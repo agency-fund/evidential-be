@@ -133,7 +133,7 @@ from xngin.apiserver.routers.common_api_types import (
     PowerResponse,
 )
 from xngin.apiserver.routers.common_enums import ExperimentState
-from xngin.apiserver.routers.experiments import experiments_common
+from xngin.apiserver.routers.experiments import experiments_common, experiments_common_csv
 from xngin.apiserver.routers.experiments.experiments_common import AbandonExperimentResult
 from xngin.apiserver.settings import (
     ParticipantsDef,
@@ -1710,7 +1710,7 @@ async def get_experiment_assignments_as_csv_for_ui(
     # TODO: update for bandits
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
-    return await experiments_common.get_experiment_assignments_as_csv_impl(session, experiment)
+    return await experiments_common_csv.get_experiment_assignments_as_csv_impl(session, experiment)
 
 
 @router.get(

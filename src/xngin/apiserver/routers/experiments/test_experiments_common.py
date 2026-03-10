@@ -48,11 +48,11 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     create_preassigned_experiment_impl,
     get_assign_summary,
     get_existing_assignment_for_participant,
-    get_experiment_assignments_as_csv_impl,
     get_experiment_assignments_impl,
     list_organization_or_datasource_experiments_impl,
     update_bandit_arm_with_outcome_impl,
 )
+from xngin.apiserver.routers.experiments.experiments_common_csv import get_experiment_assignments_as_csv_impl
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.assertions import assert_dates_equal

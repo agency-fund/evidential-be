@@ -38,6 +38,7 @@ from xngin.apiserver.routers.common_api_types import (
     OnlineAssignmentWithFiltersRequest,
     UpdateBanditArmOutcomeRequest,
 )
+from xngin.apiserver.routers.experiments import experiments_common_csv
 from xngin.apiserver.routers.experiments.dependencies import (
     datasource_dependency,
     experiment_and_datasource_dependency,
@@ -49,7 +50,6 @@ from xngin.apiserver.routers.experiments.dependencies import (
 from xngin.apiserver.routers.experiments.experiments_common import (
     create_assignment_for_participant,
     get_existing_assignment_for_participant,
-    get_experiment_assignments_as_csv_impl,
     get_experiment_assignments_impl,
     get_experiment_impl,
     get_or_create_assignment_for_participant,
@@ -138,7 +138,7 @@ async def get_experiment_assignments_as_csv(
 
     csv header form: participant_id,arm_id,arm_name,strata_name1,strata_name2,...
     """
-    return await get_experiment_assignments_as_csv_impl(xngin_session, experiment)
+    return await experiments_common_csv.get_experiment_assignments_as_csv_impl(xngin_session, experiment)
 
 
 @router.get(
