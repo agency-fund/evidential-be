@@ -143,7 +143,7 @@ def test_token_cryptor_reads_configured_local_keyset_file(tmp_path):
         assert cryptor.decrypt(token) == b"payload"
 
 
-async def test_user_from_token_invite(xngin_session: AsyncSession, ppost):
+async def test_user_from_token_invite(xngin_session: AsyncSession):
     """
     Tests that invited users are updated with the IDP details on their first login, and
     that they are then bound to that IDP afterwards.

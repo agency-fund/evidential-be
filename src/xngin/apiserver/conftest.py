@@ -5,8 +5,9 @@ import contextlib
 import enum
 import os
 import secrets
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
-from functools import partial
 from typing import assert_never, cast
 
 import pytest
@@ -22,12 +23,13 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy_bigquery import dialect as bigquery_dialect
 from starlette.testclient import TestClient
 
-from xngin.apiserver import constants, database, flags
+from xngin.apiserver import database, flags
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import (
     random_seed_dependency,
 )
 from xngin.apiserver.dns import safe_resolve
+from xngin.apiserver.exceptionhandlers import XHTTPValidationError
 from xngin.apiserver.main import app
 from xngin.apiserver.routers.auth import auth_dependencies
 from xngin.apiserver.routers.auth.auth_dependencies import (
@@ -42,6 +44,11 @@ from xngin.apiserver.settings import (
     RemoteDatabaseConfig,
 )
 from xngin.apiserver.sqla import tables
+from xngin.apiserver.testing import (
+    admin_api_client,
+    experiments_api_client,
+)
+from xngin.apiserver.testing.admin_api_client import AdminAPIClientNotDefaultStatusError
 from xngin.apiserver.testing.pg_helpers import create_database_if_not_exists_pg
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 from xngin.db_extensions import custom_functions
@@ -181,56 +188,29 @@ def fixture_client(xngin_session):
         yield client
 
 
-@pytest.fixture(name="client_v1")
-def fixture_client_v1(xngin_session):
-    """Returns a FastAPI TestClient with the {constants.API_PREFIX_V1} as a prefix on the request path.
+@pytest.fixture(name="eclient")
+def fixture_experiments_api_client(xngin_session):
+    """Returns a generated API client for the Integration API.
 
-    TestClient manages the lifecycle of the app and will invoke the FastAPI app and router @lifespan methods.
+    The generated client uses TestClient under the hood. TestClient manages the lifecycle of the app and will invoke
+    the FastAPI app and router @lifespan methods.
     """
-    with TestClient(app, base_url=f"http://testserver{constants.API_PREFIX_V1}") as client:
-        yield client
+    with experiments_api_client.ExperimentsAPIClient.from_app(app) as eapi_client:
+        yield eapi_client
 
 
-@pytest.fixture(name="pget")
-def fixture_pget(client):
-    return partial(client.get, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"})
+@pytest.fixture(name="aclient")
+def fixture_admin_api_client(xngin_session):
+    """Returns a generated API client for privileged Admin API requests."""
+    with TestClient(app, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"}) as client:
+        yield admin_api_client.AdminAPIClient(client)
 
 
-@pytest.fixture(name="ppost")
-def fixture_ppost(client):
-    return partial(client.post, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"})
-
-
-@pytest.fixture(name="ppatch")
-def fixture_ppatch(client):
-    return partial(
-        client.patch,
-        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
-    )
-
-
-@pytest.fixture(name="pdelete")
-def fixture_pdelete(client):
-    return partial(
-        client.delete,
-        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
-    )
-
-
-@pytest.fixture(name="udelete")
-def fixture_udelete(client):
-    return partial(
-        client.delete,
-        headers={"Authorization": f"Bearer {UNPRIVILEGED_TOKEN_FOR_TESTING}"},
-    )
-
-
-@pytest.fixture(name="uget")
-def fixture_uget(client):
-    return partial(
-        client.get,
-        headers={"Authorization": f"Bearer {UNPRIVILEGED_TOKEN_FOR_TESTING}"},
-    )
+@pytest.fixture(name="aclient_unpriv")
+def fixture_admin_api_client_unpriv(xngin_session):
+    """Returns a generated API client for unprivileged Admin API requests."""
+    with TestClient(app, headers={"Authorization": f"Bearer {UNPRIVILEGED_TOKEN_FOR_TESTING}"}) as client:
+        yield admin_api_client.AdminAPIClient(client)
 
 
 @pytest.fixture(name="xngin_session")
@@ -377,3 +357,75 @@ async def _make_datasource_metadata(
         key_id=key_id,
         org=org,
     )
+
+
+@dataclass
+class StatusCodeMatcher:
+    exc: AdminAPIClientNotDefaultStatusError | None = None
+
+    def http_response(self):
+        """Returns the httpx Response."""
+        if self.exc is None:
+            raise AssertionError("StatusCodeMatcher has no captured response yet.")
+        return self.exc.result.response
+
+    def _detail_messages(self) -> list[str]:
+        response = self.http_response()
+        parsed_error = XHTTPValidationError.model_validate(response.json())
+        return [detail.msg for detail in parsed_error.detail]
+
+    def _has_text(self, text: str) -> bool:
+        response = self.http_response()
+        body_text = response.text if response.text is not None else str(response.content)
+        return text in body_text
+
+    def _has_message(self, msg: str, *, contains: bool = False) -> bool:
+        response = self.http_response()
+        body = response.json()
+        if not isinstance(body, dict):
+            raise TypeError(f"Expected JSON object response body, got {type(body).__name__}.")
+        actual_msg = body.get("message")
+        if not isinstance(actual_msg, str):
+            raise TypeError(f'Expected JSON object with string "message", got: {body!r}')
+        actual_msg = actual_msg.lower()
+        expected_msg = msg.lower()
+        return expected_msg in actual_msg if contains else actual_msg == expected_msg
+
+
+@contextmanager
+def expect_status_code(
+    status_code: int,
+    *,
+    message_contains: str | None = None,
+    message_eq: str | None = None,
+    detail_contains: str | None = None,
+    detail_eq: str | None = None,
+    text: str | None = None,
+) -> Iterator[StatusCodeMatcher]:
+    """Like pytest.raises(), but for checking the non-default response codes of an AdminAPIClient request."""
+    match = StatusCodeMatcher()
+    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+        yield match
+    match.exc = exc.value
+    http_response = match.http_response()
+    assert http_response.status_code == status_code, (
+        f"Expected '{status_code}' response code but got {http_response.status_code}: {http_response.content}"
+    )
+    if message_eq is not None:
+        assert match._has_message(message_eq), (
+            f"Expected '{message_eq}' to be equal to the .message field: {http_response.content}"
+        )
+    if message_contains is not None:
+        assert match._has_message(message_contains, contains=True), (
+            f"Expected '{message_contains}' to be a substring of the .message field: {http_response.content}"
+        )
+    if detail_eq is not None:
+        assert any(msg == detail_eq for msg in match._detail_messages()), (
+            f"Expected '{detail_eq}' to be one of the .msg fields in the response: {http_response.content}"
+        )
+    if detail_contains is not None:
+        assert any(detail_contains in msg for msg in match._detail_messages()), (
+            f"Expected '{detail_eq}' to be in one of the .msg fields in the response: {http_response.content}"
+        )
+    if text is not None:
+        assert match._has_text(text), f"Expected '{text}' to be in the response: {http_response.content}"
