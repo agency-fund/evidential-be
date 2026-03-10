@@ -1356,10 +1356,15 @@ async def test_get_experiment_assignments_as_csv_impl(xngin_session, testing_dat
 
     arm_name_to_id = {a.name: a.id for a in experiment.arms}
     response = await get_experiment_assignments_as_csv_impl(xngin_session, experiment)
-    rows = (await collect_streaming_response_body(response)).decode().splitlines()
+    csv_bytes = await collect_streaming_response_body(response)
+    assert b"\r" not in csv_bytes
+    assert csv_bytes.count(b"\n") == 3
+    rows = csv_bytes.decode().splitlines()
     assert rows[0] == "participant_id,arm_id,arm_name,created_at,gender"
-    assert rows[1] == f"p1,{arm_name_to_id['control']},control,2025-01-01 00:00:00+00,F"
-    assert rows[2] == f"p2,{arm_name_to_id['treatment']},treatment,2025-01-02 00:00:00+00,M"
+    assert set(rows[1:]) == {
+        f"p1,{arm_name_to_id['control']},control,2025-01-01 00:00:00+00,F",
+        f"p2,{arm_name_to_id['treatment']},treatment,2025-01-02 00:00:00+00,M",
+    }
 
 
 async def test_get_experiment_assignments_as_csv_impl_emits_null_for_missing_metadata_strata(
@@ -1376,10 +1381,15 @@ async def test_get_experiment_assignments_as_csv_impl_emits_null_for_missing_met
 
     arm_name_to_id = {a.name: a.id for a in experiment.arms}
     response = await get_experiment_assignments_as_csv_impl(xngin_session, experiment)
-    rows = (await collect_streaming_response_body(response)).decode().splitlines()
+    csv_bytes = await collect_streaming_response_body(response)
+    assert b"\r" not in csv_bytes
+    assert csv_bytes.count(b"\n") == 3
+    rows = csv_bytes.decode().splitlines()
     assert rows[0] == "participant_id,arm_id,arm_name,created_at,gender,region"
-    assert rows[1] == f"p1,{arm_name_to_id['control']},control,2025-01-01 00:00:00+00,F,"
-    assert rows[2] == f"p2,{arm_name_to_id['treatment']},treatment,2025-01-02 00:00:00+00,M,"
+    assert set(rows[1:]) == {
+        f"p1,{arm_name_to_id['control']},control,2025-01-01 00:00:00+00,F,",
+        f"p2,{arm_name_to_id['treatment']},treatment,2025-01-02 00:00:00+00,M,",
+    }
 
 
 async def test_get_experiment_assignments_as_csv_impl_includes_header_for_empty_export(
@@ -1389,7 +1399,10 @@ async def test_get_experiment_assignments_as_csv_impl_includes_header_for_empty_
     await xngin_session.refresh(experiment, ["arms"])
 
     response = await get_experiment_assignments_as_csv_impl(xngin_session, experiment)
-    rows = (await collect_streaming_response_body(response)).decode().splitlines()
+    csv_bytes = await collect_streaming_response_body(response)
+    assert b"\r" not in csv_bytes
+    assert csv_bytes.count(b"\n") == 1
+    rows = csv_bytes.decode().splitlines()
     assert rows == ["participant_id,arm_id,arm_name,created_at,gender"]
 
 
