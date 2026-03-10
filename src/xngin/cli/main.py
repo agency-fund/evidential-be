@@ -8,6 +8,7 @@ import re
 import sys
 import uuid
 from compression import zstd
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
@@ -23,11 +24,19 @@ from rich.console import Console
 from sqlalchemy import create_engine, make_url
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import Session
 from sqlalchemy.sql.compiler import IdentifierPreparer
 
 import xngin.apiserver.openapi
 from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.settings import Datasource
+from xngin.apiserver.snapshots.fake_data import (
+    VALID_SNAPSHOT_FIELDS,
+    create_fake_snapshots,
+    get_arm_ids,
+    get_freq_experiment_for_cli,
+    get_metric_names,
+)
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.bootstrap import create_entities_for_first_time_user
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_RAW_DATA
@@ -44,6 +53,8 @@ REDSHIFT_HOSTNAME_SUFFIX = "redshift.amazonaws.com"
 err_console = Console(stderr=True)
 console = Console(stderr=False)
 app = typer.Typer(help=__doc__)
+snapshots_app = typer.Typer(help="Create and modify fake historical snapshots for development.")
+app.add_typer(snapshots_app, name="snapshots")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
 
@@ -144,6 +155,15 @@ def validate_create_testing_dwh_src(v: Path):
         if str(v).endswith(ext):
             return v
     raise typer.BadParameter("--src must end in .csv or .csv.zst")
+
+
+def parse_iso_datetime(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed
 
 
 @app.command()
@@ -636,6 +656,65 @@ def decrypt(
     secretservice.setup()
     ciphertext = sys.stdin.read()
     print(secretservice.get_symmetric().decrypt(ciphertext, aad))
+
+
+@snapshots_app.command("create-fake")
+def snapshots_create_fake(
+    dsn: Annotated[str, typer.Option("--dsn", "-d", help="Database connection string", envvar="DATABASE_URL")],
+    exp_id: Annotated[str, typer.Option("--exp-id", help="Experiment ID")],
+    start_date: Annotated[
+        str | None,
+        typer.Option("--start-date", "-s", help="Start date in ISO format. Defaults to now."),
+    ] = None,
+    n: Annotated[int, typer.Option("--n", "-n", help="Number of daily snapshots to create.")] = 1,
+    arm_id: Annotated[str | None, typer.Option("--arm-id", "-a", help="Arm ID to apply values to")] = None,
+    metric: Annotated[str | None, typer.Option("--metric", "-m", help="Metric name to apply values to")] = None,
+    field: Annotated[
+        str | None,
+        typer.Option("--field", "-f", help="Field name to override in generated analyses."),
+    ] = None,
+    values: Annotated[list[float] | None, typer.Argument(help="Optional values to cycle through")] = None,
+    random_seed: Annotated[int | None, typer.Option("--random-seed", "-r", help="Random seed")] = None,
+    echo: Annotated[bool, typer.Option("--echo", help="Echo SQL queries")] = False,
+) -> None:
+    """Create fake snapshots for a frequentist experiment."""
+    engine = create_engine(dsn, echo=echo)
+
+    with Session(engine) as session:
+        try:
+            experiment = get_freq_experiment_for_cli(session, exp_id)
+        except ValueError as err:
+            err_console.print(f"Error: {err}")
+            raise typer.Exit(1) from err
+
+        if metric and metric not in get_metric_names(experiment):
+            err_console.print(
+                f"Error: metric '{metric}' not found in experiment. Available: {get_metric_names(experiment)}"
+            )
+            raise typer.Exit(1)
+
+        if arm_id and arm_id not in get_arm_ids(experiment):
+            err_console.print(f"Error: arm_id '{arm_id}' not found in experiment. Available: {get_arm_ids(experiment)}")
+            raise typer.Exit(1)
+
+        if field and field not in VALID_SNAPSHOT_FIELDS:
+            err_console.print(f"Error: field '{field}' not valid. Must be one of: {VALID_SNAPSHOT_FIELDS}")
+            raise typer.Exit(1)
+
+        snapshots = create_fake_snapshots(
+            session,
+            experiment,
+            start_date=parse_iso_datetime(start_date),
+            n=n,
+            arm_id=arm_id,
+            metric_name=metric,
+            field=field,
+            values=values,
+            random_seed=random_seed,
+        )
+        session.commit()
+
+    print(f"Successfully created {len(snapshots)} snapshots for experiment {exp_id}")
 
 
 if __name__ == "__main__":

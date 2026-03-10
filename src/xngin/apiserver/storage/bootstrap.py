@@ -21,6 +21,11 @@ from xngin.apiserver.routers.common_api_types import (
 from xngin.apiserver.routers.common_enums import ContextType, LikelihoodTypes, PriorTypes, Relation
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.settings import Dsn, RemoteDatabaseConfig
+from xngin.apiserver.snapshots.fake_data import (
+    LATE_BREAKOUT,
+    STEADY_GAIN,
+    seed_historical_snapshots,
+)
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 
@@ -43,6 +48,7 @@ async def _create_and_commit_experiment(
     )
     experiment = await session.get_one(tables.Experiment, result.experiment_id)
     await experiments_common.commit_experiment_impl(session, experiment)
+    return experiment
 
 
 async def _maybe_create_developer_samples(
@@ -82,7 +88,7 @@ async def _maybe_create_developer_samples(
     )
     await session.flush()
 
-    await _create_and_commit_experiment(
+    preassigned = await _create_and_commit_experiment(
         session,
         datasource,
         CreateExperimentRequest(
@@ -102,8 +108,9 @@ async def _maybe_create_developer_samples(
             )
         ),
     )
+    await seed_historical_snapshots(session, preassigned, STEADY_GAIN)
 
-    await _create_and_commit_experiment(
+    preassigned_2 = await _create_and_commit_experiment(
         session,
         datasource,
         CreateExperimentRequest(
@@ -125,6 +132,7 @@ async def _maybe_create_developer_samples(
             ),
         ),
     )
+    await seed_historical_snapshots(session, preassigned_2, LATE_BREAKOUT)
 
     await _create_and_commit_experiment(
         session,
