@@ -128,16 +128,21 @@ async def get_experiment_assignments(
 
 @router.get(
     "/experiments/{experiment_id}/assignments/csv",
-    summary="Export experiment assignments as CSV file.",
+    summary="Export experiment assignments as CSV.",
+    description="""Returns a CSV stream with a header row.
+
+    Output columns:
+    - `participant_id`
+    - `arm_id`
+    - `arm_name`
+    - `created_at`: UTC ISO 8601 timestamp in ISO8601 format
+    - one column for each configured strata field
+    """,
 )
 async def get_experiment_assignments_as_csv(
     experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> StreamingResponse:
-    """Exports the assignments info with header row as CSV. BalanceCheck not included.
-
-    csv header form: participant_id,arm_id,arm_name,strata_name1,strata_name2,...
-    """
     return await experiments_common_csv.get_experiment_assignments_as_csv_impl(xngin_session, experiment)
 
 
