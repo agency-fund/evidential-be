@@ -148,6 +148,7 @@ def get_stats_on_filters(
 
     return [query(col_name, ptype_fd) for col_name, ptype_fd in filter_schema.items() if db_schema.get(col_name)]
 
+
 def get_cluster_size_stats(
     session: Session,
     sa_table: Table,
