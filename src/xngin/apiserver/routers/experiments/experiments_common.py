@@ -6,8 +6,7 @@ from datetime import UTC, datetime
 from typing import cast
 
 import numpy as np
-from fastapi import HTTPException, Response, status
-from fastapi.responses import StreamingResponse
+from fastapi import HTTPException, status
 from sqlalchemy import Select, Table, func, insert, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession

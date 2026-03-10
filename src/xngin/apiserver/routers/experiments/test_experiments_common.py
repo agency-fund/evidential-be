@@ -1406,6 +1406,49 @@ async def test_get_experiment_assignments_as_csv_impl_includes_header_for_empty_
     assert rows == ["participant_id,arm_id,arm_name,created_at,gender"]
 
 
+async def test_get_experiment_assignments_as_csv_impl_uses_sorted_strata_header_order(
+    xngin_session, testing_datasource
+):
+    experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds)
+    experiment.design_spec_fields = {
+        "strata": [{"field_name": "region"}, {"field_name": "gender"}],
+        "metrics": [],
+        "filters": [],
+    }
+    await xngin_session.commit()
+    await xngin_session.refresh(experiment, ["arms"])
+
+    response = await get_experiment_assignments_as_csv_impl(xngin_session, experiment)
+    csv_bytes = await collect_streaming_response_body(response)
+    rows = csv_bytes.decode().splitlines()
+    assert rows[0] == "participant_id,arm_id,arm_name,created_at,gender,region"
+
+
+async def test_get_experiment_assignments_as_csv_impl_omits_strata_columns_when_none_defined(
+    xngin_session, testing_datasource
+):
+    experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds)
+    await xngin_session.refresh(experiment, ["arms"])
+    arm_name_to_id = {a.name: a.id for a in experiment.arms}
+    experiment.design_spec_fields = {
+        "strata": [],
+        "metrics": [],
+        "filters": [],
+    }
+    await xngin_session.commit()
+
+    response = await get_experiment_assignments_as_csv_impl(xngin_session, experiment)
+    csv_bytes = await collect_streaming_response_body(response)
+    assert b"\r" not in csv_bytes
+    assert csv_bytes.count(b"\n") == 3
+    rows = csv_bytes.decode().splitlines()
+    assert rows[0] == "participant_id,arm_id,arm_name,created_at"
+    assert set(rows[1:]) == {
+        f"p1,{arm_name_to_id['control']},control,2025-01-01T00:00:00Z",
+        f"p2,{arm_name_to_id['treatment']},treatment,2025-01-02T00:00:00Z",
+    }
+
+
 async def test_get_existing_assignment_for_participant(xngin_session, testing_datasource):
     experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds)
     await xngin_session.refresh(experiment, ["arm_assignments"])
