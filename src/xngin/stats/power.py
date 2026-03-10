@@ -147,7 +147,7 @@ def _analyze_power_sample_size_mode(
     icc: float | None = None,
     avg_cluster_size: float | None = None,
     cv: float = 0.0,
-) -> "MetricPowerAnalysis | ClusterMetricPowerAnalysis":
+) -> MetricPowerAnalysis | ClusterMetricPowerAnalysis:
     """
     Calculate required sample size for individual or cluster randomization.
 

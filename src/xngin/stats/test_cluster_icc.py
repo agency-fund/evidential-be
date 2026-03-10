@@ -16,7 +16,7 @@ Tests for ICC and CV calculation from database.
 
 
 @pytest.fixture
-def test_db_session() -> Generator[Session, None, None]:
+def test_db_session() -> Generator[Session]:
     engine = create_engine("postgresql://localhost/evidential_test")
     session_local = sessionmaker(bind=engine)  # Lowercase
     session = session_local()
