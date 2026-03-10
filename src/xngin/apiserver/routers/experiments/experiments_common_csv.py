@@ -75,7 +75,6 @@ async def get_experiment_assignments_as_csv_impl(
     _validate_experiment_assignments_csv_export(experiment)
     strata_names = _get_assignment_csv_strata_names_from_experiment(experiment)
     copy_query = _build_experiment_assignments_copy_query(experiment.id, strata_names)
-    filename = f"experiment_{experiment.id}_assignments.csv"
 
     async def csv_generator():
         async_conn = await xngin_session.connection()
@@ -93,6 +92,7 @@ async def get_experiment_assignments_as_csv_impl(
         if buffer:
             yield bytes(buffer)
 
+    filename = f"experiment_{experiment.id}_assignments.csv"
     return CsvStreamingResponse(
         csv_generator(),
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
