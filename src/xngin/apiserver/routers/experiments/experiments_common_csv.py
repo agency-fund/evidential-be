@@ -8,6 +8,8 @@ from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_enums import ExperimentsType
 from xngin.apiserver.sqla import tables
 
+CSV_STREAM_CHUNK_SIZE_BYTES = 256 * 1024
+
 
 def _get_assignment_csv_strata_names_from_experiment(experiment: tables.Experiment) -> list[str]:
     if experiment.design_spec_fields is None:
@@ -44,7 +46,6 @@ def _build_experiment_assignments_copy_query(experiment_id: str, strata_names: l
                 ON a.id = aa.arm_id
                 AND a.experiment_id = aa.experiment_id
             WHERE aa.experiment_id = {experiment_id}
-            ORDER BY aa.participant_id
         ) TO STDOUT WITH (FORMAT CSV, HEADER TRUE)
     """
 
@@ -72,9 +73,15 @@ async def get_experiment_assignments_as_csv_impl(
         driver_conn = raw_conn.driver_connection
         if driver_conn is None:
             raise RuntimeError("Expected psycopg driver connection for CSV export.")
+        buffer = bytearray()
         async with driver_conn.cursor() as cursor, cursor.copy(copy_query) as copy:
             async for chunk in copy:
-                yield bytes(chunk)
+                buffer.extend(chunk)
+                if len(buffer) >= CSV_STREAM_CHUNK_SIZE_BYTES:
+                    yield bytes(buffer)
+                    buffer.clear()
+        if buffer:
+            yield bytes(buffer)
 
     return StreamingResponse(
         csv_generator(),
