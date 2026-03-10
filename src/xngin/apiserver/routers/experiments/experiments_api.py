@@ -16,7 +16,6 @@ from fastapi import (
     Query,
     Response,
 )
-from fastapi.responses import StreamingResponse
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -56,6 +55,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     list_organization_or_datasource_experiments_impl,
     update_bandit_arm_with_outcome_impl,
 )
+from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
 from xngin.apiserver.settings import Datasource
 from xngin.apiserver.sqla import tables
 
@@ -138,11 +138,12 @@ async def get_experiment_assignments(
     - `created_at`: UTC ISO 8601 timestamp in ISO8601 format
     - one column for each configured strata field
     """,
+    response_class=CsvStreamingResponse,
 )
 async def get_experiment_assignments_as_csv(
     experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
-) -> StreamingResponse:
+) -> CsvStreamingResponse:
     return await experiments_common_csv.get_experiment_assignments_as_csv_impl(xngin_session, experiment)
 
 

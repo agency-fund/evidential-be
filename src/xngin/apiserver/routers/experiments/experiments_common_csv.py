@@ -11,6 +11,10 @@ from xngin.apiserver.sqla import tables
 CSV_STREAM_CHUNK_SIZE_BYTES = 256 * 1024
 
 
+class CsvStreamingResponse(StreamingResponse):
+    media_type = "text/csv"
+
+
 def _get_assignment_csv_strata_names_from_experiment(experiment: tables.Experiment) -> list[str]:
     if experiment.design_spec_fields is None:
         return []
@@ -67,7 +71,7 @@ def _validate_experiment_assignments_csv_export(experiment: tables.Experiment) -
 async def get_experiment_assignments_as_csv_impl(
     xngin_session: AsyncSession,
     experiment: tables.Experiment,
-) -> StreamingResponse:
+) -> CsvStreamingResponse:
     _validate_experiment_assignments_csv_export(experiment)
     strata_names = _get_assignment_csv_strata_names_from_experiment(experiment)
     copy_query = _build_experiment_assignments_copy_query(experiment.id, strata_names)
@@ -89,8 +93,7 @@ async def get_experiment_assignments_as_csv_impl(
         if buffer:
             yield bytes(buffer)
 
-    return StreamingResponse(
+    return CsvStreamingResponse(
         csv_generator(),
-        media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
