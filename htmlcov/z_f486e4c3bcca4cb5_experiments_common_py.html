@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Coverage for src/xngin/apiserver/routers/experiments/experiments_common.py: 90%</title>
+    <title>Coverage for src/xngin/apiserver/routers/experiments/experiments_common.py: 91%</title>
     <link rel="icon" sizes="32x32" href="favicon_32_cb_58284776.png">
     <link rel="stylesheet" href="style_cb_6b508a39.css" type="text/css">
     <script src="coverage_html_cb_6fb7b396.js" defer></script>
@@ -12,7 +12,7 @@
     <div class="content">
         <h1>
             <span class="text">Coverage for </span><b>src/xngin/apiserver/routers/experiments/experiments_common.py</b>:
-            <span class="pc_cov">90%</span>
+            <span class="pc_cov">91%</span>
         </h1>
         <aside id="help_panel_wrapper">
             <input id="help_panel_state" type="checkbox">
@@ -55,17 +55,17 @@
         </aside>
         <h2>
             <span class="text">422 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">381<span class="text"> run</span></button>
-            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">41<span class="text"> missing</span></button>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">384<span class="text"> run</span></button>
+            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">38<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
         <p class="text">
-            <a id="prevFileLink" class="nav" href="z_f486e4c3bcca4cb5_experiments_api_py.html">&#xab; prev</a> &nbsp; &nbsp;
+            <a id="prevFileLink" class="nav" href="z_f486e4c3bcca4cb5_dependencies_py.html">&#xab; prev</a> &nbsp; &nbsp;
             <a id="indexLink" class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a id="nextFileLink" class="nav" href="z_f486e4c3bcca4cb5_property_filters_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.11.0">coverage.py v7.11.0</a>,
-            created at 2026-03-10 17:36 +0000
+            created at 2026-03-10 21:29 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -715,13 +715,13 @@
     <p class="run"><span class="n"><a id="t633" href="#t633">633</a></span><span class="t"><span class="key">async</span> <span class="key">def</span> <span class="nam">get_experiment_assignments_as_csv_impl</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t634" href="#t634">634</a></span><span class="t">    <span class="nam">experiment</span><span class="op">:</span> <span class="nam">tables</span><span class="op">.</span><span class="nam">Experiment</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t635" href="#t635">635</a></span><span class="t"><span class="op">)</span> <span class="op">-></span> <span class="nam">StreamingResponse</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t636" href="#t636">636</a></span><span class="t">    <span class="nam">csv_generator</span> <span class="op">=</span> <span class="nam">experiment_assignments_to_csv_generator</span><span class="op">(</span><span class="nam">experiment</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t637" href="#t637">637</a></span><span class="t">    <span class="nam">filename</span> <span class="op">=</span> <span class="fst">f"</span><span class="fst">experiment_</span><span class="op">{</span><span class="nam">experiment</span><span class="op">.</span><span class="nam">id</span><span class="op">}</span><span class="fst">_assignments.csv</span><span class="fst">"</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t638" href="#t638">638</a></span><span class="t">    <span class="key">return</span> <span class="nam">StreamingResponse</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t639" href="#t639">639</a></span><span class="t">        <span class="nam">csv_generator</span><span class="op">(</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t640" href="#t640">640</a></span><span class="t">        <span class="nam">media_type</span><span class="op">=</span><span class="str">"text/csv"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t641" href="#t641">641</a></span><span class="t">        <span class="nam">headers</span><span class="op">=</span><span class="op">{</span><span class="str">"Content-Disposition"</span><span class="op">:</span> <span class="fst">f'</span><span class="fst">attachment; filename="</span><span class="op">{</span><span class="nam">filename</span><span class="op">}</span><span class="fst">"</span><span class="fst">'</span><span class="op">}</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t642" href="#t642">642</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t636" href="#t636">636</a></span><span class="t">    <span class="nam">csv_generator</span> <span class="op">=</span> <span class="nam">experiment_assignments_to_csv_generator</span><span class="op">(</span><span class="nam">experiment</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t637" href="#t637">637</a></span><span class="t">    <span class="nam">filename</span> <span class="op">=</span> <span class="fst">f"</span><span class="fst">experiment_</span><span class="op">{</span><span class="nam">experiment</span><span class="op">.</span><span class="nam">id</span><span class="op">}</span><span class="fst">_assignments.csv</span><span class="fst">"</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t638" href="#t638">638</a></span><span class="t">    <span class="key">return</span> <span class="nam">StreamingResponse</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t639" href="#t639">639</a></span><span class="t">        <span class="nam">csv_generator</span><span class="op">(</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t640" href="#t640">640</a></span><span class="t">        <span class="nam">media_type</span><span class="op">=</span><span class="str">"text/csv"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t641" href="#t641">641</a></span><span class="t">        <span class="nam">headers</span><span class="op">=</span><span class="op">{</span><span class="str">"Content-Disposition"</span><span class="op">:</span> <span class="fst">f'</span><span class="fst">attachment; filename="</span><span class="op">{</span><span class="nam">filename</span><span class="op">}</span><span class="fst">"</span><span class="fst">'</span><span class="op">}</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t642" href="#t642">642</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t643" href="#t643">643</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t644" href="#t644">644</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t645" href="#t645">645</a></span><span class="t"><span class="key">async</span> <span class="key">def</span> <span class="nam">get_existing_assignment_for_participant</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
@@ -1293,12 +1293,12 @@
 <footer>
     <div class="content">
         <p>
-            <a class="nav" href="z_f486e4c3bcca4cb5_experiments_api_py.html">&#xab; prev</a> &nbsp; &nbsp;
+            <a class="nav" href="z_f486e4c3bcca4cb5_dependencies_py.html">&#xab; prev</a> &nbsp; &nbsp;
             <a class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a class="nav" href="z_f486e4c3bcca4cb5_property_filters_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.11.0">coverage.py v7.11.0</a>,
-            created at 2026-03-10 17:36 +0000
+            created at 2026-03-10 21:29 +0000
         </p>
     </div>
 </footer>

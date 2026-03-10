@@ -36,8 +36,7 @@
 | src/xngin/apiserver/routers/common\_api\_types.py                    |      405 |       25 |     94% |122, 148, 150, 426, 428, 430, 487, 718-720, 758, 975, 984, 987-988, 998, 1000, 1010, 1012, 1098, 1253, 1414, 1416-1418 |
 | src/xngin/apiserver/routers/common\_enums.py                         |      183 |       38 |     79% |66, 68, 91-100, 105, 127-143, 154-158, 199, 234, 250-253, 262, 301-302, 306, 338 |
 | src/xngin/apiserver/routers/experiments/dependencies.py              |       45 |        3 |     93% |38, 59, 66 |
-| src/xngin/apiserver/routers/experiments/experiments\_api.py          |       68 |        3 |     96% |126, 140, 273 |
-| src/xngin/apiserver/routers/experiments/experiments\_common.py       |      422 |       41 |     90% |129, 152, 195, 199, 218, 237, 258-259, 282, 360, 371, 398, 410, 577-578, 636-638, 709-710, 731, 766, 833, 837, 841, 845, 902-903, 906, 936, 954, 962, 972, 976, 1025-1026, 1034-1036, 1066-1067 |
+| src/xngin/apiserver/routers/experiments/experiments\_common.py       |      422 |       38 |     91% |129, 152, 195, 199, 218, 237, 258-259, 282, 360, 371, 398, 410, 577-578, 709-710, 731, 766, 833, 837, 841, 845, 902-903, 906, 936, 954, 962, 972, 976, 1025-1026, 1034-1036, 1066-1067 |
 | src/xngin/apiserver/routers/experiments/property\_filters.py         |       96 |        8 |     92% |25, 28, 32, 95-96, 148, 160-161 |
 | src/xngin/apiserver/routers/experiments/test\_experiments\_common.py |      723 |        9 |     99% |181-182, 853-855, 1105-1107, 1586 |
 | src/xngin/apiserver/routers/experiments/test\_property\_filters.py   |       44 |        1 |     98% |        24 |
@@ -69,9 +68,9 @@
 | src/xngin/xsecrets/secretservice.py                                  |       60 |        4 |     93% |41-42, 100, 122 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                       |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                           |       67 |        1 |     99% |        24 |
-|                                                            **TOTAL** | **10514** |  **716** | **93%** |           |
+|                                                            **TOTAL** | **10547** |  **710** | **93%** |           |
 
-59 files skipped due to complete coverage.
+60 files skipped due to complete coverage.
 
 
 ## Setup coverage badge
