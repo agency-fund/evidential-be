@@ -1357,9 +1357,29 @@ async def test_get_experiment_assignments_as_csv_impl(xngin_session, testing_dat
     arm_name_to_id = {a.name: a.id for a in experiment.arms}
     response = await get_experiment_assignments_as_csv_impl(xngin_session, experiment)
     rows = (await collect_streaming_response_body(response)).decode().splitlines()
-    assert rows[0] == "participant_id,arm_id,arm_name,created_at,gender,score"
-    assert rows[1] == f"p1,{arm_name_to_id['control']},control,2025-01-01 00:00:00+00,F,1.1"
-    assert rows[2] == f'p2,{arm_name_to_id["treatment"]},treatment,2025-01-02 00:00:00+00,M,"esc,aped"'
+    assert rows[0] == "participant_id,arm_id,arm_name,created_at,gender"
+    assert rows[1] == f"p1,{arm_name_to_id['control']},control,2025-01-01 00:00:00+00,F"
+    assert rows[2] == f"p2,{arm_name_to_id['treatment']},treatment,2025-01-02 00:00:00+00,M"
+
+
+async def test_get_experiment_assignments_as_csv_impl_emits_null_for_missing_metadata_strata(
+    xngin_session, testing_datasource
+):
+    experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds)
+    experiment.design_spec_fields = {
+        "strata": [{"field_name": "gender"}, {"field_name": "region"}],
+        "metrics": [{"field_name": "is_onboarded", "metric_pct_change": 0.1, "metric_target": None}],
+        "filters": [],
+    }
+    await xngin_session.commit()
+    await xngin_session.refresh(experiment, ["arms"])
+
+    arm_name_to_id = {a.name: a.id for a in experiment.arms}
+    response = await get_experiment_assignments_as_csv_impl(xngin_session, experiment)
+    rows = (await collect_streaming_response_body(response)).decode().splitlines()
+    assert rows[0] == "participant_id,arm_id,arm_name,created_at,gender,region"
+    assert rows[1] == f"p1,{arm_name_to_id['control']},control,2025-01-01 00:00:00+00,F,"
+    assert rows[2] == f"p2,{arm_name_to_id['treatment']},treatment,2025-01-02 00:00:00+00,M,"
 
 
 async def test_get_experiment_assignments_as_csv_impl_includes_header_for_empty_export(

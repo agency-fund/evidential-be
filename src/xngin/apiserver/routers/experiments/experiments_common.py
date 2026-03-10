@@ -590,22 +590,6 @@ def get_assignment_csv_strata_names_from_experiment(experiment: tables.Experimen
     return [stratum["field_name"] for stratum in stored_strata]
 
 
-async def get_assignment_csv_strata_names(
-    xngin_session: AsyncSession,
-    experiment: tables.Experiment,
-) -> list[str]:
-    stmt = (
-        select(tables.ArmAssignment.strata)
-        .where(tables.ArmAssignment.experiment_id == experiment.id)
-        .order_by(tables.ArmAssignment.participant_id)
-        .limit(1)
-    )
-    strata = (await xngin_session.scalar(stmt)) or []
-    if strata:
-        return [stratum["field_name"] for stratum in strata]
-    return get_assignment_csv_strata_names_from_experiment(experiment)
-
-
 def build_experiment_assignments_copy_sql(experiment: tables.Experiment, strata_names: list[str]) -> str:
     if experiment.experiment_type not in {
         ExperimentsType.FREQ_ONLINE.value,
@@ -654,7 +638,7 @@ async def get_experiment_assignments_as_csv_impl(
     xngin_session: AsyncSession,
     experiment: tables.Experiment,
 ) -> StreamingResponse:
-    strata_names = await get_assignment_csv_strata_names(xngin_session, experiment)
+    strata_names = get_assignment_csv_strata_names_from_experiment(experiment)
     copy_sql = build_experiment_assignments_copy_sql(experiment, strata_names)
     filename = f"experiment_{experiment.id}_assignments.csv"
 
