@@ -128,6 +128,7 @@ class ExperimentStorageConverter:
         self,
         design_spec: capi.DesignSpec,
         participants_schema: ParticipantsSchema | None = None,
+        include_deprecated_design_spec_fields: bool = True,
     ) -> Self:
         """Saves the components of a DesignSpec to the experiment.
 
@@ -229,7 +230,8 @@ class ExperimentStorageConverter:
         # add fields_used_map to experiment_fields
         self.experiment.experiment_fields = list(fields_used_map.values())
 
-        self._set_deprecated_design_spec_fields(design_spec)
+        if include_deprecated_design_spec_fields:
+            self._set_deprecated_design_spec_fields(design_spec)
         return self
 
     def get_design_spec_fields(self) -> DesignSpecFields:
