@@ -266,7 +266,7 @@ async def get_experiment_via_ds_or_raise(
     ds: tables.Datasource,
     experiment_id: str,
     *,
-    preload: list[QueryableAttribute] | None = None,
+    preload: list[QueryableAttribute | list[QueryableAttribute]] | None = None,
 ) -> tables.Experiment:
     """Reads the requested experiment (related to the given datasource) from the database.
 
@@ -281,7 +281,18 @@ async def get_experiment_via_ds_or_raise(
         .where(tables.Experiment.id == experiment_id)
     )
     if preload:
-        stmt = stmt.options(*[selectinload(f) for f in preload])
+        options = []
+        for f in preload:
+            # If a list is provided, treat it as loading a nested relationship.
+            if isinstance(f, list) and f:
+                nested_load = selectinload(f[0])
+                for attr in f[1:]:
+                    nested_load = nested_load.selectinload(attr)
+                options.append(nested_load)
+            elif isinstance(f, QueryableAttribute):
+                options.append(selectinload(f))
+
+        stmt = stmt.options(*options)
     result = await session.execute(stmt)
     exp = result.scalar_one_or_none()
     if exp is None:
@@ -1619,7 +1630,11 @@ async def get_experiment_for_ui(
         session,
         ds,
         experiment_id,
-        preload=[tables.Experiment.webhooks, tables.Experiment.contexts],
+        preload=[
+            [tables.Experiment.experiment_fields, tables.ExperimentField.experiment_filters],
+            tables.Experiment.webhooks,
+            tables.Experiment.contexts,
+        ],
     )
     participants = ds.get_config().find_participants_or_none(experiment.participant_type)
     return GetExperimentForUiResponse(
