@@ -1106,10 +1106,7 @@ async def test_state_setting_experiment_impl(
         assert e.status_code == expected_status  # noqa: PT017
         assert e.detail == expected_detail  # noqa: PT017
     else:
-        if method_under_test is commit_experiment_impl:
-            assert response == expected_status
-        else:
-            assert response == expected_status
+        assert response == expected_status
         assert experiment.state == expected_state
 
 
