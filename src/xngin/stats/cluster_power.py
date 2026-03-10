@@ -43,6 +43,20 @@ def calculate_design_effect(
     return 1 + icc * ((m - 1) + m * (cv**2))
 
 
+def calculate_effective_sample_size(total_n: int, deff: float) -> int:
+    """
+    Calculate effective sample size accounting for clustering.
+
+    Args:
+        total_n: Total number of participants
+        deff: Design effect
+
+    Returns:
+        Effective sample size (total_n / deff)
+    """
+    return int(total_n / deff)
+
+
 def calculate_num_clusters_needed(
     n_individual: float,
     avg_cluster_size: float,
