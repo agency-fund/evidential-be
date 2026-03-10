@@ -28,10 +28,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql.compiler import IdentifierPreparer
 
 import xngin.apiserver.openapi
-from xngin.apiserver.dwh.dwh_session import CannotFindTableError, DwhSession
 from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
-from xngin.apiserver.dwh.inspections import create_schema_from_table
-from xngin.apiserver.settings import Datasource, Dsn
+from xngin.apiserver.settings import Datasource
 from xngin.apiserver.snapshots.fake_data import (
     VALID_SNAPSHOT_FIELDS,
     create_fake_snapshots,
@@ -63,11 +61,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 secretservice.setup()
 
 async_command = lambda f: functools.wraps(f)(lambda *args, **kwargs: asyncio.run(f(*args, **kwargs)))  # noqa: E731
-
-
-class TextOrJson(StrEnum):
-    text = "text"
-    json = "json"
 
 
 class Base64OrJson(StrEnum):
@@ -422,58 +415,6 @@ def create_testing_dwh(
     else:
         err_console.print("Unrecognized database driver.")
         raise typer.Exit(2)
-
-
-@app.command()
-@async_command
-async def create_participants_schema(
-    dsn: Annotated[str, typer.Argument(..., help="The SQLAlchemy DSN of a data warehouse.")],
-    table_name: Annotated[
-        str,
-        typer.Argument(
-            ...,
-            envvar="XNGIN_CLI_TABLE_NAME",
-            help="The name of the table to pull field metadata from.",
-        ),
-    ] = "dwh",
-    unique_id_col: Annotated[
-        str | None,
-        typer.Option(
-            help="Specify the column name within table_name to use as the unique identifier for each participant. If "
-            "None, will attempt to infer a reasonable column from the schema or raise an error."
-        ),
-    ] = None,
-    use_sa_autoload: Annotated[
-        bool,
-        typer.Option(
-            help="True to use SQLAlchemy's table reflection, else use a cursor to infer types",
-        ),
-    ] = True,
-):
-    """Generates a ParticipantsSchema from a datasource."""
-    config = await create_participants_schema_from_table(dsn, table_name, use_sa_autoload, unique_id_col)
-    print(json.dumps(config.model_dump(), sort_keys=True, indent=2))
-
-
-async def create_participants_schema_from_table(
-    dsn: str, table: str, use_sa_autoload: bool, unique_id_col: str | None = None
-):
-    """Creates a ParticipantsSchema from a SQLAlchemy table.
-
-    :param dsn The SQLAlchemy-compatible DSN.
-    :param table The name of the table to inspect.
-    :param use_sa_autoload True if you want to use SQLAlchemy's reflection, else infer from a SQL SELECT cursor.
-    :param unique_id_col The column name in the table to use as a participant's unique identifier.
-    """
-    try:
-        dwh_config = Dsn.from_url(dsn)
-
-        async with DwhSession(dwh_config) as dwh:
-            dwh_table = await dwh.inspect_table(table, use_sa_autoload=use_sa_autoload)
-    except CannotFindTableError as cfte:
-        err_console.print(cfte.message)
-        raise typer.Exit(1) from cfte
-    return create_schema_from_table(dwh_table, unique_id_col=unique_id_col)
 
 
 @app.command()
