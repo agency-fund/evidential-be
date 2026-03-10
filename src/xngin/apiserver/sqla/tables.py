@@ -379,7 +379,10 @@ class Experiment(Base):
     datasource_id: Mapped[str] = mapped_column(String(255), ForeignKey("datasources.id", ondelete="CASCADE"))
 
     experiment_type: Mapped[str] = mapped_column()
+    # participant_type is deprecated, and should be viewed as an alias for datasource_table.
     participant_type: Mapped[str] = mapped_column(String(255))
+    # The underlying datasource table name backing this experiment.
+    datasource_table: Mapped[str | None] = mapped_column(String(255))
     name: Mapped[str] = mapped_column(String(255))
     # Describe your experiment and hypothesis here.
     description: Mapped[str] = mapped_column(String(2000))

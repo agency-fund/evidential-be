@@ -1799,6 +1799,7 @@ async def test_create_freq_preassigned_experiment(
     assert experiment.datasource_id == datasource_id
     assert experiment.experiment_type == "freq_preassigned"
     assert experiment.participant_type == "test_participant_type"
+    assert experiment.datasource_table == TESTING_DWH_PARTICIPANT_DEF.table_name
     assert experiment.name == request_obj.design_spec.experiment_name
     assert experiment.description == request_obj.design_spec.description
     assert_dates_equal(experiment.start_date, request_obj.design_spec.start_date)
@@ -3580,6 +3581,10 @@ async def test_create_experiment_with_table_name_and_primary_key(
     participant_names = [p.participant_type for p in list_response.items]
     assert created.design_spec.participant_type not in participant_names
 
+    # Verify datasource_table is set to the requested table name
+    experiment = await xngin_session.get_one(tables.Experiment, created.experiment_id)
+    assert experiment.datasource_table == "dwh"
+
 
 def test_create_experiment_table_name_requires_primary_key(
     testing_datasource_with_user,
@@ -3635,6 +3640,10 @@ async def test_create_preassigned_experiment_with_table_name_and_primary_key(
     assert created.design_spec.participant_type.startswith("__dwh_")
     assert created.assign_summary is not None
     assert created.assign_summary.sample_size == 100
+
+    # Verify datasource_table is set to the requested table name
+    experiment = await xngin_session.get_one(tables.Experiment, created.experiment_id)
+    assert experiment.datasource_table == "dwh"
 
 
 def test_list_snapshots_pagination(pget, ppost, ppatch):

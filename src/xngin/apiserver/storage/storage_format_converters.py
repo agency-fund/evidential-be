@@ -450,6 +450,7 @@ class ExperimentStorageConverter:
             datasource_id=datasource_id,
             experiment_type=experiment_type,
             participant_type=design_spec.participant_type,
+            datasource_table=participants_schema.table_name if participants_schema else None,
             name=design_spec.experiment_name,
             description=design_spec.description,
             design_url=str(design_spec.design_url) if design_spec.design_url else None,

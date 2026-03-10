@@ -54,6 +54,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.assertions import assert_dates_equal
+from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 
 
 def make_createexperimentrequest_json(
@@ -399,6 +400,7 @@ async def test_create_preassigned_experiment_impl(
 
     assert experiment.experiment_type == ExperimentsType.FREQ_PREASSIGNED
     assert experiment.participant_type == request.design_spec.participant_type
+    assert experiment.datasource_table == participants_schema.table_name
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
     assert experiment.design_url == expected_design_url
@@ -805,6 +807,7 @@ async def test_create_experiment_impl_for_freq_online(
     experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
     assert experiment.experiment_type == ExperimentsType.FREQ_ONLINE
     assert experiment.participant_type == request.design_spec.participant_type
+    assert experiment.datasource_table == TESTING_DWH_PARTICIPANT_DEF.table_name
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
     assert experiment.design_url == ""
@@ -888,6 +891,7 @@ async def test_create_experiment_impl_for_mab_online(xngin_session, testing_data
 
     assert experiment.experiment_type == ExperimentsType.MAB_ONLINE
     assert experiment.participant_type == request.design_spec.participant_type
+    assert experiment.datasource_table is None
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
     # Online experiments still go through a review step before being committed
@@ -969,6 +973,7 @@ async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_dat
     experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
     assert experiment.experiment_type == ExperimentsType.CMAB_ONLINE
     assert experiment.participant_type == request.design_spec.participant_type
+    assert experiment.datasource_table is None
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
     # Online experiments still go through a review step before being committed

@@ -59,6 +59,7 @@ async def _migrate(dsn: str, dry_run: bool) -> None:
                     )
 
                 # Core conversion logic: Given the old pt and design spec, write out the new fields.
+                exp.datasource_table = participants_schema.table_name if participants_schema else None
                 converter = ExperimentStorageConverter(exp)
                 design_spec = await converter.get_design_spec()
                 converter.set_design_spec_fields(
@@ -73,6 +74,7 @@ async def _migrate(dsn: str, dry_run: bool) -> None:
                 migrated += 1
 
             except Exception as e:
+                session.expire(exp)
                 typer.echo(f"  [ERROR] {exp.id}: {e}")
                 errors += 1
 
