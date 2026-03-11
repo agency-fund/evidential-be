@@ -164,7 +164,7 @@ class ExperimentStorageConverter:
             )
 
         # Add filters. Fields used as filters technically could be reused with different filter values.
-        for filter_item in design_spec.filters:
+        for idx, filter_item in enumerate(design_spec.filters):
             field = fields_used_map.get(filter_item.field_name)
             datatype = field_type_map.get(filter_item.field_name, DataType.UNKNOWN)
             # Create the new field if it doesn't exist
@@ -183,6 +183,7 @@ class ExperimentStorageConverter:
                 values = [None if v is None else str(v) for v in values]
                 filters.append(
                     tables.ExperimentFilter(
+                        position=idx + 1,
                         relation=filter_item.relation,
                         string_values=values,
                     )
@@ -193,6 +194,7 @@ class ExperimentStorageConverter:
                     values = [None if v is None else int(v) for v in values]
                 filters.append(
                     tables.ExperimentFilter(
+                        position=idx + 1,
                         relation=filter_item.relation,
                         numeric_values=values,
                     )

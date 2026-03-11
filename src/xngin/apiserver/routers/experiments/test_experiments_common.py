@@ -276,6 +276,7 @@ async def get_experiment_preloaded(session: AsyncSession, experiment_id: str) ->
     preload = [
         selectinload(tables.Experiment.arms),
         selectinload(tables.Experiment.experiment_fields).selectinload(tables.ExperimentField.experiment_filters),
+        selectinload(tables.Experiment.experiment_filters),
     ]
     stmt = select(tables.Experiment).where(tables.Experiment.id == experiment_id).options(*preload)
     return (await session.scalars(stmt)).one()
@@ -385,7 +386,6 @@ async def test_create_preassigned_experiment_impl(
 
     # Verify database state uses app-generated ids
     experiment = await get_experiment_preloaded(xngin_session, experiment_id)
-    assert experiment is not None
 
     # Verify that experiment_fields were stored correctly (see defaults in make_createexperimentrequest_json)
     experiment_fields = experiment.experiment_fields
@@ -570,9 +570,7 @@ async def test_create_preassigned_experiment_impl_with_unbalanced_arms(
     assert num_treat / len(participants) == pytest.approx(0.81)
 
     # Verify arm weights were stored correctly on individual arms
-    experiment = await xngin_session.get(tables.Experiment, experiment_id)
-    assert experiment is not None
-    await experiment.awaitable_attrs.arms
+    experiment = await get_experiment_preloaded(xngin_session, experiment_id)
     assert [arm.arm_weight for arm in experiment.arms] == expected_weights
     # verify arm positions were stored correctly
     for i, (arm, db_arm) in enumerate(zip(request.design_spec.arms, experiment.arms, strict=True), start=1):
@@ -642,9 +640,7 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
     assert num_arm3 / len(participants) == pytest.approx(0.6, rel=0.05)
 
     # Verify arm weights were stored correctly on individual arms
-    experiment = await xngin_session.get(tables.Experiment, experiment_id)
-    assert experiment is not None
-    await experiment.awaitable_attrs.arms
+    experiment = await get_experiment_preloaded(xngin_session, experiment_id)
     assert [arm.arm_weight for arm in experiment.arms] == expected_weights
     # verify arm positions were stored correctly
     for i, (arm, db_arm) in enumerate(zip(request.design_spec.arms, experiment.arms, strict=True), start=1):
@@ -680,7 +676,6 @@ async def test_create_experiment_impl_for_freq_online_with_unbalanced_arms(
 
     # Verify database state
     experiment = await get_experiment_preloaded(xngin_session, response.experiment_id)
-    assert experiment is not None
     assert [arm.arm_weight for arm in experiment.arms] == expected_weights
 
     # Verify that experiment_fields were stored correctly (see defaults in make_createexperimentrequest_json)

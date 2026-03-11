@@ -563,8 +563,6 @@ class ExperimentField(Base):
     # Unique ID metadata:
     # is_unique_id is true when this field is used as the experiment's unique ID.
     is_unique_id: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
-    # Filters metadata: determined by joining with ExperimentFilter
-    # is_filter: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
     # Strata metadata
     is_strata: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
     # Metrics metadata:
@@ -573,6 +571,7 @@ class ExperimentField(Base):
     is_primary_metric: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
     metric_pct_change: Mapped[float | None] = mapped_column(Float)
     metric_target: Mapped[float | None] = mapped_column(Float)
+    # Filters metadata: not here, but determined by joining with ExperimentFilter
 
     @hybrid_property
     def is_filter(self) -> bool:
@@ -590,6 +589,7 @@ class ExperimentField(Base):
     experiment: Mapped[Experiment] = relationship(back_populates="experiment_fields")
     experiment_filters: Mapped[list[ExperimentFilter] | None] = relationship(
         back_populates="experiment_field",
+        order_by="asc(ExperimentFilter.position)",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
@@ -601,6 +601,8 @@ class ExperimentFilter(Base):
     __tablename__ = "experiment_filters"
 
     id: Mapped[str] = mapped_column(primary_key=True, default=experiment_filter_id_factory)
+    # The position of the filter in the design spec, starting at 1.
+    position: Mapped[int] = mapped_column()
     experiment_id: Mapped[str] = mapped_column(String(36), ForeignKey("experiments.id", ondelete="CASCADE"))
     field_name: Mapped[str] = mapped_column(String(255))
     relation: Mapped[str] = mapped_column(String(20))

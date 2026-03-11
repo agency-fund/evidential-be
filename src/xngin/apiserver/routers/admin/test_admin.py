@@ -11,7 +11,6 @@ from deepdiff import DeepDiff
 from pydantic import HttpUrl, TypeAdapter
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from xngin.apiserver import flags
 from xngin.apiserver.conftest import delete_seeded_users
@@ -104,6 +103,7 @@ from xngin.apiserver.routers.common_enums import (
     UpdateTypeNormal,
 )
 from xngin.apiserver.routers.experiments.test_experiments_common import (
+    get_experiment_preloaded,
     insert_experiment_and_arms,
     make_create_freq_online_experiment_request,
     make_create_online_bandit_experiment_request,
@@ -1946,18 +1946,7 @@ async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
     assert a_filter.value == ["123e4567-e89b-12d3-a456-426614174000"]
 
     # Verify database state of fields
-    experiment = (
-        await xngin_session.execute(
-            select(tables.Experiment)
-            .where(tables.Experiment.id == experiment_id)
-            .options(
-                selectinload(tables.Experiment.experiment_filters),
-                selectinload(tables.Experiment.experiment_fields).selectinload(
-                    tables.ExperimentField.experiment_filters
-                ),
-            )
-        )
-    ).scalar_one()
+    experiment = await get_experiment_preloaded(xngin_session, experiment_id)
     assert len(experiment.experiment_filters) == 6
     assert len(experiment.experiment_fields) == 8
     unique_id_field = next(f for f in experiment.experiment_fields if f.field_name == "id")
@@ -1967,6 +1956,7 @@ async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
     assert unique_id_field.experiment_filters is not None
     assert unique_id_field.experiment_filters[0].relation == Relation.EXCLUDES
     assert unique_id_field.experiment_filters[0].numeric_values == [(2 << 52) + 1, None]
+    assert unique_id_field.experiment_filters[0].position == 4
     current_income_field = next(f for f in experiment.experiment_fields if f.field_name == "current_income")
     assert current_income_field.data_type == "numeric"
     assert current_income_field.is_metric
@@ -1974,13 +1964,15 @@ async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
     assert current_income_field.experiment_filters is not None
     assert current_income_field.experiment_filters[0].relation == Relation.BETWEEN
     assert current_income_field.experiment_filters[0].numeric_values == [0.0, 100000.0]
-    is_onboarded_field = next(f for f in experiment.experiment_fields if f.field_name == "is_engaged")
-    assert is_onboarded_field.data_type == "boolean"
-    assert is_onboarded_field.is_metric
-    assert is_onboarded_field.is_filter
-    assert is_onboarded_field.experiment_filters is not None
-    assert is_onboarded_field.experiment_filters[0].relation == Relation.INCLUDES
-    assert is_onboarded_field.experiment_filters[0].numeric_values == [1, None]
+    assert current_income_field.experiment_filters[0].position == 2
+    is_engaged_field = next(f for f in experiment.experiment_fields if f.field_name == "is_engaged")
+    assert is_engaged_field.data_type == "boolean"
+    assert is_engaged_field.is_metric
+    assert is_engaged_field.is_filter
+    assert is_engaged_field.experiment_filters is not None
+    assert is_engaged_field.experiment_filters[0].relation == Relation.INCLUDES
+    assert is_engaged_field.experiment_filters[0].numeric_values == [1, None]
+    assert is_engaged_field.experiment_filters[0].position == 3
     ethnicity_field = next(f for f in experiment.experiment_fields if f.field_name == "ethnicity")
     assert ethnicity_field.data_type == "character varying"
     assert ethnicity_field.is_strata
@@ -1993,18 +1985,21 @@ async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
     assert gender_field.experiment_filters is not None
     assert gender_field.experiment_filters[0].relation == Relation.INCLUDES
     assert gender_field.experiment_filters[0].string_values == ["Male"]
+    assert gender_field.experiment_filters[0].position == 1
     sample_date_field = next(f for f in experiment.experiment_fields if f.field_name == "sample_date")
     assert sample_date_field.data_type == "date"
     assert sample_date_field.is_filter
     assert sample_date_field.experiment_filters is not None
     assert sample_date_field.experiment_filters[0].relation == Relation.BETWEEN
     assert sample_date_field.experiment_filters[0].string_values == ["2024-01-01", "2026-01-01"]
+    assert sample_date_field.experiment_filters[0].position == 5
     uuid_filter_field = next(f for f in experiment.experiment_fields if f.field_name == "uuid_filter")
     assert uuid_filter_field.data_type == "uuid"
     assert uuid_filter_field.is_filter
     assert uuid_filter_field.experiment_filters is not None
     assert uuid_filter_field.experiment_filters[0].relation == Relation.EXCLUDES
     assert uuid_filter_field.experiment_filters[0].string_values == ["123e4567-e89b-12d3-a456-426614174000"]
+    assert uuid_filter_field.experiment_filters[0].position == 6
 
     # And finally check getting the experiment is consistent with the created experiment.
     response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
