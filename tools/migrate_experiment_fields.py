@@ -59,7 +59,6 @@ async def _migrate(dsn: str, dry_run: bool) -> None:
                     )
 
                 # Core conversion logic: Given the old pt and design spec, write out the new fields.
-                exp.datasource_table = participants_schema.table_name if participants_schema else None
                 converter = ExperimentStorageConverter(exp)
                 design_spec = await converter.get_design_spec()
                 converter.set_design_spec_fields(
@@ -67,6 +66,8 @@ async def _migrate(dsn: str, dry_run: bool) -> None:
                     participants_schema=participants_schema,
                     include_deprecated_design_spec_fields=False,
                 )
+                # Finally set the datasource table name.
+                exp.datasource_table = participants_schema.table_name if participants_schema else None
 
                 typer.echo(
                     f"  [OK] {exp.id} ({exp.datasource.organization.name!r} / {exp.datasource.name!r} / {exp.name!r})"
