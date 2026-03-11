@@ -7,7 +7,7 @@ JSONB type columns for multi-value/complex types, use the converters to get/set 
 """
 
 from datetime import datetime
-from typing import Self
+from typing import Any, Self
 
 import numpy as np
 from pydantic import TypeAdapter
@@ -18,7 +18,6 @@ from xngin.apiserver.routers.common_enums import (
     DataType,
     ExperimentState,
     ExperimentsType,
-    FilterClass,
     StopAssignmentReason,
 )
 from xngin.apiserver.sqla import tables
@@ -177,7 +176,11 @@ class ExperimentStorageConverter:
 
                 # and associate new filter metadata with the field
                 filters = field.experiment_filters or []
-                if datatype.filter_class(filter_item.field_name) == FilterClass.DISCRETE or datatype in {
+                if datatype in {
+                    DataType.CHARACTER_VARYING,
+                    DataType.UUID,
+                    DataType.BOOLEAN,
+                    DataType.BIGINT,  # string representation to ease returning to the FE
                     DataType.DATE,
                     DataType.TIMESTAMP_WITHOUT_TIMEZONE,
                     DataType.TIMESTAMP_WITH_TIMEZONE,
@@ -185,7 +188,7 @@ class ExperimentStorageConverter:
                     filters.append(
                         tables.ExperimentFilter(
                             relation=filter_item.relation,
-                            string_values=filter_item.value,
+                            string_values=[None if v is None else str(v) for v in filter_item.value],
                         )
                     )
                 else:
@@ -248,11 +251,17 @@ class ExperimentStorageConverter:
         for ef in self.experiment.experiment_fields:
             if ef.is_filter and ef.experiment_filters:
                 for f in ef.experiment_filters:
+                    # Convert storage type to API type
+                    values: list[Any]
+                    if ef.data_type == DataType.BOOLEAN:
+                        values = [None if v is None else v == "True" for v in (f.string_values or [])]
+                    else:
+                        values = f.string_values or f.numeric_values or []
                     filters.append(
                         StorageFilter(
                             field_name=ef.field_name,
                             relation=f.relation,
-                            value=f.string_values or f.numeric_values or [],
+                            value=values,
                         )
                     )
             if ef.is_metric:

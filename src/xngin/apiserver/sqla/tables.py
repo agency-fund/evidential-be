@@ -595,8 +595,8 @@ class ExperimentFilter(Base):
     experiment_id: Mapped[str] = mapped_column(String(36), ForeignKey("experiments.id", ondelete="CASCADE"))
     field_name: Mapped[str] = mapped_column(String(255))
     relation: Mapped[str] = mapped_column(String(20))
-    string_values: Mapped[list[str] | None] = mapped_column(ARRAY(String(255)))
-    numeric_values: Mapped[list[Numeric] | None] = mapped_column(ARRAY(Numeric))
+    string_values: Mapped[list[str | None] | None] = mapped_column(ARRAY(String(255)))
+    numeric_values: Mapped[list[Numeric | None] | None] = mapped_column(ARRAY(Numeric))
 
     experiment: Mapped[Experiment] = relationship(
         back_populates="experiment_filters",

@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 import numpy as np
 import pytest
+from deepdiff import DeepDiff
 from pydantic import HttpUrl, TypeAdapter
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -79,6 +80,7 @@ from xngin.apiserver.routers.common_api_types import (
     CreateExperimentResponse,
     DataType,
     DesignSpecMetricRequest,
+    ExperimentConfig,
     ExperimentsType,
     Filter,
     FreqExperimentAnalysisResponse,
@@ -1458,7 +1460,7 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
                 fields=[
                     FieldDescriptor(
                         field_name="id",
-                        data_type=DataType.INTEGER,
+                        data_type=DataType.BIGINT,
                         description="test",
                         is_unique_id=True,
                         is_strata=False,
@@ -1474,6 +1476,15 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
                         is_filter=False,
                         is_metric=True,
                     ),
+                    FieldDescriptor(
+                        field_name="is_engaged",
+                        data_type=DataType.BOOLEAN,
+                        description="test",
+                        is_unique_id=False,
+                        is_strata=False,
+                        is_filter=True,
+                        is_metric=True,
+                    ),
                 ],
             ),
         ).model_dump_json(),
@@ -1486,6 +1497,11 @@ async def test_lifecycle_with_db(testing_datasource, ppost, ppatch, pget, pdelet
     create_exp_dict = make_createexperimentrequest_json(participant_type)
     create_exp_request = TypeAdapter(CreateExperimentRequest).validate_python(create_exp_dict)
     create_exp_request.design_spec.design_url = HttpUrl("https://example.com/design")
+    assert isinstance(create_exp_request.design_spec, PreassignedFrequentistExperimentSpec)
+    create_exp_request.design_spec.filters = [
+        Filter(field_name="id", relation=Relation.EXCLUDES, value=[str((2 << 52) + 1), None]),
+        Filter(field_name="is_engaged", relation=Relation.INCLUDES, value=[True, False]),
+    ]
     response = ppost(
         f"/v1/m/datasources/{testing_datasource.ds.id}/experiments",
         params={"desired_n": 100},
@@ -1846,6 +1862,7 @@ async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
     testing_datasource_with_user,
     use_deterministic_random,
     ppost,
+    pget,
 ):
     datasource_id = testing_datasource_with_user.ds.id
     experiment_request = CreateExperimentRequest(
@@ -1918,7 +1935,7 @@ async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
     a_filter = next(f for f in spec.filters if f.field_name == "id")
     assert a_filter.field_name == "id"
     assert a_filter.relation == Relation.EXCLUDES
-    assert a_filter.value == [(2 << 52) + 1, None]
+    assert a_filter.value == [str((2 << 52) + 1), None]
     a_filter = next(f for f in spec.filters if f.field_name == "sample_date")
     assert a_filter.field_name == "sample_date"
     assert a_filter.relation == Relation.BETWEEN
@@ -1947,14 +1964,23 @@ async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
     assert unique_id_field.data_type == "bigint"
     assert unique_id_field.is_unique_id
     assert unique_id_field.is_filter
+    assert unique_id_field.experiment_filters is not None
+    assert unique_id_field.experiment_filters[0].relation == Relation.EXCLUDES
+    assert unique_id_field.experiment_filters[0].string_values == [str((2 << 52) + 1), None]
     current_income_field = next(f for f in experiment.experiment_fields if f.field_name == "current_income")
     assert current_income_field.data_type == "numeric"
     assert current_income_field.is_metric
     assert current_income_field.is_filter
+    assert current_income_field.experiment_filters is not None
+    assert current_income_field.experiment_filters[0].relation == Relation.BETWEEN
+    assert current_income_field.experiment_filters[0].numeric_values == [0.0, 100000.0]
     is_onboarded_field = next(f for f in experiment.experiment_fields if f.field_name == "is_engaged")
     assert is_onboarded_field.data_type == "boolean"
     assert is_onboarded_field.is_metric
     assert is_onboarded_field.is_filter
+    assert is_onboarded_field.experiment_filters is not None
+    assert is_onboarded_field.experiment_filters[0].relation == Relation.INCLUDES
+    assert is_onboarded_field.experiment_filters[0].string_values == ["True", None]
     ethnicity_field = next(f for f in experiment.experiment_fields if f.field_name == "ethnicity")
     assert ethnicity_field.data_type == "character varying"
     assert ethnicity_field.is_strata
@@ -1964,12 +1990,32 @@ async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
     gender_field = next(f for f in experiment.experiment_fields if f.field_name == "gender")
     assert gender_field.data_type == "character varying"
     assert gender_field.is_filter
+    assert gender_field.experiment_filters is not None
+    assert gender_field.experiment_filters[0].relation == Relation.INCLUDES
+    assert gender_field.experiment_filters[0].string_values == ["Male"]
     sample_date_field = next(f for f in experiment.experiment_fields if f.field_name == "sample_date")
     assert sample_date_field.data_type == "date"
     assert sample_date_field.is_filter
+    assert sample_date_field.experiment_filters is not None
+    assert sample_date_field.experiment_filters[0].relation == Relation.BETWEEN
+    assert sample_date_field.experiment_filters[0].string_values == ["2024-01-01", "2026-01-01"]
     uuid_filter_field = next(f for f in experiment.experiment_fields if f.field_name == "uuid_filter")
     assert uuid_filter_field.data_type == "uuid"
     assert uuid_filter_field.is_filter
+    assert uuid_filter_field.experiment_filters is not None
+    assert uuid_filter_field.experiment_filters[0].relation == Relation.EXCLUDES
+    assert uuid_filter_field.experiment_filters[0].string_values == ["123e4567-e89b-12d3-a456-426614174000"]
+
+    # And finally check getting the experiment is consistent with the created experiment.
+    response = pget(f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}")
+    assert response.status_code == 200, response.content
+    experiment_for_ui = GetExperimentForUiResponse.model_validate(response.json())
+    diff = DeepDiff(
+        created_experiment,
+        experiment_for_ui.config,
+        ignore_type_in_groups=[(CreateExperimentResponse, ExperimentConfig)],
+    )
+    assert not diff, f"Objects differ:\n{diff.pretty()}"
 
 
 def test_create_freq_online_experiment(testing_datasource_with_user, use_deterministic_random, ppost):

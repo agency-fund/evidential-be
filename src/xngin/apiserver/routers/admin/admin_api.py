@@ -1497,7 +1497,12 @@ async def analyze_experiment(
         xngin_session,
         ds,
         experiment_id,
-        preload=[tables.Experiment.arm_assignments, tables.Experiment.draws, tables.Experiment.contexts],
+        preload=[
+            tables.Experiment.arm_assignments,
+            tables.Experiment.draws,
+            tables.Experiment.contexts,
+            [tables.Experiment.experiment_fields, tables.ExperimentField.experiment_filters],
+        ],
     )
 
     design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
