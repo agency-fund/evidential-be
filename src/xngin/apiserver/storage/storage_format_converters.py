@@ -16,6 +16,7 @@ from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.routers import common_api_types as capi
 from xngin.apiserver.routers.common_enums import (
     DataType,
+    DataTypeStorageClass,
     ExperimentState,
     ExperimentsType,
     StopAssignmentReason,
@@ -176,26 +177,23 @@ class ExperimentStorageConverter:
 
                 # and associate new filter metadata with the field
                 filters = field.experiment_filters or []
-                if datatype in {
-                    DataType.CHARACTER_VARYING,
-                    DataType.UUID,
-                    DataType.BOOLEAN,
-                    DataType.BIGINT,  # string representation to ease returning to the FE
-                    DataType.DATE,
-                    DataType.TIMESTAMP_WITHOUT_TIMEZONE,
-                    DataType.TIMESTAMP_WITH_TIMEZONE,
-                }:
+                values = filter_item.value
+                if datatype.storage_class(filter_item.field_name) == DataTypeStorageClass.STRING:
+                    values = [None if v is None else str(v) for v in values]
                     filters.append(
                         tables.ExperimentFilter(
                             relation=filter_item.relation,
-                            string_values=[None if v is None else str(v) for v in filter_item.value],
+                            string_values=values,
                         )
                     )
                 else:
+                    # Postgres won't implicitly convert between boolean to numeric, so do it here.
+                    if datatype == DataType.BOOLEAN:
+                        values = [None if v is None else int(v) for v in values]
                     filters.append(
                         tables.ExperimentFilter(
                             relation=filter_item.relation,
-                            numeric_values=filter_item.value,
+                            numeric_values=values,
                         )
                     )
                 field.experiment_filters = filters
@@ -254,7 +252,9 @@ class ExperimentStorageConverter:
                     # Convert storage type to API type
                     values: list[Any]
                     if ef.data_type == DataType.BOOLEAN:
-                        values = [None if v is None else v == "True" for v in (f.string_values or [])]
+                        values = [None if v is None else bool(v) for v in (f.numeric_values or [])]
+                    elif ef.data_type == DataType.BIGINT:
+                        values = [None if v is None else str(v) for v in (f.numeric_values or [])]
                     else:
                         values = f.string_values or f.numeric_values or []
                     filters.append(

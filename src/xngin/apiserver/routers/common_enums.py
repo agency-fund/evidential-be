@@ -142,6 +142,35 @@ class DataType(enum.StrEnum):
             case _:
                 raise RuntimeError(f"Unsupported data type {self}")
 
+    def storage_class(self, field_name):
+        """Classifies a DataType into a storage class."""
+        match self:
+            case (
+                DataType.CHARACTER_VARYING
+                | DataType.UUID
+                | DataType.DATE
+                | DataType.TIMESTAMP_WITHOUT_TIMEZONE
+                | DataType.TIMESTAMP_WITH_TIMEZONE
+            ):
+                return DataTypeStorageClass.STRING
+            case (
+                DataType.INTEGER
+                | DataType.DOUBLE_PRECISION
+                | DataType.NUMERIC
+                | DataType.BIGINT  # note: must be converted to string for API
+                | DataType.BOOLEAN  # note: must be converted to boolean for API
+            ):
+                return DataTypeStorageClass.NUMERIC
+            case _:
+                raise RuntimeError(f"Unsupported data type {self}")
+
+
+class DataTypeStorageClass(enum.Enum):
+    """Internal helper for grouping our supported data types by how to store them."""
+
+    STRING = enum.auto()
+    NUMERIC = enum.auto()
+
 
 class FilterClass(enum.StrEnum):
     """Internal helper for grouping our supported data types by what filter relations they can use."""

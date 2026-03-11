@@ -1886,7 +1886,7 @@ async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
                 Filter(field_name="gender", relation=Relation.INCLUDES, value=["Male"]),
                 Filter(field_name="current_income", relation=Relation.BETWEEN, value=[0.0, 100000.0]),
                 Filter(field_name="is_engaged", relation=Relation.INCLUDES, value=[True, None]),
-                Filter(field_name="id", relation=Relation.EXCLUDES, value=[(2 << 52) + 1, None]),
+                Filter(field_name="id", relation=Relation.EXCLUDES, value=[9007199254740993, None]),
                 Filter(field_name="sample_date", relation=Relation.BETWEEN, value=["2024-01-01", "2026-01-01"]),
                 Filter(
                     field_name="uuid_filter", relation=Relation.EXCLUDES, value=["123e4567-e89b-12d3-a456-426614174000"]
@@ -1935,7 +1935,7 @@ async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
     a_filter = next(f for f in spec.filters if f.field_name == "id")
     assert a_filter.field_name == "id"
     assert a_filter.relation == Relation.EXCLUDES
-    assert a_filter.value == [str((2 << 52) + 1), None]
+    assert a_filter.value == ["9007199254740993", None]
     a_filter = next(f for f in spec.filters if f.field_name == "sample_date")
     assert a_filter.field_name == "sample_date"
     assert a_filter.relation == Relation.BETWEEN
@@ -1966,7 +1966,7 @@ async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
     assert unique_id_field.is_filter
     assert unique_id_field.experiment_filters is not None
     assert unique_id_field.experiment_filters[0].relation == Relation.EXCLUDES
-    assert unique_id_field.experiment_filters[0].string_values == [str((2 << 52) + 1), None]
+    assert unique_id_field.experiment_filters[0].numeric_values == [(2 << 52) + 1, None]
     current_income_field = next(f for f in experiment.experiment_fields if f.field_name == "current_income")
     assert current_income_field.data_type == "numeric"
     assert current_income_field.is_metric
@@ -1980,7 +1980,7 @@ async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
     assert is_onboarded_field.is_filter
     assert is_onboarded_field.experiment_filters is not None
     assert is_onboarded_field.experiment_filters[0].relation == Relation.INCLUDES
-    assert is_onboarded_field.experiment_filters[0].string_values == ["True", None]
+    assert is_onboarded_field.experiment_filters[0].numeric_values == [1, None]
     ethnicity_field = next(f for f in experiment.experiment_fields if f.field_name == "ethnicity")
     assert ethnicity_field.data_type == "character varying"
     assert ethnicity_field.is_strata
