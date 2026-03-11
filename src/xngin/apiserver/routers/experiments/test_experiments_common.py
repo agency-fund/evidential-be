@@ -12,6 +12,7 @@ from pydantic import HttpUrl, TypeAdapter
 from sqlalchemy import Boolean, Column, MetaData, String, Table, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from sqlalchemy.schema import CreateTable
 
 from xngin.apiserver.exceptions_common import LateValidationError
@@ -271,6 +272,15 @@ async def insert_experiment_and_arms(
     return experiment
 
 
+async def get_experiment_preloaded(session: AsyncSession, experiment_id: str) -> tables.Experiment:
+    preload = [
+        selectinload(tables.Experiment.arms),
+        selectinload(tables.Experiment.experiment_fields).selectinload(tables.ExperimentField.experiment_filters),
+    ]
+    stmt = select(tables.Experiment).where(tables.Experiment.id == experiment_id).options(*preload)
+    return (await session.scalars(stmt)).one()
+
+
 @dataclass
 class MockRow:
     """Simulate the bits of a sqlalchemy Row that we need here."""
@@ -374,7 +384,7 @@ async def test_create_preassigned_experiment_impl(
     assert response.assign_summary.balance_check.balance_ok is True
 
     # Verify database state uses app-generated ids
-    experiment = await xngin_session.get(tables.Experiment, experiment_id)
+    experiment = await get_experiment_preloaded(xngin_session, experiment_id)
     assert experiment is not None
 
     # Verify that experiment_fields were stored correctly (see defaults in make_createexperimentrequest_json)
@@ -396,7 +406,8 @@ async def test_create_preassigned_experiment_impl(
     if reorder_arms:
         experiment.arms.append(experiment.arms.pop(0))
         await xngin_session.commit()
-        await xngin_session.refresh(experiment)
+        xngin_session.expunge(experiment)
+        experiment = await get_experiment_preloaded(xngin_session, experiment.id)
 
     assert experiment.experiment_type == ExperimentsType.FREQ_PREASSIGNED
     assert experiment.participant_type == request.design_spec.participant_type
@@ -668,9 +679,8 @@ async def test_create_experiment_impl_for_freq_online_with_unbalanced_arms(
     assert response.design_spec.get_validated_arm_weights() == expected_weights
 
     # Verify database state
-    experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
+    experiment = await get_experiment_preloaded(xngin_session, response.experiment_id)
     assert experiment is not None
-    await experiment.awaitable_attrs.arms
     assert [arm.arm_weight for arm in experiment.arms] == expected_weights
 
     # Verify that experiment_fields were stored correctly (see defaults in make_createexperimentrequest_json)
@@ -692,7 +702,8 @@ async def test_create_experiment_impl_for_freq_online_with_unbalanced_arms(
     if reorder_arms:
         experiment.arms.append(experiment.arms.pop(0))
         await xngin_session.commit()
-        await xngin_session.refresh(experiment)
+        xngin_session.expunge(experiment)
+        experiment = await get_experiment_preloaded(xngin_session, experiment.id)
 
     # and the rehydrated design spec
     converter = ExperimentStorageConverter(experiment)

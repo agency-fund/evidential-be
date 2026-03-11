@@ -142,7 +142,7 @@ class ExperimentStorageConverter:
             return self
 
         # Build field name to data type mapping from participants schema
-        field_type_map = {}
+        field_type_map: dict[str, DataType] = {}
         unique_id_name = None
         if participants_schema:
             field_type_map = {field.field_name: field.data_type for field in participants_schema.fields}
@@ -152,7 +152,7 @@ class ExperimentStorageConverter:
         self.experiment.experiment_fields = []
 
         # New fields used in the experiment. Each key is a field name and maps to a ExperimentField object.
-        fields_used_map = {}
+        fields_used_map: dict[str, tables.ExperimentField] = {}
 
         # Add unique ID
         if unique_id_name:
@@ -160,44 +160,45 @@ class ExperimentStorageConverter:
                 field_name=unique_id_name,
                 data_type=field_type_map.get(unique_id_name, DataType.UNKNOWN).value,
                 is_unique_id=True,
+                experiment_filters=[],
             )
 
         # Add filters. Fields used as filters technically could be reused with different filter values.
-        if design_spec.filters:
-            for filter_item in design_spec.filters:
-                field = fields_used_map.get(filter_item.field_name)
-                datatype = field_type_map.get(filter_item.field_name, DataType.UNKNOWN)
-                # Create the new field if it doesn't exist
-                if field is None:
-                    field = tables.ExperimentField(
-                        field_name=filter_item.field_name,
-                        data_type=datatype.value,
-                    )
-                    fields_used_map[filter_item.field_name] = field
+        for filter_item in design_spec.filters:
+            field = fields_used_map.get(filter_item.field_name)
+            datatype = field_type_map.get(filter_item.field_name, DataType.UNKNOWN)
+            # Create the new field if it doesn't exist
+            if field is None:
+                field = tables.ExperimentField(
+                    field_name=filter_item.field_name,
+                    data_type=datatype.value,
+                    experiment_filters=[],
+                )
+                fields_used_map[filter_item.field_name] = field
 
-                # and associate new filter metadata with the field
-                filters = field.experiment_filters or []
-                values = filter_item.value
-                if datatype.storage_class(filter_item.field_name) == DataTypeStorageClass.STRING:
-                    values = [None if v is None else str(v) for v in values]
-                    filters.append(
-                        tables.ExperimentFilter(
-                            relation=filter_item.relation,
-                            string_values=values,
-                        )
+            # and associate new filter metadata with the field
+            filters = field.experiment_filters or []
+            values = filter_item.value
+            if datatype.storage_class(filter_item.field_name) == DataTypeStorageClass.STRING:
+                values = [None if v is None else str(v) for v in values]
+                filters.append(
+                    tables.ExperimentFilter(
+                        relation=filter_item.relation,
+                        string_values=values,
                     )
-                else:
-                    # Postgres won't implicitly convert between boolean to numeric, so do it here.
-                    if datatype == DataType.BOOLEAN:
-                        values = [None if v is None else int(v) for v in values]
-                    filters.append(
-                        tables.ExperimentFilter(
-                            relation=filter_item.relation,
-                            numeric_values=values,
-                        )
+                )
+            else:
+                # Postgres won't implicitly convert between boolean to numeric, so do it here.
+                if datatype == DataType.BOOLEAN:
+                    values = [None if v is None else int(v) for v in values]
+                filters.append(
+                    tables.ExperimentFilter(
+                        relation=filter_item.relation,
+                        numeric_values=values,
                     )
-                field.experiment_filters = filters
-                field.is_filter = True
+                )
+
+            field.experiment_filters = filters
 
         # Add metrics
         if design_spec.metrics:
@@ -207,6 +208,7 @@ class ExperimentStorageConverter:
                     field = tables.ExperimentField(
                         field_name=metric.field_name,
                         data_type=field_type_map.get(metric.field_name, DataType.UNKNOWN).value,
+                        experiment_filters=[],
                     )
                     fields_used_map[metric.field_name] = field
 
@@ -222,7 +224,8 @@ class ExperimentStorageConverter:
                 if field is None:
                     field = tables.ExperimentField(
                         field_name=stratum.field_name,
-                        data_type=field_type_map.get(stratum.field_name),
+                        data_type=field_type_map.get(stratum.field_name, DataType.UNKNOWN).value,
+                        experiment_filters=[],
                     )
                     fields_used_map[stratum.field_name] = field
 
@@ -239,7 +242,7 @@ class ExperimentStorageConverter:
         """Reconstruct DesignSpecFields from experiment_fields relationship, which must be already eager-loaded."""
         # Fallback to JSONB column if experiment_fields is not loaded or empty
         # (for backwards compatibility during transition)
-        if not self.experiment.experiment_fields:
+        if not self.experiment.datasource_table:
             return DesignSpecFields.model_validate(self.experiment.design_spec_fields)
 
         filters = []
@@ -247,23 +250,22 @@ class ExperimentStorageConverter:
         strata = []
 
         for ef in self.experiment.experiment_fields:
-            if ef.is_filter and ef.experiment_filters:
-                for f in ef.experiment_filters:
-                    # Convert storage type to API type
-                    values: list[Any]
-                    if ef.data_type == DataType.BOOLEAN:
-                        values = [None if v is None else bool(v) for v in (f.numeric_values or [])]
-                    elif ef.data_type == DataType.BIGINT:
-                        values = [None if v is None else str(v) for v in (f.numeric_values or [])]
-                    else:
-                        values = f.string_values or f.numeric_values or []
-                    filters.append(
-                        StorageFilter(
-                            field_name=ef.field_name,
-                            relation=f.relation,
-                            value=values,
-                        )
+            for f in ef.experiment_filters or []:
+                # Convert storage type to API type
+                values: list[Any]
+                if ef.data_type == DataType.BOOLEAN:
+                    values = [None if v is None else bool(v) for v in (f.numeric_values or [])]
+                elif ef.data_type == DataType.BIGINT:
+                    values = [None if v is None else str(v) for v in (f.numeric_values or [])]
+                else:
+                    values = f.string_values or f.numeric_values or []
+                filters.append(
+                    StorageFilter(
+                        field_name=ef.field_name,
+                        relation=f.relation,
+                        value=values,
                     )
+                )
             if ef.is_metric:
                 metrics.append(
                     StorageMetric(

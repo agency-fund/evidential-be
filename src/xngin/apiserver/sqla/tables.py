@@ -379,7 +379,7 @@ class Experiment(Base):
     datasource_id: Mapped[str] = mapped_column(String(255), ForeignKey("datasources.id", ondelete="CASCADE"))
 
     experiment_type: Mapped[str] = mapped_column()
-    # participant_type is deprecated, and should be viewed as an alias for datasource_table.
+    # participant_type is deprecated
     participant_type: Mapped[str] = mapped_column(String(255))
     # The underlying datasource table name backing this experiment.
     datasource_table: Mapped[str | None] = mapped_column(String(255))
@@ -557,20 +557,31 @@ class ExperimentField(Base):
         String(36), ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True
     )
     field_name: Mapped[str] = mapped_column(String(255), primary_key=True)
-    # Stores the enum value of the field's common_enums.DataType. Nullable in case our migration
-    # can't find a type for all fields, or for experiments not backed by a datasource.
-    data_type: Mapped[str | None] = mapped_column(String(50))
+    # Stores the enum value of the field's common_enums.DataType.
+    data_type: Mapped[str] = mapped_column(String(50))
 
-    # Unique ID metadata
+    # Unique ID metadata:
+    # is_unique_id is true when this field is used as the experiment's unique ID.
     is_unique_id: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
     # Filters metadata: determined by joining with ExperimentFilter
-    is_filter: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
+    # is_filter: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
     # Strata metadata
     is_strata: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
-    # Metrics metadata
+    # Metrics metadata:
+    # metric_pct_change or metric_target will be set if this field is a metric,
+    # whereas is_primary_metric is true only for the primary metric in the design spec.
     is_primary_metric: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
     metric_pct_change: Mapped[float | None] = mapped_column(Float)
     metric_target: Mapped[float | None] = mapped_column(Float)
+
+    @hybrid_property
+    def is_filter(self) -> bool:
+        """
+        Determine if this field is a filter by checking if it has any experiment_filters.
+
+        WARNING: The relation must already be loaded!
+        """
+        return self.experiment_filters is not None
 
     @hybrid_property
     def is_metric(self) -> bool:
@@ -582,8 +593,6 @@ class ExperimentField(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-
-    __table_args__ = (Index("idx_experiment_fields_experiment_id", "experiment_id"),)
 
 
 class ExperimentFilter(Base):
@@ -612,6 +621,11 @@ class ExperimentFilter(Base):
             ["experiment_id", "field_name"],
             ["experiment_fields.experiment_id", "experiment_fields.field_name"],
             ondelete="CASCADE",
+        ),
+        Index(
+            "idx_experiment_filters_experiment_id_field_name",
+            "experiment_id",
+            "field_name",
         ),
     )
 
