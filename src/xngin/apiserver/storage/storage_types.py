@@ -29,26 +29,6 @@ class StorageFilter(StorageBaseModel):
     value: Sequence[Any]
 
 
-class StorageFilterMetadata(StorageBaseModel):
-    """Additional metadata for a filter stored in the experiment_fields.other column."""
-
-    relation: str
-    value: Sequence[Any]
-
-
-class StorageMetricMetadata(StorageBaseModel):
-    """Additional metadata for a metric stored in the experiment_fields.other column."""
-
-    metric_pct_change: Annotated[
-        float | None,
-        Field(description="Percent change target relative to the metric_baseline."),
-    ] = None
-    metric_target: Annotated[
-        float | None,
-        Field(description="Absolute target value = metric_baseline*(1 + metric_pct_change)"),
-    ] = None
-
-
 class StorageMetric(StorageBaseModel):
     """Defines a metric to target. See stateless_api_types.DesignSpecMetricRequest"""
 
