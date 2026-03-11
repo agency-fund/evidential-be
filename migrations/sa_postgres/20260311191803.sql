@@ -4,9 +4,8 @@ ALTER TABLE "public"."experiments" ADD COLUMN "datasource_table" character varyi
 CREATE TABLE "public"."experiment_fields" (
   "experiment_id" character varying(36) NOT NULL,
   "field_name" character varying(255) NOT NULL,
-  "data_type" character varying(50) NULL,
+  "data_type" character varying(50) NOT NULL,
   "is_unique_id" boolean NOT NULL DEFAULT false,
-  "is_filter" boolean NOT NULL DEFAULT false,
   "is_strata" boolean NOT NULL DEFAULT false,
   "is_primary_metric" boolean NOT NULL DEFAULT false,
   "metric_pct_change" double precision NULL,
@@ -14,11 +13,10 @@ CREATE TABLE "public"."experiment_fields" (
   PRIMARY KEY ("experiment_id", "field_name"),
   CONSTRAINT "experiment_fields_experiment_id_fkey" FOREIGN KEY ("experiment_id") REFERENCES "public"."experiments" ("id") ON UPDATE NO ACTION ON DELETE CASCADE
 );
--- Create index "idx_experiment_fields_experiment_id" to table: "experiment_fields"
-CREATE INDEX "idx_experiment_fields_experiment_id" ON "public"."experiment_fields" ("experiment_id");
 -- Create "experiment_filters" table
 CREATE TABLE "public"."experiment_filters" (
   "id" character varying NOT NULL,
+  "position" integer NOT NULL,
   "experiment_id" character varying(36) NOT NULL,
   "field_name" character varying(255) NOT NULL,
   "relation" character varying(20) NOT NULL,
@@ -28,3 +26,5 @@ CREATE TABLE "public"."experiment_filters" (
   CONSTRAINT "experiment_filters_experiment_id_field_name_fkey" FOREIGN KEY ("experiment_id", "field_name") REFERENCES "public"."experiment_fields" ("experiment_id", "field_name") ON UPDATE NO ACTION ON DELETE CASCADE,
   CONSTRAINT "experiment_filters_experiment_id_fkey" FOREIGN KEY ("experiment_id") REFERENCES "public"."experiments" ("id") ON UPDATE NO ACTION ON DELETE CASCADE
 );
+-- Create index "idx_experiment_filters_experiment_id_field_name" to table: "experiment_filters"
+CREATE INDEX "idx_experiment_filters_experiment_id_field_name" ON "public"."experiment_filters" ("experiment_id", "field_name");
