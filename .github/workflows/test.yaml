@@ -101,11 +101,11 @@ jobs:
       - name: Coverage comment
         if: github.event_name != 'workflow_dispatch'
         id: coverage_comment
-        uses: py-cov-action/python-coverage-comment-action@91aaf3b39c7e2331c6bc77767ce017f5160c5f11 # v3.38
+        uses: py-cov-action/python-coverage-comment-action@7188638f871f721a365d644f505d1ff3df20d683 # v3.40
         with:
           GITHUB_TOKEN: ${{ github.token }}
       - name: Store Pull Request comment to be posted
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         if: steps.coverage_comment.outputs.COMMENT_FILE_WRITTEN == 'true'
         with:
           name: python-coverage-comment-action

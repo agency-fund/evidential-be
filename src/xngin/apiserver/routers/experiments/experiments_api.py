@@ -16,7 +16,6 @@ from fastapi import (
     Query,
     Response,
 )
-from fastapi.responses import StreamingResponse
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,6 +37,7 @@ from xngin.apiserver.routers.common_api_types import (
     OnlineAssignmentWithFiltersRequest,
     UpdateBanditArmOutcomeRequest,
 )
+from xngin.apiserver.routers.experiments import experiments_common_csv
 from xngin.apiserver.routers.experiments.dependencies import (
     datasource_dependency,
     experiment_and_datasource_dependency,
@@ -49,13 +49,13 @@ from xngin.apiserver.routers.experiments.dependencies import (
 from xngin.apiserver.routers.experiments.experiments_common import (
     create_assignment_for_participant,
     get_existing_assignment_for_participant,
-    get_experiment_assignments_as_csv_impl,
     get_experiment_assignments_impl,
     get_experiment_impl,
     get_or_create_assignment_for_participant,
     list_organization_or_datasource_experiments_impl,
     update_bandit_arm_with_outcome_impl,
 )
+from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
 from xngin.apiserver.settings import Datasource
 from xngin.apiserver.sqla import tables
 
@@ -128,16 +128,23 @@ async def get_experiment_assignments(
 
 @router.get(
     "/experiments/{experiment_id}/assignments/csv",
-    summary="Export experiment assignments as CSV file.",
+    summary="Export experiment assignments as CSV.",
+    description="""Returns a CSV stream with a header row.
+
+    Output columns:
+    - `participant_id`
+    - `arm_id`
+    - `arm_name`
+    - `created_at`: UTC ISO 8601 timestamp in ISO8601 format
+    - one column for each configured strata field
+    """,
+    response_class=CsvStreamingResponse,
 )
 async def get_experiment_assignments_as_csv(
-    experiment: Annotated[tables.Experiment, Depends(experiment_with_assignments_dependency)],
-) -> StreamingResponse:
-    """Exports the assignments info with header row as CSV. BalanceCheck not included.
-
-    csv header form: participant_id,arm_id,arm_name,strata_name1,strata_name2,...
-    """
-    return await get_experiment_assignments_as_csv_impl(experiment)
+    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
+    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
+) -> CsvStreamingResponse:
+    return await experiments_common_csv.get_experiment_assignments_as_csv_impl(xngin_session, experiment)
 
 
 @router.get(

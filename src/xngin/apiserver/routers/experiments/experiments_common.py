@@ -1,16 +1,12 @@
 import asyncio
-import csv
 import enum
-import io
 import secrets
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from itertools import batched
 from typing import cast
 
 import numpy as np
 from fastapi import HTTPException, status
-from fastapi.responses import StreamingResponse
 from sqlalchemy import Select, Table, func, insert, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -582,63 +578,6 @@ def get_experiment_assignments_impl(
         experiment_id=experiment.id,
         sample_size=len(assignments),
         assignments=assignments,
-    )
-
-
-def experiment_assignments_to_csv_generator(experiment: tables.Experiment):
-    """Generator function to yield CSV rows of experiment assignments as strings"""
-    # Map arm IDs to names
-    arm_id_to_name = {arm.id: arm.name for arm in experiment.arms}
-
-    # Get strata field names from the first assignment
-    strata_names = []
-    if len(experiment.arm_assignments) > 0:
-        strata_names = experiment.arm_assignments[0].strata_names()
-
-    # Create CSV header
-    header = ["participant_id", "arm_id", "arm_name", "created_at", *strata_names]
-
-    def generate_csv(batch_size=100):
-        # Use csv.writer with StringIO to format a single row at a time
-        output = io.StringIO()
-        writer = csv.writer(output)
-
-        try:
-            # First write out our header
-            writer.writerow(header)
-
-            # Write out each participant row in batches
-            for batch in batched(experiment.arm_assignments, batch_size, strict=False):
-                for participant in batch:
-                    row = [
-                        participant.participant_id,
-                        participant.arm_id,
-                        arm_id_to_name[participant.arm_id],
-                        participant.created_at,
-                        *participant.strata_values(),
-                    ]
-                    writer.writerow(row)
-
-                # Return the batch as string for streaming to the user
-                yield output.getvalue()
-                # Clear the string buffer for the next batch
-                output.seek(0)
-                output.truncate(0)
-        finally:
-            output.close()
-
-    return generate_csv
-
-
-async def get_experiment_assignments_as_csv_impl(
-    experiment: tables.Experiment,
-) -> StreamingResponse:
-    csv_generator = experiment_assignments_to_csv_generator(experiment)
-    filename = f"experiment_{experiment.id}_assignments.csv"
-    return StreamingResponse(
-        csv_generator(),
-        media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
