@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 SA_LOGGER_NAME_FOR_CLI = "cli_dwh"
 
 REDSHIFT_HOSTNAME_SUFFIX = "redshift.amazonaws.com"
-TESTING_DWH_RAW_DATA = Path("src/xngin/apiserver/testdata/testing_dwh.csv.zst")
+TESTING_DWH_RAW_DATA = Path(__file__).resolve().parent.parent / "apiserver/testdata/testing_dwh.csv.zst"
 
 err_console = Console(stderr=True)
 console = Console(stderr=False)
