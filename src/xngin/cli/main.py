@@ -15,13 +15,11 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
-import boto3
 import psycopg
 import psycopg2
 import sqlalchemy
 import typer
 from email_validator import EmailNotValidError, validate_email
-from fastapi import FastAPI
 from rich.console import Console
 from sqlalchemy import create_engine, make_url
 from sqlalchemy.exc import IntegrityError, OperationalError
@@ -29,21 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.compiler import IdentifierPreparer
 
-import xngin.apiserver.openapi
-from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
-from xngin.apiserver.settings import Datasource
-from xngin.apiserver.snapshots.fake_data import (
-    VALID_SNAPSHOT_FIELDS,
-    create_fake_snapshots,
-    get_arm_ids,
-    get_freq_experiment_for_cli,
-    get_metric_names,
-)
-from xngin.apiserver.sqla import tables
-from xngin.apiserver.storage.bootstrap import create_entities_for_first_time_user
-from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_RAW_DATA
 from xngin.xsecrets import secretservice
-from xngin.xsecrets.nacl_provider import NaclProviderKeyset
 
 if TYPE_CHECKING:
     from pandas import DataFrame
@@ -51,6 +35,7 @@ if TYPE_CHECKING:
 SA_LOGGER_NAME_FOR_CLI = "cli_dwh"
 
 REDSHIFT_HOSTNAME_SUFFIX = "redshift.amazonaws.com"
+TESTING_DWH_RAW_DATA = Path("src/xngin/apiserver/testdata/testing_dwh.csv.zst")
 
 err_console = Console(stderr=True)
 console = Console(stderr=False)
@@ -175,6 +160,8 @@ def create_apiserver_db(
         typer.Option(help="The SQLAlchemy URL for the database.", envvar="DATABASE_URL"),
     ],
 ):
+    from xngin.apiserver.sqla import tables  # noqa: PLC0415
+
     console.print(f"DSN: [cyan]{dsn}[/cyan]")
     engine = create_engine_and_database(make_url(dsn))
     tables.Base.metadata.create_all(bind=engine)
@@ -342,6 +329,8 @@ def create_testing_dwh(
         engine.dispose()
 
     if url.host and url.host.endswith(REDSHIFT_HOSTNAME_SUFFIX):
+        import boto3  # noqa: PLC0415
+
         if not bucket:
             print("--bucket is required when importing into Redshift.")
             raise typer.Exit(2)
@@ -422,6 +411,9 @@ def create_testing_dwh(
 @app.command()
 def export_json_schemas(output: Path = Path(".schemas")):
     """Generates JSON schemas for Xngin settings files."""
+    from xngin.apiserver.dwh.inspection_types import ParticipantsSchema  # noqa: PLC0415
+    from xngin.apiserver.settings import Datasource  # noqa: PLC0415
+
     if not output.exists():
         output.mkdir()
     for model in (ParticipantsSchema, Datasource):
@@ -434,6 +426,10 @@ def export_json_schemas(output: Path = Path(".schemas")):
 @app.command()
 def export_openapi_spec(output: Path = Path("openapi.json")):
     """Writes the OpenAPI spec to the file specified by --output."""
+    from fastapi import FastAPI  # noqa: PLC0415
+
+    import xngin.apiserver.openapi  # noqa: PLC0415
+
     app = FastAPI()
     from xngin.apiserver import routes  # noqa: PLC0415
 
@@ -570,6 +566,9 @@ async def add_user(
 
     This command is only useful for local development databases; do not use it against production databases.
     """
+    from xngin.apiserver.sqla import tables  # noqa: PLC0415
+    from xngin.apiserver.storage.bootstrap import create_entities_for_first_time_user  # noqa: PLC0415
+
     console.print(f"Using application database: [cyan]{database_url}[/cyan]")
     console.print(f"Using data warehouse: [cyan]{dwh}[/cyan]")
 
@@ -631,6 +630,8 @@ def create_nacl_keyset(
 
     When --output=base64 (default), the output can be used as the XNGIN_SECRETS_NACL_KEYSET environment variable.
     """
+    from xngin.xsecrets.nacl_provider import NaclProviderKeyset  # noqa: PLC0415
+
     keyset = NaclProviderKeyset.create()
     if output == Base64OrJson.base64:
         print(keyset.serialize_base64())
@@ -726,6 +727,14 @@ def snapshots_create_fake(
     echo: Annotated[bool, typer.Option("--echo", help="Echo SQL queries")] = False,
 ) -> None:
     """Create fake snapshots for a frequentist experiment."""
+    from xngin.apiserver.snapshots.fake_data import (  # noqa: PLC0415
+        VALID_SNAPSHOT_FIELDS,
+        create_fake_snapshots,
+        get_arm_ids,
+        get_freq_experiment_for_cli,
+        get_metric_names,
+    )
+
     engine = create_engine(dsn, echo=echo)
 
     with Session(engine) as session:
