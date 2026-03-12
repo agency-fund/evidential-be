@@ -128,7 +128,7 @@ class ExperimentStorageConverter:
         self,
         design_spec: capi.DesignSpec,
         participants_schema: ParticipantsSchema | None = None,
-        include_deprecated_design_spec_fields: bool = True,
+        set_deprecated_design_spec_fields: bool = True,
     ) -> Self:
         """Saves the components of a DesignSpec to the experiment.
 
@@ -179,7 +179,7 @@ class ExperimentStorageConverter:
             # and associate new filter metadata with the field
             filters = field.experiment_filters or []
             values = filter_item.value
-            if datatype.storage_class() == DataTypeStorageClass.STRING:
+            if datatype.storage_class(filter_item.field_name) == DataTypeStorageClass.STRING:
                 values = [None if v is None else str(v) for v in values]
                 filters.append(
                     tables.ExperimentFilter(
@@ -236,7 +236,7 @@ class ExperimentStorageConverter:
         # add fields_used_map to experiment_fields
         self.experiment.experiment_fields = list(fields_used_map.values())
 
-        if include_deprecated_design_spec_fields:
+        if set_deprecated_design_spec_fields:
             self._set_deprecated_design_spec_fields(design_spec)
         return self
 
