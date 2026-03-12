@@ -1585,9 +1585,7 @@ async def test_create_freq_preassigned_experiment(
     (arm1_id, arm2_id) = [arm.arm_id for arm in created_experiment.design_spec.arms]
 
     # Verify database state using the ids in the returned DesignSpec.
-    experiment = (
-        await xngin_session.scalars(select(tables.Experiment).where(tables.Experiment.id == experiment_id))
-    ).one()
+    experiment = await get_experiment_preloaded(xngin_session, experiment_id)
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == datasource_id
     assert experiment.experiment_type == "freq_preassigned"
@@ -1597,16 +1595,9 @@ async def test_create_freq_preassigned_experiment(
     assert experiment.description == request_obj.design_spec.description
     assert_dates_equal(experiment.start_date, request_obj.design_spec.start_date)
     assert_dates_equal(experiment.end_date, request_obj.design_spec.end_date)
-    # Verify assignments were created
-    assignments = (
-        await xngin_session.scalars(
-            select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
-        )
-    ).all()
-    assert len(assignments) == 100, {e.name: getattr(experiment, e.name) for e in tables.Experiment.__table__.columns}
 
     # Verify that experiment_fields were stored correctly (see defaults in make_createexperimentrequest_json)
-    experiment_fields = await experiment.awaitable_attrs.experiment_fields
+    experiment_fields = experiment.experiment_fields
     assert len(experiment_fields) == 3
     unique_id_field = next((f for f in experiment_fields if f.is_unique_id), None)
     assert unique_id_field is not None
@@ -1618,7 +1609,16 @@ async def test_create_freq_preassigned_experiment(
     is_onboarded_field = next((f for f in experiment_fields if f.field_name == "is_onboarded"), None)
     assert is_onboarded_field is not None
     assert is_onboarded_field.is_metric
+    assert is_onboarded_field.is_primary_metric
     assert is_onboarded_field.data_type == "boolean"
+
+    # Verify assignments were created
+    assignments = (
+        await xngin_session.scalars(
+            select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
+        )
+    ).all()
+    assert len(assignments) == 100, {e.name: getattr(experiment, e.name) for e in tables.Experiment.__table__.columns}
 
     # Check one assignment to see if it looks roughly right
     sample_assignment: tables.ArmAssignment = assignments[0]
@@ -1732,6 +1732,7 @@ async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
     current_income_field = next(f for f in experiment.experiment_fields if f.field_name == "current_income")
     assert current_income_field.data_type == "numeric"
     assert current_income_field.is_metric
+    assert current_income_field.is_primary_metric
     assert current_income_field.is_filter
     assert current_income_field.experiment_filters is not None
     assert current_income_field.experiment_filters[0].relation == Relation.BETWEEN
@@ -1740,6 +1741,7 @@ async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
     is_engaged_field = next(f for f in experiment.experiment_fields if f.field_name == "is_engaged")
     assert is_engaged_field.data_type == "boolean"
     assert is_engaged_field.is_metric
+    assert not is_engaged_field.is_primary_metric
     assert is_engaged_field.is_filter
     assert is_engaged_field.experiment_filters is not None
     assert is_engaged_field.experiment_filters[0].relation == Relation.INCLUDES

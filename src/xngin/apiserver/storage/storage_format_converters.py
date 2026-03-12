@@ -240,10 +240,57 @@ class ExperimentStorageConverter:
             self._set_deprecated_design_spec_fields(design_spec)
         return self
 
+    def _convert_experiment_field_to_storage_filters(
+        self,
+        experiment_field: tables.ExperimentField,
+    ) -> list[StorageFilter]:
+        """Converts an ExperimentField to a list of StorageFilters, or empty list if the field is not a filter."""
+        filters = []
+        for f in experiment_field.experiment_filters or []:
+            # Convert storage type to API type
+            values: list[Any]
+            if experiment_field.data_type == DataType.BOOLEAN:
+                values = [None if v is None else bool(v) for v in (f.numeric_values or [])]
+            elif experiment_field.data_type == DataType.BIGINT:
+                values = [None if v is None else str(v) for v in (f.numeric_values or [])]
+            else:
+                values = f.string_values or f.numeric_values or []
+            filters.append(
+                StorageFilter(
+                    field_name=experiment_field.field_name,
+                    relation=f.relation,
+                    value=values,
+                )
+            )
+
+        return filters
+
+    def _convert_experiment_field_to_storage_metric(
+        self,
+        experiment_field: tables.ExperimentField,
+    ) -> StorageMetric | None:
+        """Converts an ExperimentField to a StorageMetric, or None if the field is not a metric."""
+        if experiment_field.is_metric:
+            return StorageMetric(
+                field_name=experiment_field.field_name,
+                metric_pct_change=experiment_field.metric_pct_change,
+                metric_target=experiment_field.metric_target,
+            )
+        return None
+
+    def _convert_experiment_field_to_storage_stratum(
+        self,
+        experiment_field: tables.ExperimentField,
+    ) -> StorageStratum | None:
+        """Converts an ExperimentField to a StorageStratum, or None if the field is not a stratum."""
+        if experiment_field.is_strata:
+            return StorageStratum(field_name=experiment_field.field_name)
+        return None
+
     def get_design_spec_fields(self) -> DesignSpecFields:
         """Reconstruct DesignSpecFields from experiment_fields relationship, which must be already eager-loaded."""
-        # Fallback to JSONB column if experiment_fields is not loaded or empty
-        # (for backwards compatibility during transition)
+        # The presence of datasource_table indicates whether the fields have been migrated to the
+        # new representation or not. If it is unset, we read from the previous representation.
         if not self.experiment.datasource_table:
             return DesignSpecFields.model_validate(self.experiment.design_spec_fields)
 
@@ -252,32 +299,12 @@ class ExperimentStorageConverter:
         strata = []
 
         for ef in self.experiment.experiment_fields:
-            for f in ef.experiment_filters or []:
-                # Convert storage type to API type
-                values: list[Any]
-                if ef.data_type == DataType.BOOLEAN:
-                    values = [None if v is None else bool(v) for v in (f.numeric_values or [])]
-                elif ef.data_type == DataType.BIGINT:
-                    values = [None if v is None else str(v) for v in (f.numeric_values or [])]
-                else:
-                    values = f.string_values or f.numeric_values or []
-                filters.append(
-                    StorageFilter(
-                        field_name=ef.field_name,
-                        relation=f.relation,
-                        value=values,
-                    )
-                )
-            if ef.is_metric:
-                metrics.append(
-                    StorageMetric(
-                        field_name=ef.field_name,
-                        metric_pct_change=ef.metric_pct_change,
-                        metric_target=ef.metric_target,
-                    )
-                )
-            if ef.is_strata:
-                strata.append(StorageStratum(field_name=ef.field_name))
+            if storage_filters := self._convert_experiment_field_to_storage_filters(ef):
+                filters.extend(storage_filters)
+            if storage_metric := self._convert_experiment_field_to_storage_metric(ef):
+                metrics.append(storage_metric)
+            if storage_stratum := self._convert_experiment_field_to_storage_stratum(ef):
+                strata.append(storage_stratum)
 
         return DesignSpecFields(filters=filters, metrics=metrics, strata=strata)
 
