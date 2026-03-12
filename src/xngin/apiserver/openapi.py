@@ -1,11 +1,14 @@
 import dataclasses
+from typing import TYPE_CHECKING
 
-from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 from fastapi.routing import APIRoute
 
 from xngin.apiserver import constants, flags
 from xngin.apiserver.flags import PUBLISH_ALL_DOCS
+
+if TYPE_CHECKING:
+    from fastapi import FastAPI
 
 
 @dataclasses.dataclass
