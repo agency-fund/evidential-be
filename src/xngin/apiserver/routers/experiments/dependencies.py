@@ -1,13 +1,11 @@
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Path
-from fastapi.openapi import models as openapi_models
-from fastapi.security.base import SecurityBase
+from fastapi.security.api_key import APIKeyHeader
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute, joinedload, selectinload
 from starlette import status
-from starlette.requests import Request
 
 from xngin.apiserver import apikeys, constants
 from xngin.apiserver.apikeys import hash_key_or_raise, require_valid_api_key
@@ -18,30 +16,26 @@ from xngin.apiserver.settings import (
 from xngin.apiserver.sqla import tables
 
 
-class DatasourceApiKeyHeader(SecurityBase):
+class DatasourceApiKeyHeader(APIKeyHeader):
     """Defines the request header for the API key in the OpenAPI spec and requires it to exist on a request.
 
     This does not validate the key; it only checks that it is present.
     """
 
     def __init__(self):
-        self.model: openapi_models.APIKey = openapi_models.APIKey(
-            **{"in": openapi_models.APIKeyIn.header},
+        super().__init__(
             name=constants.HEADER_API_KEY,
             description=f"The datasource-specific API key. These keys are managed in Settings > Datasources. "
             f"Datasource keys begin with `{apikeys.API_KEY_PREFIX}`.",
+            scheme_name="DatasourceApiKey",
+            auto_error=False,
         )
-        self.scheme_name = "DatasourceApiKey"
 
-    async def __call__(self, request: Request) -> str:
-        api_key = request.headers.get(self.model.name)
-        return self.check_key(api_key)
-
-    def check_key(self, api_key: str | None) -> str:
+    def check_api_key(self, api_key: str | None) -> str | None:
         """Confirms that the API key is present and matches the expected structure."""
         _ = apikeys.validate_api_key(api_key)
         if api_key is None:
-            raise ValueError("Unexpected: api_key is None")
+            return None
         return api_key
 
 

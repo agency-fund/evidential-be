@@ -179,7 +179,7 @@ class ExperimentStorageConverter:
             # and associate new filter metadata with the field
             filters = field.experiment_filters or []
             values = filter_item.value
-            if datatype.storage_class(filter_item.field_name) == DataTypeStorageClass.STRING:
+            if datatype.storage_class() == DataTypeStorageClass.STRING:
                 values = [None if v is None else str(v) for v in values]
                 filters.append(
                     tables.ExperimentFilter(

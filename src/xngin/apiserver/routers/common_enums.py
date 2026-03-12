@@ -142,7 +142,7 @@ class DataType(enum.StrEnum):
             case _:
                 raise RuntimeError(f"Unsupported data type {self}")
 
-    def storage_class(self, field_name):
+    def storage_class(self):
         """Classifies a DataType into a storage class."""
         match self:
             case (

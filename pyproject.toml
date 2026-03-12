@@ -8,7 +8,7 @@ dependencies = [
     "deepdiff>=8.6.1,<9",
     "dnspython>=2.7.0",
     "email-validator>=2.2.0",
-    "fastapi[standard-no-fastapi-cloud-cli]>=0.120.0,<0.121",
+    "fastapi[standard-no-fastapi-cloud-cli]>=0.134.0,<0.135",
     "google-cloud-kms>=3.7.0,<4",
     "httpx>=0.28.1,<0.29.0",
     "loguru>=0.7.3,<0.8.0",
@@ -29,9 +29,9 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.48,<2.1",
     "statsmodels>=0.14.5,<0.20",
     "stochatreat @ git+https://github.com/agency-fund/stochatreat@prod",
-    "typer>=0.20.0,<0.21.0",
+    "typer>=0.21.1,<0.22.0",
     "uvicorn[standard]>=0.38.0",
-    "zstandard>=0.25.0,<0.26",  # undeclared dependency of pandas-gbq
+    "zstandard>=0.25.0,<0.26", # undeclared dependency of pandas-gbq
 ]
 requires-python = ">=3.14,<3.15"
 
@@ -42,6 +42,7 @@ ide = [
 dev = [
     "boto3-stubs>=1.39.1",
     "coverage>=7.11.0",
+    "fastapi-typed-client @ git+https://github.com/dctaf/fastapi-typed-client-fork@evid",
     "mypy>=1.18.2",
     "pandas-stubs>=2.3.2",
     "pre-commit>=4.5.0,<4.6.0",
