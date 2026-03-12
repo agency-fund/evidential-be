@@ -4,7 +4,6 @@ import dataclasses
 from collections import defaultdict
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -13,6 +12,7 @@ from pydantic import TypeAdapter
 from sqlalchemy import DECIMAL, Boolean, Column, Float, Integer, MetaData, String, Table, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from xngin.apiserver.conftest import RowProtocolMixin
 from xngin.apiserver.routers.assignment_adapters import (
     assign_treatments_with_balance,
     bulk_insert_arm_assignments,
@@ -23,20 +23,11 @@ from xngin.apiserver.routers.common_api_types import (
     BalanceCheck,
     Strata,
 )
-from xngin.apiserver.routers.experiments.test_experiments_common import (
-    insert_experiment_and_arms,
-)
-from xngin.apiserver.settings import (
-    RemoteDatabaseConfig,
-)
+from xngin.apiserver.routers.experiments.test_experiments_common import insert_experiment_and_arms
+from xngin.apiserver.settings import RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
 from xngin.stats.assignment import AssignmentResult
 from xngin.stats.balance import BalanceResult
-
-
-class RowProtocolMixin:
-    def _asdict(self) -> dict[str, Any]:
-        return dataclasses.asdict(self)  # type: ignore[no-any-return, call-overload]
 
 
 @dataclass
@@ -52,6 +43,7 @@ class Row(RowProtocolMixin):
     income_dec: Decimal
     is_male: bool
     single_value: int
+    nullable_value: float | None = None
 
 
 @pytest.fixture
@@ -90,6 +82,7 @@ def make_sample_data_dict(n=1000):
     }
     data["income_dec"] = [Decimal(i).quantize(Decimal(1)) for i in data["income"]]
     data["is_male"] = [g == "M" for g in data["gender"]]
+    data["nullable_value"] = [None] * n
     return data
 
 
@@ -462,3 +455,36 @@ async def test_bulk_insert_with_no_valid_strata(xngin_session: AsyncSession, tes
     # Here we still output the requested strata column, even though it's all the same value
     expected_strata = [Strata(field_name="single_value", strata_value="1").model_dump()]
     assert all(p.strata == expected_strata for p in assignments)
+
+
+@pytest.mark.parametrize("missing_value", [None, np.nan, pd.NA, Decimal("NaN"), float("NaN")])
+async def test_bulk_insert_renders_missing_strata_values_as_na(
+    xngin_session: AsyncSession, testing_datasource, sample_rows, missing_value
+):
+    """Test that missing strata values are rendered as "NA" regardless of sentinel."""
+    ds: tables.Datasource = testing_datasource.ds
+    pt = testing_datasource.pt
+    experiment = await insert_experiment_and_arms(xngin_session, ds)
+    arms = [Arm(arm_id=arm.id, arm_name=arm.name) for arm in experiment.arms]
+
+    rows = [dataclasses.replace(row, nullable_value=missing_value) for row in sample_rows]
+    fake_assignment_results = AssignmentResult(
+        treatment_ids=[0, 1] * (len(rows) // 2),
+        stratum_ids=None,
+        balance_result=None,
+        orig_stratum_cols=["nullable_value"],
+    )
+
+    await bulk_insert_arm_assignments(
+        xngin_session=xngin_session,
+        experiment_id=experiment.id,
+        arms=arms,
+        participant_type=pt.participant_type,
+        participant_id_col=pt.get_unique_id_field(),
+        data=rows,
+        assignment_result=fake_assignment_results,
+    )
+
+    assignments = (await xngin_session.scalars(select(tables.ArmAssignment))).all()
+    expected_strata = [Strata(field_name="nullable_value", strata_value="NA").model_dump()]
+    assert all(assignment.strata == expected_strata for assignment in assignments)

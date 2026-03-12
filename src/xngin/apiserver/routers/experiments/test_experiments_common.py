@@ -1,8 +1,7 @@
-import dataclasses
 import inspect
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
+from typing import cast
 
 import numpy as np
 import pytest
@@ -14,6 +13,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.schema import CreateTable
 
+from xngin.apiserver.conftest import RowProtocolMixin
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import (
     BaseFrequentistDesignSpec,
@@ -46,13 +46,13 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     create_bandit_online_experiment_impl,
     create_experiment_impl,
     create_preassigned_experiment_impl,
-    experiment_assignments_to_csv_generator,
     get_assign_summary,
     get_existing_assignment_for_participant,
     get_experiment_assignments_impl,
     list_organization_or_datasource_experiments_impl,
     update_bandit_arm_with_outcome_impl,
 )
+from xngin.apiserver.routers.experiments.experiments_common_csv import get_experiment_assignments_as_csv_impl
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.assertions import assert_dates_equal
@@ -266,16 +266,13 @@ async def insert_experiment_and_arms(
 
 
 @dataclass
-class MockRow:
+class MockRow(RowProtocolMixin):
     """Simulate the bits of a sqlalchemy Row that we need here."""
 
     participant_id: str
     gender: str = "M"
     is_onboarded: bool = True
     region: str = "North"  # Default value for backward compatibility
-
-    def _asdict(self) -> dict[str, Any]:
-        return dataclasses.asdict(self)
 
 
 @pytest.fixture
@@ -1346,17 +1343,107 @@ async def make_experiment_with_assignments(xngin_session, datasource: tables.Dat
     return experiment
 
 
-async def test_experiment_assignments_to_csv_generator(xngin_session, testing_datasource):
+async def collect_streaming_response_body(response) -> bytes:
+    return b"".join([chunk async for chunk in response.body_iterator])
+
+
+async def test_get_experiment_assignments_as_csv_impl(xngin_session, testing_datasource):
     experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds)
-    await xngin_session.refresh(experiment, ["arms", "arm_assignments"])
+    await xngin_session.refresh(experiment, ["arms"])
 
     arm_name_to_id = {a.name: a.id for a in experiment.arms}
-    batches = list(experiment_assignments_to_csv_generator(experiment)())
-    assert len(batches) == 1
-    rows = batches[0].splitlines(keepends=True)
-    assert rows[0] == "participant_id,arm_id,arm_name,created_at,gender,score\r\n"
-    assert rows[1] == f"p1,{arm_name_to_id['control']},control,2025-01-01 00:00:00+00:00,F,1.1\r\n"
-    assert rows[2] == f'p2,{arm_name_to_id["treatment"]},treatment,2025-01-02 00:00:00+00:00,M,"esc,aped"\r\n'
+    response = await get_experiment_assignments_as_csv_impl(xngin_session, experiment)
+    csv_bytes = await collect_streaming_response_body(response)
+    assert b"\r" not in csv_bytes
+    assert csv_bytes.count(b"\n") == 3
+    rows = csv_bytes.decode().splitlines()
+    assert rows[0] == "participant_id,arm_id,arm_name,created_at,gender"
+    assert set(rows[1:]) == {
+        f"p1,{arm_name_to_id['control']},control,2025-01-01T00:00:00Z,F",
+        f"p2,{arm_name_to_id['treatment']},treatment,2025-01-02T00:00:00Z,M",
+    }
+
+
+async def test_get_experiment_assignments_as_csv_impl_emits_null_for_missing_metadata_strata(
+    xngin_session, testing_datasource
+):
+    experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds)
+    experiment.design_spec_fields = {
+        "strata": [{"field_name": "gender"}, {"field_name": "region"}],
+        "metrics": [{"field_name": "is_onboarded", "metric_pct_change": 0.1, "metric_target": None}],
+        "filters": [],
+    }
+    await xngin_session.commit()
+    await xngin_session.refresh(experiment, ["arms"])
+
+    arm_name_to_id = {a.name: a.id for a in experiment.arms}
+    response = await get_experiment_assignments_as_csv_impl(xngin_session, experiment)
+    csv_bytes = await collect_streaming_response_body(response)
+    assert b"\r" not in csv_bytes
+    assert csv_bytes.count(b"\n") == 3
+    rows = csv_bytes.decode().splitlines()
+    assert rows[0] == "participant_id,arm_id,arm_name,created_at,gender,region"
+    assert set(rows[1:]) == {
+        f"p1,{arm_name_to_id['control']},control,2025-01-01T00:00:00Z,F,",
+        f"p2,{arm_name_to_id['treatment']},treatment,2025-01-02T00:00:00Z,M,",
+    }
+
+
+async def test_get_experiment_assignments_as_csv_impl_includes_header_for_empty_export(
+    xngin_session, testing_datasource
+):
+    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
+    await xngin_session.refresh(experiment, ["arms"])
+
+    response = await get_experiment_assignments_as_csv_impl(xngin_session, experiment)
+    csv_bytes = await collect_streaming_response_body(response)
+    assert b"\r" not in csv_bytes
+    assert csv_bytes.count(b"\n") == 1
+    rows = csv_bytes.decode().splitlines()
+    assert rows == ["participant_id,arm_id,arm_name,created_at,gender"]
+
+
+async def test_get_experiment_assignments_as_csv_impl_uses_sorted_strata_header_order(
+    xngin_session, testing_datasource
+):
+    experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds)
+    experiment.design_spec_fields = {
+        "strata": [{"field_name": "region"}, {"field_name": "gender"}],
+        "metrics": [],
+        "filters": [],
+    }
+    await xngin_session.commit()
+    await xngin_session.refresh(experiment, ["arms"])
+
+    response = await get_experiment_assignments_as_csv_impl(xngin_session, experiment)
+    csv_bytes = await collect_streaming_response_body(response)
+    rows = csv_bytes.decode().splitlines()
+    assert rows[0] == "participant_id,arm_id,arm_name,created_at,gender,region"
+
+
+async def test_get_experiment_assignments_as_csv_impl_omits_strata_columns_when_none_defined(
+    xngin_session, testing_datasource
+):
+    experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds)
+    await xngin_session.refresh(experiment, ["arms"])
+    arm_name_to_id = {a.name: a.id for a in experiment.arms}
+    experiment.design_spec_fields = {
+        "strata": [],
+        "metrics": [],
+        "filters": [],
+    }
+    await xngin_session.commit()
+
+    response = await get_experiment_assignments_as_csv_impl(xngin_session, experiment)
+    csv_bytes = await collect_streaming_response_body(response)
+    assert b"\r" not in csv_bytes
+    assert csv_bytes.count(b"\n") == 3
+    rows = csv_bytes.decode().splitlines()
+    assert rows[0] == "participant_id,arm_id,arm_name,created_at"
+    assert set(rows[1:]) == {
+        f"p1,{arm_name_to_id['control']},control,2025-01-01T00:00:00Z",
+        f"p2,{arm_name_to_id['treatment']},treatment,2025-01-02T00:00:00Z",
+    }
 
 
 async def test_get_existing_assignment_for_participant(xngin_session, testing_datasource):
