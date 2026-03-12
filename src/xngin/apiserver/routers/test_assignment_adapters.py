@@ -2,10 +2,8 @@
 
 import dataclasses
 from collections import defaultdict
-from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -14,6 +12,7 @@ from pydantic import TypeAdapter
 from sqlalchemy import DECIMAL, Boolean, Column, Float, Integer, MetaData, String, Table, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from xngin.apiserver.conftest import RowProtocolMixin
 from xngin.apiserver.routers.assignment_adapters import (
     assign_treatments_with_balance,
     bulk_insert_arm_assignments,
@@ -24,23 +23,11 @@ from xngin.apiserver.routers.common_api_types import (
     BalanceCheck,
     Strata,
 )
-from xngin.apiserver.routers.experiments.test_experiments_common import (
-    insert_experiment_and_arms,
-)
-from xngin.apiserver.settings import (
-    RemoteDatabaseConfig,
-)
+from xngin.apiserver.routers.experiments.test_experiments_common import insert_experiment_and_arms
+from xngin.apiserver.settings import RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
 from xngin.stats.assignment import AssignmentResult
 from xngin.stats.balance import BalanceResult
-
-
-class RowProtocolMixin:
-    @property
-    def _mapping(self) -> Mapping[str, Any]:
-        if dataclasses.is_dataclass(self):
-            return dataclasses.asdict(self)
-        raise RuntimeError("RowProtocolMixin is only defined for use with dataclasses.")
 
 
 @dataclass

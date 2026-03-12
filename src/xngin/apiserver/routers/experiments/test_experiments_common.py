@@ -1,9 +1,7 @@
-import dataclasses
 import inspect
-from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
+from typing import cast
 
 import numpy as np
 import pytest
@@ -15,6 +13,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.schema import CreateTable
 
+from xngin.apiserver.conftest import RowProtocolMixin
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import (
     BaseFrequentistDesignSpec,
@@ -267,17 +266,13 @@ async def insert_experiment_and_arms(
 
 
 @dataclass
-class MockRow:
+class MockRow(RowProtocolMixin):
     """Simulate the bits of a sqlalchemy Row that we need here."""
 
     participant_id: str
     gender: str = "M"
     is_onboarded: bool = True
     region: str = "North"  # Default value for backward compatibility
-
-    @property
-    def _mapping(self) -> Mapping[str, Any]:
-        return dataclasses.asdict(self)
 
 
 @pytest.fixture
