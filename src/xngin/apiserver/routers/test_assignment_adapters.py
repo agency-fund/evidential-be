@@ -38,7 +38,9 @@ from xngin.stats.balance import BalanceResult
 class RowProtocolMixin:
     @property
     def _mapping(self) -> Mapping[str, Any]:
-        return dataclasses.asdict(self)  # type: ignore[no-any-return, call-overload]
+        if dataclasses.is_dataclass(self):
+            return dataclasses.asdict(self)
+        raise RuntimeError("RowProtocolMixin is only defined for use with dataclasses.")
 
 
 @dataclass
