@@ -1,5 +1,6 @@
 import dataclasses
 import inspect
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
@@ -274,7 +275,8 @@ class MockRow:
     is_onboarded: bool = True
     region: str = "North"  # Default value for backward compatibility
 
-    def _asdict(self) -> dict[str, Any]:
+    @property
+    def _mapping(self) -> Mapping[str, Any]:
         return dataclasses.asdict(self)
 
 
