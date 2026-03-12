@@ -1,7 +1,7 @@
 """Bridges our API types with assignment logic that operates on DataFrames."""
 
 import decimal
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, Protocol
 
 import numpy as np
@@ -23,8 +23,9 @@ from xngin.stats.balance import BalanceResult
 class RowProtocol(Protocol):
     """Minimal methods to approximate a sqlalchemy.engine.row.Row for testing."""
 
-    def _asdict(self) -> dict[str, Any]:
-        """https://docs.sqlalchemy.org/en/20/core/connections.html#sqlalchemy.engine.Row._asdict"""
+    @property
+    def _mapping(self) -> Mapping[str, Any]:
+        """https://docs.sqlalchemy.org/en/20/core/connections.html#sqlalchemy.engine.Row._mapping"""
         ...
 
 
@@ -122,7 +123,7 @@ async def bulk_insert_arm_assignments(
     orig_stratum_cols = assignment_result.orig_stratum_cols
 
     for stratum_id, treatment_assignment, row in zip(stratum_ids, assignment_result.treatment_ids, data, strict=True):
-        row_dict = row._asdict()
+        row_mapping = row._mapping
 
         if not orig_stratum_cols:
             strata = []
@@ -131,7 +132,7 @@ async def bulk_insert_arm_assignments(
             strata = [
                 Strata(
                     field_name=column,
-                    strata_value=str(row_dict[column] if pd.notna(row_dict[column]) else "NA"),
+                    strata_value=str(row_mapping[column] if pd.notna(row_mapping[column]) else "NA"),
                 ).model_dump(mode="json")
                 for column in orig_stratum_cols
             ]
@@ -145,7 +146,7 @@ async def bulk_insert_arm_assignments(
 
         participant = tables.ArmAssignment(
             experiment_id=experiment_id,
-            participant_id=str(row_dict[participant_id_col]),
+            participant_id=str(row_mapping[participant_id_col]),
             participant_type=participant_type,
             arm_id=arm_id,
             strata=strata,

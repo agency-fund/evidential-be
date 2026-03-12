@@ -2,13 +2,14 @@
 this module are run."""
 
 import contextlib
+import dataclasses
 import enum
 import os
 import secrets
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import assert_never, cast
+from typing import Any, assert_never, cast
 
 import pytest
 import sqlalchemy
@@ -56,6 +57,14 @@ from xngin.db_extensions import custom_functions
 # SQLAlchemy's logger will append this to the name of its loggers used for the application database; e.g.
 # sqlalchemy.engine.Engine.xngin_app.
 SA_LOGGER_NAME_FOR_APP = "xngin_app"
+
+
+class RowProtocolMixin:
+    @property
+    def _mapping(self) -> Mapping[str, Any]:
+        if dataclasses.is_dataclass(self):
+            return dataclasses.asdict(self)
+        raise RuntimeError("RowProtocolMixin is only defined for use with dataclasses.")
 
 
 class DbType(enum.StrEnum):
