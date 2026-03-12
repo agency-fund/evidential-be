@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, assert_never
 
+import pandas as pd
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -45,6 +46,8 @@ from xngin.apiserver.dwh.inspections import (
     dehydrate_participants,
 )
 from xngin.apiserver.dwh.queries import (
+    get_cluster_outcome_data,
+    get_cluster_size_stats,
     get_stats_on_filters,
     get_stats_on_metrics,
 )
@@ -124,6 +127,7 @@ from xngin.apiserver.routers.common_api_types import (
     CreateExperimentResponse,
     ExperimentAnalysisResponse,
     ExperimentsType,
+    Filter,
     GetExperimentAssignmentsResponse,
     GetMetricsResponseElement,
     GetParticipantAssignmentResponse,
@@ -143,6 +147,7 @@ from xngin.apiserver.snapshots import snapshotter
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.stats import check_power
+from xngin.stats.cluster_icc import calculate_icc_from_dataframe
 
 GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
 RESPONSE_CACHE_MAX_AGE_SECONDS = timedelta(minutes=15).seconds
@@ -217,7 +222,38 @@ def cache_is_fresh(updated: datetime | None):
     return updated is not None and datetime.now(UTC) - updated < timedelta(minutes=5)
 
 
-@asynccontextmanager
+def calculate_icc_and_cv_from_database(
+    session,
+    sa_table,
+    cluster_column: str,
+    outcome_column: str,
+    filters: list[Filter],
+) -> dict[str, float]:
+    """
+    Calculate ICC and cluster statistics from database.
+
+    Convenience function that orchestrates DWH queries with stats calculations.
+    Belongs in API layer since it combines database access and stats functions.
+    """
+    # Get cluster size statistics from database (queries.py)
+    cluster_stats = get_cluster_size_stats(session, sa_table, cluster_column, filters)
+
+    # Get cluster-outcome data for ICC calculation (queries.py)
+    data = get_cluster_outcome_data(session, sa_table, cluster_column, outcome_column, filters)
+
+    # Convert to DataFrame
+    df = pd.DataFrame(data)
+
+    # Calculate ICC using stats layer (cluster_icc.py)
+    icc = calculate_icc_from_dataframe(df)
+
+    return {
+        "icc": icc,
+        "avg_cluster_size": cluster_stats["avg_cluster_size"],
+        "cv": cluster_stats["cv"],
+    }
+
+
 async def lifespan(_app: FastAPI):
     logger.info(f"Starting router: {__name__} (prefix={router.prefix})")
     yield
@@ -1929,6 +1965,45 @@ async def power_check(
 
     arm_weights = design_spec.get_validated_arm_weights()
 
+    # Handle cluster randomization parameters
+    cluster_params = None
+
+    if body.icc is not None and body.avg_cluster_size is not None:
+        # User provided ICC - apply same values to all metrics
+        cluster_params = {}
+        for metric_stat in metric_stats:
+            cluster_params[metric_stat.field_name] = {
+                "icc": body.icc,
+                "avg_cluster_size": body.avg_cluster_size,
+                "cv": body.cv if body.cv is not None else 0.0,
+            }
+
+    elif body.cluster_column is not None:
+        # Calculate ICC per metric from database
+        if not design_spec.metrics:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="At least one metric required for cluster analysis",
+            )
+
+        cluster_params = {}
+        async with DwhSession(dsconfig.dwh) as dwh:
+            sa_table = await dwh.inspect_table(table_name)
+            for metric_stat in metric_stats:
+                cluster_stats = await asyncio.to_thread(
+                    calculate_icc_and_cv_from_database,
+                    dwh.session,
+                    sa_table,
+                    body.cluster_column,
+                    metric_stat.field_name,
+                    design_spec.filters,
+                )
+                cluster_params[metric_stat.field_name] = {
+                    "icc": cluster_stats["icc"],
+                    "avg_cluster_size": cluster_stats["avg_cluster_size"],
+                    "cv": cluster_stats["cv"],
+                }
+
     return PowerResponse(
         analyses=check_power(
             metrics=metric_stats,
@@ -1937,6 +2012,7 @@ async def power_check(
             alpha=design_spec.alpha,
             arm_weights=arm_weights,
             desired_n=design_spec.desired_n,
+            cluster_params=cluster_params,  # Pass dict, not individual params
         )
     )
 

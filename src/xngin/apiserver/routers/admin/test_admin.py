@@ -55,6 +55,7 @@ from xngin.apiserver.routers.common_api_types import (
     Arm,
     ArmBandit,
     BanditExperimentAnalysisResponse,
+    ClusterMetricPowerAnalysis,
     CMABContextInputRequest,
     CMABExperimentSpec,
     CreateExperimentRequest,
@@ -3387,3 +3388,82 @@ async def test_list_organization_events_pagination_with_same_timestamp_is_id_des
     assert page2.items[0].id == expected_tied_order[1]
     assert page2.items[0].id != page1.items[0].id
     assert page2.items[0].created_at == tied_created_at
+
+
+async def test_power_check_with_manual_icc(testing_datasource_with_user, aclient: AdminAPIClient):
+    """Test power check with user-provided ICC values."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        participant_type="test_participant_type",
+        experiment_name="test cluster power",
+        description="test power check with manual ICC",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="control", arm_description="Control group"),
+            Arm(arm_name="treatment", arm_description="Treatment group"),
+        ],
+        metrics=[
+            DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1),
+        ],
+        strata=[],
+        filters=[],
+    )
+    power_response = aclient.power_check(
+        datasource_id=testing_datasource_with_user.ds.id,
+        body=PowerRequest(
+            design_spec=design_spec,
+            icc=0.15,
+            avg_cluster_size=30,
+            cv=1.2,
+        ),
+    ).data
+    assert len(power_response.analyses) == 1
+    analysis = power_response.analyses[0]
+    assert isinstance(analysis, ClusterMetricPowerAnalysis)
+    assert analysis.icc == 0.15
+    assert analysis.avg_cluster_size == 30
+    assert analysis.design_effect is not None
+    assert analysis.design_effect > 1.0
+
+
+# @pytest.mark.skip(reason="Requires clustered_dwh table to be loaded in test database")
+async def test_power_check_with_calculated_icc(testing_datasource_with_user, aclient: AdminAPIClient):
+    """Test power check with ICC calculated from database (requires clustered_dwh)."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        participant_type="test_participant_type",
+        experiment_name="test cluster power from DB",
+        description="test power check calculating ICC from database",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="control"),
+            Arm(arm_name="treatment"),
+        ],
+        metrics=[
+            DesignSpecMetricRequest(field_name="test_score", metric_pct_change=0.1),
+        ],
+        strata=[],
+        filters=[],
+    )
+    power_response = aclient.power_check(
+        datasource_id=testing_datasource_with_user.ds.id,
+        body=PowerRequest(
+            design_spec=design_spec,
+            table_name="clustered_dwh",
+            primary_key="participant_id",
+            cluster_column="cluster_powerlaw",
+        ),
+    ).data
+    assert len(power_response.analyses) == 1
+    analysis = power_response.analyses[0]
+    assert isinstance(analysis, ClusterMetricPowerAnalysis)
+    assert analysis.icc is not None
+    assert 0.15 <= analysis.icc <= 0.25
+    assert analysis.avg_cluster_size > 0
+    assert analysis.cv > 2.0
+    assert analysis.design_effect is not None
+    assert analysis.design_effect > 1.0
+    assert analysis.num_clusters_total is not None
+    assert analysis.num_clusters_total > 0
