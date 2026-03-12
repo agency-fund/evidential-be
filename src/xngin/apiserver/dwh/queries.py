@@ -279,6 +279,20 @@ def general_excludes_filter(
     )
 
 
+def general_includes_filter(
+    col: sqlalchemy.Column, value: FilterValueTypes | Sequence[datetime | None] | Sequence[date | None]
+) -> ColumnElement[bool]:
+    if None in value:
+        non_null_list = [v for v in value if v is not None]
+        if len(non_null_list) == 0:
+            return col.is_(sqlalchemy.null())
+        return or_(
+            col.is_(sqlalchemy.null()),
+            col.in_(non_null_list),
+        )
+    return col.in_(value)
+
+
 def create_between_filter(col: sqlalchemy.Column, values: Sequence) -> ColumnElement:
     """Helper function to create a BETWEEN SQLAlchemy filter expression.
 
@@ -318,7 +332,7 @@ def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:
         case Relation.INCLUDES if isinstance(col.type, sqlalchemy.Boolean):
             return or_(*[col.is_(value) if value is not None else col.is_(None) for value in parsed_values])
         case Relation.INCLUDES:
-            return sqlalchemy.not_(general_excludes_filter(col, parsed_values))
+            return general_includes_filter(col, parsed_values)
         case _:
             raise RuntimeError("Bug: invalid Filter.")
 
