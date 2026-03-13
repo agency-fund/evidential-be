@@ -3,15 +3,15 @@ import random
 import uuid
 from typing import Any
 
+import pandas as pd
 import pytest
 
 from xngin.apiserver.dwh.analysis_types import MetricValue, ParticipantOutcome
-from xngin.apiserver.sqla import tables
 from xngin.stats.analysis import analyze_experiment
 
 
-@pytest.fixture
-def test_assignments(n=1000, seed=42):  # noqa: PT028
+@pytest.fixture(name="test_assignments")
+def fixture_assignments(n=1000, seed=42):
     rand = random.Random(seed)
     # Use fixed UUIDs instead of randomly generated ones
     arm_ids = [
@@ -19,20 +19,18 @@ def test_assignments(n=1000, seed=42):  # noqa: PT028
         uuid.UUID("b1d90769-6e6e-4973-a7eb-d9da1c6ddcd5"),
         uuid.UUID("df84e3ae-f5df-4dc8-9ba6-fa0743e1c895"),
     ]
-    assignments = []
-    for i in range(n):
-        arm_id = rand.choice(arm_ids)
-        assignments.append(
-            # TODO: test Assignment for old stateless api
-            # re: https://github.com/agency-fund/xngin/pull/306 since arm_id is a
-            #  sqlalchemy.Uuid(as_uuid=False), must assign to it with a string
-            tables.ArmAssignment(participant_id=str(i), arm_id=str(arm_id), strata=[])
-        )
-    return assignments
+    assignments = [
+        {
+            "participant_id": str(i),
+            "arm_id": str(rand.choice(arm_ids)),
+        }
+        for i in range(n)
+    ]
+    return pd.DataFrame(assignments)
 
 
-@pytest.fixture
-def test_outcomes(n=1000, seed=43):  # noqa: PT028
+@pytest.fixture(name="test_outcomes")
+def fixture_outcomes(n=1000, seed=43):
     rand = random.Random(seed)
     return [
         ParticipantOutcome(
@@ -180,7 +178,7 @@ def test_analysis_with_missing_outcomes(test_assignments, test_outcomes):
 
 def test_analysis_with_one_arm_missing_all_outcomes(test_assignments, test_outcomes):
     # Make all outcomes missing for one arm. Should still be processed, but result in NaNs
-    arm_map = {a.participant_id: a.arm_id for a in test_assignments}
+    arm_map = test_assignments.set_index("participant_id")["arm_id"].to_dict()
     num_missing_values = 0
     for i in range(len(test_outcomes)):
         if arm_map[test_outcomes[i].participant_id] == "b1d90769-6e6e-4973-a7eb-d9da1c6ddcd5":
@@ -220,3 +218,10 @@ def test_analysis_with_one_arm_missing_all_outcomes(test_assignments, test_outco
     result = analyze_experiment(test_assignments, test_outcomes)
     assert len(result) == 1  # One metric
     assert len(result["bool_field"]) == 0  # No arm analyses
+
+
+def test_analysis_rejects_assignments_with_extra_columns(test_assignments, test_outcomes):
+    invalid_assignments = test_assignments.assign(strata=[[] for _ in range(len(test_assignments))])
+
+    with pytest.raises(ValueError, match="assignments_df shape is wrong"):
+        analyze_experiment(invalid_assignments, test_outcomes)

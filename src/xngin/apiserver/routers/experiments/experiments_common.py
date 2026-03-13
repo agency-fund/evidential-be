@@ -1,12 +1,15 @@
 import asyncio
 import enum
+import io
 import secrets
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import cast
 
 import numpy as np
+import pandas as pd
 from fastapi import HTTPException, status
+from pandas import DataFrame
 from sqlalchemy import Select, Table, func, insert, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +18,7 @@ from sqlalchemy.orm import selectinload
 from xngin.apiserver import constants, flags
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor
-from xngin.apiserver.dwh.queries import get_participant_metrics
+from xngin.apiserver.dwh.participant_metrics_queries import get_participant_metrics
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.assignment_adapters import (
     RowProtocol,
@@ -54,6 +57,7 @@ from xngin.apiserver.routers.common_enums import (
 )
 from xngin.apiserver.routers.experiments.property_filters import passes_filters, validate_filter_value
 from xngin.apiserver.settings import DatasourceConfig, ParticipantsDef
+from xngin.apiserver.sql.queries import select_as_csv
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
@@ -64,6 +68,8 @@ from xngin.stats.bandit_sampling import choose_arm as choose_bandit_arm
 from xngin.stats.bandit_sampling import update_arm as update_bandit_arm
 from xngin.stats.stats_errors import StatsAnalysisError
 from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
+
+CSV_PARSE_CHUNK_SIZE_BYTES = 5 << 20
 
 
 class ExperimentsAssignmentError(Exception):
@@ -1020,6 +1026,7 @@ async def get_assign_summary(
 
 
 async def analyze_experiment_freq_impl(
+    xngin_session: AsyncSession,
     dsconfig: DatasourceConfig,
     experiment: tables.Experiment,
     baseline_arm_id: str,
@@ -1030,15 +1037,11 @@ async def analyze_experiment_freq_impl(
     participants_cfg = dsconfig.find_participants(experiment.participant_type)
     unique_id_field = participants_cfg.get_unique_id_field()
 
-    assignments = experiment.arm_assignments
-    participant_ids = [assignment.participant_id for assignment in assignments]
-    num_participants = len(participant_ids)
-    if num_participants == 0:
+    participant_ids, assignments_df = await read_assignments_efficiently(xngin_session, experiment.id)
+    if assignments_df.empty:
         raise StatsAnalysisError("No participants found for experiment.")
-
     async with DwhSession(dsconfig.dwh) as dwh:
         sa_table = await dwh.inspect_table(participants_cfg.table_name)
-
         # Mark the start of the analysis as when we begin pulling outcomes.
         created_at = datetime.now(UTC)
         participant_outcomes = await asyncio.to_thread(
@@ -1060,10 +1063,11 @@ async def analyze_experiment_freq_impl(
     # We want to notify the user if there are participants assigned to the experiment that are not
     # in the data warehouse. E.g. in an online experiment, perhaps a new user was assigned
     # before their info was synced to the dwh.
+    num_participants = len(participant_ids)
     num_missing_participants = num_participants - len(participant_outcomes)
 
     analyze_results = analyze_freq_experiment(
-        assignments,
+        assignments_df,
         participant_outcomes,
         baseline_arm_id,
         alpha=experiment.alpha,
@@ -1121,6 +1125,25 @@ async def analyze_experiment_freq_impl(
         num_missing_participants=num_missing_participants,
         created_at=created_at,
     )
+
+
+async def read_assignments_efficiently(xngin_session: AsyncSession, experiment_id: str) -> tuple[list[str], DataFrame]:
+    """Reads assignments directly from Postgres via a COPY statement.
+
+    Reads CSV output in row-bounded chunks and concatenates the parsed frames.
+    """
+    select_query = t"SELECT arm_id, participant_id FROM arm_assignments WHERE experiment_id = {experiment_id}"  # type: ignore
+    dfs = [
+        pd.read_csv(io.BytesIO(chunk), names=["arm_id", "participant_id"], dtype=str)
+        async for chunk in select_as_csv(
+            xngin_session, select_query, buffer_size_bytes=CSV_PARSE_CHUNK_SIZE_BYTES, newline_framed=True
+        )
+    ]
+    if dfs:
+        df = pd.concat(dfs, ignore_index=True)
+    else:
+        df = pd.DataFrame(columns=["arm_id", "participant_id"]).astype(str)
+    return df["participant_id"].to_list(), df
 
 
 def analyze_experiment_bandit_impl(
