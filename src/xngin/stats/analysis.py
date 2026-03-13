@@ -5,7 +5,6 @@ import statsmodels.formula.api as smf
 from patsy.eval import EvalFactor
 
 from xngin.apiserver.dwh.analysis_types import ParticipantOutcome
-from xngin.apiserver.sqla import tables
 
 
 @dataclasses.dataclass(slots=True)  # slots=True for performance
@@ -25,7 +24,7 @@ class ArmAnalysisResult:
 
 
 def analyze_experiment(
-    treatment_assignments: list[tables.ArmAssignment],
+    assignments_df: pd.DataFrame,
     participant_outcomes: list[ParticipantOutcome],
     baseline_arm_id: str | None = None,
     alpha: float | None = None,
@@ -34,7 +33,7 @@ def analyze_experiment(
     Perform statistical analysis with DesignSpec metrics and their values
 
     Args:
-    treatment_assignments: list of participant treatment assignments
+    assignments_df: DataFrame of {assignment_id, participant_id} strings
     participant_outcomes: list of participant outcomes
     baseline_arm_id: which arm to use as baseline; if not provided, uses the first arm seen
     alpha: significance level for confidence intervals (defaults to 0.05 if None for a 95% CI).
@@ -45,16 +44,15 @@ def analyze_experiment(
         - If *zero* arm analyses exist for a metric (e.g. since zero non-null outcomes were found
           across all arms), the name will exist, but the inner dict will be empty.
     """
+    expected_columns = {"participant_id", "arm_id"}
+    actual_columns = set(assignments_df.columns)
+    if actual_columns != expected_columns:
+        raise ValueError(
+            f"assignments_df shape is wrong: expected={','.join(expected_columns)}, actual={','.join(actual_columns)}"
+        )
+
     if alpha is None:
         alpha = 0.05
-
-    assignments_df = pd.DataFrame([
-        {
-            "participant_id": assignment.participant_id,
-            "arm_id": assignment.arm_id,
-        }
-        for assignment in treatment_assignments
-    ])
 
     rows = []
     for outcome in participant_outcomes:

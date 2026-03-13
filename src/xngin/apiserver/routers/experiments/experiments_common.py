@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import cast
 
 import numpy as np
+import pandas as pd
 from fastapi import HTTPException, status
 from sqlalchemy import Select, Table, func, insert, select
 from sqlalchemy.exc import IntegrityError
@@ -1031,11 +1032,16 @@ async def analyze_experiment_freq_impl(
     unique_id_field = participants_cfg.get_unique_id_field()
 
     assignments = experiment.arm_assignments
-    participant_ids = [assignment.participant_id for assignment in assignments]
-    num_participants = len(participant_ids)
-    if num_participants == 0:
+    assignments_df = pd.DataFrame([
+        {
+            "participant_id": assignment.participant_id,
+            "arm_id": assignment.arm_id,
+        }
+        for assignment in assignments
+    ])
+    if assignments_df.empty:
         raise StatsAnalysisError("No participants found for experiment.")
-
+    participant_ids = assignments_df["participant_id"].to_list()
     async with DwhSession(dsconfig.dwh) as dwh:
         sa_table = await dwh.inspect_table(participants_cfg.table_name)
         # Mark the start of the analysis as when we begin pulling outcomes.
@@ -1059,10 +1065,11 @@ async def analyze_experiment_freq_impl(
     # We want to notify the user if there are participants assigned to the experiment that are not
     # in the data warehouse. E.g. in an online experiment, perhaps a new user was assigned
     # before their info was synced to the dwh.
+    num_participants = len(participant_ids)
     num_missing_participants = num_participants - len(participant_outcomes)
 
     analyze_results = analyze_freq_experiment(
-        assignments,
+        assignments_df,
         participant_outcomes,
         baseline_arm_id,
         alpha=experiment.alpha,
