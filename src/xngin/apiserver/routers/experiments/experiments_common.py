@@ -15,7 +15,7 @@ from sqlalchemy.orm import selectinload
 from xngin.apiserver import constants, flags
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor
-from xngin.apiserver.dwh.queries import get_participant_metrics
+from xngin.apiserver.dwh.participant_metrics_queries import get_participant_metrics
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.assignment_adapters import (
     RowProtocol,
@@ -1038,7 +1038,6 @@ async def analyze_experiment_freq_impl(
 
     async with DwhSession(dsconfig.dwh) as dwh:
         sa_table = await dwh.inspect_table(participants_cfg.table_name)
-
         # Mark the start of the analysis as when we begin pulling outcomes.
         created_at = datetime.now(UTC)
         participant_outcomes = await asyncio.to_thread(
