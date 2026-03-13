@@ -1779,7 +1779,7 @@ async def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_
     await xngin_session.refresh(experiment, ["arms", "arm_assignments"])
 
     analysis = await analyze_experiment_freq_impl(
-        testing_datasource.ds.get_config(), experiment, arm1_id, design_metric
+        xngin_session, testing_datasource.ds.get_config(), experiment, arm1_id, design_metric
     )
     assert analysis is not None
     assert analysis.experiment_id == experiment.id

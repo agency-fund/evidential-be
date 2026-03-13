@@ -1532,7 +1532,7 @@ async def analyze_experiment(
         xngin_session,
         ds,
         experiment_id,
-        preload=[tables.Experiment.arm_assignments, tables.Experiment.draws, tables.Experiment.contexts],
+        preload=[tables.Experiment.draws, tables.Experiment.contexts],
     )
 
     design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
@@ -1550,7 +1550,7 @@ async def analyze_experiment(
             baseline_arm_id = baseline_arm_id or design_spec.arms[0].arm_id
             assert baseline_arm_id is not None
             return await experiments_common.analyze_experiment_freq_impl(
-                ds.get_config(), experiment, baseline_arm_id, design_spec.metrics
+                xngin_session, ds.get_config(), experiment, baseline_arm_id, design_spec.metrics
             )
         case _:
             assert_never()
