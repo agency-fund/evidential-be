@@ -3,17 +3,19 @@ import dataclasses
 import json
 import os
 import struct
+from typing import TYPE_CHECKING
 
 import nacl.secret
 import nacl.utils
-from google.auth.credentials import Credentials
-from google.cloud import kms
 from google.oauth2 import service_account
 from loguru import logger
 
 from xngin.xsecrets import constants
 from xngin.xsecrets.exceptions import InvalidSecretStoreConfigurationError
 from xngin.xsecrets.provider import Provider, Registry
+
+if TYPE_CHECKING:
+    from google.auth.credentials import Credentials
 
 NAME = "gcpkms"
 
@@ -99,7 +101,10 @@ class GcpKmsProvider(Provider):
         :param key_name: GCP KMS key name (e.g. projects/.../locations/.../keyRings/.../cryptoKeys/...)
         :param credentials: GCP service account credentials
         """
+        from google.cloud import kms  # noqa: PLC0415
+
         self.key_name = key_name
+        self.kms = kms
         self.kms_client = kms.KeyManagementServiceClient(credentials=credentials)
 
     def name(self) -> str:
@@ -111,7 +116,7 @@ class GcpKmsProvider(Provider):
         aead = nacl.secret.Aead(dek)
         encrypted_data = aead.encrypt(pt, aad)
 
-        request = kms.EncryptRequest(name=self.key_name, plaintext=dek)
+        request = self.kms.EncryptRequest(name=self.key_name, plaintext=dek)
         response = self.kms_client.encrypt(request)
         encrypted_dek = response.ciphertext
 
@@ -121,7 +126,7 @@ class GcpKmsProvider(Provider):
         """Decrypts ciphertext using envelope encryption."""
         encrypted_dek, encrypted_data = _unpack_envelope_ciphertext(ct)
 
-        request = kms.DecryptRequest(name=self.key_name, ciphertext=encrypted_dek)
+        request = self.kms.DecryptRequest(name=self.key_name, ciphertext=encrypted_dek)
         response = self.kms_client.decrypt(request)
         dek = response.plaintext
 
