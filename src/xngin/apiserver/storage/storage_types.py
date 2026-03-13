@@ -43,6 +43,7 @@ class StorageMetric(StorageBaseModel):
     ] = None
 
 
+# TODO: Deprecate this and use ExperimentField directly instead.
 class DesignSpecFields(StorageBaseModel):
     """Holds the Participant Type fields specified in an experiment's DesignSpec."""
 

@@ -7,10 +7,11 @@ from typing import Any, ClassVar, Literal, Self
 
 import sqlalchemy
 from pydantic import TypeAdapter
-from sqlalchemy import Float, ForeignKey, Index, String
+from sqlalchemy import Float, ForeignKey, ForeignKeyConstraint, Index, Numeric, String
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncAttrs
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
 
@@ -31,6 +32,7 @@ arm_id_factory = unique_id_factory("arm")
 datasource_id_factory = unique_id_factory("ds")
 event_id_factory = unique_id_factory("evt")
 experiment_id_factory = unique_id_factory("exp")
+experiment_filter_id_factory = unique_id_factory("eflt")
 organization_id_factory = unique_id_factory("o")
 snapshot_id_factory = unique_id_factory("sn")
 task_id_factory = unique_id_factory("task")
@@ -370,7 +372,10 @@ class Experiment(Base):
     datasource_id: Mapped[str] = mapped_column(String(255), ForeignKey("datasources.id", ondelete="CASCADE"))
 
     experiment_type: Mapped[str] = mapped_column()
+    # participant_type is deprecated
     participant_type: Mapped[str] = mapped_column(String(255))
+    # The underlying datasource table name backing this experiment.
+    datasource_table: Mapped[str | None] = mapped_column(String(255))
     name: Mapped[str] = mapped_column(String(255))
     # Describe your experiment and hypothesis here.
     description: Mapped[str] = mapped_column(String(2000))
@@ -431,7 +436,17 @@ class Experiment(Base):
         back_populates="experiment",
         cascade="all, delete-orphan",
     )
-    contexts: Mapped[list[Context]] = relationship("Context", back_populates="experiment", cascade="all, delete-orphan")
+    contexts: Mapped[list[Context]] = relationship(back_populates="experiment", cascade="all, delete-orphan")
+    experiment_fields: Mapped[list[ExperimentField]] = relationship(
+        back_populates="experiment",
+        cascade="all, delete-orphan",
+    )
+    # All edits to experiment_filters should be done through experiment_fields.
+    experiment_filters: Mapped[list[ExperimentFilter]] = relationship(
+        back_populates="experiment",
+        viewonly=True,
+        overlaps="experiment_field,experiment_filters",
+    )
     snapshots: Mapped[Snapshot] = relationship(viewonly=True)
 
 
@@ -519,6 +534,95 @@ class Context(Base):
     value_type: Mapped[str] = mapped_column()
 
     experiment: Mapped[Experiment] = relationship("Experiment", back_populates="contexts")
+
+
+class ExperimentField(Base):
+    """Stores individual fields used in an experiment's design specification.
+
+    Each row represents a table column used for one or more purposes (filter, metric, stratum, or
+    unique_id). If a field is used for filtering, one should also join on the ExperimentFilter table
+    to get the filter criteria.
+    """
+
+    __tablename__ = "experiment_fields"
+
+    experiment_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True
+    )
+    field_name: Mapped[str] = mapped_column(String(255), primary_key=True)
+    # Stores the enum value of the field's common_enums.DataType.
+    data_type: Mapped[str] = mapped_column(String(50))
+
+    # Unique ID metadata:
+    # is_unique_id is true when this field is used as the experiment's unique ID.
+    is_unique_id: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
+    # Strata metadata
+    is_strata: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
+    # Metrics metadata:
+    # metric_pct_change or metric_target will be set if this field is a metric,
+    # whereas is_primary_metric is true only for the primary metric in the design spec.
+    is_primary_metric: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
+    metric_pct_change: Mapped[float | None] = mapped_column(Float)
+    metric_target: Mapped[float | None] = mapped_column(Float)
+    # Filters metadata: not here, but determined by joining with ExperimentFilter
+
+    @hybrid_property
+    def is_filter(self) -> bool:
+        """
+        Determine if this field is a filter by checking if it has any experiment_filters.
+
+        WARNING: The relation must already be loaded!
+        """
+        return self.experiment_filters is not None
+
+    @hybrid_property
+    def is_metric(self) -> bool:
+        return self.is_primary_metric or self.metric_pct_change is not None or self.metric_target is not None
+
+    experiment: Mapped[Experiment] = relationship(back_populates="experiment_fields")
+    experiment_filters: Mapped[list[ExperimentFilter] | None] = relationship(
+        back_populates="experiment_field",
+        order_by="asc(ExperimentFilter.position)",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class ExperimentFilter(Base):
+    """Stores individual filters used in an experiment's design specification."""
+
+    __tablename__ = "experiment_filters"
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=experiment_filter_id_factory)
+    # The position of the filter in the design spec, starting at 1.
+    position: Mapped[int] = mapped_column()
+    experiment_id: Mapped[str] = mapped_column(String(36), ForeignKey("experiments.id", ondelete="CASCADE"))
+    field_name: Mapped[str] = mapped_column(String(255))
+    relation: Mapped[str] = mapped_column(String(20))
+    string_values: Mapped[list[str | None] | None] = mapped_column(ARRAY(String(255)))
+    numeric_values: Mapped[list[Numeric | None] | None] = mapped_column(ARRAY(Numeric))
+
+    experiment: Mapped[Experiment] = relationship(
+        back_populates="experiment_filters",
+        overlaps="experiment_filters",
+    )
+    experiment_field: Mapped[ExperimentField] = relationship(
+        back_populates="experiment_filters",
+        overlaps="experiment",
+    )
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["experiment_id", "field_name"],
+            ["experiment_fields.experiment_id", "experiment_fields.field_name"],
+            ondelete="CASCADE",
+        ),
+        Index(
+            "idx_experiment_filters_experiment_id_field_name",
+            "experiment_id",
+            "field_name",
+        ),
+    )
 
 
 class Snapshot(Base):

@@ -18,6 +18,12 @@ from xngin.apiserver.storage.storage_format_converters import ExperimentStorageC
 
 
 async def make_experiment(xngin_session, datasource: tables.Datasource, design_spec: DesignSpec) -> tables.Experiment:
+    # Get participants schema from datasource for frequentist experiments
+    participants_schema = None
+    if design_spec.experiment_type in {ExperimentsType.FREQ_PREASSIGNED, ExperimentsType.FREQ_ONLINE}:
+        ds_config = datasource.get_config()
+        participants_schema = ds_config.find_participants(design_spec.participant_type)
+
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
         organization_id=datasource.organization_id,
@@ -26,6 +32,7 @@ async def make_experiment(xngin_session, datasource: tables.Datasource, design_s
         state=ExperimentState.COMMITTED,
         stopped_assignments_at=datetime.now(UTC),
         stopped_assignments_reason=StopAssignmentReason.PREASSIGNED,
+        participants_schema=participants_schema,
     )
     experiment = experiment_converter.get_experiment()
     xngin_session.add(experiment)
