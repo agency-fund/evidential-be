@@ -21,7 +21,7 @@
 | src/xngin/apiserver/exceptionhandlers.py                             |       68 |       10 |     85% |50, 54, 62, 70-75, 89, 108 |
 | src/xngin/apiserver/flags.py                                         |       49 |        4 |     92% |67, 70, 88, 91 |
 | src/xngin/apiserver/main.py                                          |       36 |        5 |     86% |39, 69-70, 87-89 |
-| src/xngin/apiserver/openapi.py                                       |       22 |       13 |     41% |     19-83 |
+| src/xngin/apiserver/openapi.py                                       |       22 |       13 |     41% |     22-86 |
 | src/xngin/apiserver/pagination.py                                    |      108 |       13 |     88% |47-48, 53-55, 61, 68, 220, 222, 233-236 |
 | src/xngin/apiserver/request\_encapsulation\_middleware.py            |       69 |        3 |     96% |   113-115 |
 | src/xngin/apiserver/routers/admin/admin\_api.py                      |      627 |       53 |     92% |256, 338, 350, 361, 365, 374, 563, 788, 792, 851-857, 1040, 1077, 1194-1272, 1319, 1321-1324, 1364, 1486, 1491, 1542, 1555-1556, 1581, 1712-1714, 1894, 1900, 1945 |
@@ -64,12 +64,12 @@
 | src/xngin/stats/bandit\_sampling.py                                  |       73 |        7 |     90% |162, 186, 191, 214, 238, 240, 272 |
 | src/xngin/stats/power.py                                             |      118 |        5 |     96% |71, 74, 118-119, 195 |
 | src/xngin/xsecrets/chafernet.py                                      |       52 |        1 |     98% |        92 |
-| src/xngin/xsecrets/gcp\_kms\_provider.py                             |       69 |       26 |     62% |62-77, 84-85, 102-103, 106, 110-118, 122-129 |
+| src/xngin/xsecrets/gcp\_kms\_provider.py                             |       70 |       28 |     60% |64-79, 86-87, 104-108, 111, 115-123, 127-134 |
 | src/xngin/xsecrets/provider.py                                       |       19 |        1 |     95% |        46 |
 | src/xngin/xsecrets/secretservice.py                                  |       60 |        4 |     93% |41-42, 100, 122 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                       |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                           |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                            | **10244** |  **718** | **93%** |           |
+| **TOTAL**                                                            | **10245** |  **720** | **93%** |           |
 
 60 files skipped due to complete coverage.
 
