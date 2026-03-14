@@ -18,7 +18,7 @@ repos:
       - id: check-added-large-files
         exclude: ^src/xngin/apiserver/testdata/testing_dwh.csv.zst$
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: ed07c6e8889cf83a7245866d1dd007d1f93bf55e  # frozen: 0.9.13
+    rev: a1a56a60ddf7e9ba639fdd9f00f852d63ede4c04  # frozen: 0.10.10
     hooks:
       - id: uv-lock
   - repo: https://github.com/astral-sh/ruff-pre-commit
