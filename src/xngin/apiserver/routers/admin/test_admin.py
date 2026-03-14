@@ -1,5 +1,7 @@
 import base64
 import copy
+import csv
+import io
 import json
 import math
 from datetime import UTC, datetime, timedelta
@@ -1356,16 +1358,24 @@ async def test_lifecycle_with_db(testing_datasource, aclient: AdminAPIClient, ac
     ).data
     assert experiment_analysis.experiment_id == parsed_experiment_id
 
-    # Get assignments for the experiment.
-    assignments = aclient.get_experiment_assignments_for_ui(
-        datasource_id=testing_datasource.ds.id, experiment_id=parsed_experiment_id
-    ).data
-    assert assignments.experiment_id == parsed_experiment_id
-    assert assignments.sample_size == 100
-    assert assignments.balance_check is not None
-    assert len(assignments.assignments) == 100
-    assert {arm.arm_name for arm in assignments.assignments} == {"updated arm", "treatment"}
-    assert {arm.arm_id for arm in assignments.assignments} == {*parsed_arm_ids}
+    # Get assignments for the experiment as CSV.
+    # Use aclient.client directly because generated client does not correctly handle CSV response types.
+    assignments_csv_response = aclient.client.get(
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/assignments/csv"
+    )
+    assert assignments_csv_response.status_code == 200, assignments_csv_response.content
+    assert assignments_csv_response.headers["content-type"].startswith("text/csv")
+
+    csv_reader = csv.reader(io.StringIO(assignments_csv_response.text))
+    csv_header = next(csv_reader)
+    assert csv_header == ["participant_id", "arm_id", "arm_name", "created_at", "gender"]
+
+    assignments_csv_rows = [dict(zip(csv_header, row, strict=True)) for row in csv_reader]
+    assert len(assignments_csv_rows) == 100
+    for row in assignments_csv_rows:
+        datetime.fromisoformat(row["created_at"])
+    assert {row["arm_name"] for row in assignments_csv_rows} == {"updated arm", "treatment"}
+    assert {row["arm_id"] for row in assignments_csv_rows} == set(parsed_arm_ids)
 
     # Unprivileged user attempts to delete the experiment
     with expect_status_code(403):

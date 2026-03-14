@@ -123,7 +123,6 @@ from xngin.apiserver.routers.common_api_types import (
     CreateExperimentResponse,
     ExperimentAnalysisResponse,
     ExperimentsType,
-    GetExperimentAssignmentsResponse,
     GetMetricsResponseElement,
     GetParticipantAssignmentResponse,
     GetStrataResponseElement,
@@ -1675,23 +1674,6 @@ async def get_experiment_for_ui(
         config=await experiments_common.get_experiment_impl(session, experiment),
         participant_type=participants,
     )
-
-
-@router.get("/datasources/{datasource_id}/experiments/{experiment_id}/assignments")
-async def get_experiment_assignments_for_ui(
-    datasource_id: str,
-    experiment_id: str,
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(require_user_from_token)],
-) -> GetExperimentAssignmentsResponse:
-    ds = await get_datasource_or_raise(session, user, datasource_id)
-    experiment = await get_experiment_via_ds_or_raise(
-        session,
-        ds,
-        experiment_id,
-        preload=[tables.Experiment.arm_assignments, tables.Experiment.draws],
-    )
-    return experiments_common.get_experiment_assignments_impl(experiment)
 
 
 @router.get(
