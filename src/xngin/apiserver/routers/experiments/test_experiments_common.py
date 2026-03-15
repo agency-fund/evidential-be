@@ -1499,6 +1499,16 @@ async def test_create_assignment_for_participant_errors(xngin_session, testing_d
         await create_assignment_for_participant(xngin_session, experiment, "p1", None, random_state=66)
 
 
+async def test_create_assignment_rejects_preassigned_even_without_stopped_at(xngin_session, testing_datasource):
+    """Preassigned experiments must never accept new assignments, even if stopped_assignments_at is somehow None."""
+    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
+    experiment.stopped_assignments_at = None
+    await xngin_session.commit()
+
+    result = await create_assignment_for_participant(xngin_session, experiment, "new_id", None, random_state=66)
+    assert result is None
+
+
 async def test_create_assignment_for_participant(xngin_session, testing_datasource):
     preassigned_experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
     # Assert that we won't create new assignments for preassigned experiments
