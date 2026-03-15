@@ -80,7 +80,6 @@ from xngin.apiserver.routers.common_api_types import (
     CreateExperimentRequest,
     CreateExperimentResponse,
     ExperimentAnalysisResponse,
-    GetExperimentAssignmentsResponse,
     ListExperimentsResponse,
     PowerRequest,
     PowerResponse,
@@ -3754,96 +3753,6 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                 default_status=HTTPStatus.OK,
                 models={
                     HTTPStatus.OK: GetExperimentForUiResponse,
-                    HTTPStatus.BAD_REQUEST: HTTPExceptionError,
-                    HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
-                    HTTPStatus.FORBIDDEN: HTTPExceptionError,
-                    HTTPStatus.NOT_FOUND: HTTPExceptionError,
-                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
-                },
-                path_params={
-                    "datasource_id": datasource_id,
-                    "experiment_id": experiment_id,
-                },
-                raise_if_not_default_status=raise_if_not_default_status,
-                client_exts=client_exts,
-            ),
-        )
-
-    @overload
-    def get_experiment_assignments_for_ui(
-        self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        *,
-        raise_if_not_default_status: Literal[True] = True,
-        client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[
-        Literal[HTTPStatus.OK], GetExperimentAssignmentsResponse, type[GetExperimentAssignmentsResponse]
-    ]: ...
-    @overload
-    def get_experiment_assignments_for_ui(
-        self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        *,
-        raise_if_not_default_status: Literal[False],
-        client_exts: AdminAPIClientExtensions | None = None,
-    ) -> (
-        AdminAPIClientResult[
-            Literal[HTTPStatus.OK], GetExperimentAssignmentsResponse, type[GetExperimentAssignmentsResponse]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
-    ): ...
-    def get_experiment_assignments_for_ui(
-        self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        *,
-        raise_if_not_default_status: bool = True,
-        client_exts: AdminAPIClientExtensions | None = None,
-    ) -> (
-        AdminAPIClientResult[
-            Literal[HTTPStatus.OK], GetExperimentAssignmentsResponse, type[GetExperimentAssignmentsResponse]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
-    ):
-        return cast(
-            (
-                AdminAPIClientResult[
-                    Literal[HTTPStatus.OK], GetExperimentAssignmentsResponse, type[GetExperimentAssignmentsResponse]
-                ]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
-            ),
-            self._route_handler(
-                path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments",  # noqa: RUF100,RUF027
-                method=HTTPMethod.GET,
-                default_status=HTTPStatus.OK,
-                models={
-                    HTTPStatus.OK: GetExperimentAssignmentsResponse,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
