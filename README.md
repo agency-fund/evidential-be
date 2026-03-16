@@ -7,7 +7,7 @@
 | src/xngin/apiserver/apikeys.py                                       |       51 |        4 |     92% |     59-63 |
 | src/xngin/apiserver/certs/certs.py                                   |       16 |        9 |     44% |19-23, 37-44 |
 | src/xngin/apiserver/common\_field\_types.py                          |       12 |        1 |     92% |        13 |
-| src/xngin/apiserver/conftest.py                                      |      218 |       12 |     94% |67, 86, 101, 103, 114, 165, 167, 171, 378, 395, 398, 424 |
+| src/xngin/apiserver/conftest.py                                      |      223 |       12 |     95% |67, 86, 101, 103, 114, 165, 167, 171, 383, 400, 403, 429 |
 | src/xngin/apiserver/customlogging.py                                 |       66 |       13 |     80% |25-26, 48-68, 73-74, 102-107 |
 | src/xngin/apiserver/database.py                                      |       46 |        5 |     89% |27, 38, 55, 61, 68 |
 | src/xngin/apiserver/dependencies.py                                  |       12 |        4 |     67% | 12, 23-25 |
@@ -52,6 +52,7 @@
 | src/xngin/apiserver/testing/admin\_api\_client.py                    |      194 |       14 |     93% |160-163, 208, 225-232, 257-261, 317, 1657, 2603, 3911 |
 | src/xngin/apiserver/testing/assertions.py                            |        7 |        1 |     86% |         7 |
 | src/xngin/apiserver/testing/experiments\_api\_client.py              |       96 |       11 |     89% |164, 181-188, 202-203, 213-217, 224, 535 |
+| src/xngin/apiserver/testing/pg\_helpers.py                           |       13 |        2 |     85% |     16-17 |
 | src/xngin/db\_extensions/custom\_functions.py                        |       39 |        3 |     92% |47, 66, 79 |
 | src/xngin/db\_extensions/test\_custom\_functions.py                  |       46 |       12 |     74% |59-68, 73-82 |
 | src/xngin/events/common.py                                           |        7 |        2 |     71% |    14, 21 |
@@ -69,9 +70,9 @@
 | src/xngin/xsecrets/secretservice.py                                  |       60 |        4 |     93% |41-42, 100, 122 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                       |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                           |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                            | **10251** |  **719** | **93%** |           |
+| **TOTAL**                                                            | **10256** |  **721** | **93%** |           |
 
-60 files skipped due to complete coverage.
+59 files skipped due to complete coverage.
 
 
 ## Setup coverage badge
