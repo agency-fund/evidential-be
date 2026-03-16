@@ -94,7 +94,7 @@ def assign_treatments_with_balance(
 async def bulk_insert_arm_assignments(
     xngin_session: AsyncSession,
     experiment_id: str,
-    arm_ids: Sequence[str],
+    arm_ids: list[str],
     participant_type: str,
     participant_id_col: str,
     data: Sequence[RowProtocol],
@@ -105,12 +105,13 @@ async def bulk_insert_arm_assignments(
 
     Args:
         xngin_session: sqlalchemy session
-        experiment_id: Unique identifier for experiment
-        arm_ids: ID of each treatment arm, ordered by arm index
+        experiment_id: Database ID of the experiment
+        arm_ids: Database ID of each treatment arm, ordered by arm index used in assignment.
         participant_type: Type of participant in the experiment
         participant_id_col: Name of column in `data` containing participant identifiers
         data: sqlalchemy result set of Rows representing units to be assigned
-        assignment_result: AssignmentResult containing assignments and balance check results
+        assignment_result: AssignmentResult containing assignments and balance check results. AssignmentResult.arm_pop
+          indexes are parallel to indexes on arm_ids.
         stratum_id_name: If you want to output the strata group ids, provide a non-null name for
                          the column to add to the assignment output as a Strata field.
     """
@@ -155,10 +156,12 @@ async def bulk_insert_arm_assignments(
 
     for i, arm_id in enumerate(arm_ids):
         count = int(assignment_result.arm_pop[i])
-        if count > 0:
-            stmt = pg_insert(tables.ArmStats).values(arm_id=arm_id, population=count)
-            stmt = stmt.on_conflict_do_update(
+        stmt = (
+            pg_insert(tables.ArmStats)
+            .values(arm_id=arm_id, population=count)
+            .on_conflict_do_update(
                 index_elements=[tables.ArmStats.arm_id],
                 set_={"population": tables.ArmStats.population + count},
             )
-            await xngin_session.execute(stmt)
+        )
+        await xngin_session.execute(stmt)
