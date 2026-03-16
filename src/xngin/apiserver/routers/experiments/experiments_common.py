@@ -11,6 +11,7 @@ import pandas as pd
 from fastapi import HTTPException, status
 from pandas import DataFrame
 from sqlalchemy import Select, Table, func, insert, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -886,6 +887,15 @@ async def create_assignment_for_participant(
         if result is None:
             raise ExperimentsAssignmentError(f"Failed to create assignment for participant '{participant_id}'")
         created_at = result[0]
+        stmt = (
+            pg_insert(tables.ArmStats)
+            .values(arm_id=chosen_arm_id, population=1)
+            .on_conflict_do_update(
+                index_elements=[tables.ArmStats.arm_id],
+                set_={"population": tables.ArmStats.population + 1},
+            )
+        )
+        await xngin_session.execute(stmt)
         await xngin_session.commit()
     except IntegrityError as e:
         await xngin_session.rollback()
@@ -1031,10 +1041,14 @@ async def get_assign_summary(
     match experiment_type:
         case ExperimentsType.FREQ_ONLINE | ExperimentsType.FREQ_PREASSIGNED:
             result = await xngin_session.execute(
-                select(tables.ArmAssignment.arm_id, tables.Arm.name, func.count())
-                .join(tables.Arm)
-                .where(tables.ArmAssignment.experiment_id == experiment_id)
-                .group_by(tables.ArmAssignment.arm_id, tables.Arm.name)
+                select(
+                    tables.Arm.id,
+                    tables.Arm.name,
+                    func.coalesce(tables.ArmStats.population, 0),
+                )
+                .outerjoin(tables.ArmStats, tables.Arm.id == tables.ArmStats.arm_id)
+                .where(tables.Arm.experiment_id == experiment_id)
+                .order_by(tables.Arm.position)
             )
         case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
             result = await xngin_session.execute(

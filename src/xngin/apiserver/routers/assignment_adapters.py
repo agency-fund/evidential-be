@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from pandas import DataFrame
 from sqlalchemy import Insert, Table
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver.routers.common_api_types import (
@@ -154,3 +155,13 @@ async def bulk_insert_arm_assignments(
         participants_to_insert.append(participant.to_dict())
 
     await xngin_session.execute(Insert(tables.ArmAssignment), participants_to_insert)
+
+    for i, arm in enumerate(arms):
+        count = int(assignment_result.arm_pop[i])
+        if count > 0:
+            stmt = pg_insert(tables.ArmStats).values(arm_id=arm.arm_id, population=count)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=[tables.ArmStats.arm_id],
+                set_={"population": tables.ArmStats.population + count},
+            )
+            await xngin_session.execute(stmt)

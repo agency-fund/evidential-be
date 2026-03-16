@@ -200,6 +200,7 @@ async def fixture_testing_experiment(xngin_session: AsyncSession, testing_dataso
 
     # Add fake assignments for each arm for real participant ids in our test data.
     arm_ids = [arm.id for arm in experiment.arms]
+    arm_pop = [0] * len(arm_ids)
     # NOTE: id = 0 doesn't exist in the test data, so we'll have 1 missing participant.
     for i in range(10):
         assignment = tables.ArmAssignment(
@@ -210,6 +211,9 @@ async def fixture_testing_experiment(xngin_session: AsyncSession, testing_dataso
             strata=[],
         )
         xngin_session.add(assignment)
+        arm_pop[i % 2] += 1
+    for j, arm_id in enumerate(arm_ids):
+        xngin_session.add(tables.ArmStats(arm_id=arm_id, population=arm_pop[j]))
     await xngin_session.commit()
     await xngin_session.refresh(experiment, ["arm_assignments"])
     return experiment
@@ -2204,6 +2208,7 @@ async def test_analyze_experiment_with_no_assignments_in_one_arm_yet(
             )
         )
     xngin_session.add_all(arm_assignments)
+    xngin_session.add(tables.ArmStats(arm_id=assigned_arm_id, population=expected_num_assignments))
     await xngin_session.commit()
 
     # Test analysis when one arm has no assignments still has the expected ArmAnalysis for each.
@@ -2888,6 +2893,45 @@ async def test_delete_experiment_data_assignments(
         select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
     )
     assert len(list(assignments_after)) == 0
+
+    # Verify arm_stats rows are deleted
+    arm_stats_after = (
+        await xngin_session.scalars(
+            select(tables.ArmStats).where(
+                tables.ArmStats.arm_id.in_(select(tables.Arm.id).where(tables.Arm.experiment_id == experiment_id))
+            )
+        )
+    ).all()
+    assert len(arm_stats_after) == 0
+
+
+async def test_delete_experiment_cascades_arm_stats(
+    xngin_session: AsyncSession, testing_experiment: tables.Experiment, testing_datasource_with_user, client
+):
+    """Test that deleting an entire experiment cascade-deletes its arm_stats rows."""
+    ds_id = testing_datasource_with_user.ds.id
+    experiment_id = testing_experiment.id
+    arm_ids = [arm.id for arm in testing_experiment.arms]
+
+    # Verify arm_stats exist before deletion
+    arm_stats_before = (
+        await xngin_session.scalars(select(tables.ArmStats).where(tables.ArmStats.arm_id.in_(arm_ids)))
+    ).all()
+    assert len(arm_stats_before) > 0
+
+    # Delete the whole experiment
+    client.request(
+        "DELETE",
+        f"/v1/m/datasources/{ds_id}/experiments/{experiment_id}",
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+
+    # Verify arm_stats rows were cascade-deleted
+    xngin_session.expire_all()
+    arm_stats_after = (
+        await xngin_session.scalars(select(tables.ArmStats).where(tables.ArmStats.arm_id.in_(arm_ids)))
+    ).all()
+    assert len(arm_stats_after) == 0
 
 
 @pytest.mark.parametrize(

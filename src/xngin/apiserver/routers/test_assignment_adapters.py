@@ -208,6 +208,7 @@ async def test_bulk_insert_arm_assignments_basic(
         stratum_ids=[int(s.is_male) for s in sample_rows],
         balance_result=None,
         orig_stratum_cols=["gender"],
+        arm_pop=np.bincount([0, 1] * (len(sample_rows) // 2), minlength=len(arms)),
     )
 
     await bulk_insert_arm_assignments(
@@ -220,6 +221,12 @@ async def test_bulk_insert_arm_assignments_basic(
         assignment_result=fake_assignment_results,
         stratum_id_name=stratum_id_name,
     )
+
+    # Verify arm_stats populations were upserted
+    for i, arm in enumerate(arms):
+        arm_stat = await xngin_session.get(tables.ArmStats, arm.arm_id)
+        assert arm_stat is not None
+        assert arm_stat.population == int(fake_assignment_results.arm_pop[i])
 
     # Get assignments for verification
     result = await xngin_session.scalars(select(tables.ArmAssignment))
@@ -354,6 +361,7 @@ async def test_bulk_insert_renders_decimal_and_bool_strata_correctly(
         stratum_ids=[0, 1] * (len(sample_rows) // 2),
         balance_result=None,
         orig_stratum_cols=["income_dec", "is_male"],
+        arm_pop=np.bincount([0, 1] * (len(sample_rows) // 2), minlength=len(arms)),
     )
 
     await bulk_insert_arm_assignments(
@@ -393,6 +401,7 @@ async def test_bulk_insert_with_no_stratification(xngin_session: AsyncSession, t
         stratum_ids=None,
         balance_result=None,
         orig_stratum_cols=[],
+        arm_pop=np.bincount([0, 1] * (len(sample_rows) // 2), minlength=len(arms)),
     )
 
     await bulk_insert_arm_assignments(
@@ -436,6 +445,7 @@ async def test_bulk_insert_with_no_valid_strata(xngin_session: AsyncSession, tes
         stratum_ids=None,
         balance_result=None,
         orig_stratum_cols=["single_value"],
+        arm_pop=np.bincount([0, 1] * (len(sample_rows) // 2), minlength=len(arms)),
     )
 
     await bulk_insert_arm_assignments(
@@ -473,6 +483,7 @@ async def test_bulk_insert_renders_missing_strata_values_as_na(
         stratum_ids=None,
         balance_result=None,
         orig_stratum_cols=["nullable_value"],
+        arm_pop=np.bincount([0, 1] * (len(rows) // 2), minlength=len(arms)),
     )
 
     await bulk_insert_arm_assignments(
