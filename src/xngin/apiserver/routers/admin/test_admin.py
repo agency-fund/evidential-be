@@ -3176,6 +3176,8 @@ async def test_create_experiment_with_table_name_and_primary_key(
     ds_id = testing_datasource_with_user.ds.id
 
     request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
+    request_json["design_spec"]["participant_type"] = "ignored_when_table_name_is_set"
+    initial_participant_count = len(testing_datasource_with_user.ds.get_config().participants)
     experiment_request = CreateExperimentRequest.model_validate({
         **request_json,
         "table_name": "dwh",  # The actual table name in test DWH
@@ -3188,22 +3190,14 @@ async def test_create_experiment_with_table_name_and_primary_key(
         random_state=42,
     ).data
 
-    # Verify auto-generated participant_type name
-    assert created.design_spec.participant_type.startswith("__dwh_")
-    assert len(created.design_spec.participant_type) == len("__dwh_") + 8
+    # Verify participant_type is derived deterministically from the inspected table.
+    assert created.design_spec.participant_type == "dwh"
 
-    # Verify participant type was persisted and is hidden
+    # Verify no participant type was persisted to datasource config.
     ds = await xngin_session.get_one(tables.Datasource, ds_id)
     await xngin_session.refresh(ds)
     config = ds.get_config()
-    pt = config.find_participants(created.design_spec.participant_type)
-    assert pt is not None
-    assert pt.hidden is True
-
-    # Verify hidden participant type not in list
-    list_response = aclient.list_participant_types(datasource_id=ds_id).data
-    participant_names = [p.participant_type for p in list_response.items]
-    assert created.design_spec.participant_type not in participant_names
+    assert len(config.participants) == initial_participant_count
 
     # Verify datasource_table is set to the requested table name
     experiment = await xngin_session.get_one(tables.Experiment, created.experiment_id)
@@ -3237,6 +3231,7 @@ async def test_create_preassigned_experiment_with_table_name_and_primary_key(
     ds_id = testing_datasource_with_user.ds.id
 
     request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_PREASSIGNED)
+    request_json["design_spec"]["participant_type"] = "ignored_when_table_name_is_set"
     experiment_request = CreateExperimentRequest.model_validate({
         **request_json,
         "table_name": "dwh",
@@ -3250,7 +3245,7 @@ async def test_create_preassigned_experiment_with_table_name_and_primary_key(
         random_state=42,
     ).data
 
-    assert created.design_spec.participant_type.startswith("__dwh_")
+    assert created.design_spec.participant_type == "dwh"
     assert created.assign_summary is not None
     assert created.assign_summary.sample_size == 100
 

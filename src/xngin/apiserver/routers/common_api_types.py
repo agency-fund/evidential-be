@@ -1276,7 +1276,7 @@ class CreateExperimentRequest(ApiBaseModel):
         Field(
             default=None,
             description="Optional table name for creating experiments without a pre-registered participant type. "
-            "When provided with primary_key, synthesizes a participant schema and persists it. "
+            "When provided with primary_key, inspects the datasource table to derive experiment field metadata. "
             "The design_spec.participant_type field is ignored when this is set.",
         ),
     ] = None
