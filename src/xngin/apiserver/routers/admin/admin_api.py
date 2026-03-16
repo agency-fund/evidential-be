@@ -22,7 +22,6 @@ from fastapi import (
     Response,
     status,
 )
-from fastapi.responses import StreamingResponse
 from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy import delete, func, select
@@ -133,8 +132,9 @@ from xngin.apiserver.routers.common_api_types import (
     PowerResponse,
 )
 from xngin.apiserver.routers.common_enums import ExperimentState, PreloadMethod
-from xngin.apiserver.routers.experiments import experiments_common
+from xngin.apiserver.routers.experiments import experiments_common, experiments_common_csv
 from xngin.apiserver.routers.experiments.experiments_common import AbandonExperimentResult
+from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
 from xngin.apiserver.settings import (
     ParticipantsDef,
     RemoteDatabaseConfig,
@@ -1736,22 +1736,18 @@ async def get_experiment_assignments_for_ui(
         "Export experiment assignments as CSV file; BalanceCheck not included. "
         "csv header form: participant_id,arm_id,arm_name,strata_name1,strata_name2,..."
     ),
+    response_class=CsvStreamingResponse,
 )
 async def get_experiment_assignments_as_csv_for_ui(
     datasource_id: str,
     experiment_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
-) -> StreamingResponse:
+) -> CsvStreamingResponse:
     # TODO: update for bandits
     ds = await get_datasource_or_raise(session, user, datasource_id)
-    experiment = await get_experiment_via_ds_or_raise(
-        session,
-        ds,
-        experiment_id,
-        preload=[tables.Experiment.arm_assignments],
-    )
-    return await experiments_common.get_experiment_assignments_as_csv_impl(experiment)
+    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    return await experiments_common_csv.get_experiment_assignments_as_csv_impl(session, experiment)
 
 
 @router.get(

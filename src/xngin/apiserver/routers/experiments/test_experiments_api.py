@@ -152,7 +152,7 @@ async def test_get_experiment_assignments_as_csv_success(xngin_session, testing_
         response.headers["content-disposition"] == f'attachment; filename="experiment_{experiment.id}_assignments.csv"'
     )
     csv_lines = response.text.strip().splitlines()
-    assert csv_lines[0] == "participant_id,arm_id,arm_name,created_at"
+    assert csv_lines[0] == "participant_id,arm_id,arm_name,created_at,gender"
     assert len(csv_lines) == 11
     assert {line.split(",", 1)[0] for line in csv_lines[1:]} == {f"participant_{i}" for i in range(10)}
     assert all(any(arm.id in line for arm in experiment.arms) for line in csv_lines[1:])

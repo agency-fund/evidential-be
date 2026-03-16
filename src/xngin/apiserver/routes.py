@@ -1,10 +1,13 @@
-from fastapi import FastAPI
+from typing import TYPE_CHECKING
 
 from xngin.apiserver.flags import PUBLISH_ALL_DOCS
 from xngin.apiserver.routers import healthchecks_api
 from xngin.apiserver.routers.admin import admin_api
 from xngin.apiserver.routers.auth import auth_api
 from xngin.apiserver.routers.experiments import experiments_api
+
+if TYPE_CHECKING:
+    from fastapi import FastAPI
 
 
 def register(app: FastAPI):
