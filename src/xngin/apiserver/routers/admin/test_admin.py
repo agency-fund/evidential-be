@@ -1,5 +1,7 @@
 import base64
 import copy
+import csv
+import io
 import json
 import math
 from datetime import UTC, datetime, timedelta
@@ -17,9 +19,7 @@ from xngin.apiserver.conftest import delete_seeded_users, expect_status_code
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.dwh.inspections import ColumnDeleted, Drift, FieldChangedType
-from xngin.apiserver.routers.admin.admin_api_converters import (
-    CREDENTIALS_UNAVAILABLE_MESSAGE,
-)
+from xngin.apiserver.routers.admin.admin_api_converters import CREDENTIALS_UNAVAILABLE_MESSAGE
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddMemberToOrganizationRequest,
     AddWebhookToOrganizationRequest,
@@ -90,6 +90,7 @@ from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.assertions import assert_dates_equal
+from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 from xngin.stats.bandit_sampling import update_arm
 
@@ -1356,16 +1357,24 @@ async def test_lifecycle_with_db(testing_datasource, aclient: AdminAPIClient, ac
     ).data
     assert experiment_analysis.experiment_id == parsed_experiment_id
 
-    # Get assignments for the experiment.
-    assignments = aclient.get_experiment_assignments_for_ui(
-        datasource_id=testing_datasource.ds.id, experiment_id=parsed_experiment_id
-    ).data
-    assert assignments.experiment_id == parsed_experiment_id
-    assert assignments.sample_size == 100
-    assert assignments.balance_check is not None
-    assert len(assignments.assignments) == 100
-    assert {arm.arm_name for arm in assignments.assignments} == {"updated arm", "treatment"}
-    assert {arm.arm_id for arm in assignments.assignments} == {*parsed_arm_ids}
+    # Get assignments for the experiment as CSV.
+    # Use aclient.client directly because generated client does not correctly handle CSV response types.
+    assignments_csv_response = aclient.client.get(
+        f"/v1/m/datasources/{testing_datasource.ds.id}/experiments/{parsed_experiment_id}/assignments/csv"
+    )
+    assert assignments_csv_response.status_code == 200, assignments_csv_response.content
+    assert assignments_csv_response.headers["content-type"].startswith("text/csv")
+
+    csv_reader = csv.reader(io.StringIO(assignments_csv_response.text))
+    csv_header = next(csv_reader)
+    assert csv_header == ["participant_id", "arm_id", "arm_name", "created_at", "gender"]
+
+    assignments_csv_rows = [dict(zip(csv_header, row, strict=True)) for row in csv_reader]
+    assert len(assignments_csv_rows) == 100
+    for row in assignments_csv_rows:
+        datetime.fromisoformat(row["created_at"])
+    assert {row["arm_name"] for row in assignments_csv_rows} == {"updated arm", "treatment"}
+    assert {row["arm_id"] for row in assignments_csv_rows} == set(parsed_arm_ids)
 
     # Unprivileged user attempts to delete the experiment
     with expect_status_code(403):
@@ -1916,128 +1925,6 @@ async def test_update_arm_invalid(xngin_session, testing_experiment, aclient: Ad
         )
 
 
-def test_get_experiment_assignment_for_preassigned_participant(testing_experiment, aclient: AdminAPIClient):
-    datasource_id = testing_experiment.datasource_id
-    experiment_id = testing_experiment.id
-    assignments = testing_experiment.arm_assignments
-
-    assignment_response = aclient.get_experiment_assignment_for_participant(
-        datasource_id=datasource_id, experiment_id=experiment_id, participant_id="unassigned_id"
-    ).data
-    assert assignment_response.experiment_id == experiment_id
-    assert assignment_response.participant_id == "unassigned_id"
-    assert assignment_response.assignment is None
-
-    assignment_response = aclient.get_experiment_assignment_for_participant(
-        datasource_id=datasource_id, experiment_id=experiment_id, participant_id=assignments[0].participant_id
-    ).data
-    assert assignment_response.experiment_id == experiment_id
-    assert assignment_response.participant_id == assignments[0].participant_id
-    assert assignment_response.assignment is not None
-
-
-async def test_get_experiment_assignment_for_online_participant(
-    xngin_session: AsyncSession, testing_datasource_with_user, aclient: AdminAPIClient
-):
-    datasource_id = testing_datasource_with_user.ds.id
-    experiment_resp = await make_freq_online_experiment(datasource_id, aclient)
-    experiment_id = experiment_resp.config.experiment_id
-    experiment_arms = experiment_resp.config.design_spec.arms
-
-    # Check for an assignment that doesn't exist, but don't create it.
-    assignment_response = aclient.get_experiment_assignment_for_participant(
-        datasource_id=datasource_id, experiment_id=experiment_id, participant_id="new_id", create_if_none=False
-    ).data
-    assert assignment_response.experiment_id == experiment_id
-    assert assignment_response.participant_id == "new_id"
-    assert assignment_response.assignment is None
-
-    # Create a new participant assignment.
-    assignment_response = aclient.get_experiment_assignment_for_participant(
-        datasource_id=datasource_id, experiment_id=experiment_id, participant_id="new_id"
-    ).data
-    assert assignment_response.experiment_id == experiment_id
-    assert assignment_response.participant_id == "new_id"
-    assert assignment_response.assignment is not None
-    assert str(assignment_response.assignment.arm_id) in {arm.arm_id for arm in experiment_arms}
-
-    # Get back the same assignment.
-    assignment_response2 = aclient.get_experiment_assignment_for_participant(
-        datasource_id=datasource_id, experiment_id=experiment_id, participant_id="new_id"
-    ).data
-    assert assignment_response2 == assignment_response
-
-    # Make sure there's only one db entry.
-    scalars = await xngin_session.scalars(
-        select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
-    )
-    assignment = scalars.one()
-    assert assignment.participant_id == "new_id"
-    assert assignment.arm_id == str(assignment_response.assignment.arm_id)
-
-
-async def test_get_mab_experiment_assignment_for_online_participant(
-    xngin_session: AsyncSession, testing_datasource_with_user, aclient: AdminAPIClient
-):
-    test_experiment = await insert_experiment_and_arms(
-        xngin_session, testing_datasource_with_user.ds, ExperimentsType.MAB_ONLINE
-    )
-    datasource_id = test_experiment.datasource_id
-    experiment_id = test_experiment.id
-
-    # Check for an assignment that doesn't exist, but don't create it.
-    assignment_response = aclient.get_experiment_assignment_for_participant(
-        datasource_id=datasource_id, experiment_id=experiment_id, participant_id="new_id", create_if_none=False
-    ).data
-    assert assignment_response.experiment_id == experiment_id
-    assert assignment_response.participant_id == "new_id"
-    assert assignment_response.assignment is None
-
-    # Create a new participant assignment.
-    assignment_response = aclient.get_experiment_assignment_for_participant(
-        datasource_id=datasource_id, experiment_id=experiment_id, participant_id="new_id"
-    ).data
-    assert assignment_response.experiment_id == experiment_id
-    assert assignment_response.participant_id == "new_id"
-    assert assignment_response.assignment is not None
-    assert assignment_response.assignment.observed_at is None
-    assert assignment_response.assignment.outcome is None
-    assert str(assignment_response.assignment.arm_id) in {arm.id for arm in test_experiment.arms}
-
-    # Get back the same assignment.
-    assignment_response2 = aclient.get_experiment_assignment_for_participant(
-        datasource_id=datasource_id, experiment_id=experiment_id, participant_id="new_id"
-    ).data
-    assert assignment_response2 == assignment_response
-
-    # Make sure there's only one db entry.
-    scalars = await xngin_session.scalars(select(tables.Draw).where(tables.Draw.experiment_id == experiment_id))
-    assignment = scalars.one()
-    assert assignment.participant_id == "new_id"
-    assert assignment.arm_id == str(assignment_response.assignment.arm_id)
-
-
-async def test_get_experiment_assignment_for_online_participant_past_end_date(
-    testing_datasource_with_user, aclient: AdminAPIClient
-):
-    datasource_id = testing_datasource_with_user.ds.id
-    end_date = datetime.now(UTC) - timedelta(days=1)
-    experiment_id = (await make_freq_online_experiment(datasource_id, aclient, end_date=end_date)).config.experiment_id
-
-    # Verify no new assignment is created for the ended experiment.
-    assignment_response = aclient.get_experiment_assignment_for_participant(
-        datasource_id=datasource_id, experiment_id=experiment_id, participant_id="new_id"
-    ).data
-    assert assignment_response.experiment_id == experiment_id
-    assert assignment_response.participant_id == "new_id"
-    assert assignment_response.assignment is None, assignment_response.model_dump_json()
-
-    # Verify that the experiment state was updated.
-    experiment_resp = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=experiment_id).data
-    assert experiment_resp.config.stopped_assignments_at is not None
-    assert experiment_resp.config.stopped_assignments_reason == StopAssignmentReason.END_DATE
-
-
 def test_freq_experiments_analyze(testing_experiment, aclient: AdminAPIClient):
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
@@ -2144,15 +2031,12 @@ async def test_analyze_experiment_with_no_participants(testing_datasource_with_u
 
 
 async def test_analyze_experiment_whose_assignments_have_no_dwh_data(
-    testing_datasource_with_user, aclient: AdminAPIClient
+    testing_datasource_with_user, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     datasource_id = testing_datasource_with_user.ds.id
     experiment_id = (await make_freq_online_experiment(datasource_id, aclient)).config.experiment_id
 
-    # Create a new participant assignment for an id missing in the dwh.
-    aclient.get_experiment_assignment_for_participant(
-        datasource_id=datasource_id, experiment_id=experiment_id, participant_id="0"
-    )
+    eclient.get_assignment(api_key=testing_datasource_with_user.key, experiment_id=experiment_id, participant_id="0")
 
     with expect_status_code(
         422,

@@ -123,9 +123,7 @@ from xngin.apiserver.routers.common_api_types import (
     CreateExperimentResponse,
     ExperimentAnalysisResponse,
     ExperimentsType,
-    GetExperimentAssignmentsResponse,
     GetMetricsResponseElement,
-    GetParticipantAssignmentResponse,
     GetStrataResponseElement,
     ListExperimentsResponse,
     PowerRequest,
@@ -1677,23 +1675,6 @@ async def get_experiment_for_ui(
     )
 
 
-@router.get("/datasources/{datasource_id}/experiments/{experiment_id}/assignments")
-async def get_experiment_assignments_for_ui(
-    datasource_id: str,
-    experiment_id: str,
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(require_user_from_token)],
-) -> GetExperimentAssignmentsResponse:
-    ds = await get_datasource_or_raise(session, user, datasource_id)
-    experiment = await get_experiment_via_ds_or_raise(
-        session,
-        ds,
-        experiment_id,
-        preload=[tables.Experiment.arm_assignments, tables.Experiment.draws],
-    )
-    return experiments_common.get_experiment_assignments_impl(experiment)
-
-
 @router.get(
     "/datasources/{datasource_id}/experiments/{experiment_id}/assignments/csv",
     summary=(
@@ -1712,50 +1693,6 @@ async def get_experiment_assignments_as_csv_for_ui(
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
     return await experiments_common_csv.get_experiment_assignments_as_csv_impl(session, experiment)
-
-
-@router.get(
-    "/datasources/{datasource_id}/experiments/{experiment_id}/assignments/{participant_id}",
-    description="""Get the assignment for a specific participant, excluding strata if any.
-    For 'preassigned' experiments, the participant's Assignment is returned if it exists.
-    For 'online', returns the assignment if it exists, else generates an assignment.""",
-)
-async def get_experiment_assignment_for_participant(
-    datasource_id: str,
-    experiment_id: str,
-    participant_id: str,
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(require_user_from_token)],
-    create_if_none: Annotated[
-        bool,
-        Query(
-            description=(
-                "Create an assignment if none exists. Does nothing for preassigned experiments. "
-                "Override if you just want to check if an assignment exists."
-            )
-        ),
-    ] = True,
-    random_state: Annotated[
-        int | None,
-        Query(
-            description="Specify a random seed for reproducibility.",
-            include_in_schema=False,
-        ),
-    ] = None,
-) -> GetParticipantAssignmentResponse:
-    """Get the assignment for a specific participant in an experiment."""
-    # Validate the datasource and experiment exist
-    ds = await get_datasource_or_raise(session, user, datasource_id)
-    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
-
-    return await experiments_common.get_or_create_assignment_for_participant(
-        xngin_session=session,
-        experiment=experiment,
-        participant_id=participant_id,
-        create_if_none=create_if_none,
-        properties=None,
-        random_state=random_state,
-    )
 
 
 @router.patch("/datasources/{datasource_id}/experiments/{experiment_id}", status_code=status.HTTP_204_NO_CONTENT)
