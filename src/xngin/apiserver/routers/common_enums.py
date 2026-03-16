@@ -8,6 +8,13 @@ from loguru import logger
 from sqlalchemy.dialects.postgresql.json import JSON, JSONB
 
 
+class PreloadMethod(enum.Enum):
+    """Methods we'll support for preloading a SQLAlchemy relationship."""
+
+    SELECTINLOAD = enum.auto()
+    JOINLOAD = enum.auto()
+
+
 class ExperimentState(enum.StrEnum):
     """
     Experiment lifecycle states.

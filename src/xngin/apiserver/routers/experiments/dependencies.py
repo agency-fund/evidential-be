@@ -10,6 +10,7 @@ from starlette import status
 from xngin.apiserver import apikeys, constants
 from xngin.apiserver.apikeys import hash_key_or_raise, require_valid_api_key
 from xngin.apiserver.dependencies import CannotFindDatasourceError, xngin_db_session
+from xngin.apiserver.routers.common_enums import PreloadMethod
 from xngin.apiserver.settings import (
     Datasource,
 )
@@ -71,14 +72,22 @@ class ExperimentDependency:
     Parameterizable db Experiment dependency (instances are callable) for endpoints that require API keys.
 
     When constructing the dependency, you can provide a list of experiment attributes to preload to
-    avoid N+1 queries.  If a *list* is provided as an item in preload, we treat it as pre-loading a
-    set of nested relationships.
+    avoid N+1 queries.
+
+    You can alternatively provide a list of list-of-tuples, where each tuple contains a
+    PreloadMethod and a QueryableAttribute. We treat each list-of-tuples as pre-loading a nested
+    relationship using the desired preloading method for each level.
 
     See __call__ for additional injected parameters when called as a dependency.
     """
 
-    def __init__(self, preload: list[QueryableAttribute | list[QueryableAttribute]] | None = None) -> None:
+    def __init__(
+        self,
+        preload: list[QueryableAttribute] | None = None,
+        nested_preload: list[list[tuple[PreloadMethod, QueryableAttribute]]] | None = None,
+    ) -> None:
         self.preload = preload
+        self.nested_preload = nested_preload
 
     async def __call__(
         self,
@@ -115,17 +124,22 @@ class ExperimentDependency:
                 tables.ApiKey.key == key_hash,
             )
         )
+        options = []
         if self.preload:
-            options = []
-            for f in self.preload:
-                # If a list is provided, treat it as loading a nested relationship.
-                if isinstance(f, list) and f:
-                    nested_load = selectinload(f[0])
-                    for attr in f[1:]:
-                        nested_load = nested_load.selectinload(attr)
+            options.extend([selectinload(f) for f in self.preload])
+        if self.nested_preload:
+            for nested in self.nested_preload:
+                nested_load = None
+                for method, attr in nested:
+                    match method:
+                        case PreloadMethod.SELECTINLOAD:
+                            nested_load = selectinload(attr) if nested_load is None else nested_load.selectinload(attr)
+                        case PreloadMethod.JOINLOAD:
+                            nested_load = joinedload(attr) if nested_load is None else nested_load.joinedload(attr)
+                if nested_load is not None:
                     options.append(nested_load)
-                elif isinstance(f, QueryableAttribute):
-                    options.append(selectinload(f))
+
+        if options:
             query = query.options(*options)
         experiment = (await xngin_session.scalars(query)).unique().one_or_none()
 
@@ -146,8 +160,13 @@ experiment_dependency = ExperimentDependency()
 experiment_and_datasource_dependency = ExperimentDependency(
     preload=[
         tables.Experiment.datasource,
-        [tables.Experiment.experiment_fields, tables.ExperimentField.experiment_filters],
-    ]
+    ],
+    nested_preload=[
+        [
+            (PreloadMethod.SELECTINLOAD, tables.Experiment.experiment_fields),
+            (PreloadMethod.JOINLOAD, tables.ExperimentField.experiment_filters),
+        ],
+    ],
 )
 
 # Use this version when you also want contexts for assignment responses.
@@ -158,8 +177,13 @@ experiment_response_dependency = ExperimentDependency(
     preload=[
         tables.Experiment.webhooks,
         tables.Experiment.contexts,
-        [tables.Experiment.experiment_fields, tables.ExperimentField.experiment_filters],
-    ]
+    ],
+    nested_preload=[
+        [
+            (PreloadMethod.SELECTINLOAD, tables.Experiment.experiment_fields),
+            (PreloadMethod.JOINLOAD, tables.ExperimentField.experiment_filters),
+        ],
+    ],
 )
 
 # This version is used with processing assignments, e.g. exporting them.

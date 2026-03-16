@@ -27,7 +27,7 @@ from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import QueryableAttribute, selectinload
+from sqlalchemy.orm import QueryableAttribute, joinedload, selectinload
 
 from xngin.apiserver import constants, flags
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
@@ -132,7 +132,7 @@ from xngin.apiserver.routers.common_api_types import (
     PowerRequest,
     PowerResponse,
 )
-from xngin.apiserver.routers.common_enums import ExperimentState
+from xngin.apiserver.routers.common_enums import ExperimentState, PreloadMethod
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.routers.experiments.experiments_common import AbandonExperimentResult
 from xngin.apiserver.settings import (
@@ -297,7 +297,8 @@ async def get_experiment_via_ds_or_raise(
     ds: tables.Datasource,
     experiment_id: str,
     *,
-    preload: list[QueryableAttribute | list[QueryableAttribute]] | None = None,
+    preload: list[QueryableAttribute] | None = None,
+    nested_preload: list[list[tuple[PreloadMethod, QueryableAttribute]]] | None = None,
 ) -> tables.Experiment:
     """Reads the requested experiment (related to the given datasource) from the database.
 
@@ -311,18 +312,23 @@ async def get_experiment_via_ds_or_raise(
         .where(tables.Experiment.datasource_id == ds.id)
         .where(tables.Experiment.id == experiment_id)
     )
-    if preload:
-        options = []
-        for f in preload:
-            # If a list is provided, treat it as loading a nested relationship.
-            if isinstance(f, list) and f:
-                nested_load = selectinload(f[0])
-                for attr in f[1:]:
-                    nested_load = nested_load.selectinload(attr)
-                options.append(nested_load)
-            elif isinstance(f, QueryableAttribute):
-                options.append(selectinload(f))
 
+    options = []
+    if preload:
+        options.extend([selectinload(f) for f in preload])
+    if nested_preload:
+        for nested in nested_preload:
+            nested_load = None
+            for method, attr in nested:
+                match method:
+                    case PreloadMethod.SELECTINLOAD:
+                        nested_load = selectinload(attr) if nested_load is None else nested_load.selectinload(attr)
+                    case PreloadMethod.JOINLOAD:
+                        nested_load = joinedload(attr) if nested_load is None else nested_load.joinedload(attr)
+            if nested_load is not None:
+                options.append(nested_load)
+
+    if options:
         stmt = stmt.options(*options)
     result = await session.execute(stmt)
     exp = result.scalar_one_or_none()
@@ -1547,7 +1553,12 @@ async def analyze_experiment(
             tables.Experiment.arm_assignments,
             tables.Experiment.draws,
             tables.Experiment.contexts,
-            [tables.Experiment.experiment_fields, tables.ExperimentField.experiment_filters],
+        ],
+        nested_preload=[
+            [
+                (PreloadMethod.SELECTINLOAD, tables.Experiment.experiment_fields),
+                (PreloadMethod.JOINLOAD, tables.ExperimentField.experiment_filters),
+            ]
         ],
     )
 
@@ -1685,9 +1696,14 @@ async def get_experiment_for_ui(
         ds,
         experiment_id,
         preload=[
-            [tables.Experiment.experiment_fields, tables.ExperimentField.experiment_filters],
             tables.Experiment.webhooks,
             tables.Experiment.contexts,
+        ],
+        nested_preload=[
+            [
+                (PreloadMethod.SELECTINLOAD, tables.Experiment.experiment_fields),
+                (PreloadMethod.JOINLOAD, tables.ExperimentField.experiment_filters),
+            ]
         ],
     )
     participants = ds.get_config().find_participants_or_none(experiment.participant_type)
