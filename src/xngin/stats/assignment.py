@@ -21,14 +21,15 @@ STOCHATREAT_TREAT_NAME = "treat"
 class AssignmentResult:
     """Result of treatment assignment and balance checking."""
 
-    # Arm index assigned to each participant, indexed by participant ordinal.
+    # Arm index assigned to each participant, indexed by participant.
     treatment_ids: list[int]
-    # Stratum index for each participant, indexed by participant ordinal.
+
+    # arm_pop[i] is the count of participants assigned to arm i.
+    arm_pop: npt.NDArray[np.intp]
+
     stratum_ids: list[int] | None
     balance_result: BalanceResult | None
     orig_stratum_cols: list[str]
-    # arm_pop[i] is the count of participants assigned to arm i.
-    arm_pop: npt.NDArray[np.intp]
 
 
 def assign_treatment_and_check_balance(
