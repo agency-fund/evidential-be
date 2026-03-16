@@ -12,7 +12,6 @@ from typing import Any, Self
 import numpy as np
 from pydantic import TypeAdapter
 
-from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.routers import common_api_types as capi
 from xngin.apiserver.routers.common_enums import (
     DataType,
@@ -127,26 +126,23 @@ class ExperimentStorageConverter:
     def set_design_spec_fields(
         self,
         design_spec: capi.DesignSpec,
-        participants_schema: ParticipantsSchema | None = None,
+        field_type_map: dict[str, DataType] | None = None,
+        unique_id_name: str | None = None,
         set_deprecated_design_spec_fields: bool = True,
     ) -> Self:
         """Saves the components of a DesignSpec to the experiment.
 
         Args:
             design_spec: The design specification to save.
-            participants_schema: Optional schema to resolve data types for fields.
+            field_type_map: Optional field name to data type mapping.
+            unique_id_name: Optional unique ID field name.
         """
         if not isinstance(design_spec, capi.BaseFrequentistDesignSpec):
             self.experiment.design_spec_fields = None
             self.experiment.experiment_fields = []
             return self
 
-        # Build field name to data type mapping from participants schema
-        field_type_map: dict[str, DataType] = {}
-        unique_id_name = None
-        if participants_schema:
-            field_type_map = {field.field_name: field.data_type for field in participants_schema.fields}
-            unique_id_name = participants_schema.get_unique_id_field()
+        field_type_map = field_type_map or {}
 
         # Clear existing design fields
         self.experiment.experiment_fields = []
@@ -478,7 +474,9 @@ class ExperimentStorageConverter:
         n_trials: int = 0,
         decision: str = "",
         impact: str = "",
-        participants_schema: ParticipantsSchema | None = None,
+        table_name: str | None = None,
+        field_type_map: dict[str, DataType] | None = None,
+        unique_id_name: str | None = None,
     ) -> Self:
         """Init experiment with arms from components. Get the final object with get_experiment().
 
@@ -490,7 +488,7 @@ class ExperimentStorageConverter:
             datasource_id=datasource_id,
             experiment_type=experiment_type,
             participant_type=design_spec.participant_type,
-            datasource_table=participants_schema.table_name if participants_schema else None,
+            datasource_table=table_name,
             name=design_spec.experiment_name,
             description=design_spec.description,
             design_url=str(design_spec.design_url) if design_spec.design_url else None,
@@ -523,7 +521,7 @@ class ExperimentStorageConverter:
                 ]
                 return (
                     cls(experiment)
-                    .set_design_spec_fields(design_spec, participants_schema)
+                    .set_design_spec_fields(design_spec, field_type_map, unique_id_name)
                     .set_balance_check(balance_check)
                     .set_power_response(power_analyses)
                 )

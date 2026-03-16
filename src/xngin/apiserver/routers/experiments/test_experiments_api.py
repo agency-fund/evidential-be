@@ -18,6 +18,7 @@ from xngin.apiserver.routers.common_api_types import (
     UpdateBanditArmOutcomeRequest,
 )
 from xngin.apiserver.routers.common_enums import ExperimentState, Relation, StopAssignmentReason
+from xngin.apiserver.routers.experiments.experiments_common import extract_participant_field_info
 from xngin.apiserver.routers.experiments.test_experiments_common import (
     insert_experiment_and_arms,
     make_insertable_experiment,
@@ -450,8 +451,11 @@ async def test_assign_with_filters_participant_passes_filters(xngin_session, tes
     # Get participants schema from datasource for data type resolution
     ds_config = testing_datasource.ds.get_config()
     participants_schema = ds_config.find_participants(design_spec.participant_type)
+    field_type_map, unique_id_name, _table_name = extract_participant_field_info(participants_schema)
     experiment = (
-        ExperimentStorageConverter(experiment).set_design_spec_fields(design_spec, participants_schema).get_experiment()
+        ExperimentStorageConverter(experiment)
+        .set_design_spec_fields(design_spec, field_type_map=field_type_map, unique_id_name=unique_id_name)
+        .get_experiment()
     )
     xngin_session.add(experiment)
     await xngin_session.commit()
@@ -476,9 +480,10 @@ async def test_assign_with_filters_ignores_missing_content_type_header(xngin_ses
     design_spec = TypeAdapter(OnlineFrequentistExperimentSpec).validate_python(design_spec)
     design_spec.filters = [Filter(field_name="current_income", relation=Relation.BETWEEN, value=[1000, 5000])]
     participants_schema = testing_datasource.ds.get_config().find_participants(design_spec.participant_type)
+    field_type_map, unique_id_name, _table_name = extract_participant_field_info(participants_schema)
     experiment = (
         ExperimentStorageConverter(experiment)
-        .set_design_spec_fields(design_spec, participants_schema=participants_schema)
+        .set_design_spec_fields(design_spec, field_type_map=field_type_map, unique_id_name=unique_id_name)
         .get_experiment()
     )
     xngin_session.add(experiment)

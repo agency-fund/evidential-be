@@ -45,6 +45,7 @@ from xngin.apiserver.routers.common_api_types import (
     Strata,
 )
 from xngin.apiserver.routers.common_enums import (
+    DataType,
     ExperimentState,
     ExperimentsType,
     LikelihoodTypes,
@@ -106,6 +107,17 @@ def get_freq_experiment_configs_or_raise(
             validate_filter_value(filter_.field_name, value, field_type)
 
     return ds_config, participants_cfg
+
+
+def extract_participant_field_info(
+    participants_schema: ParticipantsSchema,
+) -> tuple[dict[str, DataType], str | None, str]:
+    """Extract the field metadata experiment creation needs from a participant schema."""
+    return (
+        {field.field_name: field.data_type for field in participants_schema.fields},
+        participants_schema.get_unique_id_field(),
+        participants_schema.table_name,
+    )
 
 
 def synthesize_participants_def(
@@ -190,13 +202,17 @@ async def create_experiment_impl(
             if not isinstance(request.design_spec, BaseFrequentistDesignSpec):
                 raise TypeError("design_spec expected to be a BaseFrequentistDesignSpec")
             ds_config, participants_cfg = get_freq_experiment_configs_or_raise(datasource, request.design_spec)
+            field_type_map, participants_unique_id_field, table_name = extract_participant_field_info(participants_cfg)
 
+            if participants_unique_id_field is None:
+                # Should not actually ever happen as both ParticipantsSchema and
+                # CreateExperimentRequest validate that there is a unique ID | primary key.
+                raise LateValidationError("Preassigned experiments must have a unique ID field.")
             if desired_n is None:
                 raise LateValidationError("Preassigned experiments must have a desired_n.")
 
             # Get participants and their schema info from the client dwh.
             # Only fetch the columns we might need for stratified random assignment.
-            participants_unique_id_field = participants_cfg.get_unique_id_field()
             metric_names = [m.field_name for m in request.design_spec.metrics]
             strata_names = [s.field_name for s in request.design_spec.strata]
             stratum_cols = strata_names + metric_names if stratify_on_metrics else strata_names
@@ -224,7 +240,9 @@ async def create_experiment_impl(
                 xngin_session=xngin_session,
                 stratify_on_metrics=stratify_on_metrics,
                 validated_webhooks=validated_webhooks,
-                participants_schema=participants_cfg,
+                table_name=table_name,
+                field_type_map=field_type_map,
+                unique_id_name=participants_unique_id_field,
             )
 
         case ExperimentsType.FREQ_ONLINE:
@@ -233,6 +251,7 @@ async def create_experiment_impl(
             if not isinstance(request.design_spec, BaseFrequentistDesignSpec):
                 raise TypeError("design_spec expected to be a BaseFrequentistDesignSpec")
             _validated_ds_cfg, validated_p_cfg = get_freq_experiment_configs_or_raise(datasource, request.design_spec)
+            field_type_map, unique_id_name, table_name = extract_participant_field_info(validated_p_cfg)
 
             return await create_freq_online_experiment_impl(
                 request=request,
@@ -240,7 +259,9 @@ async def create_experiment_impl(
                 organization_id=datasource.organization_id,
                 xngin_session=xngin_session,
                 validated_webhooks=validated_webhooks,
-                participants_schema=validated_p_cfg,
+                table_name=table_name,
+                field_type_map=field_type_map,
+                unique_id_name=unique_id_name,
             )
 
         case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
@@ -271,7 +292,9 @@ async def create_preassigned_experiment_impl(
     xngin_session: AsyncSession,
     stratify_on_metrics: bool,
     validated_webhooks: list[tables.Webhook],
-    participants_schema: ParticipantsSchema,
+    table_name: str | None,
+    field_type_map: dict[str, DataType],
+    unique_id_name: str | None,
 ) -> CreateExperimentResponse:
     """Create a frequentist preassigned experiment and persist it to the database."""
 
@@ -317,7 +340,9 @@ async def create_preassigned_experiment_impl(
         stopped_assignments_reason=StopAssignmentReason.PREASSIGNED,
         balance_check=balance_check,
         power_analyses=request.power_analyses,
-        participants_schema=participants_schema,
+        table_name=table_name,
+        field_type_map=field_type_map,
+        unique_id_name=unique_id_name,
     )
     experiment = experiment_converter.get_experiment()
     # Associate webhooks with the experiment
@@ -352,7 +377,9 @@ async def create_freq_online_experiment_impl(
     organization_id: str,
     xngin_session: AsyncSession,
     validated_webhooks: list[tables.Webhook],
-    participants_schema: ParticipantsSchema,
+    table_name: str | None,
+    field_type_map: dict[str, DataType],
+    unique_id_name: str | None,
 ) -> CreateExperimentResponse:
     """Create a frequentist online experiment and persist it to the database."""
     design_spec = request.design_spec
@@ -365,7 +392,9 @@ async def create_freq_online_experiment_impl(
         organization_id=organization_id,
         experiment_type=ExperimentsType.FREQ_ONLINE,
         design_spec=design_spec,
-        participants_schema=participants_schema,
+        table_name=table_name,
+        field_type_map=field_type_map,
+        unique_id_name=unique_id_name,
     )
     experiment = experiment_converter.get_experiment()
     # Associate webhooks with the experiment

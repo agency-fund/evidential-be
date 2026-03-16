@@ -12,6 +12,7 @@ from xngin.apiserver.routers.common_api_types import (
     PreassignedFrequentistExperimentSpec,
 )
 from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
+from xngin.apiserver.routers.experiments.experiments_common import extract_participant_field_info
 from xngin.apiserver.snapshots.snapshotter import create_pending_snapshots, make_first_snapshot
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
@@ -19,10 +20,13 @@ from xngin.apiserver.storage.storage_format_converters import ExperimentStorageC
 
 async def make_experiment(xngin_session, datasource: tables.Datasource, design_spec: DesignSpec) -> tables.Experiment:
     # Get participants schema from datasource for frequentist experiments
-    participants_schema = None
+    field_type_map = None
+    unique_id_name = None
+    table_name = None
     if design_spec.experiment_type in {ExperimentsType.FREQ_PREASSIGNED, ExperimentsType.FREQ_ONLINE}:
         ds_config = datasource.get_config()
         participants_schema = ds_config.find_participants(design_spec.participant_type)
+        field_type_map, unique_id_name, table_name = extract_participant_field_info(participants_schema)
 
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
@@ -32,7 +36,9 @@ async def make_experiment(xngin_session, datasource: tables.Datasource, design_s
         state=ExperimentState.COMMITTED,
         stopped_assignments_at=datetime.now(UTC),
         stopped_assignments_reason=StopAssignmentReason.PREASSIGNED,
-        participants_schema=participants_schema,
+        table_name=table_name,
+        field_type_map=field_type_map,
+        unique_id_name=unique_id_name,
     )
     experiment = experiment_converter.get_experiment()
     xngin_session.add(experiment)

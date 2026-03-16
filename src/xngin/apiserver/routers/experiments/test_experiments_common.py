@@ -47,6 +47,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     create_bandit_online_experiment_impl,
     create_experiment_impl,
     create_preassigned_experiment_impl,
+    extract_participant_field_info,
     get_assign_summary,
     get_existing_assignment_for_participant,
     get_experiment_assignments_impl,
@@ -228,9 +229,13 @@ async def make_insertable_experiment(
 
     # Get participants schema from datasource for frequentist experiments
     participants_schema = None
+    field_type_map = None
+    unique_id_name = None
+    table_name = None
     if experiment_type in {ExperimentsType.FREQ_PREASSIGNED, ExperimentsType.FREQ_ONLINE}:
         ds_config = datasource.get_config()
         participants_schema = ds_config.find_participants(design_spec.participant_type)
+        field_type_map, unique_id_name, table_name = extract_participant_field_info(participants_schema)
 
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
@@ -240,7 +245,9 @@ async def make_insertable_experiment(
         state=state,
         stopped_assignments_at=stopped_assignments_at,
         stopped_assignments_reason=stopped_assignments_reason,
-        participants_schema=participants_schema,
+        table_name=table_name,
+        field_type_map=field_type_map,
+        unique_id_name=unique_id_name,
     )
     experiment = experiment_converter.get_experiment()
     return experiment, await experiment_converter.get_design_spec()
@@ -343,6 +350,7 @@ async def test_create_preassigned_experiment_impl(
     # Get participants schema from datasource
     ds_config = testing_datasource.ds.get_config()
     participants_schema = ds_config.find_participants(request.design_spec.participant_type)
+    field_type_map, unique_id_name, table_name = extract_participant_field_info(participants_schema)
 
     response = await create_preassigned_experiment_impl(
         request=request.model_copy(deep=True),  # we'll use the original request for assertions
@@ -355,7 +363,9 @@ async def test_create_preassigned_experiment_impl(
         xngin_session=xngin_session,
         stratify_on_metrics=True,
         validated_webhooks=[],
-        participants_schema=participants_schema,
+        table_name=table_name,
+        field_type_map=field_type_map,
+        unique_id_name=unique_id_name,
     )
 
     # Verify response
@@ -497,6 +507,7 @@ async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
     # Get participants schema from datasource
     ds_config = testing_datasource.ds.get_config()
     participants_schema = ds_config.find_participants(request.design_spec.participant_type)
+    field_type_map, unique_id_name, table_name = extract_participant_field_info(participants_schema)
 
     with pytest.raises(LateValidationError, match="Duplicate participant ID found after filtering:"):
         await create_preassigned_experiment_impl(
@@ -510,7 +521,9 @@ async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
             xngin_session=xngin_session,
             stratify_on_metrics=False,
             validated_webhooks=[],
-            participants_schema=participants_schema,
+            table_name=table_name,
+            field_type_map=field_type_map,
+            unique_id_name=unique_id_name,
         )
 
 
@@ -530,6 +543,7 @@ async def test_create_preassigned_experiment_impl_with_unbalanced_arms(
     # Get participants schema from datasource
     ds_config = testing_datasource.ds.get_config()
     participants_schema = ds_config.find_participants(request.design_spec.participant_type)
+    field_type_map, unique_id_name, table_name = extract_participant_field_info(participants_schema)
 
     response = await create_preassigned_experiment_impl(
         request=request,
@@ -542,7 +556,9 @@ async def test_create_preassigned_experiment_impl_with_unbalanced_arms(
         xngin_session=xngin_session,
         stratify_on_metrics=True,
         validated_webhooks=[],
-        participants_schema=participants_schema,
+        table_name=table_name,
+        field_type_map=field_type_map,
+        unique_id_name=unique_id_name,
     )
 
     experiment_id = response.experiment_id
@@ -596,6 +612,7 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
     # Get participants schema from datasource
     ds_config = testing_datasource.ds.get_config()
     participants_schema = ds_config.find_participants(request.design_spec.participant_type)
+    field_type_map, unique_id_name, table_name = extract_participant_field_info(participants_schema)
 
     response = await create_preassigned_experiment_impl(
         request=request,
@@ -608,7 +625,9 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
         xngin_session=xngin_session,
         stratify_on_metrics=False,
         validated_webhooks=[],
-        participants_schema=participants_schema,
+        table_name=table_name,
+        field_type_map=field_type_map,
+        unique_id_name=unique_id_name,
     )
 
     experiment_id = response.experiment_id

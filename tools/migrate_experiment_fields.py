@@ -65,9 +65,16 @@ async def _migrate(dsn: str, dry_run: bool, raise_on_error: bool) -> None:
                     # Core conversion logic: Given the old pt and design spec, write out the new fields.
                     converter = ExperimentStorageConverter(exp)
                     design_spec = await converter.get_design_spec()
+                    field_type_map = (
+                        {field.field_name: field.data_type for field in participants_schema.fields}
+                        if participants_schema
+                        else {}
+                    )
+                    unique_id_name = participants_schema.get_unique_id_field() if participants_schema else None
                     converter.set_design_spec_fields(
                         design_spec,
-                        participants_schema=participants_schema,
+                        field_type_map=field_type_map,
+                        unique_id_name=unique_id_name,
                         set_deprecated_design_spec_fields=False,
                     )
                     # Finally set the datasource table name.

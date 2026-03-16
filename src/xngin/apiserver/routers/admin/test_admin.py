@@ -82,6 +82,7 @@ from xngin.apiserver.routers.common_enums import (
     UpdateTypeNormal,
 )
 from xngin.apiserver.routers.experiments.test_experiments_common import (
+    extract_participant_field_info,
     get_experiment_preloaded,
     insert_experiment_and_arms,
     make_create_freq_online_experiment_request,
@@ -180,6 +181,7 @@ async def fixture_testing_experiment(xngin_session: AsyncSession, testing_dataso
     # Get participants schema from datasource for data type resolution
     ds_config = datasource.get_config()
     participants_schema = ds_config.find_participants(design_spec.participant_type)
+    field_type_map, unique_id_name, table_name = extract_participant_field_info(participants_schema)
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
         organization_id=datasource.organization_id,
@@ -188,7 +190,9 @@ async def fixture_testing_experiment(xngin_session: AsyncSession, testing_dataso
         state=ExperimentState.COMMITTED,
         stopped_assignments_at=datetime.now(UTC),
         stopped_assignments_reason=StopAssignmentReason.PREASSIGNED,
-        participants_schema=participants_schema,
+        table_name=table_name,
+        field_type_map=field_type_map,
+        unique_id_name=unique_id_name,
     )
     experiment = experiment_converter.get_experiment()
     xngin_session.add(experiment)
