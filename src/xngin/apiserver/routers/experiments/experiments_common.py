@@ -1,7 +1,6 @@
 import asyncio
 import enum
 import io
-import secrets
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import cast
@@ -17,7 +16,6 @@ from sqlalchemy.orm import selectinload
 
 from xngin.apiserver import constants, flags
 from xngin.apiserver.dwh.dwh_session import DwhSession
-from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.dwh.participant_metrics_queries import get_participant_metrics
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.assignment_adapters import (
@@ -126,70 +124,43 @@ def extract_participant_field_info(
     )
 
 
-def synthesize_participants_def(
-    schema: dict[str, FieldDescriptor],
-    table_name: str,
-    primary_key: str,
-    design_spec: BaseFrequentistDesignSpec,
-) -> ParticipantsDef:
-    """Synthesize a ParticipantsDef from table_name, primary_key, and design_spec fields."""
-    fields: list[FieldDescriptor] = []
-    metric_fields = set(m.field_name for m in design_spec.metrics)
-    filter_fields = set(f.field_name for f in design_spec.filters)
-    strata_fields = set(s.field_name for s in design_spec.strata)
-    for f in sorted(metric_fields | strata_fields | filter_fields | {primary_key}):
-        fd = schema.get(f)
-        if fd is None:
-            raise LateValidationError(f"unexpected: design field '{f}' is not present in schema")
-        fd.is_unique_id = f == primary_key
-        fd.is_metric = f in metric_fields
-        fd.is_strata = f in strata_fields
-        fd.is_filter = f in filter_fields
-        fields.append(fd)
-
-    return ParticipantsDef(
-        type="schema",
-        # Generate unique name: __<table_name>_<8 hex chars>
-        participant_type=f"__{table_name}_{secrets.token_hex(4)}",
-        table_name=table_name,
-        fields=fields,
-        hidden=True,
-    )
-
-
-async def maybe_synthesize_participant_type(
+async def synthesize_participant_type_metadata(
     datasource: tables.Datasource, create_experiment_request: CreateExperimentRequest
-) -> CreateExperimentRequest:
-    """When table_name and primary_key are present in a frequentist CreateExperimentRequest, we generate a
-    participant type from an inspection of the data warehouse and the requested experiment configuration."""
+) -> tuple[CreateExperimentRequest, dict[str, DataType] | None, str | None, str | None]:
+    """Inspect an explicit table/primary_key experiment request and return field metadata."""
     if not isinstance(create_experiment_request.design_spec, BaseFrequentistDesignSpec):
-        return create_experiment_request
+        return create_experiment_request, None, None, None
     if create_experiment_request.table_name is None or create_experiment_request.primary_key is None:
-        return create_experiment_request
+        return create_experiment_request, None, None, None
 
-    # Get types from the data warehouse
     async with DwhSession(datasource.get_config().dwh) as dwh:
         inspected = await dwh.inspect_table_with_descriptors(
             create_experiment_request.table_name, create_experiment_request.primary_key
         )
 
-    # Synthesize participant definition
-    new_participants_def = synthesize_participants_def(
-        schema=inspected.db_schema,
-        table_name=create_experiment_request.table_name,
-        primary_key=create_experiment_request.primary_key,
-        design_spec=create_experiment_request.design_spec,
-    )
+    design_spec = create_experiment_request.design_spec
+    referenced_fields = {
+        *[metric.field_name for metric in design_spec.metrics],
+        *[filter_.field_name for filter_ in design_spec.filters],
+        *[stratum.field_name for stratum in design_spec.strata],
+        create_experiment_request.primary_key,
+    }
+    missing_fields = sorted(field_name for field_name in referenced_fields if field_name not in inspected.db_schema)
+    if missing_fields:
+        raise LateValidationError(
+            "Design fields are not present in the inspected table: "
+            + ", ".join(repr(field) for field in missing_fields)
+        )
 
-    # Save the new participant type to the datasource config
-    config = datasource.get_config()
-    config.participants.append(new_participants_def)
-    datasource.set_config(config)
+    field_type_map = {field_name: descriptor.data_type for field_name, descriptor in inspected.db_schema.items()}
+    for filter_ in design_spec.filters:
+        field_type = field_type_map[filter_.field_name]
+        for value in filter_.value:
+            validate_filter_value(filter_.field_name, value, field_type)
 
-    # Update design_spec with generated participant type
     updated_body = create_experiment_request.model_copy(deep=True)
-    updated_body.design_spec.participant_type = new_participants_def.participant_type
-    return updated_body
+    updated_body.design_spec.participant_type = create_experiment_request.table_name
+    return updated_body, field_type_map, create_experiment_request.primary_key, create_experiment_request.table_name
 
 
 async def create_experiment_impl(
@@ -204,11 +175,20 @@ async def create_experiment_impl(
     match request.design_spec.experiment_type:
         case ExperimentsType.FREQ_PREASSIGNED:
             # Requests that include a table name and primary key can have participant type created dynamically.
-            request = await maybe_synthesize_participant_type(datasource, request)
+            (
+                request,
+                field_type_map,
+                participants_unique_id_field,
+                table_name,
+            ) = await synthesize_participant_type_metadata(datasource, request)
             if not isinstance(request.design_spec, BaseFrequentistDesignSpec):
                 raise TypeError("design_spec expected to be a BaseFrequentistDesignSpec")
-            ds_config, participants_cfg = get_freq_experiment_configs_or_raise(datasource, request.design_spec)
-            field_type_map, participants_unique_id_field, table_name = extract_participant_field_info(participants_cfg)
+            ds_config = datasource.get_config()
+            if field_type_map is None or participants_unique_id_field is None or table_name is None:
+                ds_config, participants_cfg = get_freq_experiment_configs_or_raise(datasource, request.design_spec)
+                field_type_map, participants_unique_id_field, table_name = extract_participant_field_info(
+                    participants_cfg
+                )
 
             if participants_unique_id_field is None:
                 # Should not actually ever happen as both ParticipantsSchema and
@@ -225,7 +205,7 @@ async def create_experiment_impl(
 
             async with DwhSession(ds_config.dwh) as dwh:
                 result = await dwh.get_participants(
-                    participants_cfg.table_name,
+                    table_name,
                     select_columns={*stratum_cols, participants_unique_id_field},
                     filters=request.design_spec.filters,
                     n=desired_n,
@@ -253,11 +233,16 @@ async def create_experiment_impl(
 
         case ExperimentsType.FREQ_ONLINE:
             # Requests that include a table name and primary key can have participant type created dynamically.
-            request = await maybe_synthesize_participant_type(datasource, request)
+            request, field_type_map, unique_id_name, table_name = await synthesize_participant_type_metadata(
+                datasource, request
+            )
             if not isinstance(request.design_spec, BaseFrequentistDesignSpec):
                 raise TypeError("design_spec expected to be a BaseFrequentistDesignSpec")
-            _validated_ds_cfg, validated_p_cfg = get_freq_experiment_configs_or_raise(datasource, request.design_spec)
-            field_type_map, unique_id_name, table_name = extract_participant_field_info(validated_p_cfg)
+            if field_type_map is None or table_name is None:
+                _validated_ds_cfg, validated_p_cfg = get_freq_experiment_configs_or_raise(
+                    datasource, request.design_spec
+                )
+                field_type_map, unique_id_name, table_name = extract_participant_field_info(validated_p_cfg)
 
             return await create_freq_online_experiment_impl(
                 request=request,
