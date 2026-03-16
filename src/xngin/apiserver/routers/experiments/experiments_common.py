@@ -362,7 +362,7 @@ async def create_preassigned_experiment_impl(
     await bulk_insert_arm_assignments(
         xngin_session=xngin_session,
         experiment_id=experiment.id,
-        arms=[Arm(arm_id=arm.id, arm_name=arm.name) for arm in experiment.arms],
+        arm_ids=[arm.id for arm in experiment.arms],
         participant_type=experiment.participant_type,
         participant_id_col=participant_unique_id_field,
         data=dwh_participants,

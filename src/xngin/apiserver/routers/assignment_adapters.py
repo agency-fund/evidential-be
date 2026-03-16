@@ -12,7 +12,6 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver.routers.common_api_types import (
-    Arm,
     BalanceCheck,
     Strata,
 )
@@ -95,7 +94,7 @@ def assign_treatments_with_balance(
 async def bulk_insert_arm_assignments(
     xngin_session: AsyncSession,
     experiment_id: str,
-    arms: Sequence[Arm],
+    arm_ids: Sequence[str],
     participant_type: str,
     participant_id_col: str,
     data: Sequence[RowProtocol],
@@ -107,7 +106,7 @@ async def bulk_insert_arm_assignments(
     Args:
         xngin_session: sqlalchemy session
         experiment_id: Unique identifier for experiment
-        arms: Name & id of each treatment arm
+        arm_ids: ID of each treatment arm, ordered by arm index
         participant_type: Type of participant in the experiment
         participant_id_col: Name of column in `data` containing participant identifiers
         data: sqlalchemy result set of Rows representing units to be assigned
@@ -141,9 +140,7 @@ async def bulk_insert_arm_assignments(
             if stratum_id_name is not None and had_valid_strata:
                 strata.append(Strata(field_name=stratum_id_name, strata_value=str(stratum_id)).model_dump(mode="json"))
 
-        arm_id = arms[treatment_assignment].arm_id
-        if arm_id is None:
-            raise ValueError(f"Arm at index {treatment_assignment} has no arm_id")
+        arm_id = arm_ids[treatment_assignment]
 
         participant = tables.ArmAssignment(
             experiment_id=experiment_id,
@@ -156,10 +153,10 @@ async def bulk_insert_arm_assignments(
 
     await xngin_session.execute(Insert(tables.ArmAssignment), participants_to_insert)
 
-    for i, arm in enumerate(arms):
+    for i, arm_id in enumerate(arm_ids):
         count = int(assignment_result.arm_pop[i])
         if count > 0:
-            stmt = pg_insert(tables.ArmStats).values(arm_id=arm.arm_id, population=count)
+            stmt = pg_insert(tables.ArmStats).values(arm_id=arm_id, population=count)
             stmt = stmt.on_conflict_do_update(
                 index_elements=[tables.ArmStats.arm_id],
                 set_={"population": tables.ArmStats.population + count},
