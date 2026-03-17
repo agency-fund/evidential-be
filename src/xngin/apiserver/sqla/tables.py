@@ -7,7 +7,7 @@ from typing import Any, ClassVar, Literal, Self
 
 import sqlalchemy
 from pydantic import TypeAdapter
-from sqlalchemy import Float, ForeignKey, ForeignKeyConstraint, Index, Numeric, String
+from sqlalchemy import Boolean, Float, ForeignKey, ForeignKeyConstraint, Index, Numeric, String
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncAttrs
@@ -600,7 +600,10 @@ class ExperimentFilter(Base):
     field_name: Mapped[str] = mapped_column(String(255))
     relation: Mapped[str] = mapped_column(String(20))
     string_values: Mapped[list[str | None] | None] = mapped_column(ARRAY(String(255)))
+    # We're ok with storing all numeric types as NUMERIC since it can hold any length up to the impl
+    # limits, and we're not doing any indexing or aggregation of these values.
     numeric_values: Mapped[list[Numeric | None] | None] = mapped_column(ARRAY(Numeric))
+    boolean_values: Mapped[list[bool | None] | None] = mapped_column(ARRAY(Boolean))
 
     experiment: Mapped[Experiment] = relationship(
         back_populates="experiment_filters",

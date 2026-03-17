@@ -1749,7 +1749,7 @@ async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
     assert is_engaged_field.is_filter
     assert is_engaged_field.experiment_filters is not None
     assert is_engaged_field.experiment_filters[0].relation == Relation.INCLUDES
-    assert is_engaged_field.experiment_filters[0].numeric_values == [1, None]
+    assert is_engaged_field.experiment_filters[0].boolean_values == [1, None]
     assert is_engaged_field.experiment_filters[0].position == 3
     ethnicity_field = next(f for f in experiment.experiment_fields if f.field_name == "ethnicity")
     assert ethnicity_field.data_type == "character varying"

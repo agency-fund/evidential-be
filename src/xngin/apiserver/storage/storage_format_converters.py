@@ -175,26 +175,33 @@ class ExperimentStorageConverter:
             # and associate new filter metadata with the field
             filters = field.experiment_filters or []
             values = filter_item.value
-            if datatype.storage_class(filter_item.field_name) == DataTypeStorageClass.STRING:
-                values = [None if v is None else str(v) for v in values]
-                filters.append(
-                    tables.ExperimentFilter(
-                        position=idx + 1,
-                        relation=filter_item.relation,
-                        string_values=values,
+            match datatype.storage_class(filter_item.field_name):
+                case DataTypeStorageClass.BOOLEAN:
+                    values = [None if v is None else bool(v) for v in values]
+                    filters.append(
+                        tables.ExperimentFilter(
+                            position=idx + 1,
+                            relation=filter_item.relation,
+                            boolean_values=values,
+                        )
                     )
-                )
-            else:
-                # Postgres won't implicitly convert between boolean to numeric, so do it here.
-                if datatype == DataType.BOOLEAN:
-                    values = [None if v is None else int(v) for v in values]
-                filters.append(
-                    tables.ExperimentFilter(
-                        position=idx + 1,
-                        relation=filter_item.relation,
-                        numeric_values=values,
+                case DataTypeStorageClass.NUMERIC:
+                    filters.append(
+                        tables.ExperimentFilter(
+                            position=idx + 1,
+                            relation=filter_item.relation,
+                            numeric_values=values,
+                        )
                     )
-                )
+                case _:
+                    values = [None if v is None else str(v) for v in values]
+                    filters.append(
+                        tables.ExperimentFilter(
+                            position=idx + 1,
+                            relation=filter_item.relation,
+                            string_values=values,
+                        )
+                    )
 
             field.experiment_filters = filters
 
@@ -245,12 +252,10 @@ class ExperimentStorageConverter:
         for f in experiment_field.experiment_filters or []:
             # Convert storage type to API type
             values: list[Any]
-            if experiment_field.data_type == DataType.BOOLEAN:
-                values = [None if v is None else bool(v) for v in (f.numeric_values or [])]
-            elif experiment_field.data_type == DataType.BIGINT:
+            if experiment_field.data_type == DataType.BIGINT:
                 values = [None if v is None else str(v) for v in (f.numeric_values or [])]
             else:
-                values = f.string_values or f.numeric_values or []
+                values = f.string_values or f.numeric_values or f.boolean_values or []
             filters.append(
                 StorageFilter(
                     field_name=experiment_field.field_name,

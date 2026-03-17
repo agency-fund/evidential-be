@@ -160,12 +160,13 @@ class DataType(enum.StrEnum):
                 | DataType.TIMESTAMP_WITH_TIMEZONE
             ):
                 return DataTypeStorageClass.STRING
+            case DataType.BOOLEAN:
+                return DataTypeStorageClass.BOOLEAN
             case (
                 DataType.INTEGER
                 | DataType.DOUBLE_PRECISION
                 | DataType.NUMERIC
                 | DataType.BIGINT  # note: must be converted to string for API
-                | DataType.BOOLEAN  # note: must be converted to boolean for API
             ):
                 return DataTypeStorageClass.NUMERIC
             case _:
@@ -177,6 +178,7 @@ class DataTypeStorageClass(enum.Enum):
 
     STRING = enum.auto()
     NUMERIC = enum.auto()
+    BOOLEAN = enum.auto()
 
 
 class FilterClass(enum.StrEnum):
