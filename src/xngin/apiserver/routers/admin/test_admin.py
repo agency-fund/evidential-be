@@ -1784,7 +1784,6 @@ async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
     diff = DeepDiff(
         created_experiment,
         experiment_for_ui.config,
-        ignore_order=True,
         ignore_type_in_groups=[(CreateExperimentResponse, ExperimentConfig)],
     )
     assert not diff, f"Objects differ:\n{diff.pretty()}"

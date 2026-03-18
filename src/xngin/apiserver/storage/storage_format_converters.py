@@ -6,6 +6,7 @@ types. Our SQLA tables ideally shouldn't depend on xngin/apiserver/*; but for th
 JSONB type columns for multi-value/complex types, use the converters to get/set them properly.
 """
 
+import operator
 from datetime import datetime
 from typing import Any, Self
 
@@ -246,8 +247,8 @@ class ExperimentStorageConverter:
     def _convert_experiment_field_to_storage_filters(
         self,
         experiment_field: tables.ExperimentField,
-    ) -> list[StorageFilter]:
-        """Converts an ExperimentField to a list of StorageFilters, or empty list if the field is not a filter."""
+    ) -> list[tuple[int, StorageFilter]]:
+        """Converts an ExperimentField to a list of (position, StorageFilter) tuples, or [] if not a filter."""
         filters = []
         for f in experiment_field.experiment_filters or []:
             # Convert storage type to API type
@@ -256,13 +257,14 @@ class ExperimentStorageConverter:
                 values = [None if v is None else str(v) for v in (f.numeric_values or [])]
             else:
                 values = f.string_values or f.numeric_values or f.boolean_values or []
-            filters.append(
+            filters.append((
+                f.position,
                 StorageFilter(
                     field_name=experiment_field.field_name,
                     relation=f.relation,
                     value=values,
-                )
-            )
+                ),
+            ))
 
         return filters
 
@@ -295,17 +297,19 @@ class ExperimentStorageConverter:
         if not self.experiment.datasource_table:
             return DesignSpecFields.model_validate(self.experiment.design_spec_fields)
 
-        filters = []
-        metrics = []
-        strata = []
+        position_filters: list[tuple[int, StorageFilter]] = []
+        metrics: list[StorageMetric] = []
+        strata: list[StorageStratum] = []
 
         for ef in self.experiment.experiment_fields:
             if storage_filters := self._convert_experiment_field_to_storage_filters(ef):
-                filters.extend(storage_filters)
+                position_filters.extend(storage_filters)
             if storage_metric := self._convert_experiment_field_to_storage_metric(ef):
                 metrics.append(storage_metric)
             if storage_stratum := self._convert_experiment_field_to_storage_stratum(ef):
                 strata.append(storage_stratum)
+
+        filters = [f[1] for f in sorted(position_filters, key=operator.itemgetter(0))]
 
         return DesignSpecFields(filters=filters, metrics=metrics, strata=strata)
 
