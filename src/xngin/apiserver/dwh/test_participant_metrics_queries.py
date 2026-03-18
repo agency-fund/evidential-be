@@ -183,7 +183,7 @@ def test_build_participant_metrics_query_plans_batches_integer_ranges(shared_sam
 def test_build_participant_metrics_query_plans_coalesces_between_filters(shared_sample_tables):
     participant_ids = [str(i) for start in range(1, PARTICIPANT_BATCH_SIZE * 3 // 2, 3) for i in (start, start + 1)]
 
-    query_plan_set = build_participant_metrics_plan(
+    query_plans = build_participant_metrics_plan(
         shared_sample_tables.sample_table,
         [
             DesignSpecMetricRequest(field_name="float_col", metric_pct_change=0.1),
@@ -191,15 +191,12 @@ def test_build_participant_metrics_query_plans_coalesces_between_filters(shared_
         ],
         unique_id_field="id",
         participant_ids=participant_ids,
-    )
-    query_plans = query_plan_set.plans
+    ).plans
 
     assert len(query_plans) == 1
-
-    query = query_plans[0].query.compile()
-    query_sql = str(query)
-    assert query_sql.count(" BETWEEN ") > 1
-    assert " OR " in query_sql
+    query_sql = str(query_plans[0].query.compile())
+    assert query_sql.count(" BETWEEN ") == PARTICIPANT_BATCH_SIZE // 2, query_sql
+    assert query_sql.count(" OR ") == (PARTICIPANT_BATCH_SIZE // 2) - 1, query_sql
 
 
 def test_build_participant_metrics_query_plans_keeps_single_large_between_range(shared_sample_tables):
