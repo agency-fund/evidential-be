@@ -1548,7 +1548,6 @@ async def analyze_experiment(
         ds,
         experiment_id,
         preload=[
-            tables.Experiment.arm_assignments,
             tables.Experiment.draws,
             tables.Experiment.contexts,
         ],
