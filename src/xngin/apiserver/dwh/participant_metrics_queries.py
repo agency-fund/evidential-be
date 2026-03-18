@@ -98,7 +98,6 @@ class ParticipantMetricsPlans:
 
 def naive_strategy(participant_ids: list[str]) -> list[ParticipantChunk]:
     """Generates ParticipantChunks using INCLUDES operators for up to PARTICIPANT_BATCH_SIZE ids at a time."""
-    logger.info("Choosing strategy: naive")
     pids = sorted(participant_ids)
     return [
         ParticipantChunk(
@@ -113,7 +112,6 @@ def naive_strategy(participant_ids: list[str]) -> list[ParticipantChunk]:
 
 def between_strategy(integer_ids: NDArray[np.int64]) -> list[ParticipantChunk]:
     """Generates ParticipantChunks using BETWEEN (and sometimes INCLUDES) for integer IDs."""
-    logger.info("Choosing strategy: between")
     # Extract ranges of consecutive integers so that we can generate BETWEEN and IN queries from them.
     range_starts, range_ends = identify_runs(integer_ids)
 
