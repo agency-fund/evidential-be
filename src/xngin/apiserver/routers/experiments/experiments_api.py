@@ -115,15 +115,17 @@ async def get_experiment(
     return await get_experiment_impl(xngin_session, experiment)
 
 
-# TODO: add a query param to include strata; default to false
 @router.get(
     "/experiments/{experiment_id}/assignments",
     summary="Fetch list of participant=>arm assignments for the given experiment id.",
+    description="This endpoint is inefficient for large experiments. Large experiments should use "
+    "`/experiments/{experiment_id}/assignments/csv`.",
 )
 async def get_experiment_assignments(
+    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
     experiment: Annotated[tables.Experiment, Depends(experiment_with_assignments_dependency)],
 ) -> GetExperimentAssignmentsResponse:
-    return get_experiment_assignments_impl(experiment)
+    return await get_experiment_assignments_impl(xngin_session, experiment)
 
 
 @router.get(

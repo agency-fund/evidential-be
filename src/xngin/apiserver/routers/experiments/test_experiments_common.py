@@ -1542,7 +1542,7 @@ async def test_get_experiment_assignments_impl(xngin_session, testing_datasource
     await xngin_session.commit()
     await xngin_session.refresh(experiment, ["arms", "arm_assignments"])
 
-    data = get_experiment_assignments_impl(experiment)
+    data = await get_experiment_assignments_impl(xngin_session, experiment)
 
     # Check the response structure
     assert data.experiment_id == experiment.id
@@ -1607,7 +1607,7 @@ async def test_get_experiment_mab_assignments_impl(xngin_session, testing_dataso
     await xngin_session.commit()
     await xngin_session.refresh(experiment, ["arms", "draws"])
 
-    data = get_experiment_assignments_impl(experiment)
+    data = await get_experiment_assignments_impl(xngin_session, experiment)
 
     # Check the response structure
     assert data.experiment_id == experiment.id

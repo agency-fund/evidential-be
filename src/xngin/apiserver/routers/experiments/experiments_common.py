@@ -44,7 +44,6 @@ from xngin.apiserver.routers.common_api_types import (
     ListExperimentsResponse,
     MetricAnalysis,
     ParticipantProperty,
-    Strata,
 )
 from xngin.apiserver.routers.common_enums import (
     DataType,
@@ -55,6 +54,7 @@ from xngin.apiserver.routers.common_enums import (
     UpdateTypeBeta,
     UpdateTypeNormal,
 )
+from xngin.apiserver.routers.experiments.experiments_common_csv import get_experiment_assignments_fast
 from xngin.apiserver.routers.experiments.property_filters import passes_filters, validate_filter_value
 from xngin.apiserver.settings import DatasourceConfig, ParticipantsDef
 from xngin.apiserver.sql.queries import select_as_csv
@@ -62,6 +62,7 @@ from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent
+from xngin.ops import performance
 from xngin.stats.analysis import analyze_experiment as analyze_freq_experiment
 from xngin.stats.assignment import AssignmentResult
 from xngin.stats.bandit_analysis import analyze_experiment as analyze_bandit_experiment
@@ -567,28 +568,19 @@ async def list_organization_or_datasource_experiments_impl(
     return ListExperimentsResponse(items=items)
 
 
-def get_experiment_assignments_impl(
+async def get_experiment_assignments_impl(
+    xngin_session: AsyncSession,
     experiment: tables.Experiment,
 ) -> GetExperimentAssignmentsResponse:
-    # Map arm IDs to names
-    arm_id_to_name = {arm.id: arm.name for arm in experiment.arms}
-    # Convert ArmAssignment models to Assignment API types
-
-    assignments: list[Assignment]
+    assignments: list[Assignment] = []
 
     match experiment.experiment_type:
         case ExperimentsType.FREQ_ONLINE | ExperimentsType.FREQ_PREASSIGNED:
-            assignments = [
-                Assignment(
-                    participant_id=arm_assignment.participant_id,
-                    arm_id=arm_assignment.arm_id,
-                    arm_name=arm_id_to_name[arm_assignment.arm_id],
-                    created_at=arm_assignment.created_at,
-                    strata=[Strata.model_validate(s) for s in arm_assignment.strata],
-                )
-                for arm_assignment in experiment.arm_assignments
-            ]
+            with performance.timing("async for"):
+                async for assignment in get_experiment_assignments_fast(xngin_session, experiment):
+                    assignments.append(assignment)
         case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
+            arm_id_to_name = {arm.id: arm.name for arm in experiment.arms}
             assignments = [
                 Assignment(
                     participant_id=draw.participant_id,
@@ -603,7 +595,6 @@ def get_experiment_assignments_impl(
             ]
         case _:
             raise LateValidationError(f"Invalid experiment type: {experiment.experiment_type}")
-
     return GetExperimentAssignmentsResponse(
         balance_check=ExperimentStorageConverter(experiment).get_balance_check(),
         experiment_id=experiment.id,

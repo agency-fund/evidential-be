@@ -1,13 +1,14 @@
 # mypy: disable-error-code="misc"
-
+from collections.abc import AsyncGenerator
 
 from fastapi.responses import StreamingResponse
 from psycopg import sql
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver.exceptions_common import LateValidationError
+from xngin.apiserver.routers.common_api_types import Assignment, Strata
 from xngin.apiserver.routers.common_enums import ExperimentsType
-from xngin.apiserver.sql.queries import select_as_csv
+from xngin.apiserver.sql.queries import select_as_csv, with_driver_connection
 from xngin.apiserver.sqla import tables
 
 CSV_STREAM_CHUNK_SIZE_BYTES = 1 << 20
@@ -17,10 +18,10 @@ class CsvStreamingResponse(StreamingResponse):
     media_type = "text/csv"
 
 
-def _get_assignment_csv_strata_names_from_experiment(experiment: tables.Experiment) -> list[str]:
+async def _get_assignment_csv_strata_names_from_experiment(experiment: tables.Experiment) -> list[str]:
     if experiment.experiment_type not in {ExperimentsType.FREQ_ONLINE.value, ExperimentsType.FREQ_PREASSIGNED.value}:
         return []
-    return sorted([ef.field_name for ef in experiment.experiment_fields if ef.is_strata])
+    return sorted([ef.field_name for ef in await experiment.awaitable_attrs.experiment_fields if ef.is_strata])
 
 
 def _build_experiment_assignments_select_query(experiment_id: str, experiment_type: str, strata_names: list[str]):
@@ -86,10 +87,31 @@ async def get_experiment_assignments_as_csv_impl(
     xngin_session: AsyncSession,
     experiment: tables.Experiment,
 ) -> CsvStreamingResponse:
-    strata_names = _get_assignment_csv_strata_names_from_experiment(experiment)
+    strata_names = await _get_assignment_csv_strata_names_from_experiment(experiment)
     select_query = _build_experiment_assignments_select_query(experiment.id, experiment.experiment_type, strata_names)
     filename = f"experiment_{experiment.id}_assignments.csv"
     return CsvStreamingResponse(
         select_as_csv(xngin_session, select_query, buffer_size_bytes=CSV_STREAM_CHUNK_SIZE_BYTES, include_header=True),
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+async def get_experiment_assignments_fast(
+    xngin_session: AsyncSession, experiment: tables.Experiment
+) -> AsyncGenerator[Assignment]:
+    strata_names = await _get_assignment_csv_strata_names_from_experiment(experiment)
+    select_query = _build_experiment_assignments_select_query(experiment.id, experiment.experiment_type, strata_names)
+
+    async with with_driver_connection(xngin_session) as driver_conn, driver_conn.cursor() as cursor:
+        async for assignment in cursor.stream(select_query, size=10000):
+            participant_id, arm_id, arm_name, created_at, *strata_values = assignment
+            yield Assignment(
+                participant_id=participant_id,
+                arm_id=arm_id,
+                arm_name=arm_name,
+                created_at=created_at,
+                strata=[
+                    Strata(field_name=strata_names[i], strata_value=strata_values[i])
+                    for i, _ in enumerate(strata_names)
+                ],
+            )
