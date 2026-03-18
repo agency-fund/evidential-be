@@ -53,7 +53,7 @@ def identify_runs(arr: NDArray[np.int64]) -> tuple[NDArray[np.int64], NDArray[np
 
 @dataclass(frozen=True, slots=True)
 class ParticipantChunk:
-    """Compact intermediate representation of a Filter."""
+    """Compact intermediate representation of a participant ID filters INCLUDES(...) or BETWEEN(low, high)."""
 
     is_includes: bool
     value_str: list[str] | None
