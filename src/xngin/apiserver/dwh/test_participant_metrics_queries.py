@@ -19,7 +19,7 @@ from xngin.apiserver.routers.common_api_types import DesignSpecMetricRequest
 pytest_plugins = ("xngin.apiserver.dwh.dwh_test_support",)
 
 
-def test_to_np_int_arr_returns_none_for_non_integer_values():
+def test_returns_none_when_not_all_integer_values():
     assert to_np_int_arr(["1", "abc", "3"]) is None
 
 
@@ -76,7 +76,7 @@ def test_between_strategy_splits_large_ranges():
     ]
 
 
-def test_coalesce_chunks_into_disjunctives_splits_oversized_groups():
+def test_coalesce_chunks_into_disjunctives_splits_on_size_and_not_values():
     chunks = [
         ParticipantChunk(is_includes=False, value_str=None, value_int=[1, 4_000], size=4_000),
         ParticipantChunk(is_includes=False, value_str=None, value_int=[5_000, 8_999], size=4_000),
