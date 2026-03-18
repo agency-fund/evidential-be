@@ -8,6 +8,13 @@ from loguru import logger
 from sqlalchemy.dialects.postgresql.json import JSON, JSONB
 
 
+class PreloadMethod(enum.Enum):
+    """Methods we'll support for preloading a SQLAlchemy relationship."""
+
+    SELECTINLOAD = enum.auto()
+    JOINLOAD = enum.auto()
+
+
 class ExperimentState(enum.StrEnum):
     """
     Experiment lifecycle states.
@@ -140,7 +147,38 @@ class DataType(enum.StrEnum):
             ):
                 return FilterClass.NUMERIC
             case _:
+                raise RuntimeError(f"Unsupported data type {self} for field {field_name}")
+
+    def storage_class(self):
+        """Classifies a DataType into a storage class."""
+        match self:
+            case (
+                DataType.CHARACTER_VARYING
+                | DataType.UUID
+                | DataType.DATE
+                | DataType.TIMESTAMP_WITHOUT_TIMEZONE
+                | DataType.TIMESTAMP_WITH_TIMEZONE
+            ):
+                return DataTypeStorageClass.STRING
+            case DataType.BOOLEAN:
+                return DataTypeStorageClass.BOOLEAN
+            case (
+                DataType.INTEGER
+                | DataType.DOUBLE_PRECISION
+                | DataType.NUMERIC
+                | DataType.BIGINT  # note: must be converted to string for API
+            ):
+                return DataTypeStorageClass.NUMERIC
+            case _:
                 raise RuntimeError(f"Unsupported data type {self}")
+
+
+class DataTypeStorageClass(enum.StrEnum):
+    """Internal helper for grouping our supported data types by how to store them."""
+
+    STRING = enum.auto()
+    NUMERIC = enum.auto()
+    BOOLEAN = enum.auto()
 
 
 class FilterClass(enum.StrEnum):

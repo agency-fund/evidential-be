@@ -26,7 +26,7 @@ from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import QueryableAttribute, selectinload
+from sqlalchemy.orm import QueryableAttribute, joinedload, selectinload
 
 from xngin.apiserver import constants, flags
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
@@ -124,13 +124,12 @@ from xngin.apiserver.routers.common_api_types import (
     ExperimentAnalysisResponse,
     ExperimentsType,
     GetMetricsResponseElement,
-    GetParticipantAssignmentResponse,
     GetStrataResponseElement,
     ListExperimentsResponse,
     PowerRequest,
     PowerResponse,
 )
-from xngin.apiserver.routers.common_enums import ExperimentState
+from xngin.apiserver.routers.common_enums import ExperimentState, PreloadMethod
 from xngin.apiserver.routers.experiments import experiments_common, experiments_common_csv
 from xngin.apiserver.routers.experiments.experiments_common import AbandonExperimentResult
 from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
@@ -297,6 +296,7 @@ async def get_experiment_via_ds_or_raise(
     experiment_id: str,
     *,
     preload: list[QueryableAttribute] | None = None,
+    nested_preload: list[list[tuple[PreloadMethod, QueryableAttribute]]] | None = None,
 ) -> tables.Experiment:
     """Reads the requested experiment (related to the given datasource) from the database.
 
@@ -310,8 +310,24 @@ async def get_experiment_via_ds_or_raise(
         .where(tables.Experiment.datasource_id == ds.id)
         .where(tables.Experiment.id == experiment_id)
     )
+
+    options = []
     if preload:
-        stmt = stmt.options(*[selectinload(f) for f in preload])
+        options.extend([selectinload(f) for f in preload])
+    if nested_preload:
+        for nested in nested_preload:
+            nested_load = None
+            for method, attr in nested:
+                match method:
+                    case PreloadMethod.SELECTINLOAD:
+                        nested_load = selectinload(attr) if nested_load is None else nested_load.selectinload(attr)
+                    case PreloadMethod.JOINLOAD:
+                        nested_load = joinedload(attr) if nested_load is None else nested_load.joinedload(attr)
+            if nested_load is not None:
+                options.append(nested_load)
+
+    if options:
+        stmt = stmt.options(*options)
     result = await session.execute(stmt)
     exp = result.scalar_one_or_none()
     if exp is None:
@@ -1531,7 +1547,17 @@ async def analyze_experiment(
         xngin_session,
         ds,
         experiment_id,
-        preload=[tables.Experiment.draws, tables.Experiment.contexts],
+        preload=[
+            tables.Experiment.arm_assignments,
+            tables.Experiment.draws,
+            tables.Experiment.contexts,
+        ],
+        nested_preload=[
+            [
+                (PreloadMethod.SELECTINLOAD, tables.Experiment.experiment_fields),
+                (PreloadMethod.JOINLOAD, tables.ExperimentField.experiment_filters),
+            ]
+        ],
     )
 
     design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
@@ -1667,7 +1693,16 @@ async def get_experiment_for_ui(
         session,
         ds,
         experiment_id,
-        preload=[tables.Experiment.webhooks, tables.Experiment.contexts],
+        preload=[
+            tables.Experiment.webhooks,
+            tables.Experiment.contexts,
+        ],
+        nested_preload=[
+            [
+                (PreloadMethod.SELECTINLOAD, tables.Experiment.experiment_fields),
+                (PreloadMethod.JOINLOAD, tables.ExperimentField.experiment_filters),
+            ]
+        ],
     )
     participants = ds.get_config().find_participants_or_none(experiment.participant_type)
     return GetExperimentForUiResponse(
@@ -1694,50 +1729,6 @@ async def get_experiment_assignments_as_csv_for_ui(
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
     return await experiments_common_csv.get_experiment_assignments_as_csv_impl(session, experiment)
-
-
-@router.get(
-    "/datasources/{datasource_id}/experiments/{experiment_id}/assignments/{participant_id}",
-    description="""Get the assignment for a specific participant, excluding strata if any.
-    For 'preassigned' experiments, the participant's Assignment is returned if it exists.
-    For 'online', returns the assignment if it exists, else generates an assignment.""",
-)
-async def get_experiment_assignment_for_participant(
-    datasource_id: str,
-    experiment_id: str,
-    participant_id: str,
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(require_user_from_token)],
-    create_if_none: Annotated[
-        bool,
-        Query(
-            description=(
-                "Create an assignment if none exists. Does nothing for preassigned experiments. "
-                "Override if you just want to check if an assignment exists."
-            )
-        ),
-    ] = True,
-    random_state: Annotated[
-        int | None,
-        Query(
-            description="Specify a random seed for reproducibility.",
-            include_in_schema=False,
-        ),
-    ] = None,
-) -> GetParticipantAssignmentResponse:
-    """Get the assignment for a specific participant in an experiment."""
-    # Validate the datasource and experiment exist
-    ds = await get_datasource_or_raise(session, user, datasource_id)
-    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
-
-    return await experiments_common.get_or_create_assignment_for_participant(
-        xngin_session=session,
-        experiment=experiment,
-        participant_id=participant_id,
-        create_if_none=create_if_none,
-        properties=None,
-        random_state=random_state,
-    )
 
 
 @router.patch("/datasources/{datasource_id}/experiments/{experiment_id}", status_code=status.HTTP_204_NO_CONTENT)

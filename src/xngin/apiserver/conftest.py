@@ -222,26 +222,31 @@ def fixture_admin_api_client_unpriv(xngin_session):
         yield admin_api_client.AdminAPIClient(client)
 
 
+@pytest.fixture(scope="session")
+async def fixture_initialize_xngin_db_schema():
+    """Create the application schema once for the test session."""
+    async with database.setup():
+        create_database_if_not_exists_pg(database.get_sqlalchemy_database_url())
+        async with database.get_async_engine().begin() as conn:
+            await conn.run_sync(tables.Base.metadata.create_all)
+
+
 @pytest.fixture(name="xngin_session")
-async def fixture_xngin_db_session():
+async def fixture_xngin_db_session(fixture_initialize_xngin_db_schema):
     """Yields a SQLAlchemy session suitable for direct interaction with the database.
 
-    This will drop and recreate all tables at the beginning of every test. The users table will be seeded with
+    This will delete all rows from the application tables at the beginning of every test. The users table will be seeded
+    with
     a privileged user (pget, ppost, ...) and an unprivileged user (uget, upost, ...). These users can be removed by
     individual tests by calling delete_seeded_users().
 
     Where possible, prefer using the API methods to test functionality rather than touching the database
     directly.
-
-    This fixture uses autouse=True to ensure all tests begin with a clean database state. Since some tests only
-    interact with the API server through API methods (without explicitly using the xngin_session fixture),
-    autouse=True guarantees this cleanup runs for every test, preventing any shared state between test runs.
     """
     async with database.setup():
-        create_database_if_not_exists_pg(database.get_sqlalchemy_database_url())
         async with database.get_async_engine().begin() as conn:
-            await conn.run_sync(tables.Base.metadata.drop_all)
-            await conn.run_sync(tables.Base.metadata.create_all)
+            for table in reversed(tables.Base.metadata.sorted_tables):
+                await conn.execute(sqlalchemy.delete(table))
         async with database.async_session() as session:
             session.add_all([
                 tables.User(email=PRIVILEGED_EMAIL, is_privileged=True),

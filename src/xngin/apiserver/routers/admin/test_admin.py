@@ -5,11 +5,13 @@ import io
 import json
 import math
 from datetime import UTC, datetime, timedelta
+from http import HTTPStatus
 from typing import Protocol
 from urllib.parse import urlparse
 
 import numpy as np
 import pytest
+from deepdiff import DeepDiff
 from pydantic import HttpUrl, TypeAdapter
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,9 +21,7 @@ from xngin.apiserver.conftest import delete_seeded_users, expect_status_code
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.dwh.inspections import ColumnDeleted, Drift, FieldChangedType
-from xngin.apiserver.routers.admin.admin_api_converters import (
-    CREDENTIALS_UNAVAILABLE_MESSAGE,
-)
+from xngin.apiserver.routers.admin.admin_api_converters import CREDENTIALS_UNAVAILABLE_MESSAGE
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddMemberToOrganizationRequest,
     AddWebhookToOrganizationRequest,
@@ -60,8 +60,10 @@ from xngin.apiserver.routers.common_api_types import (
     CMABContextInputRequest,
     CMABExperimentSpec,
     CreateExperimentRequest,
+    CreateExperimentResponse,
     DataType,
     DesignSpecMetricRequest,
+    ExperimentConfig,
     ExperimentsType,
     Filter,
     FreqExperimentAnalysisResponse,
@@ -71,6 +73,7 @@ from xngin.apiserver.routers.common_api_types import (
     PowerRequest,
     PreassignedFrequentistExperimentSpec,
     PriorTypes,
+    Stratum,
 )
 from xngin.apiserver.routers.common_enums import (
     ExperimentState,
@@ -80,6 +83,8 @@ from xngin.apiserver.routers.common_enums import (
     UpdateTypeNormal,
 )
 from xngin.apiserver.routers.experiments.test_experiments_common import (
+    extract_participant_field_info,
+    get_experiment_preloaded,
     insert_experiment_and_arms,
     make_create_freq_online_experiment_request,
     make_create_online_bandit_experiment_request,
@@ -87,11 +92,12 @@ from xngin.apiserver.routers.experiments.test_experiments_common import (
     make_createexperimentrequest_json,
     make_insertable_experiment,
 )
-from xngin.apiserver.settings import NoDwh, ParticipantsDef, RemoteDatabaseConfig
+from xngin.apiserver.settings import ParticipantsDef, RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.assertions import assert_dates_equal
+from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 from xngin.stats.bandit_sampling import update_arm
 
@@ -174,6 +180,10 @@ async def fixture_testing_experiment(xngin_session: AsyncSession, testing_dataso
         strata=[],
         filters=[],
     )
+    # Get participants schema from datasource for data type resolution
+    ds_config = datasource.get_config()
+    participants_schema = ds_config.find_participants(design_spec.participant_type)
+    field_type_map, unique_id_name, table_name = extract_participant_field_info(participants_schema)
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
         organization_id=datasource.organization_id,
@@ -182,6 +192,9 @@ async def fixture_testing_experiment(xngin_session: AsyncSession, testing_dataso
         state=ExperimentState.COMMITTED,
         stopped_assignments_at=datetime.now(UTC),
         stopped_assignments_reason=StopAssignmentReason.PREASSIGNED,
+        table_name=table_name,
+        field_type_map=field_type_map,
+        unique_id_name=unique_id_name,
     )
     experiment = experiment_converter.get_experiment()
     xngin_session.add(experiment)
@@ -766,13 +779,15 @@ async def test_list_datasources_ordered_by_experiment_count(
     """Datasources should be ordered by number of experiments (desc), then by name (asc)."""
     org = testing_datasource_with_user.org
     ds_a = testing_datasource_with_user.ds
+    pt_config = ds_a.get_config().participants
+    dwh = ds_a.get_config().dwh
 
-    # Create two additional datasources in the same org.
-    nodwh_config = RemoteDatabaseConfig(participants=[], type="remote", dwh=NoDwh())
+    # Create two additional fake datasources in the same org.
+    common_dwh_config = RemoteDatabaseConfig(participants=pt_config, type="remote", dwh=dwh)
     ds_b = tables.Datasource(id=tables.datasource_id_factory(), name="AAA datasource", organization=org)
-    ds_b.set_config(nodwh_config)
+    ds_b.set_config(common_dwh_config)
     ds_c = tables.Datasource(id=tables.datasource_id_factory(), name="ZZZ datasource", organization=org)
-    ds_c.set_config(nodwh_config)
+    ds_c.set_config(common_dwh_config)
     xngin_session.add_all([ds_b, ds_c])
     await xngin_session.commit()
 
@@ -1261,7 +1276,7 @@ async def test_lifecycle_with_db(testing_datasource, aclient: AdminAPIClient, ac
                 fields=[
                     FieldDescriptor(
                         field_name="id",
-                        data_type=DataType.INTEGER,
+                        data_type=DataType.BIGINT,
                         description="test",
                         is_unique_id=True,
                         is_strata=False,
@@ -1277,6 +1292,15 @@ async def test_lifecycle_with_db(testing_datasource, aclient: AdminAPIClient, ac
                         is_filter=False,
                         is_metric=True,
                     ),
+                    FieldDescriptor(
+                        field_name="is_engaged",
+                        data_type=DataType.BOOLEAN,
+                        description="test",
+                        is_unique_id=False,
+                        is_strata=False,
+                        is_filter=True,
+                        is_metric=True,
+                    ),
                 ],
             ),
         ),
@@ -1287,6 +1311,11 @@ async def test_lifecycle_with_db(testing_datasource, aclient: AdminAPIClient, ac
     create_exp_dict = make_createexperimentrequest_json(participant_type)
     create_exp_request = TypeAdapter(CreateExperimentRequest).validate_python(create_exp_dict)
     create_exp_request.design_spec.design_url = HttpUrl("https://example.com/design")
+    assert isinstance(create_exp_request.design_spec, PreassignedFrequentistExperimentSpec)
+    create_exp_request.design_spec.filters = [
+        Filter(field_name="id", relation=Relation.EXCLUDES, value=[str((2 << 52) + 1), None]),
+        Filter(field_name="is_engaged", relation=Relation.INCLUDES, value=[True, False]),
+    ]
     created_experiment = aclient.create_experiment(
         datasource_id=testing_datasource.ds.id, body=create_exp_request, desired_n=100
     ).data
@@ -1529,8 +1558,12 @@ async def test_create_experiment_with_invalid_design_url(testing_datasource_with
         aclient.create_experiment(datasource_id=datasource_id, body=request, desired_n=1)
 
 
-async def test_create_preassigned_experiment(
-    xngin_session: AsyncSession, testing_datasource_with_user, use_deterministic_random, aclient: AdminAPIClient
+async def test_create_freq_preassigned_experiment(
+    xngin_session: AsyncSession,
+    testing_datasource_with_user,
+    use_deterministic_random,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
 ):
     datasource_id = testing_datasource_with_user.ds.id
     request_obj = make_create_preassigned_experiment_request()
@@ -1567,37 +1600,220 @@ async def test_create_preassigned_experiment(
     (arm1_id, arm2_id) = [arm.arm_id for arm in created_experiment.design_spec.arms]
 
     # Verify database state using the ids in the returned DesignSpec.
-    experiment = (
-        await xngin_session.scalars(select(tables.Experiment).where(tables.Experiment.id == experiment_id))
-    ).one()
+    experiment = await get_experiment_preloaded(xngin_session, experiment_id)
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == datasource_id
     assert experiment.experiment_type == "freq_preassigned"
     assert experiment.participant_type == "test_participant_type"
+    assert experiment.datasource_table == TESTING_DWH_PARTICIPANT_DEF.table_name
     assert experiment.name == request_obj.design_spec.experiment_name
     assert experiment.description == request_obj.design_spec.description
     assert_dates_equal(experiment.start_date, request_obj.design_spec.start_date)
     assert_dates_equal(experiment.end_date, request_obj.design_spec.end_date)
+
+    # Verify that experiment_fields were stored correctly (see defaults in make_createexperimentrequest_json)
+    experiment_fields = experiment.experiment_fields
+    assert len(experiment_fields) == 3
+    unique_id_field = next((f for f in experiment_fields if f.is_unique_id), None)
+    assert unique_id_field is not None
+    assert unique_id_field.data_type == "bigint"
+    gender_field = next((f for f in experiment_fields if f.field_name == "gender"), None)
+    assert gender_field is not None
+    assert gender_field.is_strata
+    assert gender_field.data_type == "character varying"
+    is_onboarded_field = next((f for f in experiment_fields if f.field_name == "is_onboarded"), None)
+    assert is_onboarded_field is not None
+    assert is_onboarded_field.is_metric
+    assert is_onboarded_field.is_primary_metric
+    assert is_onboarded_field.data_type == "boolean"
+
     # Verify assignments were created
-    assignments = (
-        await xngin_session.scalars(
-            select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
-        )
-    ).all()
-    assert len(assignments) == 100, {e.name: getattr(experiment, e.name) for e in tables.Experiment.__table__.columns}
+    actual_assignments = eclient.get_experiment_assignments(
+        api_key=testing_datasource_with_user.key, experiment_id=experiment_id
+    ).data
+    assert len(actual_assignments.assignments) == 100
 
     # Check one assignment to see if it looks roughly right
-    sample_assignment: tables.ArmAssignment = assignments[0]
-    assert sample_assignment.participant_type == "test_participant_type"
-    assert sample_assignment.experiment_id == experiment_id
+    sample_assignment = actual_assignments.assignments[0]
     assert sample_assignment.arm_id in {arm1_id, arm2_id}
+    assert sample_assignment.strata is not None and len(sample_assignment.strata) == 2
     for stratum in sample_assignment.strata:
-        assert stratum["field_name"] in {"is_onboarded", "gender"}
+        assert stratum.field_name in {"is_onboarded", "gender"}
 
     # Check for approximate balance in arm assignment
-    num_control = sum(1 for a in assignments if a.arm_id == arm1_id)
-    num_treat = sum(1 for a in assignments if a.arm_id == arm2_id)
+    num_control = sum(1 for a in actual_assignments.assignments if a.arm_id == arm1_id)
+    num_treat = sum(1 for a in actual_assignments.assignments if a.arm_id == arm2_id)
     assert abs(num_control - num_treat) <= 5  # Allow some wiggle room
+
+
+async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
+    xngin_session: AsyncSession,
+    testing_datasource_with_user,
+    use_deterministic_random,
+    aclient: AdminAPIClient,
+):
+    datasource_id = testing_datasource_with_user.ds.id
+    experiment_request = CreateExperimentRequest(
+        design_spec=PreassignedFrequentistExperimentSpec(
+            participant_type="test_participant_type",
+            experiment_type="freq_preassigned",
+            experiment_name="Test Experiment with Filters",
+            description="Testing filters roundtrip",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
+            arms=[
+                Arm(arm_name="control", arm_description="Control group"),
+                Arm(arm_name="treatment", arm_description="Treatment group"),
+            ],
+            metrics=[
+                DesignSpecMetricRequest(field_name="current_income", metric_pct_change=5),
+                DesignSpecMetricRequest(field_name="is_engaged", metric_target=0.5),
+            ],
+            strata=[Stratum(field_name="ethnicity"), Stratum(field_name="baseline_income")],
+            filters=[
+                Filter(field_name="gender", relation=Relation.INCLUDES, value=["Male"]),
+                Filter(field_name="current_income", relation=Relation.BETWEEN, value=[0.0, 100000.0]),
+                Filter(field_name="is_engaged", relation=Relation.INCLUDES, value=[True, None]),
+                Filter(field_name="id", relation=Relation.EXCLUDES, value=[9007199254740993, None]),
+                Filter(field_name="sample_date", relation=Relation.BETWEEN, value=["2024-01-01", "2026-01-01"]),
+                Filter(
+                    field_name="uuid_filter", relation=Relation.EXCLUDES, value=["123e4567-e89b-12d3-a456-426614174000"]
+                ),
+            ],
+        ),
+        webhooks=[],
+    )
+
+    created_experiment = aclient.create_experiment(
+        datasource_id=datasource_id, body=experiment_request, desired_n=100, random_state=42
+    ).data
+    experiment_id = created_experiment.experiment_id
+
+    # Verify basic response
+    spec = created_experiment.design_spec
+    assert isinstance(spec, PreassignedFrequentistExperimentSpec)
+
+    assert len(spec.metrics) == 2
+    assert spec.metrics[0].field_name == "current_income"
+    assert spec.metrics[0].metric_pct_change == 5
+    assert spec.metrics[1].field_name == "is_engaged"
+    assert spec.metrics[1].metric_target == 0.5
+
+    assert len(spec.strata) == 2
+    assert spec.strata[0].field_name == "ethnicity"
+    assert spec.strata[1].field_name == "baseline_income"
+
+    assert len(spec.filters) == 6
+    a_filter = next(f for f in spec.filters if f.field_name == "gender")
+    assert a_filter.field_name == "gender"
+    assert a_filter.relation == Relation.INCLUDES
+    assert a_filter.value == ["Male"]
+    a_filter = next(f for f in spec.filters if f.field_name == "current_income")
+    assert a_filter.field_name == "current_income"
+    assert a_filter.relation == Relation.BETWEEN
+    assert a_filter.value == [0.0, 100000.0]
+    a_filter = next(f for f in spec.filters if f.field_name == "is_engaged")
+    assert a_filter.field_name == "is_engaged"
+    assert a_filter.relation == Relation.INCLUDES
+    assert a_filter.value == [True, None]
+    a_filter = next(f for f in spec.filters if f.field_name == "id")
+    assert a_filter.field_name == "id"
+    assert a_filter.relation == Relation.EXCLUDES
+    assert a_filter.value == ["9007199254740993", None]
+    a_filter = next(f for f in spec.filters if f.field_name == "sample_date")
+    assert a_filter.field_name == "sample_date"
+    assert a_filter.relation == Relation.BETWEEN
+    assert a_filter.value == ["2024-01-01", "2026-01-01"]
+    a_filter = next(f for f in spec.filters if f.field_name == "uuid_filter")
+    assert a_filter.field_name == "uuid_filter"
+    assert a_filter.relation == Relation.EXCLUDES
+    assert a_filter.value == ["123e4567-e89b-12d3-a456-426614174000"]
+
+    # Verify database state of fields
+    experiment = await get_experiment_preloaded(xngin_session, experiment_id)
+    assert len(experiment.experiment_filters) == 6
+    assert len(experiment.experiment_fields) == 8
+    unique_id_field = next(f for f in experiment.experiment_fields if f.field_name == "id")
+    assert unique_id_field.data_type == "bigint"
+    assert unique_id_field.is_unique_id
+    assert unique_id_field.is_filter
+    assert unique_id_field.experiment_filters is not None
+    assert unique_id_field.experiment_filters[0].relation == Relation.EXCLUDES
+    assert unique_id_field.experiment_filters[0].numeric_values == [(2 << 52) + 1, None]
+    assert unique_id_field.experiment_filters[0].position == 4
+    current_income_field = next(f for f in experiment.experiment_fields if f.field_name == "current_income")
+    assert current_income_field.data_type == "numeric"
+    assert current_income_field.is_metric
+    assert current_income_field.is_primary_metric
+    assert current_income_field.is_filter
+    assert current_income_field.experiment_filters is not None
+    assert current_income_field.experiment_filters[0].relation == Relation.BETWEEN
+    assert current_income_field.experiment_filters[0].numeric_values == [0.0, 100000.0]
+    assert current_income_field.experiment_filters[0].position == 2
+    is_engaged_field = next(f for f in experiment.experiment_fields if f.field_name == "is_engaged")
+    assert is_engaged_field.data_type == "boolean"
+    assert is_engaged_field.is_metric
+    assert not is_engaged_field.is_primary_metric
+    assert is_engaged_field.is_filter
+    assert is_engaged_field.experiment_filters is not None
+    assert is_engaged_field.experiment_filters[0].relation == Relation.INCLUDES
+    assert is_engaged_field.experiment_filters[0].boolean_values == [1, None]
+    assert is_engaged_field.experiment_filters[0].position == 3
+    ethnicity_field = next(f for f in experiment.experiment_fields if f.field_name == "ethnicity")
+    assert ethnicity_field.data_type == "character varying"
+    assert ethnicity_field.is_strata
+    baseline_income_field = next(f for f in experiment.experiment_fields if f.field_name == "baseline_income")
+    assert baseline_income_field.data_type == "numeric"
+    assert baseline_income_field.is_strata
+    gender_field = next(f for f in experiment.experiment_fields if f.field_name == "gender")
+    assert gender_field.data_type == "character varying"
+    assert gender_field.is_filter
+    assert gender_field.experiment_filters is not None
+    assert gender_field.experiment_filters[0].relation == Relation.INCLUDES
+    assert gender_field.experiment_filters[0].string_values == ["Male"]
+    assert gender_field.experiment_filters[0].position == 1
+    sample_date_field = next(f for f in experiment.experiment_fields if f.field_name == "sample_date")
+    assert sample_date_field.data_type == "date"
+    assert sample_date_field.is_filter
+    assert sample_date_field.experiment_filters is not None
+    assert sample_date_field.experiment_filters[0].relation == Relation.BETWEEN
+    assert sample_date_field.experiment_filters[0].string_values == ["2024-01-01", "2026-01-01"]
+    assert sample_date_field.experiment_filters[0].position == 5
+    uuid_filter_field = next(f for f in experiment.experiment_fields if f.field_name == "uuid_filter")
+    assert uuid_filter_field.data_type == "uuid"
+    assert uuid_filter_field.is_filter
+    assert uuid_filter_field.experiment_filters is not None
+    assert uuid_filter_field.experiment_filters[0].relation == Relation.EXCLUDES
+    assert uuid_filter_field.experiment_filters[0].string_values == ["123e4567-e89b-12d3-a456-426614174000"]
+    assert uuid_filter_field.experiment_filters[0].position == 6
+
+    # And finally check getting the experiment is consistent with the created experiment.
+    experiment_for_ui = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=experiment_id).data
+    diff = DeepDiff(
+        created_experiment,
+        experiment_for_ui.config,
+        ignore_type_in_groups=[(CreateExperimentResponse, ExperimentConfig)],
+    )
+    assert not diff, f"Objects differ:\n{diff.pretty()}"
+
+    # Get assignments for the experiment as CSV to verify the spec's strata fields are included.
+    csv_response = aclient.client.get(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/csv",
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+    assert csv_response.status_code == HTTPStatus.OK
+    assert csv_response.headers["content-type"].startswith("text/csv")
+    assert (
+        csv_response.headers["content-disposition"]
+        == f'attachment; filename="experiment_{experiment_id}_assignments.csv"'
+    )
+
+    csv_lines = csv_response.text.strip().splitlines()
+    assert len(csv_lines) == 101
+    assert csv_lines[0] == "participant_id,arm_id,arm_name,created_at,baseline_income,ethnicity"
+    for line in csv_lines[1:]:
+        # CSV lines should have values for all fields
+        assert len([value for value in line.split(",") if value != ""]) == 6
 
 
 def test_create_freq_online_experiment(testing_datasource_with_user, use_deterministic_random, aclient: AdminAPIClient):
@@ -1926,128 +2142,6 @@ async def test_update_arm_invalid(xngin_session, testing_experiment, aclient: Ad
         )
 
 
-def test_get_experiment_assignment_for_preassigned_participant(testing_experiment, aclient: AdminAPIClient):
-    datasource_id = testing_experiment.datasource_id
-    experiment_id = testing_experiment.id
-    assignments = testing_experiment.arm_assignments
-
-    assignment_response = aclient.get_experiment_assignment_for_participant(
-        datasource_id=datasource_id, experiment_id=experiment_id, participant_id="unassigned_id"
-    ).data
-    assert assignment_response.experiment_id == experiment_id
-    assert assignment_response.participant_id == "unassigned_id"
-    assert assignment_response.assignment is None
-
-    assignment_response = aclient.get_experiment_assignment_for_participant(
-        datasource_id=datasource_id, experiment_id=experiment_id, participant_id=assignments[0].participant_id
-    ).data
-    assert assignment_response.experiment_id == experiment_id
-    assert assignment_response.participant_id == assignments[0].participant_id
-    assert assignment_response.assignment is not None
-
-
-async def test_get_experiment_assignment_for_online_participant(
-    xngin_session: AsyncSession, testing_datasource_with_user, aclient: AdminAPIClient
-):
-    datasource_id = testing_datasource_with_user.ds.id
-    experiment_resp = await make_freq_online_experiment(datasource_id, aclient)
-    experiment_id = experiment_resp.config.experiment_id
-    experiment_arms = experiment_resp.config.design_spec.arms
-
-    # Check for an assignment that doesn't exist, but don't create it.
-    assignment_response = aclient.get_experiment_assignment_for_participant(
-        datasource_id=datasource_id, experiment_id=experiment_id, participant_id="new_id", create_if_none=False
-    ).data
-    assert assignment_response.experiment_id == experiment_id
-    assert assignment_response.participant_id == "new_id"
-    assert assignment_response.assignment is None
-
-    # Create a new participant assignment.
-    assignment_response = aclient.get_experiment_assignment_for_participant(
-        datasource_id=datasource_id, experiment_id=experiment_id, participant_id="new_id"
-    ).data
-    assert assignment_response.experiment_id == experiment_id
-    assert assignment_response.participant_id == "new_id"
-    assert assignment_response.assignment is not None
-    assert str(assignment_response.assignment.arm_id) in {arm.arm_id for arm in experiment_arms}
-
-    # Get back the same assignment.
-    assignment_response2 = aclient.get_experiment_assignment_for_participant(
-        datasource_id=datasource_id, experiment_id=experiment_id, participant_id="new_id"
-    ).data
-    assert assignment_response2 == assignment_response
-
-    # Make sure there's only one db entry.
-    scalars = await xngin_session.scalars(
-        select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
-    )
-    assignment = scalars.one()
-    assert assignment.participant_id == "new_id"
-    assert assignment.arm_id == str(assignment_response.assignment.arm_id)
-
-
-async def test_get_mab_experiment_assignment_for_online_participant(
-    xngin_session: AsyncSession, testing_datasource_with_user, aclient: AdminAPIClient
-):
-    test_experiment = await insert_experiment_and_arms(
-        xngin_session, testing_datasource_with_user.ds, ExperimentsType.MAB_ONLINE
-    )
-    datasource_id = test_experiment.datasource_id
-    experiment_id = test_experiment.id
-
-    # Check for an assignment that doesn't exist, but don't create it.
-    assignment_response = aclient.get_experiment_assignment_for_participant(
-        datasource_id=datasource_id, experiment_id=experiment_id, participant_id="new_id", create_if_none=False
-    ).data
-    assert assignment_response.experiment_id == experiment_id
-    assert assignment_response.participant_id == "new_id"
-    assert assignment_response.assignment is None
-
-    # Create a new participant assignment.
-    assignment_response = aclient.get_experiment_assignment_for_participant(
-        datasource_id=datasource_id, experiment_id=experiment_id, participant_id="new_id"
-    ).data
-    assert assignment_response.experiment_id == experiment_id
-    assert assignment_response.participant_id == "new_id"
-    assert assignment_response.assignment is not None
-    assert assignment_response.assignment.observed_at is None
-    assert assignment_response.assignment.outcome is None
-    assert str(assignment_response.assignment.arm_id) in {arm.id for arm in test_experiment.arms}
-
-    # Get back the same assignment.
-    assignment_response2 = aclient.get_experiment_assignment_for_participant(
-        datasource_id=datasource_id, experiment_id=experiment_id, participant_id="new_id"
-    ).data
-    assert assignment_response2 == assignment_response
-
-    # Make sure there's only one db entry.
-    scalars = await xngin_session.scalars(select(tables.Draw).where(tables.Draw.experiment_id == experiment_id))
-    assignment = scalars.one()
-    assert assignment.participant_id == "new_id"
-    assert assignment.arm_id == str(assignment_response.assignment.arm_id)
-
-
-async def test_get_experiment_assignment_for_online_participant_past_end_date(
-    testing_datasource_with_user, aclient: AdminAPIClient
-):
-    datasource_id = testing_datasource_with_user.ds.id
-    end_date = datetime.now(UTC) - timedelta(days=1)
-    experiment_id = (await make_freq_online_experiment(datasource_id, aclient, end_date=end_date)).config.experiment_id
-
-    # Verify no new assignment is created for the ended experiment.
-    assignment_response = aclient.get_experiment_assignment_for_participant(
-        datasource_id=datasource_id, experiment_id=experiment_id, participant_id="new_id"
-    ).data
-    assert assignment_response.experiment_id == experiment_id
-    assert assignment_response.participant_id == "new_id"
-    assert assignment_response.assignment is None, assignment_response.model_dump_json()
-
-    # Verify that the experiment state was updated.
-    experiment_resp = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=experiment_id).data
-    assert experiment_resp.config.stopped_assignments_at is not None
-    assert experiment_resp.config.stopped_assignments_reason == StopAssignmentReason.END_DATE
-
-
 def test_freq_experiments_analyze(testing_experiment, aclient: AdminAPIClient):
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
@@ -2154,15 +2248,12 @@ async def test_analyze_experiment_with_no_participants(testing_datasource_with_u
 
 
 async def test_analyze_experiment_whose_assignments_have_no_dwh_data(
-    testing_datasource_with_user, aclient: AdminAPIClient
+    testing_datasource_with_user, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     datasource_id = testing_datasource_with_user.ds.id
     experiment_id = (await make_freq_online_experiment(datasource_id, aclient)).config.experiment_id
 
-    # Create a new participant assignment for an id missing in the dwh.
-    aclient.get_experiment_assignment_for_participant(
-        datasource_id=datasource_id, experiment_id=experiment_id, participant_id="0"
-    )
+    eclient.get_assignment(api_key=testing_datasource_with_user.key, experiment_id=experiment_id, participant_id="0")
 
     with expect_status_code(
         422,
@@ -3095,6 +3186,10 @@ async def test_create_experiment_with_table_name_and_primary_key(
     participant_names = [p.participant_type for p in list_response.items]
     assert created.design_spec.participant_type not in participant_names
 
+    # Verify datasource_table is set to the requested table name
+    experiment = await xngin_session.get_one(tables.Experiment, created.experiment_id)
+    assert experiment.datasource_table == "dwh"
+
 
 def test_create_experiment_table_name_requires_primary_key(testing_datasource_with_user, aclient: AdminAPIClient):
     """Test that table_name requires primary_key."""
@@ -3117,7 +3212,7 @@ def test_create_experiment_primary_key_requires_table_name(testing_datasource_wi
 
 
 async def test_create_preassigned_experiment_with_table_name_and_primary_key(
-    testing_datasource_with_user, use_deterministic_random, aclient: AdminAPIClient
+    xngin_session: AsyncSession, testing_datasource_with_user, use_deterministic_random, aclient: AdminAPIClient
 ):
     """Test creating a preassigned experiment with table_name and primary_key."""
     ds_id = testing_datasource_with_user.ds.id
@@ -3139,6 +3234,10 @@ async def test_create_preassigned_experiment_with_table_name_and_primary_key(
     assert created.design_spec.participant_type.startswith("__dwh_")
     assert created.assign_summary is not None
     assert created.assign_summary.sample_size == 100
+
+    # Verify datasource_table is set to the requested table name
+    experiment = await xngin_session.get_one(tables.Experiment, created.experiment_id)
+    assert experiment.datasource_table == "dwh"
 
 
 def test_list_snapshots_pagination(aclient: AdminAPIClient):

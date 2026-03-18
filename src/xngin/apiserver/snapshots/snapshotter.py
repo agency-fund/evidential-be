@@ -91,6 +91,9 @@ async def make_first_snapshot(experiment_id: str, snapshot_id: str):
                     selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.draws),
                     selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.contexts),
                     selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.datasource),
+                    selectinload(tables.Snapshot.experiment)
+                    .selectinload(tables.Experiment.experiment_fields)
+                    .selectinload(tables.ExperimentField.experiment_filters),
                 )
             )
         ).scalar_one_or_none()
@@ -120,6 +123,9 @@ async def process_pending_snapshots(snapshot_timeout: int):
             selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.draws),
             selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.contexts),
             selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.datasource),
+            selectinload(tables.Snapshot.experiment)
+            .selectinload(tables.Experiment.experiment_fields)
+            .selectinload(tables.ExperimentField.experiment_filters),
         )
     )
 
