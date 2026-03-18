@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
-import statsmodels.formula.api as smf
+import statsmodels.api as sm
 from pandas.api.types import is_any_real_numeric_dtype
 
 from xngin.stats.stats_errors import StatsBalanceError
@@ -114,17 +115,6 @@ def restore_original_numeric_columns(df_orig: pd.DataFrame, df_cleaned: pd.DataF
     return df_cleaned
 
 
-def _q(col: str) -> str:
-    """Quote a column name for use in Patsy formulas."""
-    if '"' not in col:
-        return f'Q("{col}")'
-    if "'" not in col:
-        return f"Q('{col}')"
-    # Else, column contains both ' and "
-    col_escaped = col.replace('"', r"\"")
-    return f'Q("{col_escaped}")'
-
-
 def check_balance_of_preprocessed_df(
     data: pd.DataFrame,
     treatment_col: str = "treat",
@@ -158,18 +148,31 @@ def check_balance_of_preprocessed_df(
             "and fields used for stratification."
         )
 
-    # Use Patsy's C() to handle categoricals and Q() to handle bad column names
-    non_numeric_covariates = [c for c in covariates if not is_any_real_numeric_dtype(data[c])]
-    wrapped_covariates = [f"C({_q(c)})" if c in non_numeric_covariates else _q(c) for c in covariates]
-    formula = f"{_q(treatment_col)} ~ " + " + ".join(wrapped_covariates)
-    # print(f"------FORMULA:\n\t{formula}")
-
     # Fit regression model; for now only check the first two treatment groups.
     df_analysis = data[data[treatment_col].isin([0, 1])]
+
+    # Build the design matrix directly with pd.get_dummies instead of patsy's formula
+    # API. patsy iterates every element in Python to detect NAs and convert categoricals,
+    # which costs ~5.6s for 1M rows. pd.get_dummies does this vectorized in C.
+    categorical_cols = [c for c in covariates if not is_any_real_numeric_dtype(df_analysis[c])]
+    numeric_cols = [c for c in covariates if c not in categorical_cols]
+
+    parts: list[pd.DataFrame] = []
+    if numeric_cols:
+        parts.append(df_analysis[numeric_cols].astype(np.float64))
+    if categorical_cols:
+        dummies = pd.get_dummies(df_analysis[categorical_cols], drop_first=True, dtype=np.float64)
+        parts.append(dummies)
+
+    exog = pd.concat(parts, axis=1) if parts else pd.DataFrame(index=df_analysis.index)
+    exog.insert(0, "Intercept", 1.0)
+    exog = exog.astype(np.float64)
+    endog = df_analysis[treatment_col].astype(np.float64)
+
     # While HC3 may be better at low sample sizes (Long & Ervin 2000), it is sensitive to high
     # leverage points, so use HC1 for now. Future work should consider:
     # https://blog.stata.com/2022/10/06/heteroskedasticity-robust-standard-errors-some-practical-considerations/
-    model = smf.ols(formula=formula, data=df_analysis).fit(method="pinv", cov_type="HC1")
+    model = sm.OLS(endog, exog).fit(method="pinv", cov_type="HC1")
 
     return BalanceResult(
         f_statistic=model.fvalue,
