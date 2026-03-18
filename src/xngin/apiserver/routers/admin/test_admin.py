@@ -1563,6 +1563,7 @@ async def test_create_freq_preassigned_experiment(
     testing_datasource_with_user,
     use_deterministic_random,
     aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
 ):
     datasource_id = testing_datasource_with_user.ds.id
     request_obj = make_create_preassigned_experiment_request()
@@ -1627,8 +1628,8 @@ async def test_create_freq_preassigned_experiment(
     assert is_onboarded_field.data_type == "boolean"
 
     # Verify assignments were created
-    actual_assignments = aclient.get_experiment_assignments_for_ui(
-        datasource_id=datasource_id, experiment_id=experiment_id
+    actual_assignments = eclient.get_experiment_assignments(
+        api_key=testing_datasource_with_user.key, experiment_id=experiment_id
     ).data
     assert len(actual_assignments.assignments) == 100
 
