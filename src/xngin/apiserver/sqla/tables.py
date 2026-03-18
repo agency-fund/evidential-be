@@ -612,6 +612,7 @@ class ExperimentFilter(Base):
     experiment_field: Mapped[ExperimentField] = relationship(
         back_populates="experiment_filters",
         overlaps="experiment",
+        order_by="asc(ExperimentFilter.position)",
     )
 
     __table_args__ = (

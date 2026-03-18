@@ -149,7 +149,7 @@ class DataType(enum.StrEnum):
             case _:
                 raise RuntimeError(f"Unsupported data type {self} for field {field_name}")
 
-    def storage_class(self, field_name):
+    def storage_class(self):
         """Classifies a DataType into a storage class."""
         match self:
             case (
@@ -170,10 +170,10 @@ class DataType(enum.StrEnum):
             ):
                 return DataTypeStorageClass.NUMERIC
             case _:
-                raise RuntimeError(f"Unsupported data type {self} for field {field_name}")
+                raise RuntimeError(f"Unsupported data type {self}")
 
 
-class DataTypeStorageClass(enum.Enum):
+class DataTypeStorageClass(enum.StrEnum):
     """Internal helper for grouping our supported data types by how to store them."""
 
     STRING = enum.auto()

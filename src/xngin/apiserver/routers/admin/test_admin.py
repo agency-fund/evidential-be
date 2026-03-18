@@ -3,6 +3,7 @@ import copy
 import json
 import math
 from datetime import UTC, datetime, timedelta
+from http import HTTPStatus
 from typing import Protocol
 from urllib.parse import urlparse
 
@@ -1617,24 +1618,21 @@ async def test_create_freq_preassigned_experiment(
     assert is_onboarded_field.data_type == "boolean"
 
     # Verify assignments were created
-    assignments = (
-        await xngin_session.scalars(
-            select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment_id)
-        )
-    ).all()
-    assert len(assignments) == 100, {e.name: getattr(experiment, e.name) for e in tables.Experiment.__table__.columns}
+    actual_assignments = aclient.get_experiment_assignments_for_ui(
+        datasource_id=datasource_id, experiment_id=experiment_id
+    ).data
+    assert len(actual_assignments.assignments) == 100
 
     # Check one assignment to see if it looks roughly right
-    sample_assignment: tables.ArmAssignment = assignments[0]
-    assert sample_assignment.participant_type == "test_participant_type"
-    assert sample_assignment.experiment_id == experiment_id
+    sample_assignment = actual_assignments.assignments[0]
     assert sample_assignment.arm_id in {arm1_id, arm2_id}
+    assert sample_assignment.strata is not None and len(sample_assignment.strata) == 2
     for stratum in sample_assignment.strata:
-        assert stratum["field_name"] in {"is_onboarded", "gender"}
+        assert stratum.field_name in {"is_onboarded", "gender"}
 
     # Check for approximate balance in arm assignment
-    num_control = sum(1 for a in assignments if a.arm_id == arm1_id)
-    num_treat = sum(1 for a in assignments if a.arm_id == arm2_id)
+    num_control = sum(1 for a in actual_assignments.assignments if a.arm_id == arm1_id)
+    num_treat = sum(1 for a in actual_assignments.assignments if a.arm_id == arm2_id)
     assert abs(num_control - num_treat) <= 5  # Allow some wiggle room
 
 
@@ -1787,6 +1785,25 @@ async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
         ignore_type_in_groups=[(CreateExperimentResponse, ExperimentConfig)],
     )
     assert not diff, f"Objects differ:\n{diff.pretty()}"
+
+    # Get assignments for the experiment as CSV to verify the spec's strata fields are included.
+    csv_response = aclient.client.get(
+        f"/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/csv",
+        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    )
+    assert csv_response.status_code == HTTPStatus.OK
+    assert csv_response.headers["content-type"].startswith("text/csv")
+    assert (
+        csv_response.headers["content-disposition"]
+        == f'attachment; filename="experiment_{experiment_id}_assignments.csv"'
+    )
+
+    csv_lines = csv_response.text.strip().splitlines()
+    assert len(csv_lines) == 101
+    assert csv_lines[0] == "participant_id,arm_id,arm_name,created_at,baseline_income,ethnicity"
+    for line in csv_lines[1:]:
+        # CSV lines should have values for all fields
+        assert len([value for value in line.split(",") if value != ""]) == 6
 
 
 def test_create_freq_online_experiment(testing_datasource_with_user, use_deterministic_random, aclient: AdminAPIClient):

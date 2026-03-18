@@ -176,7 +176,7 @@ class ExperimentStorageConverter:
             # and associate new filter metadata with the field
             filters = field.experiment_filters or []
             values = filter_item.value
-            match datatype.storage_class(filter_item.field_name):
+            match datatype.storage_class():
                 case DataTypeStorageClass.BOOLEAN:
                     values = [None if v is None else bool(v) for v in values]
                     filters.append(
