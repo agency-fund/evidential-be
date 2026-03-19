@@ -36,7 +36,7 @@ from xngin.apiserver.routers.common_api_types import (
     PriorTypes,
     Stratum,
 )
-from xngin.apiserver.routers.common_enums import ExperimentState, Relation, StopAssignmentReason
+from xngin.apiserver.routers.common_enums import DataType, ExperimentState, Relation, StopAssignmentReason
 from xngin.apiserver.routers.experiments.experiments_common import (
     AbandonExperimentResult,
     CommitExperimentResult,
@@ -47,6 +47,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     create_assignment_for_participant,
     create_bandit_online_experiment_impl,
     create_experiment_impl,
+    create_freq_online_experiment_impl,
     create_preassigned_experiment_impl,
     extract_participant_field_info,
     get_assign_summary,
@@ -210,6 +211,7 @@ def make_create_online_bandit_experiment_request(
 async def make_insertable_experiment(
     datasource: tables.Datasource,
     state: ExperimentState = ExperimentState.COMMITTED,
+    *,
     experiment_type: ExperimentsType = ExperimentsType.FREQ_PREASSIGNED,
     prior_type: PriorTypes = PriorTypes.NORMAL,
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
@@ -401,8 +403,33 @@ async def test_create_preassigned_experiment_impl(
     assert response.assign_summary.balance_check is not None
     assert response.assign_summary.balance_check.balance_ok is True
 
-    # Verify database state uses app-generated ids
+    # Verify database state
     experiment = await get_experiment_preloaded(xngin_session, experiment_id)
+    # Reorder storage layout for arms to confirm we're able to retrieve in order according to position.
+    if reorder_arms:
+        experiment.arms.append(experiment.arms.pop(0))
+        await xngin_session.commit()
+        xngin_session.expunge(experiment)
+        experiment = await get_experiment_preloaded(xngin_session, experiment.id)
+
+    assert experiment.arms[0].id is not None
+    assert experiment.arms[0].name == "control"
+    assert experiment.arms[0].position == 1
+    assert experiment.arms[1].id is not None
+    assert experiment.arms[1].name == "treatment"
+    assert experiment.arms[1].position == 2
+
+    assert experiment.experiment_type == ExperimentsType.FREQ_PREASSIGNED
+    assert experiment.participant_type == request.design_spec.participant_type
+    assert experiment.datasource_table == participants_schema.table_name
+    assert experiment.name == request.design_spec.experiment_name
+    assert experiment.description == request.design_spec.description
+    assert experiment.design_url == expected_design_url
+    assert experiment.state == ExperimentState.ASSIGNED
+    assert experiment.datasource_id == testing_datasource.ds.id
+    # This comparison is dependent on whether the db can store tz or not (sqlite does not).
+    assert_dates_equal(experiment.start_date, request.design_spec.start_date)
+    assert_dates_equal(experiment.end_date, request.design_spec.end_date)
 
     # Verify that experiment_fields were stored correctly (see defaults in make_createexperimentrequest_json)
     experiment_fields = experiment.experiment_fields
@@ -418,25 +445,6 @@ async def test_create_preassigned_experiment_impl(
     assert is_onboarded_field is not None
     assert is_onboarded_field.is_metric
     assert is_onboarded_field.data_type == "boolean"
-
-    # Reorder storage layout for arms to confirm we're able to retrieve in order according to position.
-    if reorder_arms:
-        experiment.arms.append(experiment.arms.pop(0))
-        await xngin_session.commit()
-        xngin_session.expunge(experiment)
-        experiment = await get_experiment_preloaded(xngin_session, experiment.id)
-
-    assert experiment.experiment_type == ExperimentsType.FREQ_PREASSIGNED
-    assert experiment.participant_type == request.design_spec.participant_type
-    assert experiment.datasource_table == participants_schema.table_name
-    assert experiment.name == request.design_spec.experiment_name
-    assert experiment.description == request.design_spec.description
-    assert experiment.design_url == expected_design_url
-    assert experiment.state == ExperimentState.ASSIGNED
-    assert experiment.datasource_id == testing_datasource.ds.id
-    # This comparison is dependent on whether the db can store tz or not (sqlite does not).
-    assert_dates_equal(experiment.start_date, request.design_spec.start_date)
-    assert_dates_equal(experiment.end_date, request.design_spec.end_date)
 
     # Verify stats parameters were stored correctly
     assert isinstance(request.design_spec, PreassignedFrequentistExperimentSpec)
@@ -673,6 +681,174 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
         assert db_arm.position == i
         assert arm.arm_name == db_arm.name
         assert arm.arm_weight == db_arm.arm_weight
+
+
+async def test_create_freq_online_experiment_impl_experiments_fields_are_correctly_stored(
+    xngin_session: AsyncSession,
+    testing_datasource,
+    use_deterministic_random,
+):
+    """Test creating a freq online experiment with filters, metrics, and strata are correctly stored."""
+    experiment_request = CreateExperimentRequest(
+        table_name="dwh",
+        primary_key="id",
+        design_spec=OnlineFrequentistExperimentSpec(
+            participant_type="",
+            experiment_type="freq_online",
+            experiment_name="Test Experiment with Filters",
+            description="Testing field storage",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
+            arms=[Arm(arm_name="control", arm_description=""), Arm(arm_name="treatment", arm_description="")],
+            metrics=[
+                DesignSpecMetricRequest(field_name="current_income", metric_pct_change=5),
+                DesignSpecMetricRequest(field_name="is_engaged", metric_target=0.5),
+            ],
+            strata=[
+                Stratum(field_name="ethnicity"),
+                Stratum(field_name="baseline_income"),
+            ],
+            filters=[
+                Filter(field_name="gender", relation=Relation.INCLUDES, value=["Male"]),
+                Filter(field_name="current_income", relation=Relation.BETWEEN, value=[0.0, 100000.0]),
+                Filter(field_name="is_engaged", relation=Relation.INCLUDES, value=[True, None]),
+                Filter(field_name="id", relation=Relation.EXCLUDES, value=[9007199254740993, None]),
+                Filter(field_name="sample_date", relation=Relation.BETWEEN, value=["2024-01-01", "2026-01-01"]),
+                Filter(
+                    field_name="uuid_filter", relation=Relation.EXCLUDES, value=["123e4567-e89b-12d3-a456-426614174000"]
+                ),
+            ],
+        ),
+        webhooks=[],
+    )
+
+    # Fake our field type map. Normally extracted from datasource schema.
+    field_type_map: dict[str, DataType] = {
+        "participant_id": DataType.CHARACTER_VARYING,
+        "gender": DataType.CHARACTER_VARYING,
+        "is_engaged": DataType.BOOLEAN,
+        "current_income": DataType.DOUBLE_PRECISION,
+        "baseline_income": DataType.NUMERIC,
+        "ethnicity": DataType.CHARACTER_VARYING,
+        "id": DataType.BIGINT,
+        "sample_date": DataType.DATE,
+        "uuid_filter": DataType.UUID,
+    }
+
+    response = await create_freq_online_experiment_impl(
+        request=experiment_request,
+        datasource_id=testing_datasource.ds.id,
+        organization_id=testing_datasource.ds.organization_id,
+        xngin_session=xngin_session,
+        validated_webhooks=[],
+        table_name=experiment_request.table_name,
+        field_type_map=field_type_map,
+        unique_id_name=experiment_request.primary_key,
+    )
+
+    # Verify API response
+    assert response.experiment_id is not None
+    assert response.datasource_id == testing_datasource.ds.id
+    assert response.state == ExperimentState.ASSIGNED
+
+    assert isinstance(response.design_spec, OnlineFrequentistExperimentSpec)
+    assert response.design_spec.experiment_name == experiment_request.design_spec.experiment_name
+    assert response.design_spec.description == experiment_request.design_spec.description
+    assert response.design_spec.start_date == experiment_request.design_spec.start_date
+    assert response.design_spec.end_date == experiment_request.design_spec.end_date
+    assert all(arm.arm_id is not None for arm in response.design_spec.arms)
+    assert all(arm.arm_name in {"control", "treatment"} for arm in response.design_spec.arms)
+    assert len(response.design_spec.metrics) == 2
+    assert response.design_spec.metrics[0].field_name == "current_income"
+    assert response.design_spec.metrics[0].metric_pct_change == 5
+    assert response.design_spec.metrics[1].field_name == "is_engaged"
+    assert response.design_spec.metrics[1].metric_target == 0.5
+    assert len(response.design_spec.strata) == 2
+    assert response.design_spec.strata[0].field_name == "ethnicity"
+    assert response.design_spec.strata[1].field_name == "baseline_income"
+    assert len(response.design_spec.filters) == 6
+    assert response.design_spec.filters[0].field_name == "gender"
+    assert response.design_spec.filters[0].relation == Relation.INCLUDES
+    assert response.design_spec.filters[0].value == ["Male"]
+    assert response.design_spec.filters[1].field_name == "current_income"
+    assert response.design_spec.filters[1].relation == Relation.BETWEEN
+    assert response.design_spec.filters[1].value == [0.0, 100000.0]
+    assert response.design_spec.filters[2].field_name == "is_engaged"
+    assert response.design_spec.filters[2].relation == Relation.INCLUDES
+    assert response.design_spec.filters[2].value == [True, None]
+    assert response.design_spec.filters[3].field_name == "id"
+    assert response.design_spec.filters[3].relation == Relation.EXCLUDES
+    assert response.design_spec.filters[3].value == ["9007199254740993", None]
+    assert response.design_spec.filters[4].field_name == "sample_date"
+    assert response.design_spec.filters[4].relation == Relation.BETWEEN
+    assert response.design_spec.filters[4].value == ["2024-01-01", "2026-01-01"]
+    assert response.design_spec.filters[5].field_name == "uuid_filter"
+    assert response.design_spec.filters[5].relation == Relation.EXCLUDES
+    assert response.design_spec.filters[5].value == ["123e4567-e89b-12d3-a456-426614174000"]
+
+    assert response.assign_summary is not None
+    assert response.assign_summary.sample_size == 0
+    assert response.assign_summary.balance_check is None
+    assert response.assign_summary.arm_sizes is not None
+    assert all(arm_size.size == 0 for arm_size in response.assign_summary.arm_sizes)
+
+    # Verify database state of fields
+    experiment = await get_experiment_preloaded(xngin_session, response.experiment_id)
+    assert len(experiment.experiment_filters) == 6
+    assert len(experiment.experiment_fields) == 8
+    unique_id_field = next(f for f in experiment.experiment_fields if f.field_name == "id")
+    assert unique_id_field.data_type == "bigint"
+    assert unique_id_field.is_unique_id
+    assert unique_id_field.is_filter
+    assert unique_id_field.experiment_filters is not None
+    assert unique_id_field.experiment_filters[0].relation == Relation.EXCLUDES
+    assert unique_id_field.experiment_filters[0].numeric_values == [(2 << 52) + 1, None]
+    assert unique_id_field.experiment_filters[0].position == 4
+    current_income_field = next(f for f in experiment.experiment_fields if f.field_name == "current_income")
+    assert current_income_field.data_type == "double precision"
+    assert current_income_field.is_metric
+    assert current_income_field.is_primary_metric
+    assert current_income_field.is_filter
+    assert current_income_field.experiment_filters is not None
+    assert current_income_field.experiment_filters[0].relation == Relation.BETWEEN
+    assert current_income_field.experiment_filters[0].numeric_values == [0.0, 100000.0]
+    assert current_income_field.experiment_filters[0].position == 2
+    is_engaged_field = next(f for f in experiment.experiment_fields if f.field_name == "is_engaged")
+    assert is_engaged_field.data_type == "boolean"
+    assert is_engaged_field.is_metric
+    assert not is_engaged_field.is_primary_metric
+    assert is_engaged_field.is_filter
+    assert is_engaged_field.experiment_filters is not None
+    assert is_engaged_field.experiment_filters[0].relation == Relation.INCLUDES
+    assert is_engaged_field.experiment_filters[0].boolean_values == [1, None]
+    assert is_engaged_field.experiment_filters[0].position == 3
+    ethnicity_field = next(f for f in experiment.experiment_fields if f.field_name == "ethnicity")
+    assert ethnicity_field.data_type == "character varying"
+    assert ethnicity_field.is_strata
+    baseline_income_field = next(f for f in experiment.experiment_fields if f.field_name == "baseline_income")
+    assert baseline_income_field.data_type == "numeric"
+    assert baseline_income_field.is_strata
+    gender_field = next(f for f in experiment.experiment_fields if f.field_name == "gender")
+    assert gender_field.data_type == "character varying"
+    assert gender_field.is_filter
+    assert gender_field.experiment_filters is not None
+    assert gender_field.experiment_filters[0].relation == Relation.INCLUDES
+    assert gender_field.experiment_filters[0].string_values == ["Male"]
+    assert gender_field.experiment_filters[0].position == 1
+    sample_date_field = next(f for f in experiment.experiment_fields if f.field_name == "sample_date")
+    assert sample_date_field.data_type == "date"
+    assert sample_date_field.is_filter
+    assert sample_date_field.experiment_filters is not None
+    assert sample_date_field.experiment_filters[0].relation == Relation.BETWEEN
+    assert sample_date_field.experiment_filters[0].string_values == ["2024-01-01", "2026-01-01"]
+    assert sample_date_field.experiment_filters[0].position == 5
+    uuid_filter_field = next(f for f in experiment.experiment_fields if f.field_name == "uuid_filter")
+    assert uuid_filter_field.data_type == "uuid"
+    assert uuid_filter_field.is_filter
+    assert uuid_filter_field.experiment_filters is not None
+    assert uuid_filter_field.experiment_filters[0].relation == Relation.EXCLUDES
+    assert uuid_filter_field.experiment_filters[0].string_values == ["123e4567-e89b-12d3-a456-426614174000"]
+    assert uuid_filter_field.experiment_filters[0].position == 6
 
 
 @pytest.mark.parametrize("reorder_arms", [True, False])
