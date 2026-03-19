@@ -42,7 +42,7 @@ dev = [
     "coverage>=7.11.0",
     "deepdiff>=8.6.1,<9",
     "fastapi-typed-client @ git+https://github.com/dctaf/fastapi-typed-client-fork@evid",
-    "mypy>=1.18.2",
+    "mypy>=1.19.1",
     "pandas-stubs>=2.3.2",
     "pre-commit>=4.5.0,<4.6.0",
     "pytest-asyncio>=1.2.0",
