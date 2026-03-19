@@ -308,7 +308,6 @@ class MockRow(RowProtocolMixin):
     participant_id: str
     gender: str = "M"
     is_onboarded: bool = True
-    region: str = "North"  # Default value for backward compatibility
 
 
 @pytest.fixture
@@ -1604,7 +1603,7 @@ async def make_experiment_with_assignments(
             created_at=datetime(2025, 1, 1, tzinfo=UTC),
             strata=[
                 {"field_name": "gender", "strata_value": "F"},
-                {"field_name": "score", "strata_value": "1.1"},
+                {"field_name": "ethnicity", "strata_value": "Asian"},
             ],
         ),
         tables.ArmAssignment(
@@ -1615,7 +1614,7 @@ async def make_experiment_with_assignments(
             created_at=datetime(2025, 1, 2, tzinfo=UTC),
             strata=[
                 {"field_name": "gender", "strata_value": "M"},
-                {"field_name": "score", "strata_value": "esc,aped"},
+                {"field_name": "ethnicity", "strata_value": "esc,aped"},
             ],
         ),
     ]
@@ -1638,7 +1637,7 @@ async def test_get_experiment_assignments_as_csv_impl(xngin_session, testing_dat
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
             end_date=datetime.now(UTC) + timedelta(days=1),
             arms=[Arm(arm_name="control", arm_description=""), Arm(arm_name="treatment", arm_description="")],
-            strata=[Stratum(field_name="gender"), Stratum(field_name="score")],
+            strata=[Stratum(field_name="gender"), Stratum(field_name="ethnicity")],
             metrics=[DesignSpecMetricRequest(field_name="is_onboarded", metric_pct_change=0.1)],
             filters=[],
         ),
@@ -1652,10 +1651,10 @@ async def test_get_experiment_assignments_as_csv_impl(xngin_session, testing_dat
     assert b"\r" not in csv_bytes
     assert csv_bytes.count(b"\n") == 3
     rows = csv_bytes.decode().splitlines()
-    assert rows[0] == "participant_id,arm_id,arm_name,created_at,gender,score"
+    assert rows[0] == "participant_id,arm_id,arm_name,created_at,ethnicity,gender"
     assert set(rows[1:]) == {
-        f"p1,{arm_name_to_id['control']},control,2025-01-01T00:00:00Z,F,1.1",
-        f'p2,{arm_name_to_id["treatment"]},treatment,2025-01-02T00:00:00Z,M,"esc,aped"',
+        f"p1,{arm_name_to_id['control']},control,2025-01-01T00:00:00Z,Asian,F",
+        f'p2,{arm_name_to_id["treatment"]},treatment,2025-01-02T00:00:00Z,"esc,aped",M',
     }
 
 
@@ -1671,12 +1670,12 @@ async def test_get_experiment_assignments_as_csv_impl_emits_null_for_missing_met
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
             end_date=datetime.now(UTC) + timedelta(days=1),
             arms=[Arm(arm_name="control", arm_description=""), Arm(arm_name="treatment", arm_description="")],
-            strata=[Stratum(field_name="gender"), Stratum(field_name="region")],
+            strata=[Stratum(field_name="current_income"), Stratum(field_name="gender")],
             metrics=[DesignSpecMetricRequest(field_name="is_onboarded", metric_pct_change=0.1)],
             filters=[],
         ),
     )
-    # These arm assignments are missing the strata "region"
+    # These arm assignments are missing the strata "current_income"
     experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds, experiment=experiment)
 
     arm_name_to_id = {a.name: a.id for a in experiment.arms}
@@ -1685,10 +1684,10 @@ async def test_get_experiment_assignments_as_csv_impl_emits_null_for_missing_met
     assert b"\r" not in csv_bytes
     assert csv_bytes.count(b"\n") == 3
     rows = csv_bytes.decode().splitlines()
-    assert rows[0] == "participant_id,arm_id,arm_name,created_at,gender,region"
+    assert rows[0] == "participant_id,arm_id,arm_name,created_at,current_income,gender"
     assert set(rows[1:]) == {
-        f"p1,{arm_name_to_id['control']},control,2025-01-01T00:00:00Z,F,",
-        f"p2,{arm_name_to_id['treatment']},treatment,2025-01-02T00:00:00Z,M,",
+        f"p1,{arm_name_to_id['control']},control,2025-01-01T00:00:00Z,,F",
+        f"p2,{arm_name_to_id['treatment']},treatment,2025-01-02T00:00:00Z,,M",
     }
 
 
@@ -1718,7 +1717,7 @@ async def test_get_experiment_assignments_as_csv_impl_uses_sorted_strata_header_
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
             end_date=datetime.now(UTC) + timedelta(days=1),
             arms=[Arm(arm_name="control", arm_description=""), Arm(arm_name="treatment", arm_description="")],
-            strata=[Stratum(field_name="region"), Stratum(field_name="gender")],
+            strata=[Stratum(field_name="gender"), Stratum(field_name="current_income")],
             metrics=[DesignSpecMetricRequest(field_name="is_onboarded", metric_pct_change=0.1)],
             filters=[],
         ),
@@ -1728,7 +1727,7 @@ async def test_get_experiment_assignments_as_csv_impl_uses_sorted_strata_header_
     response = await get_experiment_assignments_as_csv_impl(xngin_session, experiment)
     csv_bytes = await collect_streaming_response_body(response)
     rows = csv_bytes.decode().splitlines()
-    assert rows[0] == "participant_id,arm_id,arm_name,created_at,gender,region"
+    assert rows[0] == "participant_id,arm_id,arm_name,created_at,current_income,gender"
 
 
 async def test_get_experiment_assignments_as_csv_impl_omits_strata_columns_when_none_defined(
