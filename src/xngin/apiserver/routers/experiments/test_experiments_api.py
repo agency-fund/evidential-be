@@ -44,6 +44,8 @@ async def create_online_experiment(
     aclient: AdminAPIClient,
     *,
     experiment_type: ExperimentsType = ExperimentsType.FREQ_ONLINE,
+    table_name: str | None = None,
+    primary_key: str | None = None,
     end_date: datetime | None = None,
     filters: list[Filter] | None = None,
 ):
@@ -82,6 +84,8 @@ async def create_online_experiment(
             strata=[Stratum(field_name="gender")],
             filters=filters,
         )
+        table_name = table_name or "dwh"
+        primary_key = primary_key or "id"
     elif experiment_type == ExperimentsType.MAB_ONLINE:
         design_spec = MABExperimentSpec(
             **base_kwargs,
@@ -108,7 +112,7 @@ async def create_online_experiment(
             ],
         )
 
-    request = CreateExperimentRequest(design_spec=design_spec)
+    request = CreateExperimentRequest(design_spec=design_spec, table_name=table_name, primary_key=primary_key)
     created_experiment = aclient.create_experiment(datasource_id=datasource_metadata.ds.id, body=request).data
     aclient.commit_experiment(datasource_metadata.ds.id, created_experiment.experiment_id)
     config = aclient.get_experiment_for_ui(
@@ -126,7 +130,7 @@ async def create_preassigned_experiment(datasource_metadata, aclient: AdminAPICl
     )
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        participant_type="test_participant_type",
+        participant_type="",
         experiment_name="test experiment",
         description="test experiment",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -140,7 +144,7 @@ async def create_preassigned_experiment(datasource_metadata, aclient: AdminAPICl
         filters=[],
     )
 
-    request = CreateExperimentRequest(design_spec=design_spec)
+    request = CreateExperimentRequest(design_spec=design_spec, table_name="dwh", primary_key="id")
     created_experiment = aclient.create_experiment(
         datasource_id=datasource_metadata.ds.id,
         body=request,
