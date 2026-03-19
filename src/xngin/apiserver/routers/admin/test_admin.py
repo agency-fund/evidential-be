@@ -2906,7 +2906,10 @@ async def test_delete_experiment_data_assignments(
 
 
 async def test_delete_experiment_cascades_arm_stats(
-    xngin_session: AsyncSession, testing_experiment: tables.Experiment, testing_datasource_with_user, client
+    xngin_session: AsyncSession,
+    testing_experiment: tables.Experiment,
+    testing_datasource_with_user,
+    aclient: AdminAPIClient,
 ):
     """Test that deleting an entire experiment cascade-deletes its arm_stats rows."""
     ds_id = testing_datasource_with_user.ds.id
@@ -2919,12 +2922,7 @@ async def test_delete_experiment_cascades_arm_stats(
     ).all()
     assert len(arm_stats_before) > 0
 
-    # Delete the whole experiment
-    client.request(
-        "DELETE",
-        f"/v1/m/datasources/{ds_id}/experiments/{experiment_id}",
-        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
-    )
+    aclient.delete_experiment(datasource_id=ds_id, experiment_id=experiment_id)
 
     # Verify arm_stats rows were cascade-deleted
     xngin_session.expire_all()
