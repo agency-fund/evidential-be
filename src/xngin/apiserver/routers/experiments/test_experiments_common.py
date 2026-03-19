@@ -17,6 +17,7 @@ from sqlalchemy.schema import CreateTable
 from xngin.apiserver.conftest import RowProtocolMixin
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import (
+    Arm,
     BaseFrequentistDesignSpec,
     CMABExperimentSpec,
     CreateExperimentRequest,
@@ -212,15 +213,22 @@ async def make_insertable_experiment(
     experiment_type: ExperimentsType = ExperimentsType.FREQ_PREASSIGNED,
     prior_type: PriorTypes = PriorTypes.NORMAL,
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
+    design_spec: DesignSpec | None = None,
 ) -> tuple[tables.Experiment, DesignSpec]:
     """Make a minimal experiment with arms ready for insertion into the database for tests.
 
+    If a design_spec is provided, it is used to create the experiment. Otherwise, a new design_spec
+    is created using the provided experiment_type, prior_type, and reward_type.
     This does not add any power analyses or balance checks.
     """
-    request = make_createexperimentrequest_json(
-        experiment_type=experiment_type, prior_type=prior_type, reward_type=reward_type
-    )
-    design_spec: DesignSpec = TypeAdapter(DesignSpec).validate_python(request["design_spec"])
+    if design_spec is None:
+        request = make_createexperimentrequest_json(
+            experiment_type=experiment_type, prior_type=prior_type, reward_type=reward_type
+        )
+        design_spec = TypeAdapter(DesignSpec).validate_python(request["design_spec"])
+
+    experiment_type = design_spec.experiment_type
+
     stopped_assignments_at: datetime | None = None
     stopped_assignments_reason: StopAssignmentReason | None = None
     if experiment_type == ExperimentsType.FREQ_PREASSIGNED:
@@ -1396,9 +1404,19 @@ async def test_get_experiment_mab_assignments_impl(xngin_session, testing_dataso
         assert assignment.created_at is not None
 
 
-async def make_experiment_with_assignments(xngin_session, datasource: tables.Datasource):
+async def make_experiment_with_assignments(
+    xngin_session,
+    datasource: tables.Datasource,
+    experiment: tables.Experiment | None = None,
+) -> tables.Experiment:
     """Helper test function that commits a new preassigned experiment with assignments."""
-    experiment = await insert_experiment_and_arms(xngin_session, datasource)
+    if experiment is None:
+        experiment = await insert_experiment_and_arms(xngin_session, datasource)
+    else:
+        # Ensure the experiment has an id.
+        xngin_session.add(experiment)
+        await xngin_session.flush()
+
     arm1_id = experiment.arms[0].id
     arm2_id = experiment.arms[1].id
     assignments = [
@@ -1435,7 +1453,21 @@ async def collect_streaming_response_body(response) -> bytes:
 
 
 async def test_get_experiment_assignments_as_csv_impl(xngin_session, testing_datasource):
-    experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds)
+    experiment, _ = await make_insertable_experiment(
+        testing_datasource.ds,
+        design_spec=PreassignedFrequentistExperimentSpec(
+            participant_type="test_participant_type",
+            experiment_name="test experiment",
+            description="test experiment",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime.now(UTC) + timedelta(days=1),
+            arms=[Arm(arm_name="control", arm_description=""), Arm(arm_name="treatment", arm_description="")],
+            strata=[Stratum(field_name="gender"), Stratum(field_name="score")],
+            metrics=[DesignSpecMetricRequest(field_name="is_onboarded", metric_pct_change=0.1)],
+            filters=[],
+        ),
+    )
+    experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds, experiment=experiment)
     await xngin_session.refresh(experiment, ["arms"])
 
     arm_name_to_id = {a.name: a.id for a in experiment.arms}
@@ -1444,24 +1476,32 @@ async def test_get_experiment_assignments_as_csv_impl(xngin_session, testing_dat
     assert b"\r" not in csv_bytes
     assert csv_bytes.count(b"\n") == 3
     rows = csv_bytes.decode().splitlines()
-    assert rows[0] == "participant_id,arm_id,arm_name,created_at,gender"
+    assert rows[0] == "participant_id,arm_id,arm_name,created_at,gender,score"
     assert set(rows[1:]) == {
-        f"p1,{arm_name_to_id['control']},control,2025-01-01T00:00:00Z,F",
-        f"p2,{arm_name_to_id['treatment']},treatment,2025-01-02T00:00:00Z,M",
+        f"p1,{arm_name_to_id['control']},control,2025-01-01T00:00:00Z,F,1.1",
+        f'p2,{arm_name_to_id["treatment"]},treatment,2025-01-02T00:00:00Z,M,"esc,aped"',
     }
 
 
 async def test_get_experiment_assignments_as_csv_impl_emits_null_for_missing_metadata_strata(
     xngin_session, testing_datasource
 ):
-    experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds)
-    experiment.design_spec_fields = {
-        "strata": [{"field_name": "gender"}, {"field_name": "region"}],
-        "metrics": [{"field_name": "is_onboarded", "metric_pct_change": 0.1, "metric_target": None}],
-        "filters": [],
-    }
-    await xngin_session.commit()
-    await xngin_session.refresh(experiment, ["arms"])
+    experiment, _ = await make_insertable_experiment(
+        testing_datasource.ds,
+        design_spec=PreassignedFrequentistExperimentSpec(
+            participant_type="test_participant_type",
+            experiment_name="test experiment",
+            description="test experiment",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime.now(UTC) + timedelta(days=1),
+            arms=[Arm(arm_name="control", arm_description=""), Arm(arm_name="treatment", arm_description="")],
+            strata=[Stratum(field_name="gender"), Stratum(field_name="region")],
+            metrics=[DesignSpecMetricRequest(field_name="is_onboarded", metric_pct_change=0.1)],
+            filters=[],
+        ),
+    )
+    # These arm assignments are missing the strata "region"
+    experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds, experiment=experiment)
 
     arm_name_to_id = {a.name: a.id for a in experiment.arms}
     response = await get_experiment_assignments_as_csv_impl(xngin_session, experiment)
@@ -1493,14 +1533,21 @@ async def test_get_experiment_assignments_as_csv_impl_includes_header_for_empty_
 async def test_get_experiment_assignments_as_csv_impl_uses_sorted_strata_header_order(
     xngin_session, testing_datasource
 ):
-    experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds)
-    experiment.design_spec_fields = {
-        "strata": [{"field_name": "region"}, {"field_name": "gender"}],
-        "metrics": [],
-        "filters": [],
-    }
-    await xngin_session.commit()
-    await xngin_session.refresh(experiment, ["arms"])
+    experiment, _ = await make_insertable_experiment(
+        testing_datasource.ds,
+        design_spec=PreassignedFrequentistExperimentSpec(
+            participant_type="test_participant_type",
+            experiment_name="test experiment",
+            description="test experiment",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime.now(UTC) + timedelta(days=1),
+            arms=[Arm(arm_name="control", arm_description=""), Arm(arm_name="treatment", arm_description="")],
+            strata=[Stratum(field_name="region"), Stratum(field_name="gender")],
+            metrics=[DesignSpecMetricRequest(field_name="is_onboarded", metric_pct_change=0.1)],
+            filters=[],
+        ),
+    )
+    experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds, experiment=experiment)
 
     response = await get_experiment_assignments_as_csv_impl(xngin_session, experiment)
     csv_bytes = await collect_streaming_response_body(response)
@@ -1511,15 +1558,22 @@ async def test_get_experiment_assignments_as_csv_impl_uses_sorted_strata_header_
 async def test_get_experiment_assignments_as_csv_impl_omits_strata_columns_when_none_defined(
     xngin_session, testing_datasource
 ):
-    experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds)
-    await xngin_session.refresh(experiment, ["arms"])
+    experiment, _ = await make_insertable_experiment(
+        testing_datasource.ds,
+        design_spec=PreassignedFrequentistExperimentSpec(
+            participant_type="test_participant_type",
+            experiment_name="test experiment",
+            description="test experiment",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime.now(UTC) + timedelta(days=1),
+            arms=[Arm(arm_name="control", arm_description=""), Arm(arm_name="treatment", arm_description="")],
+            strata=[],
+            metrics=[DesignSpecMetricRequest(field_name="is_onboarded", metric_pct_change=0.1)],
+            filters=[],
+        ),
+    )
+    experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds, experiment=experiment)
     arm_name_to_id = {a.name: a.id for a in experiment.arms}
-    experiment.design_spec_fields = {
-        "strata": [],
-        "metrics": [],
-        "filters": [],
-    }
-    await xngin_session.commit()
 
     response = await get_experiment_assignments_as_csv_impl(xngin_session, experiment)
     csv_bytes = await collect_streaming_response_body(response)
@@ -1847,8 +1901,8 @@ async def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_
     )
     xngin_session.add(experiment)
     await xngin_session.commit()
-    # Ignore the default design_spec_fields and just use a one-time metric, simulating some rows
-    # having NULL. (We don't actually have to set a new DesignSpec on the experiment in this test.)
+    # Just use a one-time metric, simulating some rows having NULL.
+    # (We don't actually have to set a new DesignSpec on the experiment in this test.)
     design_metric = [DesignSpecMetricRequest(field_name="is_onboarded_onetime", metric_pct_change=0.1)]
 
     # Add assignments known to have NULL. (first 500k rows are NULL, remaining copy is_onboarded)

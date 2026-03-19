@@ -16,10 +16,7 @@ class CsvStreamingResponse(StreamingResponse):
 
 
 def _get_assignment_csv_strata_names_from_experiment(experiment: tables.Experiment) -> list[str]:
-    if experiment.design_spec_fields is None:
-        return []
-    stored_strata = experiment.design_spec_fields.get("strata") or []
-    return sorted(stratum["field_name"] for stratum in stored_strata)
+    return sorted([ef.field_name for ef in experiment.experiment_fields if ef.is_strata])
 
 
 def _build_experiment_assignments_copy_query(experiment_id: str, strata_names: list[str]):
