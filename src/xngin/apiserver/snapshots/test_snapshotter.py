@@ -5,6 +5,7 @@ from sqlalchemy import select
 
 from xngin.apiserver.routers.common_api_types import (
     Arm,
+    BaseFrequentistDesignSpec,
     DesignSpec,
     DesignSpecMetricRequest,
     ExperimentsType,
@@ -12,21 +13,27 @@ from xngin.apiserver.routers.common_api_types import (
     PreassignedFrequentistExperimentSpec,
 )
 from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
-from xngin.apiserver.routers.experiments.experiments_common import extract_participant_field_info
+from xngin.apiserver.routers.experiments.experiments_common import fetch_fields_or_raise
 from xngin.apiserver.snapshots.snapshotter import create_pending_snapshots, make_first_snapshot
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
+from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 
 
-async def make_experiment(xngin_session, datasource: tables.Datasource, design_spec: DesignSpec) -> tables.Experiment:
-    # Get participants schema from datasource for frequentist experiments
+async def make_experiment(
+    xngin_session,
+    datasource: tables.Datasource,
+    design_spec: DesignSpec,
+    *,
+    table_name: str | None = None,
+    primary_key: str | None = None,
+) -> tables.Experiment:
     field_type_map = None
-    unique_id_name = None
-    table_name = None
     if design_spec.experiment_type in {ExperimentsType.FREQ_PREASSIGNED, ExperimentsType.FREQ_ONLINE}:
-        ds_config = datasource.get_config()
-        participants_schema = ds_config.find_participants(design_spec.participant_type)
-        field_type_map, unique_id_name, table_name = extract_participant_field_info(participants_schema)
+        assert isinstance(design_spec, BaseFrequentistDesignSpec)
+        assert table_name is not None
+        assert primary_key is not None
+        field_type_map = await fetch_fields_or_raise(datasource, design_spec, table_name, primary_key)
 
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
@@ -38,7 +45,7 @@ async def make_experiment(xngin_session, datasource: tables.Datasource, design_s
         stopped_assignments_reason=StopAssignmentReason.PREASSIGNED,
         table_name=table_name,
         field_type_map=field_type_map,
-        unique_id_name=unique_id_name,
+        unique_id_name=primary_key,
     )
     experiment = experiment_converter.get_experiment()
     xngin_session.add(experiment)
@@ -86,7 +93,7 @@ async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_da
     # Create a preassigned frequentist experiment design spec
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        participant_type="test_participant_type",
+        participant_type="",
         experiment_name="test experiment",
         description="test experiment",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -100,7 +107,13 @@ async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_da
         filters=[],
     )
 
-    experiment = await make_experiment(xngin_session, datasource, design_spec)
+    experiment = await make_experiment(
+        xngin_session,
+        datasource,
+        design_spec,
+        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
+    )
     # Arms' intial position should reflect design spec ordering
     arm1 = experiment.arms[0]
     assert arm1.position == 1
