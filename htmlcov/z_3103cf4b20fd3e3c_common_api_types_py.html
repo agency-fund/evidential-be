@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Coverage for src/xngin/apiserver/routers/common_api_types.py: 92%</title>
+    <title>Coverage for src/xngin/apiserver/routers/common_api_types.py: 91%</title>
     <link rel="icon" sizes="32x32" href="favicon_32_cb_c827f16f.png">
     <link rel="stylesheet" href="style_cb_9ff733b0.css" type="text/css">
     <script src="coverage_html_cb_dd2e7eb5.js" defer></script>
@@ -12,7 +12,7 @@
     <div class="content">
         <h1>
             <span class="text">Coverage for </span><b>src&#8201;/&#8201;xngin&#8201;/&#8201;apiserver&#8201;/&#8201;routers&#8201;/&#8201;common_api_types.py</b>:
-            <span class="pc_cov">92%</span>
+            <span class="pc_cov">91%</span>
         </h1>
         <aside id="help_panel_wrapper">
             <input id="help_panel_state" type="checkbox">
@@ -55,8 +55,8 @@
         </aside>
         <h2>
             <span class="text">308 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">283<span class="text"> run</span></button>
-            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">25<span class="text"> missing</span></button>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">281<span class="text"> run</span></button>
+            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">27<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
         <p class="text">
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_3103cf4b20fd3e3c_common_enums_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-18 18:10 +0000
+            created at 2026-03-19 23:23 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -792,11 +792,11 @@
     <p class="pln"><span class="n"><a id="t710" href="#t710">710</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t711" href="#t711">711</a></span><span class="t"><span class="str">        Only supports INTEGER, BIGINT, UUID and STRING types as defined in DataType.supported_participant_id_types().</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t712" href="#t712">712</a></span><span class="t"><span class="str">        """</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t713" href="#t713">713</a></span><span class="t">        <span class="key">if</span> <span class="nam">isinstance</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t714" href="#t714">714</a></span><span class="t">            <span class="nam">column_type</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t715" href="#t715">715</a></span><span class="t">            <span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">sql</span><span class="op">.</span><span class="nam">sqltypes</span><span class="op">.</span><span class="nam">Integer</span> <span class="op">|</span> <span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">sql</span><span class="op">.</span><span class="nam">sqltypes</span><span class="op">.</span><span class="nam">BigInteger</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t716" href="#t716">716</a></span><span class="t">        <span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t717" href="#t717">717</a></span><span class="t">            <span class="key">return</span> <span class="nam">int</span><span class="op">(</span><span class="nam">pid</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t713" href="#t713">713</a></span><span class="t">        <span class="key">if</span> <span class="nam">isinstance</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t714" href="#t714">714</a></span><span class="t">            <span class="nam">column_type</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t715" href="#t715">715</a></span><span class="t">            <span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">sql</span><span class="op">.</span><span class="nam">sqltypes</span><span class="op">.</span><span class="nam">Integer</span> <span class="op">|</span> <span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">sql</span><span class="op">.</span><span class="nam">sqltypes</span><span class="op">.</span><span class="nam">BigInteger</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t716" href="#t716">716</a></span><span class="t">        <span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t717" href="#t717">717</a></span><span class="t">            <span class="key">return</span> <span class="nam">int</span><span class="op">(</span><span class="nam">pid</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t718" href="#t718">718</a></span><span class="t">        <span class="key">if</span> <span class="nam">isinstance</span><span class="op">(</span><span class="nam">column_type</span><span class="op">,</span> <span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">sql</span><span class="op">.</span><span class="nam">sqltypes</span><span class="op">.</span><span class="nam">UUID</span> <span class="op">|</span> <span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">sql</span><span class="op">.</span><span class="nam">sqltypes</span><span class="op">.</span><span class="nam">String</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t719" href="#t719">719</a></span><span class="t">            <span class="key">return</span> <span class="nam">pid</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t720" href="#t720">720</a></span><span class="t">        <span class="key">raise</span> <span class="nam">LateValidationError</span><span class="op">(</span><span class="fst">f"</span><span class="fst">Unsupported participant ID type: </span><span class="op">{</span><span class="nam">column_type</span><span class="op">}</span><span class="fst">"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
@@ -1521,7 +1521,7 @@
             <a class="nav" href="z_3103cf4b20fd3e3c_common_enums_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-18 18:10 +0000
+            created at 2026-03-19 23:23 +0000
         </p>
     </div>
 </footer>
