@@ -22,4 +22,5 @@ CLAUDE*
 dist
 test_*.py
 tools
+!tools/migrations
 xngin.db
