@@ -1726,7 +1726,17 @@ async def get_experiment_assignments_as_csv_for_ui(
 ) -> CsvStreamingResponse:
     # TODO: update for bandits
     ds = await get_datasource_or_raise(session, user, datasource_id)
-    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    experiment = await get_experiment_via_ds_or_raise(
+        session,
+        ds,
+        experiment_id,
+        nested_preload=[
+            [
+                (PreloadMethod.SELECTINLOAD, tables.Experiment.experiment_fields),
+                (PreloadMethod.JOINLOAD, tables.ExperimentField.experiment_filters),
+            ]
+        ],
+    )
     return await experiments_common_csv.get_experiment_assignments_as_csv_impl(session, experiment)
 
 

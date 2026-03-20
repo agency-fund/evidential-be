@@ -86,8 +86,7 @@ def validate_freq_experiment(experiment: tables.Experiment) -> None:
     if experiment.experiment_type not in {ExperimentsType.FREQ_ONLINE, ExperimentsType.FREQ_PREASSIGNED}:
         raise ValueError(f"Experiment type must be freq_online or freq_preassigned, got {experiment.experiment_type}")
 
-    design_spec_fields = ExperimentStorageConverter(experiment).get_design_spec_fields()
-    if not design_spec_fields.metrics:
+    if not ExperimentStorageConverter(experiment).get_design_spec_metrics():
         raise ValueError("Experiment has no metrics defined")
     if not experiment.arms:
         raise ValueError("Experiment has no arms defined")
@@ -95,7 +94,7 @@ def validate_freq_experiment(experiment: tables.Experiment) -> None:
 
 def get_metric_names(experiment: tables.Experiment) -> list[str]:
     """Return metric names defined on a frequentist experiment."""
-    return [m.field_name for m in ExperimentStorageConverter(experiment).get_design_spec_fields().metrics or []]
+    return [m.field_name for m in ExperimentStorageConverter(experiment).get_design_spec_metrics()]
 
 
 def get_arm_ids(experiment: tables.Experiment) -> list[str]:
@@ -164,9 +163,7 @@ def create_freq_experiment_analysis(
     metric_analyses = []
     baseline_arm_id = _get_baseline_arm_id(experiment)
 
-    for metric_index, metric_obj in enumerate(
-        ExperimentStorageConverter(experiment).get_design_spec_fields().metrics or []
-    ):
+    for metric_index, metric_obj in enumerate(ExperimentStorageConverter(experiment).get_design_spec_metrics()):
         metric_field_name = metric_obj.field_name
         arm_analyses = []
 
@@ -209,11 +206,7 @@ def create_freq_experiment_analysis(
         metric_analyses.append(
             MetricAnalysis(
                 metric_name=metric_field_name,
-                metric=DesignSpecMetricRequest(
-                    field_name=metric_field_name,
-                    metric_target=metric_obj.metric_target,
-                    metric_pct_change=metric_obj.metric_pct_change,
-                ),
+                metric=DesignSpecMetricRequest.model_validate(metric_obj),
                 arm_analyses=arm_analyses,
             )
         )

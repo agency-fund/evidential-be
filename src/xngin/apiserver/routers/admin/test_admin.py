@@ -84,7 +84,6 @@ from xngin.apiserver.routers.common_enums import (
 )
 from xngin.apiserver.routers.experiments.test_experiments_common import (
     extract_participant_field_info,
-    get_experiment_preloaded,
     insert_experiment_and_arms,
     make_create_freq_online_experiment_request,
     make_create_online_bandit_experiment_request,
@@ -96,7 +95,6 @@ from xngin.apiserver.settings import ParticipantsDef, RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
-from xngin.apiserver.testing.assertions import assert_dates_equal
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 from xngin.stats.bandit_sampling import update_arm
@@ -1559,7 +1557,6 @@ async def test_create_experiment_with_invalid_design_url(testing_datasource_with
 
 
 async def test_create_freq_preassigned_experiment(
-    xngin_session: AsyncSession,
     testing_datasource_with_user,
     use_deterministic_random,
     aclient: AdminAPIClient,
@@ -1599,33 +1596,14 @@ async def test_create_freq_preassigned_experiment(
     experiment_id = created_experiment.experiment_id
     (arm1_id, arm2_id) = [arm.arm_id for arm in created_experiment.design_spec.arms]
 
-    # Verify database state using the ids in the returned DesignSpec.
-    experiment = await get_experiment_preloaded(xngin_session, experiment_id)
-    assert experiment.state == ExperimentState.ASSIGNED
-    assert experiment.datasource_id == datasource_id
-    assert experiment.experiment_type == "freq_preassigned"
-    assert experiment.participant_type == "test_participant_type"
-    assert experiment.datasource_table == TESTING_DWH_PARTICIPANT_DEF.table_name
-    assert experiment.name == request_obj.design_spec.experiment_name
-    assert experiment.description == request_obj.design_spec.description
-    assert_dates_equal(experiment.start_date, request_obj.design_spec.start_date)
-    assert_dates_equal(experiment.end_date, request_obj.design_spec.end_date)
-
-    # Verify that experiment_fields were stored correctly (see defaults in make_createexperimentrequest_json)
-    experiment_fields = experiment.experiment_fields
-    assert len(experiment_fields) == 3
-    unique_id_field = next((f for f in experiment_fields if f.is_unique_id), None)
-    assert unique_id_field is not None
-    assert unique_id_field.data_type == "bigint"
-    gender_field = next((f for f in experiment_fields if f.field_name == "gender"), None)
-    assert gender_field is not None
-    assert gender_field.is_strata
-    assert gender_field.data_type == "character varying"
-    is_onboarded_field = next((f for f in experiment_fields if f.field_name == "is_onboarded"), None)
-    assert is_onboarded_field is not None
-    assert is_onboarded_field.is_metric
-    assert is_onboarded_field.is_primary_metric
-    assert is_onboarded_field.data_type == "boolean"
+    # Check getting the experiment is consistent with the created experiment.
+    experiment_for_ui = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=experiment_id).data
+    diff = DeepDiff(
+        created_experiment,
+        experiment_for_ui.config,
+        ignore_type_in_groups=[(CreateExperimentResponse, ExperimentConfig)],
+    )
+    assert not diff, f"Objects differ:\n{diff.pretty()}"
 
     # Verify assignments were created
     actual_assignments = eclient.get_experiment_assignments(
@@ -1647,7 +1625,6 @@ async def test_create_freq_preassigned_experiment(
 
 
 async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
-    xngin_session: AsyncSession,
     testing_datasource_with_user,
     use_deterministic_random,
     aclient: AdminAPIClient,
@@ -1728,64 +1705,6 @@ async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
     assert a_filter.field_name == "uuid_filter"
     assert a_filter.relation == Relation.EXCLUDES
     assert a_filter.value == ["123e4567-e89b-12d3-a456-426614174000"]
-
-    # Verify database state of fields
-    experiment = await get_experiment_preloaded(xngin_session, experiment_id)
-    assert len(experiment.experiment_filters) == 6
-    assert len(experiment.experiment_fields) == 8
-    unique_id_field = next(f for f in experiment.experiment_fields if f.field_name == "id")
-    assert unique_id_field.data_type == "bigint"
-    assert unique_id_field.is_unique_id
-    assert unique_id_field.is_filter
-    assert unique_id_field.experiment_filters is not None
-    assert unique_id_field.experiment_filters[0].relation == Relation.EXCLUDES
-    assert unique_id_field.experiment_filters[0].numeric_values == [(2 << 52) + 1, None]
-    assert unique_id_field.experiment_filters[0].position == 4
-    current_income_field = next(f for f in experiment.experiment_fields if f.field_name == "current_income")
-    assert current_income_field.data_type == "numeric"
-    assert current_income_field.is_metric
-    assert current_income_field.is_primary_metric
-    assert current_income_field.is_filter
-    assert current_income_field.experiment_filters is not None
-    assert current_income_field.experiment_filters[0].relation == Relation.BETWEEN
-    assert current_income_field.experiment_filters[0].numeric_values == [0.0, 100000.0]
-    assert current_income_field.experiment_filters[0].position == 2
-    is_engaged_field = next(f for f in experiment.experiment_fields if f.field_name == "is_engaged")
-    assert is_engaged_field.data_type == "boolean"
-    assert is_engaged_field.is_metric
-    assert not is_engaged_field.is_primary_metric
-    assert is_engaged_field.is_filter
-    assert is_engaged_field.experiment_filters is not None
-    assert is_engaged_field.experiment_filters[0].relation == Relation.INCLUDES
-    assert is_engaged_field.experiment_filters[0].boolean_values == [1, None]
-    assert is_engaged_field.experiment_filters[0].position == 3
-    ethnicity_field = next(f for f in experiment.experiment_fields if f.field_name == "ethnicity")
-    assert ethnicity_field.data_type == "character varying"
-    assert ethnicity_field.is_strata
-    baseline_income_field = next(f for f in experiment.experiment_fields if f.field_name == "baseline_income")
-    assert baseline_income_field.data_type == "numeric"
-    assert baseline_income_field.is_strata
-    gender_field = next(f for f in experiment.experiment_fields if f.field_name == "gender")
-    assert gender_field.data_type == "character varying"
-    assert gender_field.is_filter
-    assert gender_field.experiment_filters is not None
-    assert gender_field.experiment_filters[0].relation == Relation.INCLUDES
-    assert gender_field.experiment_filters[0].string_values == ["Male"]
-    assert gender_field.experiment_filters[0].position == 1
-    sample_date_field = next(f for f in experiment.experiment_fields if f.field_name == "sample_date")
-    assert sample_date_field.data_type == "date"
-    assert sample_date_field.is_filter
-    assert sample_date_field.experiment_filters is not None
-    assert sample_date_field.experiment_filters[0].relation == Relation.BETWEEN
-    assert sample_date_field.experiment_filters[0].string_values == ["2024-01-01", "2026-01-01"]
-    assert sample_date_field.experiment_filters[0].position == 5
-    uuid_filter_field = next(f for f in experiment.experiment_fields if f.field_name == "uuid_filter")
-    assert uuid_filter_field.data_type == "uuid"
-    assert uuid_filter_field.is_filter
-    assert uuid_filter_field.experiment_filters is not None
-    assert uuid_filter_field.experiment_filters[0].relation == Relation.EXCLUDES
-    assert uuid_filter_field.experiment_filters[0].string_values == ["123e4567-e89b-12d3-a456-426614174000"]
-    assert uuid_filter_field.experiment_filters[0].position == 6
 
     # And finally check getting the experiment is consistent with the created experiment.
     experiment_for_ui = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=experiment_id).data
