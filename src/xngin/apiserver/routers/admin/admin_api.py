@@ -24,7 +24,7 @@ from fastapi import (
 )
 from loguru import logger
 from pydantic import BaseModel
-from sqlalchemy import delete, func, select
+from sqlalchemy import Table, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute, joinedload, selectinload
 
@@ -37,7 +37,6 @@ from xngin.apiserver.dwh.dwh_session import (
     DwhSession,
     NoDwh,
 )
-from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.dwh.inspections import (
     build_proposed_and_drift,
     create_inspect_table_response_from_table,
@@ -1885,18 +1884,12 @@ async def power_check(
         )
     dsconfig = ds.get_config()
 
-    if body.table_name is not None and body.primary_key is not None:
-        # If the power check request includes a table name and primary key, we trust the table name.
-        table_name = body.table_name
-    else:
-        # If the power check request refers to a participant type, we look up the participant type and validate it
-        # against the design spec.
-        participants_cfg = dsconfig.find_participants(design_spec.participant_type)
-        validate_schema_metrics_or_raise(design_spec, participants_cfg)
-        table_name = participants_cfg.table_name
+    if body.table_name is None or body.primary_key is None:
+        raise LateValidationError("Power checks without a table name and primary key are not supported.")
 
     async with DwhSession(dsconfig.dwh) as dwh:
-        sa_table = await dwh.inspect_table(table_name)
+        sa_table = await dwh.inspect_table(body.table_name)
+        validate_spec_against_schema_or_raise(design_spec, sa_table, body.primary_key)
         metric_stats = await asyncio.to_thread(
             get_stats_on_metrics,
             dwh.session,
@@ -1919,13 +1912,18 @@ async def power_check(
     )
 
 
-def validate_schema_metrics_or_raise(design_spec: BaseFrequentistDesignSpec, schema: ParticipantsSchema):
-    metric_fields = {m.field_name for m in schema.fields if m.is_metric}
-    metrics_requested = {m.field_name for m in design_spec.metrics}
-    invalid_metrics = metrics_requested - metric_fields
-    if len(invalid_metrics) > 0:
+def validate_spec_against_schema_or_raise(design_spec: BaseFrequentistDesignSpec, schema: Table, primary_key: str):
+    ds_fields = {c.name for c in schema.columns}
+    fields_requested = (
+        {primary_key}
+        | {m.field_name for m in design_spec.metrics}
+        | {f.field_name for f in design_spec.filters}
+        | {s.field_name for s in design_spec.strata}
+    )
+    invalid_fields = fields_requested - ds_fields
+    if len(invalid_fields) > 0:
         raise LateValidationError(
-            f"Invalid DesignSpec metrics (check your Datasource configuration): {invalid_metrics}"
+            f"Invalid DesignSpec fields (check your Datasource configuration): {', '.join(sorted(invalid_fields))}"
         )
 
 

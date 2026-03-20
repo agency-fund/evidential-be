@@ -67,6 +67,7 @@ from xngin.apiserver.routers.common_api_types import (
     ExperimentsType,
     Filter,
     FreqExperimentAnalysisResponse,
+    GetExperimentResponse,
     LikelihoodTypes,
     MABExperimentSpec,
     OnlineFrequentistExperimentSpec,
@@ -1451,7 +1452,7 @@ async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, ac
     """Test power check endpoint with balanced vs unbalanced arms."""
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        participant_type="test_participant_type",
+        participant_type="",
         experiment_name="test power check",
         description="test power check with unbalanced arms",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -1467,7 +1468,8 @@ async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, ac
 
     # Call the power check endpoint
     power_response = aclient.power_check(
-        datasource_id=testing_datasource_with_user.ds.id, body=PowerRequest(design_spec=design_spec)
+        datasource_id=testing_datasource_with_user.ds.id,
+        body=PowerRequest(design_spec=design_spec, table_name="dwh", primary_key="id"),
     ).data
     assert len(power_response.analyses) == 1
     metric_analysis = power_response.analyses[0]
@@ -1479,7 +1481,8 @@ async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, ac
     design_spec.arms[0].arm_weight = 20.0
     design_spec.arms[1].arm_weight = 80.0
     power_response2 = aclient.power_check(
-        datasource_id=testing_datasource_with_user.ds.id, body=PowerRequest(design_spec=design_spec)
+        datasource_id=testing_datasource_with_user.ds.id,
+        body=PowerRequest(design_spec=design_spec, table_name="dwh", primary_key="id"),
     ).data
     assert len(power_response2.analyses) == 1
     metric_analysis2 = power_response2.analyses[0]
@@ -1493,7 +1496,8 @@ async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, ac
     design_spec.arms[1].arm_weight = 50
     design_spec.arms[2].arm_weight = 40
     power_response3 = aclient.power_check(
-        datasource_id=testing_datasource_with_user.ds.id, body=PowerRequest(design_spec=design_spec)
+        datasource_id=testing_datasource_with_user.ds.id,
+        body=PowerRequest(design_spec=design_spec, table_name="dwh", primary_key="id"),
     ).data
     assert len(power_response3.analyses) == 1
     metric_analysis3 = power_response3.analyses[0]
@@ -1505,8 +1509,8 @@ async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, ac
     assert metric_analysis3.target_n == math.ceil(metric_analysis2.target_n * 0.2 / 0.10)
 
 
-async def test_power_check_with_synthesized_schema(testing_datasource_with_user, aclient: AdminAPIClient):
-    """Test power check with synthesized participant schema via table_name and primary_key."""
+async def test_power_check_validations(testing_datasource_with_user, aclient: AdminAPIClient):
+    """Test power check validations."""
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
         participant_type="ignored_when_synthesized",
@@ -1523,17 +1527,36 @@ async def test_power_check_with_synthesized_schema(testing_datasource_with_user,
         filters=[],
     )
 
+    # First check a valid power check
+    datasource_id = testing_datasource_with_user.ds.id
     power_response = aclient.power_check(
-        datasource_id=testing_datasource_with_user.ds.id,
-        body=PowerRequest(
-            design_spec=design_spec,
-            table_name="dwh",  # Test DWH table name
-            primary_key="id",  # Test DWH primary key
-        ),
+        datasource_id=datasource_id,
+        body=PowerRequest(design_spec=design_spec, table_name="dwh", primary_key="id"),
     ).data
     assert len(power_response.analyses) == 1
     assert power_response.analyses[0].metric_spec.field_name == "current_income"
     assert power_response.analyses[0].target_n is not None
+
+    # Now check varying failure scenarios
+    with expect_status_code(422, detail_eq="Power checks without a table name and primary key are not supported."):
+        aclient.power_check(datasource_id=datasource_id, body=PowerRequest(design_spec=design_spec))
+
+    with expect_status_code(422, detail_contains="(check your Datasource configuration): no_such_primary_key"):
+        aclient.power_check(
+            datasource_id=datasource_id,
+            body=PowerRequest(design_spec=design_spec, table_name="dwh", primary_key="no_such_primary_key"),
+        )
+
+    with expect_status_code(
+        422, detail_contains="(check your Datasource configuration): bad_filter, bad_metric, bad_stratum"
+    ):
+        design_spec.metrics = [DesignSpecMetricRequest(field_name="bad_metric", metric_pct_change=0.1)]
+        design_spec.strata = [Stratum(field_name="bad_stratum")]
+        design_spec.filters = [Filter(field_name="bad_filter", relation=Relation.INCLUDES, value=["value"])]
+        aclient.power_check(
+            datasource_id=datasource_id,
+            body=PowerRequest(design_spec=design_spec, table_name="dwh", primary_key="id"),
+        )
 
 
 async def test_create_experiment_with_invalid_design_url(testing_datasource_with_user, aclient: AdminAPIClient):
@@ -1596,12 +1619,14 @@ async def test_create_freq_preassigned_experiment(
     experiment_id = created_experiment.experiment_id
     (arm1_id, arm2_id) = [arm.arm_id for arm in created_experiment.design_spec.arms]
 
-    # Check getting the experiment is consistent with the created experiment.
-    experiment_for_ui = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=experiment_id).data
+    # Check getting the experiment from the integration API is consistent with the created experiment.
+    experiment = eclient.get_experiment(
+        api_key=testing_datasource_with_user.key, experiment_id=experiment_id
+    ).data
     diff = DeepDiff(
         created_experiment,
-        experiment_for_ui.config,
-        ignore_type_in_groups=[(CreateExperimentResponse, ExperimentConfig)],
+        experiment,
+        ignore_type_in_groups=[(CreateExperimentResponse, GetExperimentResponse)],
     )
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
