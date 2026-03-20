@@ -18,6 +18,8 @@ class CsvStreamingResponse(StreamingResponse):
 
 
 def _get_assignment_csv_strata_names_from_experiment(experiment: tables.Experiment) -> list[str]:
+    if experiment.experiment_type not in {ExperimentsType.FREQ_ONLINE.value, ExperimentsType.FREQ_PREASSIGNED.value}:
+        return []
     return sorted([ef.field_name for ef in experiment.experiment_fields if ef.is_strata])
 
 
@@ -80,22 +82,12 @@ def _build_experiment_assignments_select_query(experiment_id: str, experiment_ty
             raise LateValidationError(f"unsupported experiment type for CSV export: {experiment_type}")
 
 
-def _validate_experiment_assignments_csv_export(experiment: tables.Experiment) -> None:
-    if experiment.experiment_type not in {
-        ExperimentsType.FREQ_ONLINE.value,
-        ExperimentsType.FREQ_PREASSIGNED.value,
-    }:
-        raise LateValidationError(f"CSV export is not supported for experiment type: {experiment.experiment_type}")
-
-
 async def get_experiment_assignments_as_csv_impl(
     xngin_session: AsyncSession,
     experiment: tables.Experiment,
 ) -> CsvStreamingResponse:
-    # _validate_experiment_assignments_csv_export(experiment)
     strata_names = _get_assignment_csv_strata_names_from_experiment(experiment)
     select_query = _build_experiment_assignments_select_query(experiment.id, experiment.experiment_type, strata_names)
-
     filename = f"experiment_{experiment.id}_assignments.csv"
     return CsvStreamingResponse(
         select_as_csv(xngin_session, select_query, buffer_size_bytes=CSV_STREAM_CHUNK_SIZE_BYTES, include_header=True),
