@@ -192,6 +192,47 @@ async def maybe_synthesize_participant_type(
     return updated_body
 
 
+async def fetch_fields_or_raise(
+    datasource: tables.Datasource, design_spec: BaseFrequentistDesignSpec, table_name: str, primary_key: str
+) -> dict[str, DataType]:
+    """Inspect an explicit table/primary_key experiment request and return field metadata.
+
+    Returns: Field name => datatype map.
+    Raises: LateValidationError if any fields used in the request are not found or are invalid.
+    """
+    async with DwhSession(datasource.get_config().dwh) as dwh:
+        inspected = await dwh.inspect_table_with_descriptors(table_name, primary_key)
+
+    referenced_fields = {
+        *[metric.field_name for metric in design_spec.metrics],
+        *[filter_.field_name for filter_ in design_spec.filters],
+        *[stratum.field_name for stratum in design_spec.strata],
+        primary_key,
+    }
+
+    field_type_map = {
+        field_name: descriptor.data_type
+        for field_name, descriptor in inspected.db_schema.items()
+        if field_name in referenced_fields
+    }
+    if field_type_map is None:
+        raise LateValidationError("Experiment design must use valid datasource fields.")
+
+    missing_fields = referenced_fields - field_type_map.keys()
+    if missing_fields:
+        raise LateValidationError(
+            "Design fields are not present in the inspected table: "
+            + ", ".join(repr(field) for field in sorted(missing_fields))
+        )
+
+    for filter_ in design_spec.filters:
+        field_type = field_type_map[filter_.field_name]
+        for value in filter_.value:
+            validate_filter_value(filter_.field_name, value, field_type)
+
+    return field_type_map
+
+
 async def create_experiment_impl(
     request: CreateExperimentRequest,
     datasource: tables.Datasource,
@@ -707,15 +748,13 @@ async def get_existing_assignment_for_participant(
     return None
 
 
-def _participant_passes_filters(experiment: tables.Experiment, properties: list[ParticipantProperty]) -> bool:
-    if not properties or experiment.experiment_type != ExperimentsType.FREQ_ONLINE.value:
+def _participant_passes_filters(experiment: tables.Experiment, participant_props: list[ParticipantProperty]) -> bool:
+    if not participant_props or experiment.experiment_type != ExperimentsType.FREQ_ONLINE.value:
         return True
 
-    datasource_config = experiment.datasource.get_config()
-    participant_type = datasource_config.find_participants(experiment.participant_type)
+    props_map = {p.field_name: p.value for p in participant_props}
     experiment_converter = ExperimentStorageConverter(experiment)
-    props_map = {p.field_name: p.value for p in properties}
-    field_map = {field.field_name: field.data_type for field in participant_type.fields}
+    field_map = experiment_converter.get_field_type_map()
     return passes_filters(props_map, field_map, experiment_converter.get_design_spec_filters())
 
 
