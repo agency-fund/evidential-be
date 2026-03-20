@@ -1,4 +1,6 @@
 import inspect
+from contextlib import AbstractContextManager
+from contextlib import nullcontext as does_not_raise
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import cast
@@ -31,6 +33,7 @@ from xngin.apiserver.routers.common_api_types import (
     MetricPowerAnalysis,
     MetricType,
     OnlineFrequentistExperimentSpec,
+    ParticipantProperty,
     PowerResponse,
     PreassignedFrequentistExperimentSpec,
     PriorTypes,
@@ -53,6 +56,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     get_assign_summary,
     get_existing_assignment_for_participant,
     get_experiment_assignments_impl,
+    get_or_create_assignment_for_participant,
     list_organization_or_datasource_experiments_impl,
     update_bandit_arm_with_outcome_impl,
 )
@@ -2022,6 +2026,107 @@ async def test_create_assignment_for_participant_stopped_reason(
         assert datetime.now(UTC) - experiment.stopped_assignments_at < timedelta(seconds=1)
     else:
         assert experiment.stopped_assignments_at is None
+
+
+@pytest.mark.parametrize(
+    "has_assignment, participant_id, sample_timestamp, income",
+    [
+        # These 2 will already exist in the database due to make_experiment_with_assignments
+        (True, "p1", "2023", 0),
+        (True, "p2", None, None),
+        # These meet all the filters
+        (True, 1, "2024-01-01", 0),
+        (True, "2", "2026-02-01", 100000),
+        # These don't meet all the filters
+        (False, (1 << 63) - 1, "2024-01-01", 0),
+        (False, 1, "2023-01-01T00:00:00Z", 0),
+        (False, 1, "2026-01-01", 100001),
+    ],
+)
+async def test_get_or_create_assignment_for_participant_with_filters_in_online_freq_exp(
+    xngin_session, testing_datasource, has_assignment, participant_id, sample_timestamp, income
+):
+    experiment, _ = await make_insertable_experiment(
+        testing_datasource.ds,
+        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
+        design_spec=OnlineFrequentistExperimentSpec(
+            participant_type="",
+            experiment_name="test experiment",
+            description="test experiment",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime.now(UTC) + timedelta(days=1),
+            arms=[Arm(arm_name="control", arm_description=""), Arm(arm_name="treatment", arm_description="")],
+            strata=[],
+            metrics=[DesignSpecMetricRequest(field_name="is_onboarded", metric_pct_change=0.1)],
+            filters=[
+                Filter(field_name="id", relation=Relation.EXCLUDES, value=[(1 << 63) - 1, None]),
+                Filter(field_name="sample_timestamp", relation=Relation.BETWEEN, value=["2024-01-01T00:00:00Z", None]),
+                Filter(field_name="income", relation=Relation.BETWEEN, value=[0, 100000]),
+                Filter(field_name="gender", relation=Relation.INCLUDES, value=["M", None]),
+            ],
+        ),
+    )
+    experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds, experiment=experiment)
+    await xngin_session.refresh(experiment, ["arms"])
+
+    participant_props = [
+        ParticipantProperty(field_name="id", value=participant_id),
+        ParticipantProperty(field_name="sample_timestamp", value=sample_timestamp),
+        ParticipantProperty(field_name="income", value=income),
+        # All our tests will infer a default gender=None
+    ]
+    response = await get_or_create_assignment_for_participant(
+        xngin_session, experiment, str(participant_id), create_if_none=True, properties=participant_props
+    )
+
+    assert response.experiment_id == experiment.id
+    assert response.participant_id == str(participant_id)
+    if has_assignment:
+        assert response.assignment is not None
+        assert response.assignment.arm_id in {arm.id for arm in experiment.arms}
+    else:
+        assert response.assignment is None
+
+
+@pytest.mark.parametrize(
+    "has_assignment, experiment_type, create_if_none, expected_exception",
+    [
+        # Preassigned experiments can't add new assignments
+        (False, ExperimentsType.FREQ_PREASSIGNED, False, does_not_raise()),
+        (False, ExperimentsType.FREQ_PREASSIGNED, True, does_not_raise()),
+        # if create_if_none is False, we should not create a new assignment
+        (False, ExperimentsType.FREQ_ONLINE, False, does_not_raise()),
+        (False, ExperimentsType.MAB_ONLINE, False, does_not_raise()),
+        # but if create_if_none is True, we should create a new assignment
+        (True, ExperimentsType.FREQ_ONLINE, True, does_not_raise()),
+        (True, ExperimentsType.MAB_ONLINE, True, does_not_raise()),
+        # CMAB experiments can query for assignments but NOT create at this endpoint
+        (False, ExperimentsType.CMAB_ONLINE, False, does_not_raise()),
+        (False, ExperimentsType.CMAB_ONLINE, True, pytest.raises(LateValidationError, match=r"use.+POST endpoint")),
+    ],
+)
+async def test_get_or_create_assignment_for_participant_without_filters(
+    xngin_session,
+    testing_datasource,
+    has_assignment: bool,
+    experiment_type: ExperimentsType,
+    create_if_none: bool,
+    expected_exception: AbstractContextManager,
+):
+    experiment = await insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=experiment_type,
+        end_date=datetime.now(UTC) + timedelta(days=1),
+    )
+    with expected_exception:
+        response = await get_or_create_assignment_for_participant(
+            xngin_session, experiment, "user_id", create_if_none, properties=None
+        )
+        assert response.experiment_id == experiment.id
+        assert response.participant_id == "user_id"
+        assert (response.assignment is not None) == has_assignment
 
 
 @pytest.mark.parametrize(
