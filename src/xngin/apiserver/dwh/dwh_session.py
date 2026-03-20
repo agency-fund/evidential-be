@@ -12,7 +12,7 @@ from sqlalchemy.exc import NoSuchTableError, OperationalError
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.dns.safe_resolve import safe_resolve
-from xngin.apiserver.dwh import queries
+from xngin.apiserver.dwh import query_constructors
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor
 from xngin.apiserver.dwh.inspections import generate_field_descriptors
 from xngin.apiserver.exceptions_common import DwhConnectionError, DwhDatabaseDoesNotExistError
@@ -278,8 +278,8 @@ class DwhSession:
         desired_n: int,
     ):
         """Samples participants."""
-        sqla_filters = queries.create_query_filters(sa_table, filters)
-        query = queries.compose_query(sa_table, select_columns, sqla_filters, desired_n)
+        sqla_filters = query_constructors.create_query_filters(sa_table, filters)
+        query = query_constructors.compose_query(sa_table, select_columns, sqla_filters, desired_n)
         return self.session.execute(query).all()
 
     def _get_participants_blocking(

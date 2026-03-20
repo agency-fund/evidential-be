@@ -21,7 +21,7 @@ from sqlalchemy.orm import DeclarativeBase, mapped_column
 from sqlalchemy.sql.ddl import CreateTable
 
 from xngin.apiserver.conftest import DbType
-from xngin.apiserver.dwh.queries import compose_query, create_query_filters
+from xngin.apiserver.dwh.query_constructors import compose_query, create_query_filters
 from xngin.apiserver.routers.common_api_types import Filter
 from xngin.apiserver.routers.common_enums import Relation
 
@@ -198,11 +198,9 @@ WHERE_TESTCASES = [
     WhereTestCase(
         filters=[Filter(field_name="string_col", relation=Relation.INCLUDES, value=["a", "b"])],
         where={
-            DbType.RS: "NOT (tt.string_col IS NULL OR (tt.string_col NOT IN ('a', 'b'))) ORDER BY random()  LIMIT 3",
-            DbType.PG: "NOT (tt.string_col IS NULL OR (tt.string_col NOT IN ('a', 'b'))) ORDER BY random()  LIMIT 3",
-            DbType.BQ: (
-                "NOT (`tt`.`string_col` IS NULL OR (`tt`.`string_col` NOT IN ('a', 'b'))) ORDER BY rand() LIMIT 3"
-            ),
+            DbType.RS: "tt.string_col IN ('a', 'b') ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.string_col IN ('a', 'b') ORDER BY random()  LIMIT 3",
+            DbType.BQ: "`tt`.`string_col` IN ('a', 'b') ORDER BY rand() LIMIT 3",
         },
     ),
     WhereTestCase(
@@ -216,47 +214,35 @@ WHERE_TESTCASES = [
     WhereTestCase(
         filters=[Filter(field_name="int_col", relation=Relation.INCLUDES, value=[42])],
         where={
-            DbType.RS: "NOT (tt.int_col IS NULL OR (tt.int_col NOT IN (42))) ORDER BY random()  LIMIT 3",
-            DbType.PG: "NOT (tt.int_col IS NULL OR (tt.int_col NOT IN (42))) ORDER BY random()  LIMIT 3",
-            DbType.BQ: "NOT (`tt`.`int_col` IS NULL OR (`tt`.`int_col` NOT IN (42))) ORDER BY rand() LIMIT 3",
+            DbType.RS: "tt.int_col IN (42) ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.int_col IN (42) ORDER BY random()  LIMIT 3",
+            DbType.BQ: "`tt`.`int_col` IN (42) ORDER BY rand() LIMIT 3",
         },
     ),
     WhereTestCase(
         filters=[Filter(field_name="int_col", relation=Relation.INCLUDES, value=[None, 1])],
         where={
-            DbType.RS: "NOT (tt.int_col IS NOT NULL AND (tt.int_col NOT IN (1))) ORDER BY random()  LIMIT 3",
-            DbType.PG: "NOT (tt.int_col IS NOT NULL AND (tt.int_col NOT IN (1))) ORDER BY random()  LIMIT 3",
-            DbType.BQ: "NOT (`tt`.`int_col` IS NOT NULL AND (`tt`.`int_col` NOT IN (1))) ORDER BY rand() LIMIT 3",
+            DbType.RS: "tt.int_col IS NULL OR tt.int_col IN (1) ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.int_col IS NULL OR tt.int_col IN (1) ORDER BY random()  LIMIT 3",
+            DbType.BQ: "`tt`.`int_col` IS NULL OR `tt`.`int_col` IN (1) ORDER BY rand() LIMIT 3",
         },
     ),
     # DATETIME tests
     WhereTestCase(
         filters=[Filter(field_name="dt_col", relation=Relation.INCLUDES, value=["2024-01-01"])],
         where={
-            DbType.RS: (
-                "NOT (tt.dt_col IS NULL OR (tt.dt_col NOT IN ('2024-01-01 00:00:00'))) ORDER BY random()  LIMIT 3"
-            ),
-            DbType.PG: (
-                "NOT (tt.dt_col IS NULL OR (tt.dt_col NOT IN ('2024-01-01 00:00:00'))) ORDER BY random()  LIMIT 3"
-            ),
-            DbType.BQ: (
-                "NOT (`tt`.`dt_col` IS NULL OR (`tt`.`dt_col` NOT IN (DATETIME '2024-01-01 00:00:00'))) "
-                "ORDER BY rand() LIMIT 3"
-            ),
+            DbType.RS: "tt.dt_col IN ('2024-01-01 00:00:00') ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.dt_col IN ('2024-01-01 00:00:00') ORDER BY random()  LIMIT 3",
+            DbType.BQ: "`tt`.`dt_col` IN (DATETIME '2024-01-01 00:00:00') ORDER BY rand() LIMIT 3",
         },
     ),
     WhereTestCase(
         filters=[Filter(field_name="dt_col", relation=Relation.INCLUDES, value=["2024-01-01", None])],
         where={
-            DbType.RS: (
-                "NOT (tt.dt_col IS NOT NULL AND (tt.dt_col NOT IN ('2024-01-01 00:00:00'))) ORDER BY random()  LIMIT 3"
-            ),
-            DbType.PG: (
-                "NOT (tt.dt_col IS NOT NULL AND (tt.dt_col NOT IN ('2024-01-01 00:00:00'))) ORDER BY random()  LIMIT 3"
-            ),
+            DbType.RS: "tt.dt_col IS NULL OR tt.dt_col IN ('2024-01-01 00:00:00') ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.dt_col IS NULL OR tt.dt_col IN ('2024-01-01 00:00:00') ORDER BY random()  LIMIT 3",
             DbType.BQ: (
-                "NOT (`tt`.`dt_col` IS NOT NULL AND (`tt`.`dt_col` NOT IN (DATETIME '2024-01-01 00:00:00'))) "
-                "ORDER BY rand() LIMIT 3"
+                "`tt`.`dt_col` IS NULL OR `tt`.`dt_col` IN (DATETIME '2024-01-01 00:00:00') ORDER BY rand() LIMIT 3"
             ),
         },
     ),
@@ -347,17 +333,17 @@ WHERE_TESTCASES = [
         ],
         where={
             DbType.BQ: (
-                "NOT (`tt`.`int_col` IS NULL OR (`tt`.`int_col` NOT IN (42, -17))) AND "
+                "`tt`.`int_col` IN (42, -17) AND "
                 "REGEXP_CONTAINS(lower(`tt`.`experiment_ids`), '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)') "
                 "ORDER BY rand() LIMIT 3"
             ),
             DbType.PG: (
-                "NOT (tt.int_col IS NULL OR (tt.int_col NOT IN (42, -17))) AND "
+                "tt.int_col IN (42, -17) AND "
                 "lower(tt.experiment_ids) ~ '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)' "
                 "ORDER BY random()  LIMIT 3"
             ),
             DbType.RS: (
-                "NOT (tt.int_col IS NULL OR (tt.int_col NOT IN (42, -17))) AND "
+                "tt.int_col IN (42, -17) AND "
                 "lower(tt.experiment_ids) ~ '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)' "
                 "ORDER BY random()  LIMIT 3"
             ),
@@ -370,19 +356,19 @@ WHERE_TESTCASES = [
         ],
         where={
             DbType.BQ: (
-                "NOT (`tt`.`int_col` IS NULL OR (`tt`.`int_col` NOT IN (42, -17))) AND "
+                "`tt`.`int_col` IN (42, -17) AND "
                 "(`tt`.`experiment_ids` IS NULL OR char_length(`tt`.`experiment_ids`) = 0 OR "
                 "NOT REGEXP_CONTAINS(lower(`tt`.`experiment_ids`), '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)')) "
                 "ORDER BY rand() LIMIT 3"
             ),
             DbType.PG: (
-                "NOT (tt.int_col IS NULL OR (tt.int_col NOT IN (42, -17))) AND "
+                "tt.int_col IN (42, -17) AND "
                 "(tt.experiment_ids IS NULL OR char_length(tt.experiment_ids) = 0 OR "
                 "lower(tt.experiment_ids) !~ '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)') "
                 "ORDER BY random()  LIMIT 3"
             ),
             DbType.RS: (
-                "NOT (tt.int_col IS NULL OR (tt.int_col NOT IN (42, -17))) AND "
+                "tt.int_col IN (42, -17) AND "
                 "(tt.experiment_ids IS NULL OR char_length(tt.experiment_ids) = 0 OR "
                 "lower(tt.experiment_ids) !~ '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)') "
                 "ORDER BY random()  LIMIT 3"
@@ -518,11 +504,9 @@ WHERE_TESTCASES = [
     WhereTestCase(
         filters=[Filter(field_name="date_col", relation=Relation.INCLUDES, value=["2024-01-01"])],
         where={
-            DbType.RS: "NOT (tt.date_col IS NULL OR (tt.date_col NOT IN ('2024-01-01'))) ORDER BY random()  LIMIT 3",
-            DbType.PG: "NOT (tt.date_col IS NULL OR (tt.date_col NOT IN ('2024-01-01'))) ORDER BY random()  LIMIT 3",
-            DbType.BQ: (
-                "NOT (`tt`.`date_col` IS NULL OR (`tt`.`date_col` NOT IN (DATE '2024-01-01'))) ORDER BY rand() LIMIT 3"
-            ),
+            DbType.RS: "tt.date_col IN ('2024-01-01') ORDER BY random()  LIMIT 3",
+            DbType.PG: "tt.date_col IN ('2024-01-01') ORDER BY random()  LIMIT 3",
+            DbType.BQ: "`tt`.`date_col` IN (DATE '2024-01-01') ORDER BY rand() LIMIT 3",
         },
     ),
     WhereTestCase(

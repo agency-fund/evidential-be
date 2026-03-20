@@ -1,5 +1,6 @@
 import asyncio
 import random
+from typing import TYPE_CHECKING
 
 import numpy as np
 import sentry_sdk
@@ -13,6 +14,9 @@ from xngin.apiserver.routers.common_enums import ContextType, ExperimentsType
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 # The amount of time the API server will wait for a snapshot to complete when invoked in response to user request.
 # The snapshotter cron job can specify a different timeout via command line flags.
@@ -96,7 +100,7 @@ async def make_first_snapshot(experiment_id: str, snapshot_id: str):
         if snapshot is None:
             logger.info(f"{experiment_id}.{snapshot_id} is missing or is already being processed.")
             return
-        await _handle_one_snapshot_safely(snapshot, SNAPSHOT_TIMEOUT_SECS)
+        await _handle_one_snapshot_safely(session, snapshot, SNAPSHOT_TIMEOUT_SECS)
 
 
 async def process_pending_snapshots(snapshot_timeout: int):
@@ -132,10 +136,10 @@ async def process_pending_snapshots(snapshot_timeout: int):
             if snapshot is None:
                 logger.info("No pending snapshots available.")
                 return
-            _ = await _handle_one_snapshot_safely(snapshot, snapshot_timeout)
+            _ = await _handle_one_snapshot_safely(session, snapshot, snapshot_timeout)
 
 
-async def _handle_one_snapshot_safely(snapshot: tables.Snapshot, snapshot_timeout: int):
+async def _handle_one_snapshot_safely(session: AsyncSession, snapshot: tables.Snapshot, snapshot_timeout: int):
     sentry_sdk.metrics.count("snapshots.started", 1, attributes={"experiment_id": snapshot.experiment_id})
     experiment = await snapshot.awaitable_attrs.experiment
     datasource = await experiment.awaitable_attrs.datasource
@@ -143,7 +147,7 @@ async def _handle_one_snapshot_safely(snapshot: tables.Snapshot, snapshot_timeou
         logger.info(f"{experiment.id}.{snapshot.id}: processing")
         try:
             async with asyncio.timeout(snapshot_timeout):
-                result = await _query_dwh_for_snapshot_data(datasource, experiment)
+                result = await _query_dwh_for_snapshot_data(session, datasource, experiment)
                 snapshot.data = result.model_dump(mode="json")
                 snapshot.status = "success"
         except Exception as exc:
@@ -156,7 +160,7 @@ async def _handle_one_snapshot_safely(snapshot: tables.Snapshot, snapshot_timeou
 
 
 async def _query_dwh_for_snapshot_data(
-    datasource: tables.Datasource, experiment: tables.Experiment
+    session: AsyncSession, datasource: tables.Datasource, experiment: tables.Experiment
 ) -> ExperimentAnalysisResponse:
     """Collect a snapshot from a customer DWH and returns the snapshot data."""
     if ExperimentsType(experiment.experiment_type).is_bayesian():
@@ -190,6 +194,7 @@ async def _query_dwh_for_snapshot_data(
         baseline_arm = next((arm for arm in experiment.arms if arm.position == 1), experiment.arms[0])
         assert baseline_arm.id is not None
         return await experiments_common.analyze_experiment_freq_impl(
+            xngin_session=session,
             dsconfig=datasource.get_config(),
             experiment=experiment,
             baseline_arm_id=baseline_arm.id,
