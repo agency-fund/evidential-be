@@ -7,7 +7,6 @@ import math
 from xngin.apiserver.routers.common_api_types import (
     DesignSpecMetric,
     MetricPowerAnalysis,
-    MetricPowerAnalysisMessage,
 )
 from xngin.stats.power import (
     _analyze_power_sample_size_mode,  # noqa: PLC2701

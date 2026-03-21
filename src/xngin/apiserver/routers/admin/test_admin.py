@@ -57,7 +57,6 @@ from xngin.apiserver.routers.common_api_types import (
     Arm,
     ArmBandit,
     BanditExperimentAnalysisResponse,
-    ClusterMetricPowerAnalysis,
     CMABContextInputRequest,
     CMABExperimentSpec,
     CreateExperimentRequest,
@@ -70,6 +69,7 @@ from xngin.apiserver.routers.common_api_types import (
     FreqExperimentAnalysisResponse,
     LikelihoodTypes,
     MABExperimentSpec,
+    MetricPowerAnalysis,
     OnlineFrequentistExperimentSpec,
     PowerRequest,
     PreassignedFrequentistExperimentSpec,
@@ -3448,9 +3448,9 @@ async def test_power_check_with_manual_icc(testing_datasource_with_user, aclient
     ).data
     assert len(power_response.analyses) == 1
     analysis = power_response.analyses[0]
-    assert isinstance(analysis, ClusterMetricPowerAnalysis)
-    assert analysis.icc == 0.15
-    assert analysis.avg_cluster_size == 30
+    assert isinstance(analysis, MetricPowerAnalysis)
+    assert analysis.metric_spec.icc == 0.15
+    assert analysis.metric_spec.avg_cluster_size == 30
     assert analysis.design_effect is not None
     assert analysis.design_effect > 1.0
 
@@ -3486,11 +3486,14 @@ async def test_power_check_with_calculated_icc(testing_datasource_with_user, acl
     ).data
     assert len(power_response.analyses) == 1
     analysis = power_response.analyses[0]
-    assert isinstance(analysis, ClusterMetricPowerAnalysis)
-    assert analysis.icc is not None
-    assert 0.15 <= analysis.icc <= 0.25
-    assert analysis.avg_cluster_size > 0
-    assert analysis.cv > 2.0
+    assert isinstance(analysis, MetricPowerAnalysis)
+    assert analysis.metric_spec.icc is not None
+    assert analysis.metric_spec.icc is not None
+    assert 0.15 <= analysis.metric_spec.icc <= 0.25
+    assert analysis.metric_spec.avg_cluster_size is not None
+    assert analysis.metric_spec.avg_cluster_size > 0
+    assert analysis.metric_spec.cv is not None
+    assert analysis.metric_spec.cv > 2.0
     assert analysis.design_effect is not None
     assert analysis.design_effect > 1.0
     assert analysis.num_clusters_total is not None
