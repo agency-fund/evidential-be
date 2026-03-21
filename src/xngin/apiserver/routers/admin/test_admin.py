@@ -1,4 +1,5 @@
 import base64
+import collections
 import copy
 import csv
 import io
@@ -14,6 +15,7 @@ import pytest
 from deepdiff import DeepDiff
 from pydantic import HttpUrl, TypeAdapter
 from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import flags
@@ -231,10 +233,13 @@ async def fixture_testing_bandit_experiment(request, xngin_session: AsyncSession
     # Add fake assignments for each arm for real participant ids in our test data.
     arm_ids = [arm.id for arm in experiment.arms]
     arm_map = {arm.id: arm for arm in experiment.arms}
+    arm_id_counts = collections.Counter[str]()
     rng = np.random.default_rng(66)
 
     for i in range(num_participants):
         arm_id = arm_ids[i % 2]  # Alternate between the two arms
+        arm_id_counts.update([arm_id])
+
         outcome = rng.binomial(n=1, p=0.5)  # Randomly generate outcome
         # NB: this step hijacks the algorithm to generate realistic arm parameters
         # It's not meant to be a test of the bandit algorithm
@@ -263,6 +268,19 @@ async def fixture_testing_bandit_experiment(request, xngin_session: AsyncSession
         xngin_session.add(assignment)
         xngin_session.add(arm_map[arm_id])
 
+    # Maintain ArmStats table for newly assigned arms.
+    # When this test setup process is replaced by API calls,
+    # this can be removed.
+    for arm_id, count in arm_id_counts.items():
+        stmt = (
+            pg_insert(tables.ArmStats)
+            .values(arm_id=arm_id, population=count)
+            .on_conflict_do_update(
+                index_elements=[tables.ArmStats.arm_id],
+                set_={"population": tables.ArmStats.population + count},
+            )
+        )
+        await xngin_session.execute(stmt)
     await xngin_session.commit()
     await xngin_session.refresh(experiment, ["draws", "arms"])
     return experiment
@@ -2938,28 +2956,34 @@ async def test_delete_experiment_cascades_arm_stats(
     indirect=True,
 )
 async def test_delete_experiment_data_draws(
-    xngin_session: AsyncSession, testing_bandit_experiment: tables.Experiment, testing_datasource_with_user, client
+    testing_bandit_experiment: tables.Experiment,
+    testing_datasource_with_user,
+    aclient: AdminAPIClient,
 ):
     """Test deleting draws for a bandit experiment."""
     ds_id = testing_datasource_with_user.ds.id
     experiment_id = testing_bandit_experiment.id
 
     # Verify draws exist before deletion
-    draws_before = await xngin_session.scalars(select(tables.Draw).where(tables.Draw.experiment_id == experiment_id))
-    assert len(list(draws_before)) > 0
+    experiment = aclient.get_experiment_for_ui(datasource_id=ds_id, experiment_id=experiment_id).data
+    assert experiment.config is not None
+    assert experiment.config.assign_summary is not None
+    assert experiment.config.assign_summary.arm_sizes is not None
+    assert len(experiment.config.assign_summary.arm_sizes) > 0
+    assert all(a.size > 0 for a in experiment.config.assign_summary.arm_sizes)
 
     # Delete draws
-    client.request(
-        "DELETE",
-        f"/v1/m/datasources/{ds_id}/experiments/{experiment_id}/data",
-        json=DeleteExperimentDataRequest(draws=True).model_dump(),
-        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    aclient.delete_experiment_data(
+        datasource_id=ds_id, experiment_id=experiment_id, body=DeleteExperimentDataRequest(draws=True)
     )
 
-    # Verify draws are deleted
-    xngin_session.expire_all()
-    draws_after = await xngin_session.scalars(select(tables.Draw).where(tables.Draw.experiment_id == experiment_id))
-    assert len(list(draws_after)) == 0
+    # Verify zero arm sizes after data deletion
+    experiment = aclient.get_experiment_for_ui(datasource_id=ds_id, experiment_id=experiment_id).data
+    assert experiment.config is not None
+    assert experiment.config.assign_summary is not None
+    assert experiment.config.assign_summary.arm_sizes is not None
+    assert len(experiment.config.assign_summary.arm_sizes) > 0
+    assert all(a.size == 0 for a in experiment.config.assign_summary.arm_sizes)
 
 
 async def test_delete_experiment_data_snapshots(

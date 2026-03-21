@@ -1038,29 +1038,16 @@ async def get_assign_summary(
     experiment_type: ExperimentsType,
 ) -> AssignSummary:
     """Constructs an AssignSummary from the experiment's arms and arm_assignments."""
-    match experiment_type:
-        case ExperimentsType.FREQ_ONLINE | ExperimentsType.FREQ_PREASSIGNED:
-            result = await xngin_session.execute(
-                select(
-                    tables.Arm.id,
-                    tables.Arm.name,
-                    func.coalesce(tables.ArmStats.population, 0),
-                )
-                .outerjoin(tables.ArmStats, tables.Arm.id == tables.ArmStats.arm_id)
-                .where(tables.Arm.experiment_id == experiment_id)
-                .order_by(tables.Arm.position)
-            )
-        case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
-            result = await xngin_session.execute(
-                select(tables.Draw.arm_id, tables.Arm.name, func.count())
-                .join(tables.Arm)
-                .where(tables.Draw.experiment_id == experiment_id)
-                .group_by(tables.Draw.arm_id, tables.Arm.name)
-            )
-            balance_check = None
-        case _:
-            raise LateValidationError(f"Invalid experiment type: {experiment_type}")
-
+    result = await xngin_session.execute(
+        select(
+            tables.Arm.id,
+            tables.Arm.name,
+            func.coalesce(tables.ArmStats.population, 0),
+        )
+        .outerjoin(tables.ArmStats, tables.Arm.id == tables.ArmStats.arm_id)
+        .where(tables.Arm.experiment_id == experiment_id)
+        .order_by(tables.Arm.position)
+    )
     arm_sizes = [
         ArmSize(
             arm=Arm(arm_id=arm_id, arm_name=name),
@@ -1068,6 +1055,9 @@ async def get_assign_summary(
         )
         for arm_id, name, count in result
     ]
+
+    if experiment_type in {ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE}:
+        balance_check = None
     return AssignSummary(
         balance_check=balance_check,
         arm_sizes=arm_sizes,
