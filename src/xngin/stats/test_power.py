@@ -1,11 +1,19 @@
 import pytest
 
-from xngin.apiserver.routers.common_api_types import DesignSpecMetric
+from xngin.apiserver.routers.common_api_types import (
+    DesignSpecMetric,
+    MetricPowerAnalysis,
+)
 from xngin.apiserver.routers.common_enums import (
     MetricPowerAnalysisMessageType,
     MetricType,
 )
-from xngin.stats.power import analyze_metric_power, calculate_mde_with_desired_n, check_power
+from xngin.stats.power import (
+    _analyze_power_sample_size_mode,  # noqa: PLC2701
+    analyze_metric_power,
+    calculate_mde_with_desired_n,
+    check_power,
+)
 from xngin.stats.stats_errors import StatsPowerError
 
 
@@ -593,3 +601,335 @@ def test_analyze_metric_power_desired_n_with_unbalanced_arms():
     assert metric.metric_baseline is not None
     assert result.target_possible is not None
     assert result.target_possible < metric.metric_baseline
+
+
+""" Test cluster power analysis """
+
+
+def test_analyze_power_sample_size_cluster_basic():
+    """Test that cluster params trigger cluster analysis."""
+    metric = DesignSpecMetric(
+        field_name="test_score",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=1000,
+        available_nonnull_n=1000,
+    )
+
+    result = _analyze_power_sample_size_mode(
+        metric=metric,
+        n_arms=2,
+        icc=0.15,
+        avg_cluster_size=30,
+        # cv not provided, should default to 0.0
+    )
+
+    # Should return MetricPowerAnalysis
+    assert isinstance(result, MetricPowerAnalysis)
+
+    # Check cluster-specific fields exist
+    assert result.metric_spec.icc == 0.15
+    assert result.metric_spec.avg_cluster_size == 30
+    assert result.metric_spec.cv == 0.0  # Default
+    assert result.num_clusters_total is not None
+    assert result.design_effect is not None
+
+
+def test_analyze_power_sample_size_cluster_with_cv():
+    """Test cluster analysis with CV provided."""
+    metric = DesignSpecMetric(
+        field_name="test_score",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=5000,
+        available_nonnull_n=5000,
+    )
+
+    result = _analyze_power_sample_size_mode(
+        metric=metric,
+        n_arms=2,
+        icc=0.15,
+        avg_cluster_size=30,
+        cv=1.5,  # High variation
+    )
+
+    assert isinstance(result, MetricPowerAnalysis)
+    assert result.metric_spec.cv == 1.5
+    # High CV should increase design effect
+    assert result.design_effect is not None
+    assert result.design_effect > 5.35  # Would be 5.35 with cv=0
+
+
+def test_analyze_power_sample_size_individual_when_no_cluster_params():
+    """Test that missing cluster params triggers individual analysis."""
+    metric = DesignSpecMetric(
+        field_name="test_score",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=1000,
+        available_nonnull_n=1000,
+    )
+
+    result = _analyze_power_sample_size_mode(
+        metric=metric,
+        n_arms=2,
+        # No icc, avg_cluster_size
+    )
+
+    # Should return MetricPowerAnalysis (not Cluster version)
+    assert type(result).__name__ == "MetricPowerAnalysis"
+    # Should not have cluster fields
+    assert result.num_clusters_total is None
+
+
+def test_analyze_power_sample_size_individual_when_only_icc():
+    """Test that only ICC (without avg_cluster_size) does individual."""
+    metric = DesignSpecMetric(
+        field_name="test_score",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=1000,
+        available_nonnull_n=1000,
+    )
+
+    result = _analyze_power_sample_size_mode(
+        metric=metric,
+        n_arms=2,
+        icc=0.15,  # Provided
+        # avg_cluster_size NOT provided
+    )
+
+    # Should do individual analysis (need both params for cluster)
+    assert type(result).__name__ == "MetricPowerAnalysis"
+
+
+def test_calculate_mde_cluster_basic():
+    """Test MDE calculation with cluster params."""
+    metric = DesignSpecMetric(
+        field_name="test_score",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_stddev=20,
+    )
+
+    target, pct_change = calculate_mde_with_desired_n(
+        desired_n=720,
+        metric=metric,
+        n_arms=2,
+        icc=0.15,
+        avg_cluster_size=30,
+    )
+
+    # Cluster MDE should be larger than individual
+    # (harder to detect with clustering)
+    assert target > 100  # Some increase from baseline
+    assert pct_change > 0
+
+
+def test_calculate_mde_individual_when_no_cluster():
+    """Test MDE without cluster params does individual."""
+    metric = DesignSpecMetric(
+        field_name="test_score",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_stddev=20,
+    )
+
+    # Without cluster params
+    target_ind, pct_ind = calculate_mde_with_desired_n(
+        desired_n=720,
+        metric=metric,
+        n_arms=2,
+    )
+
+    # With cluster params
+    target_clust, pct_clust = calculate_mde_with_desired_n(
+        desired_n=720,
+        metric=metric,
+        n_arms=2,
+        icc=0.15,
+        avg_cluster_size=30,
+    )
+
+    # Cluster MDE should be worse (larger)
+    assert target_clust > target_ind
+    assert pct_clust > pct_ind
+
+
+def test_analyze_power_sample_size_cluster_specific_values():
+    """Test cluster sample size with known expected values."""
+    metric = DesignSpecMetric(
+        field_name="reading_score",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=1000,
+        available_nonnull_n=1000,
+    )
+
+    result = _analyze_power_sample_size_mode(
+        metric=metric,
+        n_arms=2,
+        icc=0.15,
+        avg_cluster_size=30,
+        cv=0.0,
+    )
+
+    assert isinstance(result, MetricPowerAnalysis)
+
+    # Specific expected values
+    assert result.design_effect == pytest.approx(5.35)
+    assert result.num_clusters_total == 24
+    assert result.clusters_per_arm == [12, 12]
+    assert result.n_per_arm == [360, 360]
+    assert result.effective_sample_size == 134
+
+
+def test_analyze_power_sample_size_cluster_with_high_cv():
+    """Test cluster sample size with high CV - specific values."""
+    metric = DesignSpecMetric(
+        field_name="test_score",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=5000,
+        available_nonnull_n=5000,
+    )
+
+    result = _analyze_power_sample_size_mode(
+        metric=metric,
+        n_arms=2,
+        icc=0.15,
+        avg_cluster_size=30,
+        cv=1.5,  # High variation
+    )
+
+    assert isinstance(result, MetricPowerAnalysis)
+
+    # With CV=1.5:
+    # DEFF = 1 + 0.15 * [(30-1) + 30*1.5²]
+    #      = 1 + 0.15 * [29 + 67.5] = 15.475
+    assert result.design_effect == pytest.approx(15.475)
+    assert result.metric_spec.cv == 1.5
+    # High CV requires many more clusters
+    assert result.num_clusters_total == 68
+
+
+def test_analyze_power_sample_size_cluster_unbalanced():
+    """Test cluster sample size with unbalanced allocation."""
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=2000,
+        available_nonnull_n=2000,
+    )
+
+    result = _analyze_power_sample_size_mode(
+        metric=metric,
+        n_arms=2,
+        icc=0.15,
+        avg_cluster_size=30,
+        arm_weights=[20, 80],
+    )
+
+    assert isinstance(result, MetricPowerAnalysis)
+
+    # Unbalanced: 20% vs 80%
+    assert result.clusters_per_arm == [8, 29]
+    assert result.n_per_arm == [240, 870]
+    assert result.num_clusters_total == 37
+
+
+def test_calculate_mde_cluster_specific_values():
+    """Test cluster MDE with known expected values."""
+    metric = DesignSpecMetric(
+        field_name="reading_score",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_stddev=20,
+    )
+
+    target, pct_change = calculate_mde_with_desired_n(
+        desired_n=600,
+        metric=metric,
+        n_arms=2,
+        icc=0.15,
+        avg_cluster_size=30,
+        cv=0.0,
+    )
+
+    # With 600 participants, ICC=0.15, m=30:
+    # DEFF = 5.35, effective_n = 600/5.35 = 112
+    # MDE should be ~10.68 points (10.68% change)
+    assert target == pytest.approx(110.68, rel=0.01)
+    assert pct_change == pytest.approx(0.1068, rel=0.01)
+
+
+def test_calculate_mde_cluster_with_cv_specific_values():
+    """Test cluster MDE with CV - specific values."""
+    metric = DesignSpecMetric(
+        field_name="test_score",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_stddev=20,
+    )
+
+    # No CV
+    target_no_cv, _ = calculate_mde_with_desired_n(
+        desired_n=720,
+        metric=metric,
+        n_arms=2,
+        icc=0.15,
+        avg_cluster_size=30,
+        cv=0.0,
+    )
+
+    # With CV=1.5
+    target_high_cv, _ = calculate_mde_with_desired_n(
+        desired_n=720,
+        metric=metric,
+        n_arms=2,
+        icc=0.15,
+        avg_cluster_size=30,
+        cv=1.5,
+    )
+
+    # CV increases DEFF, which increases MDE
+    assert target_no_cv == pytest.approx(110.3, rel=0.01)
+    assert target_high_cv == pytest.approx(116.89, rel=0.01)
+    assert target_high_cv > target_no_cv
+
+
+def test_calculate_mde_cluster_binary_metric():
+    """Test cluster MDE with binary metric - specific values."""
+    metric = DesignSpecMetric(
+        field_name="conversion",
+        metric_type=MetricType.BINARY,
+        metric_baseline=0.10,
+    )
+
+    target, pct_change = calculate_mde_with_desired_n(
+        desired_n=1000,
+        metric=metric,
+        n_arms=2,
+        icc=0.05,
+        avg_cluster_size=50,
+    )
+
+    # Binary metric with clustering
+    # DEFF = 1 + (50-1)*0.05 = 3.45
+    assert target == pytest.approx(0.0243, rel=0.01)
+    assert pct_change == pytest.approx(-0.757, rel=0.01)

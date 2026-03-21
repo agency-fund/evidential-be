@@ -114,6 +114,28 @@ class DesignSpecMetric(DesignSpecMetricBase):
         ),
     ] = None
 
+    # Cluster randomization design parameters (all must be set together, or none)
+    icc: Annotated[
+        float | None,
+        Field(description="Intracluster correlation coefficient for cluster-randomized designs."),
+    ] = None
+    avg_cluster_size: Annotated[
+        float | None,
+        Field(description="Average number of individuals per cluster."),
+    ] = None
+    cv: Annotated[
+        float | None,
+        Field(description="Coefficient of variation in cluster sizes (0 = equal sizes)."),
+    ] = None
+
+    @model_validator(mode="after")
+    def cluster_fields_check(self) -> Self:
+        """Enforce that cluster fields are either all set or all unset."""
+        cluster_fields = (self.icc, self.avg_cluster_size, self.cv)
+        if any(f is not None for f in cluster_fields) and any(f is None for f in cluster_fields):
+            raise ValueError("icc, avg_cluster_size, and cv must all be set together or all be None")
+        return self
+
     @model_validator(mode="after")
     def stddev_check(self):
         """Enforce that metric_stddev is empty for non-NUMERICs. FE will handle numerics without stddev
@@ -625,6 +647,28 @@ class MetricPowerAnalysis(ApiBaseModel):
     msg: Annotated[
         MetricPowerAnalysisMessage | None,
         Field(description="Human friendly message about the above results."),
+    ] = None
+
+    # Cluster randomization results (None for non-cluster designs)
+    num_clusters_total: Annotated[
+        int | None,
+        Field(description="Total number of clusters needed across all arms"),
+    ] = None
+    clusters_per_arm: Annotated[
+        list[int] | None,
+        Field(description="Number of clusters needed for each arm (one entry per arm)"),
+    ] = None
+    n_per_arm: Annotated[
+        list[int] | None,
+        Field(description="Number of participants for each arm (one entry per arm)"),
+    ] = None
+    design_effect: Annotated[
+        float | None,
+        Field(description="Design effect (DEFF) - clustering penalty multiplier"),
+    ] = None
+    effective_sample_size: Annotated[
+        int | None,
+        Field(description="Effective sample size accounting for clustering (total_n / DEFF)"),
     ] = None
 
 
