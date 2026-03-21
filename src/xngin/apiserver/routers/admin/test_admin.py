@@ -1890,6 +1890,48 @@ def test_create_online_cmab_experiment(testing_datasource_with_user, aclient: Ad
     assert actual_design_spec == request_obj.design_spec
 
 
+@pytest.mark.parametrize(
+    "experiment_type,reward_type,prior_type",
+    [
+        (ExperimentsType.MAB_ONLINE, LikelihoodTypes.NORMAL, PriorTypes.NORMAL),
+        (ExperimentsType.MAB_ONLINE, LikelihoodTypes.BERNOULLI, PriorTypes.BETA),
+        (ExperimentsType.CMAB_ONLINE, LikelihoodTypes.NORMAL, PriorTypes.NORMAL),
+    ],
+)
+def test_create_online_mab_and_cmab_experiment_with_arm_weights(
+    testing_datasource_with_user, aclient: AdminAPIClient, experiment_type, reward_type, prior_type
+):
+    datasource_id = testing_datasource_with_user.ds.id
+    request_obj = make_create_online_bandit_experiment_request(
+        experiment_type=experiment_type, reward_type=reward_type, prior_type=prior_type
+    )
+    # Replace mu, sigma, alpha and beta and add arm_weights instead
+    arm_weights = [25.0, 75.0]
+    for i, arm in enumerate(request_obj.design_spec.arms):
+        assert isinstance(arm, ArmBandit)
+        arm.mu_init = None
+        arm.sigma_init = None
+        arm.alpha_init = None
+        arm.beta_init = None
+        arm.arm_weight = arm_weights[i]
+
+    created_experiment = aclient.create_experiment(datasource_id=datasource_id, body=request_obj, random_state=42).data
+    parsed_experiment_id = created_experiment.experiment_id
+    assert parsed_experiment_id is not None
+    for arm in created_experiment.design_spec.arms:
+        assert isinstance(arm, ArmBandit)
+        if prior_type == PriorTypes.BETA:
+            assert arm.alpha_init is not None
+            assert arm.alpha is not None
+            assert arm.beta_init is not None
+            assert arm.beta is not None
+        elif prior_type == PriorTypes.NORMAL:
+            assert arm.mu_init is not None
+            assert arm.mu is not None
+            assert arm.sigma_init is not None
+            assert arm.covariance is not None
+
+
 async def test_update_experiment_invalid_impact(testing_experiment, aclient: AdminAPIClient):
     """Test updating an experiment's metadata."""
     datasource_id = testing_experiment.datasource_id
