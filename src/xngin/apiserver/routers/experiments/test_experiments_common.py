@@ -21,6 +21,8 @@ from xngin.apiserver.routers.common_api_types import (
     ArmBandit,
     BaseFrequentistDesignSpec,
     CMABExperimentSpec,
+    Context,
+    ContextType,
     CreateExperimentRequest,
     DesignSpec,
     DesignSpecMetric,
@@ -1689,32 +1691,85 @@ async def make_experiment_with_assignments(
 
     arm1_id = experiment.arms[0].id
     arm2_id = experiment.arms[1].id
-    assignments = [
-        tables.ArmAssignment(
-            experiment_id=experiment.id,
-            participant_type="test_participant_type",
-            participant_id="p1",
-            arm_id=arm1_id,
-            created_at=datetime(2025, 1, 1, tzinfo=UTC),
-            strata=[
-                {"field_name": "gender", "strata_value": "F"},
-                {"field_name": "ethnicity", "strata_value": "Asian"},
-            ],
-        ),
-        tables.ArmAssignment(
-            experiment_id=experiment.id,
-            participant_type="test_participant_type",
-            participant_id="p2",
-            arm_id=arm2_id,
-            created_at=datetime(2025, 1, 2, tzinfo=UTC),
-            strata=[
-                {"field_name": "gender", "strata_value": "M"},
-                {"field_name": "ethnicity", "strata_value": "esc,aped"},
-            ],
-        ),
-    ]
+
+    assignments: list[tables.ArmAssignment] | list[tables.Draw]
+
+    match experiment.experiment_type:
+        case ExperimentsType.FREQ_PREASSIGNED.value | ExperimentsType.FREQ_ONLINE.value:
+            arm1_id = experiment.arms[0].id
+            arm2_id = experiment.arms[1].id
+            assignments = [
+                tables.ArmAssignment(
+                    experiment_id=experiment.id,
+                    participant_type="test_participant_type",
+                    participant_id="p1",
+                    arm_id=arm1_id,
+                    created_at=datetime(2025, 1, 1, tzinfo=UTC),
+                    strata=[
+                        {"field_name": "gender", "strata_value": "F"},
+                        {"field_name": "ethnicity", "strata_value": "Asian"},
+                    ],
+                ),
+                tables.ArmAssignment(
+                    experiment_id=experiment.id,
+                    participant_type="test_participant_type",
+                    participant_id="p2",
+                    arm_id=arm2_id,
+                    created_at=datetime(2025, 1, 2, tzinfo=UTC),
+                    strata=[
+                        {"field_name": "gender", "strata_value": "M"},
+                        {"field_name": "ethnicity", "strata_value": "esc,aped"},
+                    ],
+                ),
+            ]
+        case ExperimentsType.MAB_ONLINE.value:
+            assignments = [
+                tables.Draw(
+                    experiment_id=experiment.id,
+                    participant_type="test_participant_type",
+                    participant_id="p1",
+                    arm_id=arm1_id,
+                    created_at=datetime(2025, 1, 1, tzinfo=UTC),
+                    outcome=0.0,
+                ),
+                tables.Draw(
+                    experiment_id=experiment.id,
+                    participant_type="test_participant_type",
+                    participant_id="p2",
+                    arm_id=arm2_id,
+                    created_at=datetime(2025, 1, 2, tzinfo=UTC),
+                    outcome=1.0,
+                ),
+            ]
+        case ExperimentsType.CMAB_ONLINE.value:
+            assignments = [
+                tables.Draw(
+                    experiment_id=experiment.id,
+                    participant_type="test_participant_type",
+                    participant_id="p1",
+                    arm_id=arm1_id,
+                    created_at=datetime(2025, 1, 1, tzinfo=UTC),
+                    observed_at=datetime(2025, 1, 3, tzinfo=UTC),
+                    context_vals=[0.0, 0.0],
+                    outcome=0.0,
+                ),
+                tables.Draw(
+                    experiment_id=experiment.id,
+                    participant_type="test_participant_type",
+                    participant_id="p2",
+                    arm_id=arm2_id,
+                    created_at=datetime(2025, 1, 2, tzinfo=UTC),
+                    observed_at=datetime(2025, 1, 4, tzinfo=UTC),
+                    context_vals=[1.0, 1.0],
+                    outcome=1.0,
+                ),
+            ]
+        case _:
+            raise ValueError(f"Unsupported experiment type: {experiment.experiment_type}")
+
     xngin_session.add_all(assignments)
     await xngin_session.commit()
+
     return experiment
 
 
@@ -1854,6 +1909,74 @@ async def test_get_experiment_assignments_as_csv_impl_omits_strata_columns_when_
     assert set(rows[1:]) == {
         f"p1,{arm_name_to_id['control']},control,2025-01-01T00:00:00Z",
         f"p2,{arm_name_to_id['treatment']},treatment,2025-01-02T00:00:00Z",
+    }
+
+
+async def test_get_experiment_assignments_as_csv_impl_omits_context_vals_for_mab_experiment(
+    xngin_session, testing_datasource
+):
+    experiment, _ = await make_insertable_experiment(
+        testing_datasource.ds,
+        design_spec=MABExperimentSpec(
+            participant_type="test_participant_type",
+            experiment_name="test experiment",
+            description="test experiment",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime.now(UTC) + timedelta(days=1),
+            arms=[
+                ArmBandit(arm_name="control", arm_description="", alpha_init=1, beta_init=1),
+                ArmBandit(arm_name="treatment", arm_description="", alpha_init=1, beta_init=1),
+            ],
+            prior_type=PriorTypes.BETA,
+            reward_type=LikelihoodTypes.BERNOULLI,
+        ),
+    )
+    experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds, experiment=experiment)
+    arm_name_to_id = {a.name: a.id for a in experiment.arms}
+
+    response = await get_experiment_assignments_as_csv_impl(xngin_session, experiment)
+    csv_bytes = await collect_streaming_response_body(response)
+    rows = csv_bytes.decode().splitlines()
+    assert rows[0] == "participant_id,arm_id,arm_name,created_at,outcome"
+    assert set(rows[1:]) == {
+        f"p1,{arm_name_to_id['control']},control,2025-01-01T00:00:00Z,0",
+        f"p2,{arm_name_to_id['treatment']},treatment,2025-01-02T00:00:00Z,1",
+    }
+
+
+async def test_get_experiment_assignments_as_csv_impl_includes_context_vals_for_cmab_experiment(
+    xngin_session, testing_datasource
+):
+    experiment, _ = await make_insertable_experiment(
+        testing_datasource.ds,
+        design_spec=CMABExperimentSpec(
+            participant_type="test_participant_type",
+            experiment_name="test experiment",
+            description="test experiment",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime.now(UTC) + timedelta(days=1),
+            arms=[
+                ArmBandit(arm_name="control", arm_description="", mu_init=0, sigma_init=1),
+                ArmBandit(arm_name="treatment", arm_description="", mu_init=0, sigma_init=1),
+            ],
+            contexts=[
+                Context(context_name="context1", context_description="", value_type=ContextType.BINARY),
+                Context(context_name="context2", context_description="", value_type=ContextType.REAL_VALUED),
+            ],
+            prior_type=PriorTypes.NORMAL,
+            reward_type=LikelihoodTypes.BERNOULLI,
+        ),
+    )
+    experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds, experiment=experiment)
+    arm_name_to_id = {a.name: a.id for a in experiment.arms}
+
+    response = await get_experiment_assignments_as_csv_impl(xngin_session, experiment)
+    csv_bytes = await collect_streaming_response_body(response)
+    rows = csv_bytes.decode().splitlines()
+    assert rows[0] == "participant_id,arm_id,arm_name,created_at,outcome,context_vals"
+    assert set(rows[1:]) == {
+        f'p1,{arm_name_to_id["control"]},control,2025-01-01T00:00:00Z,0,"{{0,0}}"',
+        f'p2,{arm_name_to_id["treatment"]},treatment,2025-01-02T00:00:00Z,1,"{{1,1}}"',
     }
 
 
