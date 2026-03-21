@@ -22,10 +22,8 @@ def bandit_weights_to_beta_prior(
         beta (np.ndarray): Array of shape (n_arms,) containing the beta
             parameters for the Beta distribution.
     """
-    if expected_probabilities.sum() != 100:
-        raise ValueError("Expected probabilities must sum to 100.")
-
-    expected_probabilities /= 100  # Normalize to sum to 1
+    expected_probabilities = np.asarray(expected_probabilities, dtype=np.float64)
+    expected_probabilities *= 0.01  # Normalize to sum to 1
     beta_params = np.ones_like(expected_probabilities)  # Initialize beta parameters to 1
     alpha_params = np.ones_like(expected_probabilities)  # Initialize alpha parameters to 1
 
@@ -69,8 +67,7 @@ def bandit_weights_to_beta_prior(
         denominator = np.prod(pairwise_sums, axis=1)
         return float(
             np.sum(
-                ((numerator / denominator) - expected_probabilities * 0.01) ** 2
-                - 0.01 * (alphas - np.ones_like(alphas)) ** 2
+                ((numerator / denominator) - expected_probabilities) ** 2 - 0.01 * (alphas - np.ones_like(alphas)) ** 2
             )
         )
 
@@ -97,10 +94,8 @@ def bandit_weights_to_normal_prior(
         sigma (np.ndarray): Array of shape (n_arms,) containing the standard deviation parameters
             for the Normal distribution.
     """
-    if expected_probabilities.sum() != 100:
-        raise ValueError("Expected probabilities must sum to 100.")
-
-    expected_probabilities /= 100  # Normalize to sum to 1
+    expected_probabilities = np.asarray(expected_probabilities, dtype=np.float64)
+    expected_probabilities *= 0.01  # Normalize to sum to 1
     sigma_params = np.ones_like(expected_probabilities)  # Initialize beta parameters to 1
     mu_params = np.zeros_like(expected_probabilities)  # Initialize alpha parameters to 1
 
@@ -132,7 +127,10 @@ def bandit_weights_to_normal_prior(
 def convert_arm_weights_to_prior_params(
     arm_weights: list[float], prior_type: PriorTypes, num_contexts: int = 1
 ) -> tuple[list[float], list[float]]:
-    expected_probabilities = np.array(arm_weights)
+    expected_probabilities = np.array(arm_weights, dtype=np.float64)
+    if expected_probabilities.sum() != 100:
+        raise ValueError("Expected probabilities must sum to 100.")
+
     if prior_type == PriorTypes.BETA:
         alpha, beta = bandit_weights_to_beta_prior(expected_probabilities)
         return alpha.tolist(), beta.tolist()
