@@ -288,6 +288,7 @@ class ExperimentStorageConverter:
                         "arm_id": arm.id,
                         "arm_name": arm.name,
                         "arm_description": arm.description,
+                        "arm_weight": arm.arm_weight,
                         "mu_init": arm.mu_init,
                         "sigma_init": arm.sigma_init,
                         "alpha_init": arm.alpha_init,
