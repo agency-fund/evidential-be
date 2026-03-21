@@ -198,10 +198,25 @@ async def fetch_fields_or_raise(
     """Inspect an explicit table/primary_key experiment request and return field metadata.
 
     Returns: Field name => datatype map.
-    Raises: LateValidationError if any fields used in the request are not found or are invalid.
+    Raises: LateValidationError if any fields used in the request are not found, or if the filter
+            values are invalid for the field type.
     """
     async with DwhSession(datasource.get_config().dwh) as dwh:
-        inspected = await dwh.inspect_table_with_descriptors(table_name, primary_key)
+        sa_table = await dwh.inspect_table(table_name)
+        return await fetch_fields_from_table_or_raise(sa_table, design_spec, primary_key)
+
+
+async def fetch_fields_from_table_or_raise(
+    table: Table,
+    design_spec: BaseFrequentistDesignSpec,
+    primary_key: str,
+) -> dict[str, DataType]:
+    """Helper to fetch_fields_or_raise that operates on a pre-inspected SQLAlchemy table."""
+    schema_supported_fields_map: dict[str, DataType] = {}
+    for column in table.columns.values():
+        data_type = DataType.match(column.type)
+        if data_type.is_supported():
+            schema_supported_fields_map[column.name] = data_type
 
     referenced_fields = {
         *[metric.field_name for metric in design_spec.metrics],
@@ -210,27 +225,24 @@ async def fetch_fields_or_raise(
         primary_key,
     }
 
-    field_type_map = {
-        field_name: descriptor.data_type
-        for field_name, descriptor in inspected.db_schema.items()
-        if field_name in referenced_fields
+    referenced_fields_and_types = {
+        field_name: schema_supported_fields_map[field_name]
+        for field_name in referenced_fields
+        if field_name in schema_supported_fields_map
     }
-    if field_type_map is None:
-        raise LateValidationError("Experiment design must use valid datasource fields.")
 
-    missing_fields = referenced_fields - field_type_map.keys()
+    missing_fields = referenced_fields - referenced_fields_and_types.keys()
     if missing_fields:
         raise LateValidationError(
-            "Design fields are not present in the inspected table: "
-            + ", ".join(repr(field) for field in sorted(missing_fields))
+            f"Invalid DesignSpec fields (check your Datasource configuration): {', '.join(sorted(missing_fields))}"
         )
 
     for filter_ in design_spec.filters:
-        field_type = field_type_map[filter_.field_name]
+        field_type = referenced_fields_and_types[filter_.field_name]
         for value in filter_.value:
             validate_filter_value(filter_.field_name, value, field_type)
 
-    return field_type_map
+    return referenced_fields_and_types
 
 
 async def create_experiment_impl(

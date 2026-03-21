@@ -24,7 +24,7 @@ from fastapi import (
 )
 from loguru import logger
 from pydantic import BaseModel
-from sqlalchemy import Table, delete, func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute, joinedload, selectinload
 
@@ -130,7 +130,10 @@ from xngin.apiserver.routers.common_api_types import (
 )
 from xngin.apiserver.routers.common_enums import ExperimentState, PreloadMethod
 from xngin.apiserver.routers.experiments import experiments_common, experiments_common_csv
-from xngin.apiserver.routers.experiments.experiments_common import AbandonExperimentResult
+from xngin.apiserver.routers.experiments.experiments_common import (
+    AbandonExperimentResult,
+    fetch_fields_from_table_or_raise,
+)
 from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
 from xngin.apiserver.settings import (
     ParticipantsDef,
@@ -1889,7 +1892,8 @@ async def power_check(
 
     async with DwhSession(dsconfig.dwh) as dwh:
         sa_table = await dwh.inspect_table(body.table_name)
-        validate_spec_against_schema_or_raise(design_spec, sa_table, body.primary_key)
+        # Validate the fields used in the design spec are present in the table and that filter values are valid.
+        _ = await fetch_fields_from_table_or_raise(sa_table, design_spec, body.primary_key)
         metric_stats = await asyncio.to_thread(
             get_stats_on_metrics,
             dwh.session,
@@ -1910,21 +1914,6 @@ async def power_check(
             desired_n=design_spec.desired_n,
         )
     )
-
-
-def validate_spec_against_schema_or_raise(design_spec: BaseFrequentistDesignSpec, schema: Table, primary_key: str):
-    ds_fields = {c.name for c in schema.columns}
-    fields_requested = (
-        {primary_key}
-        | {m.field_name for m in design_spec.metrics}
-        | {f.field_name for f in design_spec.filters}
-        | {s.field_name for s in design_spec.strata}
-    )
-    invalid_fields = fields_requested - ds_fields
-    if len(invalid_fields) > 0:
-        raise LateValidationError(
-            f"Invalid DesignSpec fields (check your Datasource configuration): {', '.join(sorted(invalid_fields))}"
-        )
 
 
 def raise_unless_safe_hostname(dsn):
