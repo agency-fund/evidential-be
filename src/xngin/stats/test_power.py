@@ -1,8 +1,8 @@
 import pytest
 
 from xngin.apiserver.routers.common_api_types import (
-    ClusterMetricPowerAnalysis,
     DesignSpecMetric,
+    MetricPowerAnalysis,
 )
 from xngin.apiserver.routers.common_enums import (
     MetricPowerAnalysisMessageType,
@@ -626,13 +626,13 @@ def test_analyze_power_sample_size_cluster_basic():
         # cv not provided, should default to 0.0
     )
 
-    # Should return ClusterMetricPowerAnalysis
-    assert isinstance(result, ClusterMetricPowerAnalysis)
+    # Should return MetricPowerAnalysis
+    assert isinstance(result, MetricPowerAnalysis)
 
     # Check cluster-specific fields exist
-    assert result.icc == 0.15
-    assert result.avg_cluster_size == 30
-    assert result.cv == 0.0  # Default
+    assert result.metric_spec.icc == 0.15
+    assert result.metric_spec.avg_cluster_size == 30
+    assert result.metric_spec.cv == 0.0  # Default
     assert result.num_clusters_total is not None
     assert result.design_effect is not None
 
@@ -657,8 +657,8 @@ def test_analyze_power_sample_size_cluster_with_cv():
         cv=1.5,  # High variation
     )
 
-    assert isinstance(result, ClusterMetricPowerAnalysis)
-    assert result.cv == 1.5
+    assert isinstance(result, MetricPowerAnalysis)
+    assert result.metric_spec.cv == 1.5
     # High CV should increase design effect
     assert result.design_effect is not None
     assert result.design_effect > 5.35  # Would be 5.35 with cv=0
@@ -685,7 +685,7 @@ def test_analyze_power_sample_size_individual_when_no_cluster_params():
     # Should return MetricPowerAnalysis (not Cluster version)
     assert type(result).__name__ == "MetricPowerAnalysis"
     # Should not have cluster fields
-    assert not hasattr(result, "num_clusters_total")
+    assert result.num_clusters_total is None
 
 
 def test_analyze_power_sample_size_individual_when_only_icc():
@@ -784,7 +784,7 @@ def test_analyze_power_sample_size_cluster_specific_values():
         cv=0.0,
     )
 
-    assert isinstance(result, ClusterMetricPowerAnalysis)
+    assert isinstance(result, MetricPowerAnalysis)
 
     # Specific expected values
     assert result.design_effect == pytest.approx(5.35)
@@ -814,13 +814,13 @@ def test_analyze_power_sample_size_cluster_with_high_cv():
         cv=1.5,  # High variation
     )
 
-    assert isinstance(result, ClusterMetricPowerAnalysis)
+    assert isinstance(result, MetricPowerAnalysis)
 
     # With CV=1.5:
     # DEFF = 1 + 0.15 * [(30-1) + 30*1.5²]
     #      = 1 + 0.15 * [29 + 67.5] = 15.475
     assert result.design_effect == pytest.approx(15.475)
-    assert result.cv == 1.5
+    assert result.metric_spec.cv == 1.5
     # High CV requires many more clusters
     assert result.num_clusters_total == 68
 
@@ -845,7 +845,7 @@ def test_analyze_power_sample_size_cluster_unbalanced():
         arm_weights=[20, 80],
     )
 
-    assert isinstance(result, ClusterMetricPowerAnalysis)
+    assert isinstance(result, MetricPowerAnalysis)
 
     # Unbalanced: 20% vs 80%
     assert result.clusters_per_arm == [8, 29]

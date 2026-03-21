@@ -5,8 +5,8 @@ Power analysis for cluster-randomized designs.
 import math
 
 from xngin.apiserver.routers.common_api_types import (
-    ClusterMetricPowerAnalysis,
     DesignSpecMetric,
+    MetricPowerAnalysis,
     MetricPowerAnalysisMessage,
 )
 from xngin.stats.power import (
@@ -132,7 +132,7 @@ def analyze_metric_power_cluster(
     power: float = 0.8,
     alpha: float = 0.05,
     arm_weights: list[float] | None = None,
-) -> ClusterMetricPowerAnalysis:
+) -> MetricPowerAnalysis:
     """
     Calculate required sample size for cluster-randomized design.
 
@@ -154,17 +154,18 @@ def analyze_metric_power_cluster(
         arm_weights=arm_weights,
     )
 
+    updated_metric_spec = individual_analysis.metric_spec.model_copy(
+        update={"icc": icc, "avg_cluster_size": avg_cluster_size, "cv": cv}
+    )
+
     if individual_analysis.target_n is None:
-        cluster_analysis = ClusterMetricPowerAnalysis(
-            metric_spec=individual_analysis.metric_spec,
+        cluster_analysis = MetricPowerAnalysis(
+            metric_spec=updated_metric_spec,
             target_n=None,
             sufficient_n=individual_analysis.sufficient_n,
             target_possible=individual_analysis.target_possible,
             pct_change_possible=individual_analysis.pct_change_possible,
             msg=individual_analysis.msg,
-            icc=icc,
-            avg_cluster_size=avg_cluster_size,
-            cv=cv,
         )
     else:
         if arm_weights is None:
@@ -209,8 +210,8 @@ def analyze_metric_power_cluster(
                 values=final_msg.values,
             )
 
-        cluster_analysis = ClusterMetricPowerAnalysis(
-            metric_spec=individual_analysis.metric_spec,
+        cluster_analysis = MetricPowerAnalysis(
+            metric_spec=updated_metric_spec,
             target_n=new_target_n,
             sufficient_n=individual_analysis.sufficient_n,
             target_possible=individual_analysis.target_possible,
@@ -220,9 +221,6 @@ def analyze_metric_power_cluster(
             clusters_per_arm=clusters_per_arm_list,
             n_per_arm=n_per_arm_list,
             design_effect=deff,
-            icc=icc,
-            avg_cluster_size=avg_cluster_size,
-            cv=cv,
             effective_sample_size=effective_n,
         )
 

@@ -1,5 +1,3 @@
-from typing import TYPE_CHECKING
-
 import numpy as np
 import statsmodels.stats.api as sms
 
@@ -13,9 +11,6 @@ from xngin.apiserver.routers.common_enums import (
     MetricType,
 )
 from xngin.stats.stats_errors import StatsPowerError
-
-if TYPE_CHECKING:
-    from xngin.apiserver.routers.common_api_types import ClusterMetricPowerAnalysis
 
 
 def _calculate_arm_ratio_and_control_prob_from_weights(
@@ -147,7 +142,7 @@ def _analyze_power_sample_size_mode(
     icc: float | None = None,
     avg_cluster_size: float | None = None,
     cv: float = 0.0,
-) -> MetricPowerAnalysis | ClusterMetricPowerAnalysis:
+) -> MetricPowerAnalysis:
     """
     Calculate required sample size for individual or cluster randomization.
 
@@ -168,7 +163,7 @@ def _analyze_power_sample_size_mode(
         )
 
     # Cluster analysis if parameters provided, otherwise individual
-    analysis: MetricPowerAnalysis | ClusterMetricPowerAnalysis
+    analysis: MetricPowerAnalysis
 
     if icc is not None and avg_cluster_size is not None:
         from xngin.stats.cluster_power import analyze_metric_power_cluster  # noqa: PLC0415
