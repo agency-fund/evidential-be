@@ -21,7 +21,10 @@ def calculate_design_effect(
     cv: float = 0.0,
 ) -> float:
     """
-    Calculate design effect (DEFF) for cluster randomization.
+    Calculate design effect (DEFF >= 1) for cluster-randomized designs.
+
+    The design effect is the ratio of the cluster-randomized design variance to the variance of an
+    individually randomized design w/ the same total sample size and no within-cluster correlation.
 
     Formula: DEFF = 1 + (m - 1) * icc          (when cv=0)
     Formula from Eldridge et al. (2006):
@@ -29,7 +32,7 @@ def calculate_design_effect(
 
     Args:
         icc: Intracluster correlation coefficient (0 to 1)
-        avg_cluster_size: Average individuals per cluster
+        avg_cluster_size: Average individuals per cluster (m in the formulas)
         cv: Coefficient of variation in cluster sizes (default 0.0)
 
     """
@@ -99,6 +102,7 @@ def calculate_mde_cluster(
         n_arms: Number of treatment arms
         icc: Intracluster correlation coefficient, range [0, 1]
         avg_cluster_size: Average number of individuals per cluster
+        cv: Coefficient of variation in cluster sizes (default 0.0)
         power: Desired statistical power (default 0.8)
         alpha: Significance level (default 0.05)
         arm_weights: Optional allocation weights for unbalanced designs
@@ -141,6 +145,7 @@ def analyze_metric_power_cluster(
         n_arms: Number of treatment arms
         icc: Intracluster correlation coefficient (0 to 1)
         avg_cluster_size: Average individuals per cluster
+        cv: Coefficient of variation in cluster sizes (default 0.0)
         power: Desired statistical power (default 0.8)
         alpha: Significance level (default 0.05)
         arm_weights: Allocation weights for unbalanced designs
