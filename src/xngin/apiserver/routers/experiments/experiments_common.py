@@ -198,8 +198,8 @@ async def fetch_fields_or_raise(
     """Inspect an explicit table/primary_key experiment request and return field metadata.
 
     Returns: Field name => datatype map.
-    Raises: LateValidationError if any fields used in the request are not found, or if the filter
-            values are invalid for the field type.
+    Raises: LateValidationError if any fields used in the request are not found, invalid for a
+    certain use, or if filter values are invalid for the field type.
     """
     async with DwhSession(datasource.get_config().dwh) as dwh:
         sa_table = await dwh.inspect_table(table_name)
@@ -235,6 +235,17 @@ async def fetch_fields_from_table_or_raise(
     if missing_fields:
         raise LateValidationError(
             f"Invalid DesignSpec fields (check your Datasource configuration): {', '.join(sorted(missing_fields))}"
+        )
+
+    bad_metric_types = [
+        m.field_name
+        for m in design_spec.metrics
+        if not referenced_fields_and_types[m.field_name].is_supported_as_metric()
+    ]
+    if bad_metric_types:
+        raise LateValidationError(
+            f"Invalid metric field(s): ({', '.join(bad_metric_types)}). "
+            "Only boolean or numeric data types are supportedas metrics."
         )
 
     for filter_ in design_spec.filters:

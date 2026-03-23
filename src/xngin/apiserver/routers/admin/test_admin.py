@@ -1550,12 +1550,21 @@ async def test_power_check_validations(testing_datasource_with_user, aclient: Ad
     with expect_status_code(
         422, detail_contains="(check your Datasource configuration): bad_filter, bad_metric, bad_stratum"
     ):
-        design_spec.metrics = [DesignSpecMetricRequest(field_name="bad_metric", metric_pct_change=0.1)]
-        design_spec.strata = [Stratum(field_name="bad_stratum")]
-        design_spec.filters = [Filter(field_name="bad_filter", relation=Relation.INCLUDES, value=["value"])]
+        bad_design_spec = design_spec.model_copy(deep=True)
+        bad_design_spec.metrics = [DesignSpecMetricRequest(field_name="bad_metric", metric_pct_change=0.1)]
+        bad_design_spec.strata = [Stratum(field_name="bad_stratum")]
+        bad_design_spec.filters = [Filter(field_name="bad_filter", relation=Relation.INCLUDES, value=["value"])]
         aclient.power_check(
             datasource_id=datasource_id,
-            body=PowerRequest(design_spec=design_spec, table_name="dwh", primary_key="id"),
+            body=PowerRequest(design_spec=bad_design_spec, table_name="dwh", primary_key="id"),
+        )
+
+    with expect_status_code(422, detail_contains="Invalid metric field(s): (gender). Only boolean or numeric"):
+        bad_design_spec = design_spec.model_copy(deep=True)
+        bad_design_spec.metrics = [DesignSpecMetricRequest(field_name="gender", metric_pct_change=0.1)]
+        aclient.power_check(
+            datasource_id=datasource_id,
+            body=PowerRequest(design_spec=bad_design_spec, table_name="dwh", primary_key="id"),
         )
 
 
