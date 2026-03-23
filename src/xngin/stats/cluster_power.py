@@ -21,7 +21,7 @@ def calculate_design_effect(
     cv: float = 0.0,
 ) -> float:
     """
-    Calculate design effect (DEFF) for cluster randomization.
+    Calculate design effect (DEFF >= 1) for cluster-randomized designs.
 
     Formula: DEFF = 1 + (m - 1) * icc          (when cv=0)
     Formula from Eldridge et al. (2006):
