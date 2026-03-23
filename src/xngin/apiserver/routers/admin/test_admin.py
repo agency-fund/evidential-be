@@ -1620,9 +1620,7 @@ async def test_create_freq_preassigned_experiment(
     (arm1_id, arm2_id) = [arm.arm_id for arm in created_experiment.design_spec.arms]
 
     # Check getting the experiment from the integration API is consistent with the created experiment.
-    experiment = eclient.get_experiment(
-        api_key=testing_datasource_with_user.key, experiment_id=experiment_id
-    ).data
+    experiment = eclient.get_experiment(api_key=testing_datasource_with_user.key, experiment_id=experiment_id).data
     diff = DeepDiff(
         created_experiment,
         experiment,
