@@ -14,44 +14,36 @@ from xngin.stats.cluster_power import (
 from xngin.stats.power import calculate_mde_with_desired_n
 
 
-def test_calculate_design_effect_no_clustering():
-    deff = calculate_design_effect(icc=0.0, avg_cluster_size=30)
-    assert deff == 1.0
+@pytest.mark.parametrize(
+    "_test_name, icc, avg_cluster_size, cv, expected",
+    [
+        ("______no_clustering", 0.0, 30, 0.0, 1.0),
+        ("_perfect_clustering", 1.0, 30, 0.0, 30.0),
+        # DEFF = 1 + (30-1)*0.15 = 5.35
+        ("_fake_school_no_cv", 0.15, 30, 0.0, pytest.approx(5.35)),
+        # DEFF = 1 + 0.15 * [(30-1) + 30*(1.5²)] = 15.475
+        ("fake_school_cv_1.5", 0.15, 30, 1.5, pytest.approx(15.475)),
+    ],
+)
+def test_calculate_design_effect_parametrized(_test_name, icc, avg_cluster_size, cv, expected):
+    if cv == 0.0:
+        deff = calculate_design_effect(icc=icc, avg_cluster_size=avg_cluster_size)
+    else:
+        deff = calculate_design_effect(icc=icc, avg_cluster_size=avg_cluster_size, cv=cv)
+    assert deff == expected
 
 
-def test_calculate_design_effect_perfect_clustering():
-    deff = calculate_design_effect(icc=1.0, avg_cluster_size=30)
-    assert deff == 30.0
-
-
-def test_calculate_design_effect_typical_school():
-    deff = calculate_design_effect(icc=0.15, avg_cluster_size=30)
-    assert deff == pytest.approx(5.35)
-
-
-def test_calculate_design_effect_invalid_icc():
-    with pytest.raises(ValueError, match="ICC must be"):
-        calculate_design_effect(icc=1.5, avg_cluster_size=30)
-
-    with pytest.raises(ValueError, match="ICC must be"):
-        calculate_design_effect(icc=-0.1, avg_cluster_size=30)
-
-
-def test_calculate_design_effect_invalid_cluster_size():
-    with pytest.raises(ValueError, match="Cluster size must be"):
-        calculate_design_effect(icc=0.15, avg_cluster_size=0)
-
-
-def test_calculate_design_effect_with_cv():
-    """Test CV-adjusted design effect with specific values."""
-
-    deff_no_cv = calculate_design_effect(icc=0.15, avg_cluster_size=30, cv=0.0)
-    # DEFF = 1 + (30-1)*0.15 = 5.35
-    assert deff_no_cv == pytest.approx(5.35)
-
-    deff_cv = calculate_design_effect(icc=0.15, avg_cluster_size=30, cv=1.5)
-    # DEFF = 1 + 0.15 * [(30-1) + 30*(1.5²)] = 15.475
-    assert deff_cv == pytest.approx(15.475)
+@pytest.mark.parametrize(
+    "_test_name, icc, avg_cluster_size, cv, expected_error",
+    [
+        ("invalid_icc", 1.5, 30, 0.0, "ICC must be between 0 and 1, got 1.5"),
+        ("invalid_cluster_size", 0.15, 0, 0.0, "Cluster size must be >= 1, got 0"),
+        ("invalid_cv", 0.15, 30, -1.0, "CV must be >= 0, got -1.0"),
+    ],
+)
+def test_calculate_design_effect_invalid_params(_test_name, icc, avg_cluster_size, cv, expected_error):
+    with pytest.raises(ValueError, match=expected_error):
+        calculate_design_effect(icc=icc, avg_cluster_size=avg_cluster_size, cv=cv)
 
 
 def test_calculate_effective_sample_size():
@@ -82,10 +74,7 @@ def test_calculate_num_clusters_needed_no_clustering():
 
 def test_calculate_num_clusters_needed_high_deff():
     n_low = calculate_num_clusters_needed(n_individual=60, avg_cluster_size=30, deff=2.0)
-
     n_high = calculate_num_clusters_needed(n_individual=60, avg_cluster_size=30, deff=10.0)
-
-    assert n_high > n_low
     assert n_low == 4
     assert n_high == 20
 
@@ -158,8 +147,8 @@ def test_calculate_mde_cluster_higher_with_clustering():
         avg_cluster_size=30,
     )
 
-    assert ind_target == pytest.approx(105.2, rel=0.01)
-    assert clust_target == pytest.approx(110.8, rel=0.01)
+    assert ind_target == pytest.approx(104.6, abs=0.1)
+    assert clust_target == pytest.approx(110.7, abs=0.1)
 
 
 def test_calculate_mde_cluster_binary_metric():
@@ -226,7 +215,7 @@ def test_calculate_mde_cluster_with_cv():
         n_arms=2,
         icc=0.15,
         avg_cluster_size=30,
-        cv=1.5,
+        cv=0.5,
     )
 
     assert target_high_cv > target_no_cv
@@ -234,7 +223,6 @@ def test_calculate_mde_cluster_with_cv():
 
 
 def test_analyze_metric_power_cluster_missing_baseline():
-
     metric = DesignSpecMetric(
         field_name="test_metric",
         metric_type=MetricType.NUMERIC,
@@ -312,10 +300,8 @@ def test_analyze_metric_power_cluster_no_clustering():
     )
 
     assert result.design_effect == 1.0
-
-    assert result.num_clusters_total is not None
     assert result.num_clusters_total == 6
-
+    assert result.clusters_per_arm == [3, 3]
     assert result.effective_sample_size == result.target_n
 
 
@@ -338,17 +324,8 @@ def test_analyze_metric_power_cluster_unbalanced():
         arm_weights=[20, 80],
     )
 
-    assert result.target_n is not None
-    assert result.num_clusters_total is not None
-    assert result.clusters_per_arm is not None
-    assert result.n_per_arm is not None
-
-    assert len(result.clusters_per_arm) == 2
-    assert len(result.n_per_arm) == 2
-
     assert result.clusters_per_arm == [8, 29]
     assert result.n_per_arm == [240, 870]
-
     assert result.num_clusters_total == sum(result.clusters_per_arm)
     assert result.target_n == sum(result.n_per_arm)
 
@@ -371,15 +348,8 @@ def test_analyze_metric_power_cluster_three_arms():
         avg_cluster_size=30,
     )
 
-    assert result.clusters_per_arm is not None
-    assert result.n_per_arm is not None
-
-    assert len(result.clusters_per_arm) == 3
-    assert len(result.n_per_arm) == 3
-
     assert result.clusters_per_arm == [12, 12, 12]
     assert result.n_per_arm == [360, 360, 360]
-
     assert result.num_clusters_total == sum(result.clusters_per_arm)
     assert result.target_n == sum(result.n_per_arm)
 
@@ -401,8 +371,10 @@ def test_analyze_metric_power_cluster_binary_metric():
         avg_cluster_size=50,
     )
 
-    assert result.target_n is not None
-    assert result.num_clusters_total is not None
+    assert result.clusters_per_arm == [48, 48]
+    assert result.n_per_arm == [2400, 2400]
+    assert result.num_clusters_total == sum(result.clusters_per_arm)
+    assert result.target_n == sum(result.n_per_arm)
     assert result.design_effect == pytest.approx(3.45)  # 1 + (50-1)*0.05
 
 
@@ -431,13 +403,10 @@ def test_analyze_metric_power_cluster_high_icc():
         avg_cluster_size=30,
     )
 
-    assert result_low.num_clusters_total is not None
-    assert result_high.num_clusters_total is not None
-    assert result_low.design_effect is not None
-    assert result_high.design_effect is not None
-
     assert result_low.num_clusters_total == 12
     assert result_high.num_clusters_total == 42
+    assert result_low.design_effect is not None
+    assert result_high.design_effect is not None
     assert result_high.design_effect > result_low.design_effect
 
 
@@ -469,20 +438,14 @@ def test_analyze_metric_power_cluster_cv_increases_clusters():
         cv=2.0,
     )
 
-    assert result_low_cv.num_clusters_total is not None
-    assert result_high_cv.num_clusters_total is not None
     assert result_low_cv.design_effect is not None
     assert result_high_cv.design_effect is not None
-
-    assert result_high_cv.num_clusters_total > result_low_cv.num_clusters_total
     assert result_high_cv.design_effect > result_low_cv.design_effect
-
     assert result_low_cv.design_effect == pytest.approx(5.755, rel=0.01)  # 1 + 0.15*[(29) + 30*0.09]
     assert result_high_cv.design_effect == pytest.approx(23.35, rel=0.01)  # 1 + 0.15*[(29) + 30*4]
 
-    assert result_high_cv.num_clusters_total is not None
     assert result_low_cv.num_clusters_total is not None
-
+    assert result_high_cv.num_clusters_total is not None
     ratio = result_high_cv.num_clusters_total / result_low_cv.num_clusters_total
     assert ratio == pytest.approx(4.06, rel=0.1)
 
@@ -508,13 +471,17 @@ def test_analyze_metric_power_cluster_cv_affects_all_arms():
     )
 
     assert result.clusters_per_arm is not None
-
     assert len(result.clusters_per_arm) == 3
+
     assert result.cv == 1.2
     assert result.design_effect == pytest.approx(11.86, rel=0.01)  # 1 + 0.15*[(29) + 30*1.44]
 
 
-def test_analyze_metric_power_cluster_cv_warning_high():
+@pytest.mark.parametrize(
+    "cv,expected_warning",
+    [(0, None), (1.0, None), (1.5, "Warning: High cluster size variation (CV=1.50)")],
+)
+def test_analyze_metric_power_cluster_cv_warning_message(cv: float, expected_warning: str | None):
     """Test that high CV (>1.0) adds warning to message."""
     metric = DesignSpecMetric(
         field_name="test_metric",
@@ -531,86 +498,14 @@ def test_analyze_metric_power_cluster_cv_warning_high():
         n_arms=2,
         icc=0.15,
         avg_cluster_size=30,
-        cv=1.5,  # High CV
-    )
-
-    # Check warning is in message
-    assert result.msg is not None
-    assert "Warning" in result.msg.msg
-    assert "CV=1.5" in result.msg.msg or "CV=1.50" in result.msg.msg
-    assert "cluster size variation" in result.msg.msg.lower()
-
-
-def test_analyze_metric_power_cluster_cv_warning_low():
-    """Test that low CV (<=1.0) does NOT add warning."""
-    metric = DesignSpecMetric(
-        field_name="test_metric",
-        metric_type=MetricType.NUMERIC,
-        metric_baseline=100,
-        metric_target=110,
-        metric_stddev=20,
-        available_n=2000,
-        available_nonnull_n=2000,
-    )
-
-    result = analyze_metric_power_cluster(
-        metric=metric,
-        n_arms=2,
-        icc=0.15,
-        avg_cluster_size=30,
-        cv=0.5,  # Low CV
-    )
-
-    # Check NO warning in message
-    assert result.msg is not None
-    assert "Warning" not in result.msg.msg
-    assert "CV=" not in result.msg.msg
-
-
-def test_analyze_metric_power_cluster_cv_zero_no_warning():
-    """Test that CV=0 (equal clusters) has no warning."""
-    metric = DesignSpecMetric(
-        field_name="test_metric",
-        metric_type=MetricType.NUMERIC,
-        metric_baseline=100,
-        metric_target=110,
-        metric_stddev=20,
-        available_n=2000,
-        available_nonnull_n=2000,
-    )
-
-    result = analyze_metric_power_cluster(
-        metric=metric,
-        n_arms=2,
-        icc=0.15,
-        avg_cluster_size=30,
-        cv=0.0,  # Equal clusters
-    )
-
-    # Check NO warning
-    assert result.msg is not None
-    assert "Warning" not in result.msg.msg
-
-
-def test_analyze_metric_power_cluster_cv_stored():
-    """Test that CV value is stored in result."""
-    metric = DesignSpecMetric(
-        field_name="test_metric",
-        metric_type=MetricType.NUMERIC,
-        metric_baseline=100,
-        metric_target=110,
-        metric_stddev=20,
-        available_n=2000,
-        available_nonnull_n=2000,
-    )
-
-    result = analyze_metric_power_cluster(
-        metric=metric,
-        n_arms=2,
-        icc=0.15,
-        avg_cluster_size=30,
-        cv=1.8,
+        cv=cv,
     )
 
     # CV should be stored
-    assert result.cv == 1.8
+    assert result.cv == cv
+
+    assert result.msg is not None
+    if expected_warning is not None:
+        assert expected_warning in result.msg.msg
+    else:
+        assert "Warning:" not in result.msg.msg
