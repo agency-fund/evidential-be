@@ -1,6 +1,7 @@
 import asyncio
 import enum
 import io
+import secrets
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import cast
@@ -17,6 +18,7 @@ from sqlalchemy.orm import selectinload
 
 from xngin.apiserver import constants, flags
 from xngin.apiserver.dwh.dwh_session import DwhSession
+from xngin.apiserver.dwh.inspection_types import FieldDescriptor
 from xngin.apiserver.dwh.participant_metrics_queries import get_participant_metrics
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.assignment_adapters import (
@@ -56,7 +58,7 @@ from xngin.apiserver.routers.common_enums import (
     UpdateTypeNormal,
 )
 from xngin.apiserver.routers.experiments.property_filters import passes_filters, validate_filter_value
-from xngin.apiserver.settings import DatasourceConfig
+from xngin.apiserver.settings import DatasourceConfig, ParticipantsDef
 from xngin.apiserver.sql.queries import select_as_csv
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
@@ -90,45 +92,40 @@ class AbandonExperimentResult(enum.StrEnum):
     INVALID_STATE = "invalid_state"
 
 
-async def fetch_fields_or_raise(
-    datasource: tables.Datasource, design_spec: BaseFrequentistDesignSpec, table_name: str, primary_key: str
-) -> dict[str, DataType]:
-    """Inspect an explicit table/primary_key experiment request and return field metadata.
+def make_participants_def_from_experiment(experiment: tables.Experiment) -> ParticipantsDef | None:
+    """Build a ParticipantsDef from stored experiment fields."""
+    if experiment.experiment_type not in {ExperimentsType.FREQ_ONLINE.value, ExperimentsType.FREQ_PREASSIGNED.value}:
+        return None
 
-    Returns: Field name => datatype map.
-    Raises: LateValidationError if any fields used in the request are not found or are invalid.
-    """
-    async with DwhSession(datasource.get_config().dwh) as dwh:
-        inspected = await dwh.inspect_table_with_descriptors(table_name, primary_key)
+    uid = experiment.unique_id_field
+    table_name = experiment.datasource_table
+    if uid is None or table_name is None:
+        return None
 
-    referenced_fields = {
-        *[metric.field_name for metric in design_spec.metrics],
-        *[filter_.field_name for filter_ in design_spec.filters],
-        *[stratum.field_name for stratum in design_spec.strata],
-        primary_key,
-    }
+    schema: dict[str, FieldDescriptor] = {}
+    for ef in experiment.experiment_fields:
+        fd = schema.get(ef.field_name)
+        if fd is None:
+            fd = FieldDescriptor(field_name=ef.field_name, data_type=DataType(ef.data_type))
+            schema[ef.field_name] = fd
+        if ef.is_unique_id:
+            fd.is_unique_id = True
+        if ef.is_metric:
+            fd.is_metric = True
+        if ef.is_filter:
+            fd.is_filter = True
+        if ef.is_strata:
+            fd.is_strata = True
 
-    field_type_map = {
-        field_name: descriptor.data_type
-        for field_name, descriptor in inspected.db_schema.items()
-        if field_name in referenced_fields
-    }
-    if field_type_map is None:
-        raise LateValidationError("Experiment design must use valid datasource fields.")
-
-    missing_fields = referenced_fields - field_type_map.keys()
-    if missing_fields:
-        raise LateValidationError(
-            "Design fields are not present in the inspected table: "
-            + ", ".join(repr(field) for field in sorted(missing_fields))
-        )
-
-    for filter_ in design_spec.filters:
-        field_type = field_type_map[filter_.field_name]
-        for value in filter_.value:
-            validate_filter_value(filter_.field_name, value, field_type)
-
-    return field_type_map
+    hidden = experiment.participant_type is None
+    ptype = experiment.participant_type if not hidden else f"__{table_name}_{secrets.token_hex(4)}"
+    return ParticipantsDef(
+        type="schema",
+        table_name=table_name,
+        participant_type=ptype,
+        hidden=hidden,
+        fields=list(sorted(schema.values(), key=lambda x: x.field_name)),
+    )
 
 
 async def fetch_fields_or_raise(
