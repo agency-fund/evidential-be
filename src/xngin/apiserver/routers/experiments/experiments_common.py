@@ -954,7 +954,9 @@ async def update_bandit_arm_with_outcome_impl(
         )
         draw_record = result.one_or_none()
         if draw_record is None:
-            raise ExperimentsAssignmentError(...)
+            raise ExperimentsAssignmentError(
+                f"Participant '{participant_id}' already has a recorded outcome for this experiment.",
+            )
 
         arm_to_update = next(arm for arm in experiment.arms if arm.id == draw_record.arm_id)
 

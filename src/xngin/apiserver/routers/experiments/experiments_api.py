@@ -313,8 +313,25 @@ async def get_assignment_cmab(
 
 @router.post(
     "/experiments/{experiment_id}/assignments/{participant_id}/outcome",
-    description="""Update the bandit arm with corresponding outcome for a specific participant.
-    Used only for bandit experiments.""",
+    description="""
+    Update the bandit arm with corresponding outcome for a specific participant.
+    Used only for bandit experiments.
+
+    On the first call for a given participant, this endpoint will update the assigned arm with the provided outcome,
+    and return the updated arm parameters.
+    For a participant without an existing assignment, this endpoint will return a 422 error,
+    as there is no arm to update.
+    Please use the GET assignment endpoint to first create an assignment for the participant.
+    For a participant with an existing assignment and previously recorded outcome, this endpoint
+    will return a 422 error.
+    Please use the GET assignment endpoint to check if an assignment with an outcome already exists
+    for the participant.
+    """,
+    summary="""
+    "Update the assigned arm with the provided outcome, and return the updated arm parameters.
+    Only participants with an existing assignment and no previously recorded outcome can be updated with this endpoint.
+    All other cases will return a 422 error, in which case, please use the GET assignment endpoint.
+    """,
 )
 async def update_bandit_arm_with_participant_outcome(
     participant_id: str,
