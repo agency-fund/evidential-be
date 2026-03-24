@@ -116,7 +116,7 @@ def make_participants_def_from_experiment(experiment: tables.Experiment) -> Part
         if ef.is_strata:
             fd.is_strata = True
 
-    hidden = experiment.participant_type is None
+    hidden = experiment.participant_type.strip() != ""
     ptype = experiment.participant_type if not hidden else f"__{table_name}_{secrets.token_hex(4)}"
     return ParticipantsDef(
         type="schema",

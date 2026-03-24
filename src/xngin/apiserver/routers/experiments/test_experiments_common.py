@@ -71,7 +71,6 @@ from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 
 
 def make_createexperimentrequest_json(
-    participant_type: str = "test_participant_type",
     experiment_type: str = "freq_preassigned",
     prior_type: PriorTypes = PriorTypes.NORMAL,
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
@@ -87,7 +86,6 @@ def make_createexperimentrequest_json(
                 "table_name": TESTING_DWH_PARTICIPANT_DEF.table_name,
                 "primary_key": "id",
                 "design_spec": {
-                    "participant_type": "",
                     "experiment_name": "test",
                     "description": "test",
                     "experiment_type": experiment_type,
@@ -121,7 +119,6 @@ def make_createexperimentrequest_json(
         case ExperimentsType.MAB_ONLINE:
             return {
                 "design_spec": {
-                    "participant_type": participant_type,
                     "experiment_name": "test",
                     "description": "test",
                     # Attach UTC tz, but use dates_equal() to compare to respect db storage support
@@ -154,7 +151,6 @@ def make_createexperimentrequest_json(
         case ExperimentsType.CMAB_ONLINE:
             return {
                 "design_spec": {
-                    "participant_type": participant_type,
                     "experiment_name": "test",
                     "description": "test",
                     # Attach UTC tz, but use dates_equal() to compare to respect db storage support
@@ -700,7 +696,6 @@ async def test_create_freq_online_experiment_impl_experiments_fields_are_correct
         table_name="dwh",
         primary_key="id",
         design_spec=OnlineFrequentistExperimentSpec(
-            participant_type="",
             experiment_type="freq_online",
             experiment_name="Test Experiment with Filters",
             description="Testing field storage",
@@ -948,7 +943,7 @@ async def test_create_experiment_impl_for_freq_online_with_unbalanced_arms(
         (
             ExperimentsType.FREQ_PREASSIGNED,
             [Filter(field_name="missing_field", relation=Relation.INCLUDES, value=["value"])],
-            "Invalid DesignSpec fields \(check your Datasource configuration\): missing_field",
+            r"Invalid DesignSpec fields \(check your Datasource configuration\): missing_field",
         ),
     ],
 )
@@ -1021,7 +1016,8 @@ async def test_create_experiment_impl_for_freq_online(
     # Verify database state
     experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
     assert experiment.experiment_type == ExperimentsType.FREQ_ONLINE
-    assert experiment.participant_type == request.design_spec.participant_type
+    assert experiment.participant_type == ""
+    assert response.participant_type == ""
     assert experiment.datasource_table == TESTING_DWH_PARTICIPANT_DEF.table_name
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
@@ -1105,7 +1101,8 @@ async def test_create_experiment_impl_for_mab_online(xngin_session, testing_data
         await xngin_session.refresh(experiment)
 
     assert experiment.experiment_type == ExperimentsType.MAB_ONLINE
-    assert experiment.participant_type == request.design_spec.participant_type
+    assert experiment.participant_type == ""
+    assert response.participant_type == ""
     assert experiment.datasource_table is None
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
@@ -1187,7 +1184,8 @@ async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_dat
     # Verify database state
     experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
     assert experiment.experiment_type == ExperimentsType.CMAB_ONLINE
-    assert experiment.participant_type == request.design_spec.participant_type
+    assert experiment.participant_type == ""
+    assert response.participant_type == ""
     assert experiment.datasource_table is None
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
@@ -1488,14 +1486,14 @@ async def test_get_experiment_assignments_impl(xngin_session, testing_datasource
     arm_assignments = [
         tables.ArmAssignment(
             experiment_id=experiment_id,
-            participant_type="test_participant_type",
+            participant_type="",
             participant_id="p1",
             arm_id=arm1_id,
             strata=[{"field_name": "gender", "strata_value": "F"}],
         ),
         tables.ArmAssignment(
             experiment_id=experiment_id,
-            participant_type="test_participant_type",
+            participant_type="",
             participant_id="p2",
             arm_id=arm2_id,
             strata=[{"field_name": "gender", "strata_value": "M"}],
@@ -1551,7 +1549,7 @@ async def test_get_experiment_mab_assignments_impl(xngin_session, testing_dataso
     arm_assignments = [
         tables.Draw(
             experiment_id=experiment_id,
-            participant_type="test_participant_type",
+            participant_type="",
             participant_id="p1",
             arm_id=arm1_id,
             current_mu=experiment.arms[0].mu,
@@ -1559,7 +1557,7 @@ async def test_get_experiment_mab_assignments_impl(xngin_session, testing_dataso
         ),
         tables.Draw(
             experiment_id=experiment_id,
-            participant_type="test_participant_type",
+            participant_type="",
             participant_id="p2",
             arm_id=arm2_id,
             current_mu=experiment.arms[1].mu,
@@ -1703,7 +1701,6 @@ async def test_get_experiment_assignments_as_csv_impl(xngin_session, testing_dat
         table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
         primary_key="id",
         design_spec=PreassignedFrequentistExperimentSpec(
-            participant_type="",
             experiment_name="test experiment",
             description="test experiment",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -1738,7 +1735,6 @@ async def test_get_experiment_assignments_as_csv_impl_emits_null_for_missing_met
         table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
         primary_key="id",
         design_spec=PreassignedFrequentistExperimentSpec(
-            participant_type="",
             experiment_name="test experiment",
             description="test experiment",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -1787,7 +1783,6 @@ async def test_get_experiment_assignments_as_csv_impl_uses_sorted_strata_header_
         table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
         primary_key="id",
         design_spec=PreassignedFrequentistExperimentSpec(
-            participant_type="",
             experiment_name="test experiment",
             description="test experiment",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -1814,7 +1809,6 @@ async def test_get_experiment_assignments_as_csv_impl_omits_strata_columns_when_
         table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
         primary_key="id",
         design_spec=PreassignedFrequentistExperimentSpec(
-            participant_type="",
             experiment_name="test experiment",
             description="test experiment",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -1846,7 +1840,6 @@ async def test_get_experiment_assignments_as_csv_impl_omits_context_vals_for_mab
     experiment, _ = await make_insertable_experiment(
         testing_datasource.ds,
         design_spec=MABExperimentSpec(
-            participant_type="test_participant_type",
             experiment_name="test experiment",
             description="test experiment",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -1878,7 +1871,6 @@ async def test_get_experiment_assignments_as_csv_impl_includes_context_vals_for_
     experiment, _ = await make_insertable_experiment(
         testing_datasource.ds,
         design_spec=CMABExperimentSpec(
-            participant_type="test_participant_type",
             experiment_name="test experiment",
             description="test experiment",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -2174,7 +2166,6 @@ async def test_get_or_create_assignment_for_participant_with_filters_in_online_f
         table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
         primary_key="id",
         design_spec=OnlineFrequentistExperimentSpec(
-            participant_type="",
             experiment_name="test experiment",
             description="test experiment",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -2342,14 +2333,14 @@ async def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_
     arm_assignments = [
         tables.ArmAssignment(
             experiment_id=experiment_id,
-            participant_type="test_participant_type",
+            participant_type="",
             participant_id="1",
             arm_id=arm1_id,
             strata=[],
         ),
         tables.ArmAssignment(
             experiment_id=experiment_id,
-            participant_type="test_participant_type",
+            participant_type="",
             participant_id="2",
             arm_id=arm2_id,
             strata=[],
