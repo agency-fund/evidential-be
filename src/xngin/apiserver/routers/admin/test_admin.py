@@ -144,7 +144,6 @@ async def make_freq_online_experiment(
             primary_key="id",
             design_spec=OnlineFrequentistExperimentSpec(
                 experiment_type=ExperimentsType.FREQ_ONLINE,
-                participant_type="",
                 experiment_name="test experiment",
                 description="test experiment",
                 start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -173,7 +172,6 @@ async def fixture_testing_experiment(xngin_session: AsyncSession, testing_dataso
 
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        participant_type="",
         experiment_name="test experiment",
         description="test experiment",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -1331,7 +1329,7 @@ async def test_lifecycle_with_db(testing_datasource, aclient: AdminAPIClient, ac
     assert created_participant_type.participant_type == participant_type
 
     # Create experiment using that participant type.
-    create_exp_dict = make_createexperimentrequest_json(participant_type)
+    create_exp_dict = make_createexperimentrequest_json()
     create_exp_request = TypeAdapter(CreateExperimentRequest).validate_python(create_exp_dict)
     create_exp_request.design_spec.design_url = HttpUrl("https://example.com/design")
     assert isinstance(create_exp_request.design_spec, PreassignedFrequentistExperimentSpec)
@@ -1450,7 +1448,6 @@ async def test_abandon_experiment(testing_datasource_with_user, aclient: AdminAP
     datasource_id = testing_datasource_with_user.ds.id
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        participant_type="",
         experiment_name="test experiment",
         description="test experiment",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -1478,7 +1475,6 @@ async def test_power_check_with_unbalanced_arms(testing_datasource_with_user, ac
     """Test power check endpoint with balanced vs unbalanced arms."""
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        participant_type="",
         experiment_name="test power check",
         description="test power check with unbalanced arms",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -1539,7 +1535,6 @@ async def test_power_check_validations(testing_datasource_with_user, aclient: Ad
     """Test power check validations."""
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        participant_type="ignored_when_synthesized",
         experiment_name="test power check with synthesized schema",
         description="test power check using table_name and primary_key",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -1694,7 +1689,6 @@ async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
         table_name="dwh",
         primary_key="id",
         design_spec=PreassignedFrequentistExperimentSpec(
-            participant_type="",
             experiment_type="freq_preassigned",
             experiment_name="Test Experiment with Filters",
             description="Testing filters roundtrip",
@@ -2259,7 +2253,7 @@ async def test_analyze_experiment_with_no_assignments_in_one_arm_yet(
         arm_assignments.append(
             tables.ArmAssignment(
                 experiment_id=experiment_id,
-                participant_type="test_participant_type",
+                participant_type="",
                 participant_id=f"{i}",
                 arm_id=assigned_arm_id,
                 strata=[],
@@ -2479,7 +2473,6 @@ async def test_experiment_webhook_integration(testing_datasource_with_user, acli
         table_name="dwh",
         primary_key="id",
         design_spec=PreassignedFrequentistExperimentSpec(
-            participant_type="",
             experiment_type=ExperimentsType.FREQ_PREASSIGNED,
             experiment_name="Test Experiment with Webhook",
             description="Testing webhook integration",
@@ -2519,7 +2512,6 @@ async def test_experiment_webhook_integration(testing_datasource_with_user, acli
         primary_key="id",
         design_spec=PreassignedFrequentistExperimentSpec(
             experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-            participant_type="",
             experiment_name="Test Experiment without Webhooks",
             description="Testing no webhook integration",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -2581,7 +2573,6 @@ def test_snapshots(aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
             primary_key="id",
             design_spec=PreassignedFrequentistExperimentSpec(
                 experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-                participant_type="",
                 experiment_name="test experiment",
                 description="test experiment",
                 start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -2780,7 +2771,6 @@ def test_snapshot_on_ineligible_experiments(testing_datasource_with_user, aclien
             primary_key="id",
             design_spec=PreassignedFrequentistExperimentSpec(
                 experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-                participant_type="",
                 experiment_name="test old experiment",
                 description="too old to be snapshotted",
                 start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -2816,7 +2806,6 @@ def test_snapshot_on_ineligible_experiments(testing_datasource_with_user, aclien
             primary_key="id",
             design_spec=PreassignedFrequentistExperimentSpec(
                 experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-                participant_type="",
                 experiment_name="test just ended experiment",
                 description="just ended within a day of now, so can be snapshotted",
                 start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -2847,7 +2836,6 @@ def test_snapshot_with_nan(testing_datasource_with_user, aclient: AdminAPIClient
             primary_key="id",
             design_spec=PreassignedFrequentistExperimentSpec(
                 experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-                participant_type="",
                 experiment_name="test experiment",
                 description="test experiment",
                 start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -3194,7 +3182,6 @@ async def test_create_experiment_with_table_name_and_primary_key(
     ds_id = testing_datasource_with_user.ds.id
 
     request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
-    request_json["design_spec"]["participant_type"] = "ignored_when_table_name_is_set"
     initial_participant_count = len(testing_datasource_with_user.ds.get_config().participants)
     experiment_request = CreateExperimentRequest.model_validate({
         **request_json,
@@ -3208,8 +3195,7 @@ async def test_create_experiment_with_table_name_and_primary_key(
         random_state=42,
     ).data
 
-    # Verify participant_type is derived deterministically from the inspected table.
-    assert created.design_spec.participant_type == "ignored_when_table_name_is_set"
+    assert created.participant_type == ""
 
     # Verify no participant type was persisted to datasource config.
     ds = await xngin_session.get_one(tables.Datasource, ds_id)
@@ -3251,7 +3237,6 @@ async def test_create_preassigned_experiment_with_table_name_and_primary_key(
     ds_id = testing_datasource_with_user.ds.id
 
     request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_PREASSIGNED)
-    request_json["design_spec"]["participant_type"] = "ignored_when_table_name_is_set"
     experiment_request = CreateExperimentRequest.model_validate({
         **request_json,
         "table_name": "dwh",
@@ -3265,7 +3250,7 @@ async def test_create_preassigned_experiment_with_table_name_and_primary_key(
         random_state=42,
     ).data
 
-    assert created.design_spec.participant_type == "ignored_when_table_name_is_set"
+    assert created.participant_type == ""
     assert created.assign_summary is not None
     assert created.assign_summary.sample_size == 100
 
@@ -3312,7 +3297,6 @@ def test_list_snapshots_pagination(aclient: AdminAPIClient):
             primary_key="id",
             design_spec=PreassignedFrequentistExperimentSpec(
                 experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-                participant_type="",
                 experiment_name="pagination test",
                 description="pagination test",
                 start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -3411,7 +3395,6 @@ def test_list_organization_events_pagination(testing_datasource_with_user, aclie
                 webhooks=[webhook_id],
                 design_spec=PreassignedFrequentistExperimentSpec(
                     experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-                    participant_type="",
                     experiment_name=f"pagination event test {i}",
                     description=f"pagination event test {i}",
                     start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -3490,7 +3473,6 @@ async def test_list_organization_events_pagination_with_same_timestamp_is_id_des
                 primary_key="id",
                 design_spec=PreassignedFrequentistExperimentSpec(
                     experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-                    participant_type="",
                     experiment_name=f"same-ts event test {i}",
                     description=f"same-ts event test {i}",
                     start_date=datetime(2024, 1, 1, tzinfo=UTC),

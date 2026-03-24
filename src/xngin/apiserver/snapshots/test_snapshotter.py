@@ -54,14 +54,14 @@ async def make_experiment(
     arm_assignments = [
         tables.ArmAssignment(
             experiment_id=experiment.id,
-            participant_type="test_participant_type",
+            participant_type="",
             participant_id="1",
             arm_id=experiment.arms[0].id,
             strata=[],
         ),
         tables.ArmAssignment(
             experiment_id=experiment.id,
-            participant_type="test_participant_type",
+            participant_type="",
             participant_id="2",
             arm_id=experiment.arms[1].id,
             strata=[],
@@ -93,7 +93,6 @@ async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_da
     # Create a preassigned frequentist experiment design spec
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        participant_type="",
         experiment_name="test experiment",
         description="test experiment",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),

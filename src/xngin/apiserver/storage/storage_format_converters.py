@@ -232,7 +232,6 @@ class ExperimentStorageConverter:
     async def get_design_spec(self) -> capi.DesignSpec:
         """Converts stored experiment metadata to a DesignSpec object."""
         base_experiment_dict = {
-            "participant_type": self.experiment.participant_type,
             "experiment_type": self.experiment.experiment_type,
             "experiment_name": self.experiment.name,
             "description": self.experiment.description,
@@ -343,6 +342,7 @@ class ExperimentStorageConverter:
         return capi.GetExperimentResponse(
             experiment_id=(await self.experiment.awaitable_attrs.id),
             datasource_id=self.experiment.datasource_id,
+            participant_type=self.experiment.participant_type,
             state=ExperimentState(self.experiment.state),
             stopped_assignments_at=self.experiment.stopped_assignments_at,
             stopped_assignments_reason=StopAssignmentReason.from_str(self.experiment.stopped_assignments_reason),
@@ -393,6 +393,7 @@ class ExperimentStorageConverter:
         table_name: str | None = None,
         field_type_map: dict[str, DataType] | None = None,
         unique_id_name: str | None = None,
+        participant_type: str = "",
     ) -> Self:
         """Init experiment with arms from components. Get the final object with get_experiment().
 
@@ -403,7 +404,7 @@ class ExperimentStorageConverter:
         experiment = tables.Experiment(
             datasource_id=datasource_id,
             experiment_type=experiment_type,
-            participant_type=design_spec.participant_type,
+            participant_type=participant_type,
             datasource_table=table_name,
             name=design_spec.experiment_name,
             description=design_spec.description,
