@@ -1075,28 +1075,29 @@ def test_participants_lifecycle(testing_datasource_with_user, aclient: AdminAPIC
         aclient.delete_participant(datasource_id="ds-not-exist", participant_id="test_participant_type")
 
 
-def test_create_participants_type_invalid(testing_datasource_with_user, aclient: AdminAPIClient):
-    with expect_status_code(422, detail_contains="no columns marked as unique ID."):
-        aclient.create_participant_type(
-            datasource_id=testing_datasource_with_user.ds.id,
-            body=CreateParticipantsTypeRequest.model_construct(
-                participant_type="newpt",
-                schema_def=ParticipantsSchema.model_construct(
-                    table_name="dwh",
-                    fields=[
-                        FieldDescriptor(
-                            field_name="newf",
-                            data_type=DataType.INTEGER,
-                            description="test",
-                            is_unique_id=False,
-                            is_strata=False,
-                            is_filter=False,
-                            is_metric=False,
-                        )
-                    ],
-                ),
+def test_create_participants_type_without_unique_id(testing_datasource_with_user, aclient: AdminAPIClient):
+    response = aclient.create_participant_type(
+        datasource_id=testing_datasource_with_user.ds.id,
+        body=CreateParticipantsTypeRequest.model_construct(
+            participant_type="newpt",
+            schema_def=ParticipantsSchema.model_construct(
+                table_name="dwh",
+                fields=[
+                    FieldDescriptor(
+                        field_name="newf",
+                        data_type=DataType.INTEGER,
+                        description="test",
+                        is_unique_id=False,  # previously used to require a field be set to true
+                        is_strata=False,
+                        is_filter=False,
+                        is_metric=False,
+                    )
+                ],
             ),
-        )
+        ),
+    )
+    assert response.data.participant_type == "newpt"
+    assert response.data.schema_def.fields[0].is_unique_id is False
 
 
 def test_get_participants_type_with_schema_drift(testing_datasource_with_user, aclient: AdminAPIClient):
