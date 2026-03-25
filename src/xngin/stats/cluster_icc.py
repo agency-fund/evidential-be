@@ -89,9 +89,6 @@ def calculate_icc_from_dataframe(
         variance_within = float(result.scale)  # Within-cluster variance (residual)
         # Calculate ICC = σ²_between / (σ²_between + σ²_within)
         total_variance = variance_between + variance_within
-        if np.isclose(total_variance, 0.0):
-            return 0.0
-
         icc = variance_between / total_variance
 
         # Ensure ICC is in valid range [0, 1]
