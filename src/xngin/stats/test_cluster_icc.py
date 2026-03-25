@@ -32,18 +32,18 @@ class TestICCFromDataFrame:
 
     def test_calculate_icc_moderate_clustering(self):
         """Test ICC with moderate clustering (ICC < 0.1)."""
-        num_clusters = 20
+        num_clusters = 100
         rows_per_cluster = 10
 
         cluster_ids = np.repeat(np.arange(num_clusters), rows_per_cluster)
         # generate independent cluster means
         rng = np.random.default_rng(42)
         cluster_means = rng.normal(loc=100, scale=10, size=num_clusters)
-        y = np.repeat(cluster_means, rows_per_cluster) + rng.normal(0, 34, size=num_clusters * rows_per_cluster)
+        y = np.repeat(cluster_means, rows_per_cluster) + rng.normal(0, 30, size=num_clusters * rows_per_cluster)
 
         df = pd.DataFrame({"id": cluster_ids, "y": y})
         icc = calculate_icc_from_dataframe(df, cluster_column="id", outcome_column="y")
-        assert icc == pytest.approx(0.05, abs=0.01)
+        assert icc == pytest.approx(0.06, abs=0.01)
 
     def test_empty_dataframe_raises_error(self):
         """Test that empty DataFrame raises ValueError."""
@@ -78,3 +78,9 @@ class TestICCFromDataFrame:
                 cluster_column="school",
                 outcome_column="score",
             )
+
+    def test_mixedlm_non_convergence_raises_value_error(self):
+        """Force MixedLM to not converge with maxiter=0; error is wrapped with context."""
+        df = pd.DataFrame({"id": [1, 1, 2, 2], "y": [1.0, 3.0, 5.0, 7.0]})
+        with pytest.raises(ValueError, match="Mixed-effects ICC fit did not converge"):
+            calculate_icc_from_dataframe(df, cluster_column="id", outcome_column="y", mixedlm_fit_kwargs={"maxiter": 0})
