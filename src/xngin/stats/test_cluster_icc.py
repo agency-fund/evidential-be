@@ -2,6 +2,7 @@
 Tests for ICC calculation from dataframes.
 """
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -31,12 +32,18 @@ class TestICCFromDataFrame:
 
     def test_calculate_icc_moderate_clustering(self):
         """Test ICC with moderate clustering (ICC < 0.1)."""
-        df = pd.DataFrame({
-            "id": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
-            "y": [8, 9, 10, 11, 9, 10, 11, 12, 9, 11, 12, 12],
-        })
+        num_clusters = 20
+        rows_per_cluster = 10
+
+        cluster_ids = np.repeat(np.arange(num_clusters), rows_per_cluster)
+        # generate independent cluster means
+        rng = np.random.default_rng(42)
+        cluster_means = rng.normal(loc=100, scale=10, size=num_clusters)
+        y = np.repeat(cluster_means, rows_per_cluster) + rng.normal(0, 34, size=num_clusters * rows_per_cluster)
+
+        df = pd.DataFrame({"id": cluster_ids, "y": y})
         icc = calculate_icc_from_dataframe(df, cluster_column="id", outcome_column="y")
-        assert icc == pytest.approx(0.07, abs=0.01)
+        assert icc == pytest.approx(0.05, abs=0.01)
 
     def test_empty_dataframe_raises_error(self):
         """Test that empty DataFrame raises ValueError."""

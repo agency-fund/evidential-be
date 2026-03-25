@@ -32,16 +32,28 @@ def calculate_icc_from_dataframe(df: pd.DataFrame, *, cluster_column: str, outco
     if missing:
         raise ValueError(f"DataFrame is missing columns: {', '.join(missing)}")
 
-    if df[cluster_column].nunique() < 2:
+    cluster_ids = df[cluster_column]
+    if cluster_ids.nunique() < 2:
         raise ValueError("Need at least 2 clusters to calculate ICC")
+
+    # Early check of no clustering to avoid mixedlm numerical error when variance is zero, by
+    # computing the between-cluster sum of squares as used in one-way ANOVA for ICC:
+    #     icc_anova = ss_between / ss_total
+    # where ss_total = ((y - grand_mean)**2).sum()
+    y = df[outcome_column]
+    cluster_sizes = cluster_ids.value_counts()
+    cluster_means = y.groupby(cluster_ids).mean()
+    grand_mean = y.mean()
+    ss_between = ((cluster_means - grand_mean) ** 2 * cluster_sizes).sum()
+    if np.isclose(ss_between, 0.0):
+        return 0.0
 
     # Fit mixed-effects model: outcome ~ 1 + (1|cluster)
     # Use array API (intercept design matrix) so outcome column names need not be Patsy-safe.
     try:
-        endog = df[outcome_column].to_numpy(dtype=np.float64)
-        exog = np.ones((len(endog), 1), dtype=np.float64)
-        groups = df[cluster_column]
-        result = MixedLM(endog, exog, groups=groups).fit(method="lbfgs", reml=True)
+        endog = y.to_numpy(dtype=np.float64)
+        exog = np.ones((len(endog), 1))
+        result = MixedLM(endog, exog, groups=cluster_ids).fit(method="lbfgs", reml=True)
 
         # Extract variance components
         variance_between = float(result.cov_re[0, 0])  # Between-cluster variance
@@ -57,6 +69,6 @@ def calculate_icc_from_dataframe(df: pd.DataFrame, *, cluster_column: str, outco
 
         # Ensure ICC is in valid range [0, 1]
         return max(0.0, min(1.0, icc))
-
     except Exception as e:
+        # Note: could fall back to the one-way ANOVA ICC calculation as an alternative.
         raise ValueError(f"Failed to calculate ICC: {e}") from e
