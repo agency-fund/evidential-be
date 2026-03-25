@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 import sqlalchemy
 from sqlalchemy import (
     Float,
@@ -10,6 +12,7 @@ from sqlalchemy import (
     func,
     select,
 )
+from sqlalchemy.engine.row import RowMapping
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor
@@ -201,8 +204,12 @@ def get_cluster_outcome_data(
     cluster_column_name: str,
     outcome_column_name: str,
     filters: list[Filter],
-) -> list[dict[str, float]]:
-    """Fetch cluster and outcome data for ICC calculation."""
+) -> Sequence[RowMapping]:
+    """Fetch cluster and outcome data for ICC calculation.
+
+    Each row returned is a SQLAlchemy ``RowMapping`` (by column name; same keys as
+    ``cluster_column_name`` / ``outcome_column_name``). Outcomes are SQL-cast to Float.
+    """
     if cluster_column_name not in sa_table.c:
         raise LateValidationError(f"Cluster column '{cluster_column_name}' not found in table")
     if outcome_column_name not in sa_table.c:
@@ -212,10 +219,11 @@ def get_cluster_outcome_data(
     outcome_col = sa_table.c[outcome_column_name]
     filters_expr = create_query_filters(sa_table, filters)
 
-    query = select(cluster_col.label("cluster_id"), cast(outcome_col, Float).label("outcome")).where(
+    query = select(cluster_col, cast(outcome_col, Float)).where(
         cluster_col.is_not(None), outcome_col.is_not(None), *filters_expr
     )
 
+    # Explicitly ask for dict-like RowMapping objects for downstream use of each row as a dict.
     results = session.execute(query).mappings().fetchall()
 
     if not results:
@@ -223,4 +231,4 @@ def get_cluster_outcome_data(
             f"No data found for cluster column '{cluster_column_name}' and outcome '{outcome_column_name}'"
         )
 
-    return [{"cluster_id": row["cluster_id"], "outcome": row["outcome"]} for row in results]
+    return results

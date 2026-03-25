@@ -260,11 +260,8 @@ def calculate_icc_and_cv_from_database(
         filters,
     )
 
-    # Convert to DataFrame
     df = pd.DataFrame(data)
-
-    # Calculate ICC using stats layer (cluster_icc.py)
-    icc = calculate_icc_from_dataframe(df)
+    icc = calculate_icc_from_dataframe(df, cluster_column=cluster_column, outcome_column=outcome_column)
 
     return {
         "icc": icc,
