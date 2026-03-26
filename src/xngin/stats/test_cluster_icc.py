@@ -79,6 +79,15 @@ class TestICCFromDataFrame:
                 outcome_column="score",
             )
 
+    def test_nan_in_outcome_raises(self):
+        """Test that NaN values in outcome column raise ValueError."""
+        df = pd.DataFrame({
+            "id": [1, 1, 2, 2],
+            "y": [1.0, float("nan"), 3.0, 4.0],
+        })
+        with pytest.raises(ValueError, match="NaN"):
+            calculate_icc_from_dataframe(df, cluster_column="id", outcome_column="y")
+
     def test_calculate_icc_unbalanced_cluster_sizes(self):
         """ICC stays in [0, 1] with unequal cluster sizes."""
         df = pd.DataFrame({
