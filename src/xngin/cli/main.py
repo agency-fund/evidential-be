@@ -4,6 +4,7 @@ import asyncio
 import functools
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -33,6 +34,7 @@ if TYPE_CHECKING:
     from pandas import DataFrame
 
 SA_LOGGER_NAME_FOR_CLI = "cli_dwh"
+CLI_DB_APPLICATION_NAME = f"cli-{os.getpid()}"
 
 REDSHIFT_HOSTNAME_SUFFIX = "redshift.amazonaws.com"
 TESTING_DWH_RAW_DATA = Path(__file__).resolve().parent.parent / "apiserver/testdata/testing_dwh.csv.zst"
@@ -61,13 +63,14 @@ def truncate_with_ellipsis(value: str) -> str:
     return value
 
 
-def create_engine_and_database(url: sqlalchemy.URL):
+def create_engine_and_database(url: sqlalchemy.URL, *, connect_args: dict | None = None):
     """Connects to a SQLAlchemy URL and creates the database if it doesn't exist.
 
     Only implemented for psycopg/psycopg2.
     """
+    connect_args = connect_args or {}
     try:
-        engine = create_engine(url, logging_name=SA_LOGGER_NAME_FOR_CLI)
+        engine = create_engine(url, connect_args=connect_args, logging_name=SA_LOGGER_NAME_FOR_CLI)
         with engine.connect():
             print("Connected.")
     except OperationalError as exc:
@@ -80,16 +83,12 @@ def create_engine_and_database(url: sqlalchemy.URL):
             raise
         print(f"Creating database {url.database}...")
         engine = create_engine(
-            url.set(database="postgres"),
-            logging_name=SA_LOGGER_NAME_FOR_CLI,
+            url.set(database="postgres"), connect_args=connect_args, logging_name=SA_LOGGER_NAME_FOR_CLI
         )
         with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
             conn.execute(sqlalchemy.text(f"CREATE DATABASE {url.database}"))
         print("Reconnecting.")
-        return create_engine(
-            url,
-            logging_name=SA_LOGGER_NAME_FOR_CLI,
-        )
+        return create_engine(url, connect_args=connect_args, logging_name=SA_LOGGER_NAME_FOR_CLI)
     else:
         return engine
 
@@ -163,7 +162,7 @@ def create_apiserver_db(
     from xngin.apiserver.sqla import tables  # noqa: PLC0415
 
     console.print(f"DSN: [cyan]{dsn}[/cyan]")
-    engine = create_engine_and_database(make_url(dsn))
+    engine = create_engine_and_database(make_url(dsn), connect_args={"application_name": CLI_DB_APPLICATION_NAME})
     tables.Base.metadata.create_all(bind=engine)
 
 
@@ -582,7 +581,7 @@ async def add_user(
             "XNGIN_DEVDWH_DSN is unset.[/bold yellow]"
         )
 
-    engine = create_async_engine(database_url)
+    engine = create_async_engine(database_url, connect_args={"application_name": CLI_DB_APPLICATION_NAME})
     async with AsyncSession(engine) as session:
         try:
             user = await create_entities_for_first_time_user(
@@ -735,7 +734,7 @@ def snapshots_create_fake(
         get_metric_names,
     )
 
-    engine = create_engine(dsn, echo=echo)
+    engine = create_engine(dsn, connect_args={"application_name": CLI_DB_APPLICATION_NAME}, echo=echo)
 
     with Session(engine) as session:
         try:
