@@ -8,10 +8,10 @@ import numpy as np
 import pandas as pd
 from pandas import DataFrame
 from sqlalchemy import Insert, Table
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver.routers.common_api_types import (
-    Arm,
     BalanceCheck,
     Strata,
 )
@@ -94,7 +94,7 @@ def assign_treatments_with_balance(
 async def bulk_insert_arm_assignments(
     xngin_session: AsyncSession,
     experiment_id: str,
-    arms: Sequence[Arm],
+    arm_ids: list[str],
     participant_type: str,
     participant_id_col: str,
     data: Sequence[RowProtocol],
@@ -105,12 +105,13 @@ async def bulk_insert_arm_assignments(
 
     Args:
         xngin_session: sqlalchemy session
-        experiment_id: Unique identifier for experiment
-        arms: Name & id of each treatment arm
+        experiment_id: Database ID of the experiment
+        arm_ids: Database ID of each treatment arm, ordered by arm index used in assignment.
         participant_type: Type of participant in the experiment
         participant_id_col: Name of column in `data` containing participant identifiers
         data: sqlalchemy result set of Rows representing units to be assigned
-        assignment_result: AssignmentResult containing assignments and balance check results
+        assignment_result: AssignmentResult containing assignments and balance check results. AssignmentResult.arm_pop
+          indexes are parallel to indexes on arm_ids.
         stratum_id_name: If you want to output the strata group ids, provide a non-null name for
                          the column to add to the assignment output as a Strata field.
     """
@@ -140,9 +141,7 @@ async def bulk_insert_arm_assignments(
             if stratum_id_name is not None and had_valid_strata:
                 strata.append(Strata(field_name=stratum_id_name, strata_value=str(stratum_id)).model_dump(mode="json"))
 
-        arm_id = arms[treatment_assignment].arm_id
-        if arm_id is None:
-            raise ValueError(f"Arm at index {treatment_assignment} has no arm_id")
+        arm_id = arm_ids[treatment_assignment]
 
         participant = tables.ArmAssignment(
             experiment_id=experiment_id,
@@ -154,3 +153,15 @@ async def bulk_insert_arm_assignments(
         participants_to_insert.append(participant.to_dict())
 
     await xngin_session.execute(Insert(tables.ArmAssignment), participants_to_insert)
+
+    for i, arm_id in enumerate(arm_ids):
+        count = int(assignment_result.arm_pop[i])
+        stmt = (
+            pg_insert(tables.ArmStats)
+            .values(arm_id=arm_id, population=count)
+            .on_conflict_do_update(
+                index_elements=[tables.ArmStats.arm_id],
+                set_={"population": tables.ArmStats.population + count},
+            )
+        )
+        await xngin_session.execute(stmt)
