@@ -79,8 +79,12 @@ class TestICCFromDataFrame:
                 outcome_column="score",
             )
 
-    def test_mixedlm_non_convergence_raises_value_error(self):
-        """Force MixedLM to not converge with maxiter=0; error is wrapped with context."""
-        df = pd.DataFrame({"id": [1, 1, 2, 2], "y": [1.0, 3.0, 5.0, 7.0]})
-        with pytest.raises(ValueError, match="Mixed-effects ICC fit did not converge"):
-            calculate_icc_from_dataframe(df, cluster_column="id", outcome_column="y", mixedlm_fit_kwargs={"maxiter": 0})
+    def test_calculate_icc_unbalanced_cluster_sizes(self):
+        """ICC stays in [0, 1] with unequal cluster sizes."""
+        df = pd.DataFrame({
+            "id": [1, 1, 1, 2, 2, 3, 3, 3, 3, 3],
+            "_y": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        })
+        icc = calculate_icc_from_dataframe(df, cluster_column="id", outcome_column="_y")
+        assert 0.0 <= icc <= 1.0
+        assert icc == pytest.approx(0.8571, abs=1e-4)
