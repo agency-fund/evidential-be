@@ -12,8 +12,8 @@ from xngin.stats.bandit_weights_to_prior import (
 @pytest.mark.parametrize(
     "expected_probabilities, expected_alphas",
     [
-        ([12.5, 12.5, 25, 50], [0.137, 0.137, 0.554, 1.0]),
-        ([25, 75], [0.323, 1.0]),
+        ([12.5, 12.5, 25, 50], [0.174, 0.174, 0.584, 1.0]),
+        ([25, 75], [0.344, 1.0]),
         ([33.3, 33.3, 33.4], [1.0, 1.0, 1.0]),
     ],
 )
@@ -47,7 +47,7 @@ def test_bandit_weights_to_normal_prior(
 
 
 @pytest.mark.parametrize(
-    "prior_type, expected_params", [(PriorTypes.BETA, [0.323, 1.0]), (PriorTypes.NORMAL, [-0.872, 0.0])]
+    "prior_type, expected_params", [(PriorTypes.BETA, [0.344, 1.0]), (PriorTypes.NORMAL, [-0.872, 0.0])]
 )
 def test_convert_bandit_weights_to_prior_params(prior_type: PriorTypes, expected_params: list[float]):
     arm_weights = [25.0, 75.0]
