@@ -67,7 +67,7 @@ def bandit_weights_to_beta_prior(
         denominator = np.prod(pairwise_sums, axis=1)
         return float(
             np.sum(
-                ((numerator / denominator) - expected_probabilities) ** 2 - 0.01 * (alphas - np.ones_like(alphas)) ** 2
+                ((numerator / denominator) - expected_probabilities) ** 2 + 0.01 * (alphas - np.ones_like(alphas)) ** 2
             )
         )
 
