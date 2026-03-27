@@ -10,6 +10,7 @@ import pandas as pd
 from fastapi import HTTPException, status
 from pandas import DataFrame
 from sqlalchemy import Select, Table, func, insert, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -360,7 +361,7 @@ async def create_preassigned_experiment_impl(
     await bulk_insert_arm_assignments(
         xngin_session=xngin_session,
         experiment_id=experiment.id,
-        arms=[Arm(arm_id=arm.id, arm_name=arm.name) for arm in experiment.arms],
+        arm_ids=[arm.id for arm in experiment.arms],
         participant_type=experiment.participant_type,
         participant_id_col=participant_unique_id_field,
         data=dwh_participants,
@@ -885,6 +886,15 @@ async def create_assignment_for_participant(
         if result is None:
             raise ExperimentsAssignmentError(f"Failed to create assignment for participant '{participant_id}'")
         created_at = result[0]
+        stmt = (
+            pg_insert(tables.ArmStats)
+            .values(arm_id=chosen_arm_id, population=1)
+            .on_conflict_do_update(
+                index_elements=[tables.ArmStats.arm_id],
+                set_={"population": tables.ArmStats.population + 1},
+            )
+        )
+        await xngin_session.execute(stmt)
         await xngin_session.commit()
     except IntegrityError as e:
         await xngin_session.rollback()
@@ -1040,25 +1050,16 @@ async def get_assign_summary(
     experiment_type: ExperimentsType,
 ) -> AssignSummary:
     """Constructs an AssignSummary from the experiment's arms and arm_assignments."""
-    match experiment_type:
-        case ExperimentsType.FREQ_ONLINE | ExperimentsType.FREQ_PREASSIGNED:
-            result = await xngin_session.execute(
-                select(tables.ArmAssignment.arm_id, tables.Arm.name, func.count())
-                .join(tables.Arm)
-                .where(tables.ArmAssignment.experiment_id == experiment_id)
-                .group_by(tables.ArmAssignment.arm_id, tables.Arm.name)
-            )
-        case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
-            result = await xngin_session.execute(
-                select(tables.Draw.arm_id, tables.Arm.name, func.count())
-                .join(tables.Arm)
-                .where(tables.Draw.experiment_id == experiment_id)
-                .group_by(tables.Draw.arm_id, tables.Arm.name)
-            )
-            balance_check = None
-        case _:
-            raise LateValidationError(f"Invalid experiment type: {experiment_type}")
-
+    result = await xngin_session.execute(
+        select(
+            tables.Arm.id,
+            tables.Arm.name,
+            func.coalesce(tables.ArmStats.population, 0),
+        )
+        .outerjoin(tables.ArmStats, tables.Arm.id == tables.ArmStats.arm_id)
+        .where(tables.Arm.experiment_id == experiment_id)
+        .order_by(tables.Arm.position)
+    )
     arm_sizes = [
         ArmSize(
             arm=Arm(arm_id=arm_id, arm_name=name),
@@ -1066,6 +1067,9 @@ async def get_assign_summary(
         )
         for arm_id, name, count in result
     ]
+
+    if experiment_type in {ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE}:
+        balance_check = None
     return AssignSummary(
         balance_check=balance_check,
         arm_sizes=arm_sizes,

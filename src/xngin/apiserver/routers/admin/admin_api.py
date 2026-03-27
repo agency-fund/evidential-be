@@ -1822,6 +1822,13 @@ async def delete_experiment_data(
     if body.draws:
         await session.execute(delete(tables.Draw).where(tables.Draw.experiment_id == experiment.id))
 
+    if body.draws or body.assignments:
+        await session.execute(
+            delete(tables.ArmStats).where(
+                tables.ArmStats.arm_id.in_(select(tables.Arm.id).where(tables.Arm.experiment_id == experiment.id))
+            )
+        )
+
     if body.snapshots:
         await session.execute(delete(tables.Snapshot).where(tables.Snapshot.experiment_id == experiment.id))
 
