@@ -20,7 +20,6 @@ from sqlalchemy.engine.url import URL
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
 )
-from sqlalchemy.orm import selectinload
 from sqlalchemy_bigquery import dialect as bigquery_dialect
 from starlette.testclient import TestClient
 
@@ -309,7 +308,7 @@ async def fixture_testing_datasource(
     return await _make_datasource_metadata(
         xngin_session,
         aclient=aclient,
-        new_name="testing datasource",
+        org_name="testing datasource",
     )
 
 
@@ -322,55 +321,44 @@ async def fixture_testing_datasource_other(
     return await _make_datasource_metadata(
         xngin_session,
         aclient=aclient,
-        new_name="testing datasource other",
+        org_name="testing datasource other",
     )
 
 
 async def _make_datasource_metadata(
-    xngin_session: AsyncSession,
-    *,
-    aclient: admin_api_client.AdminAPIClient,
-    new_name: str,
-    participants_def_list: list[ParticipantsDef] | None = None,
+    xngin_session: AsyncSession, *, aclient: admin_api_client.AdminAPIClient, org_name: str
 ) -> DatasourceMetadata:
     """Generates a new Organization, Datasource, and API key for testing.
 
     Args:
     aclient - API client used to create the test entities.
-    new_name - the friendly name of the datasource.
-    participants_def_list - Allows overriding the new ds's `participants` list of participant types.
+    org_name - the friendly name of the datasource.
     """
-    pt_list = participants_def_list or [TESTING_DWH_PARTICIPANT_DEF]
     dwh = Dsn.from_url(flags.XNGIN_DEVDWH_DSN)
     org_id = aclient.create_organizations(aapi.CreateOrganizationRequest(name="test organization")).data.id
 
     datasource_id = aclient.create_datasource(
         body=aapi.CreateDatasourceRequest(
             organization_id=org_id,
-            name=new_name,
+            name=org_name,
             dsn=_convert_dwh_to_create_api_dsn(dwh),
         )
     ).data.id
 
-    for participants_def in pt_list:
-        aclient.create_participant_type(
-            datasource_id=datasource_id,
-            body=aapi.CreateParticipantsTypeRequest(
-                participant_type=participants_def.participant_type,
-                schema_def=participants_def,
-            ),
-        )
+    aclient.create_participant_type(
+        datasource_id=datasource_id,
+        body=aapi.CreateParticipantsTypeRequest(
+            participant_type=TESTING_DWH_PARTICIPANT_DEF.participant_type,
+            schema_def=TESTING_DWH_PARTICIPANT_DEF,
+        ),
+    )
 
     key_response = aclient.create_api_key(datasource_id=datasource_id).data
     api_org = aclient.get_organization(organization_id=org_id).data
     api_ds = aclient.get_datasource(datasource_id=datasource_id).data
 
     org = await xngin_session.get_one(tables.Organization, org_id)
-    datasource = await xngin_session.get_one(
-        tables.Datasource,
-        datasource_id,
-        options=[selectinload(tables.Datasource.organization)],
-    )
+    datasource = await xngin_session.get_one(tables.Datasource, datasource_id)
     datasource_config = datasource.get_config()
 
     return DatasourceMetadata(
