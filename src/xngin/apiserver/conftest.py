@@ -354,32 +354,30 @@ async def _make_datasource_metadata(
         )
     ).data.id
 
-    datasource = await xngin_session.get_one(
-        tables.Datasource,
-        datasource_id,
-        options=[selectinload(tables.Datasource.organization)],
-    )
-
     for participants_def in pt_list:
         aclient.create_participant_type(
-            datasource_id=datasource.id,
+            datasource_id=datasource_id,
             body=aapi.CreateParticipantsTypeRequest(
                 participant_type=participants_def.participant_type,
                 schema_def=participants_def,
             ),
         )
 
-    key_response = aclient.create_api_key(datasource_id=datasource.id).data
+    key_response = aclient.create_api_key(datasource_id=datasource_id).data
+    default_nodwh_ds = next(
+        (
+            ds
+            for ds in aclient.list_organization_datasources(organization_id=org_id).data.items
+            if ds.name == admin_common.DEFAULT_NO_DWH_SOURCE_NAME
+        ),
+        None,
+    )
+    if default_nodwh_ds is not None:
+        # TODO: Update tests and remove this delete.
+        aclient.delete_datasource(organization_id=org_id, datasource_id=default_nodwh_ds.id)
+
     api_org = aclient.get_organization(organization_id=org_id).data
     api_ds = aclient.get_datasource(datasource_id=datasource_id).data
-
-    await xngin_session.execute(
-        # TODO: Update tests and remove this delete.
-        delete(tables.Datasource).where(
-            tables.Datasource.organization_id == org_id,
-            tables.Datasource.name == admin_common.DEFAULT_NO_DWH_SOURCE_NAME,
-        )
-    )
 
     if not add_privileged_user_to_org:
         privileged_user = (
@@ -396,10 +394,7 @@ async def _make_datasource_metadata(
             )
         )
         await xngin_session.commit()
-    else:
-        await xngin_session.commit()
 
-    xngin_session.expire_all()
     org = await xngin_session.get_one(tables.Organization, org_id)
     datasource = await xngin_session.get_one(
         tables.Datasource,
