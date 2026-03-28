@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from xngin.apiserver.conftest import RowProtocolMixin
 from xngin.apiserver.routers.admin.admin_api_types import DeleteExperimentDataRequest
 from xngin.apiserver.routers.assignment_adapters import (
+    _is_present_scalar,  # noqa: PLC2701
     assign_treatments_with_balance,
     bulk_insert_arm_assignments,
     make_balance_check,
@@ -160,6 +161,27 @@ def test_make_balance_check_with_different_thresholds():
     assert thresh3 and thresh3.balance_ok
     thresh4 = make_balance_check(balance_result, 0)
     assert thresh4 and thresh4.balance_ok
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, False),
+        (pd.NA, False),
+        (pd.NaT, False),
+        (np.nan, False),
+        (np.float64(np.nan), False),
+        (float("NaN"), False),
+        (Decimal("NaN"), False),
+        (0, True),
+        (False, True),
+        ("", True),
+        (Decimal(1), True),
+        (pd.Timestamp("2024-01-01"), True),
+    ],
+)
+def test_is_present_scalar(value, expected):
+    assert _is_present_scalar(value) is expected
 
 
 def test_assign_treatments_with_balance_basic(sample_table, sample_rows):

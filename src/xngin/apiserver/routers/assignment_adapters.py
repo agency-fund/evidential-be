@@ -31,7 +31,7 @@ class RowProtocol(Protocol):
 
 
 def _is_present_scalar(value: object) -> bool:
-    """Return whether a scalar should be serialized as present rather than rendered as NA.
+    """Return whether a scalar should be serialized or rendered as "NA".
 
     This is much faster than pd.notna and equivalent for our use cases.
     """
