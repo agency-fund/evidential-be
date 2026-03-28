@@ -281,7 +281,12 @@ def fixture_use_deterministic_random():
 
 @dataclass(slots=True)
 class DatasourceMetadata:
-    """Describes an ephemeral datasource, organization, and API key."""
+    """Describes an ephemeral datasource, organization, and API key.
+
+    Tests should prefer to use the API responses and avoid using the ORM entities. We return the ORM entities only for
+    tests that are not yet migrated to use the API endpoints, or that cannot use them because they are testing a lower
+    level intentionally.
+    """
 
     org: tables.Organization
     ds: tables.Datasource
