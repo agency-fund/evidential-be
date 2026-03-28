@@ -296,9 +296,6 @@ class DatasourceMetadata:
     datasource_id: str
     pt: ParticipantsDef
 
-    # The SQLAlchemy DSN
-    dsn: str
-
     # An API key suitable for use in the Authorization: header.
     key: str
     key_id: str
@@ -383,7 +380,6 @@ async def _make_datasource_metadata(
         organization_id=api_org.id,
         datasource_id=api_ds.id,
         pt=datasource_config.participants[0],
-        dsn=datasource_config.to_sqlalchemy_url().render_as_string(False),
         key=key_response.key,
         key_id=key_response.id,
         org=org,
