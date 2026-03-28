@@ -817,12 +817,15 @@ async def test_list_datasources_ordered_by_experiment_count(
             await insert_experiment_and_arms(xngin_session, ds)
 
     items = aclient.list_organization_datasources(organization_id=org.id).data.items
-    assert len(items) == 3
+    assert len(items) == 4
 
-    # ds_b (3 experiments) first, ds_a (1 experiment) second, ds_c (0 experiments) last.
+    # ds_b (3 experiments) first, ds_a (1 experiment) second.
+    # The zero-experiment datasources are then ordered by name: the default NoDWH datasource
+    # before ds_c.
     assert items[0].id == ds_b.id
     assert items[1].id == ds_a.id
-    assert items[2].id == ds_c.id
+    assert items[2].name == DEFAULT_NO_DWH_SOURCE_NAME
+    assert items[3].id == ds_c.id
 
 
 def test_datasource_errors(aclient: AdminAPIClient):
@@ -925,7 +928,8 @@ def test_delete_datasource(testing_datasource, aclient: AdminAPIClient, aclient_
 
     # Assure the datasource was deleted.
     list_datasources2 = aclient.list_organization_datasources(organization_id=org_id).data
-    assert list_datasources2.items == []
+    assert len(list_datasources2.items) == 1
+    assert list_datasources2.items[0].name == DEFAULT_NO_DWH_SOURCE_NAME
 
     # Delete the datasource a 2nd time returns 404.
     with expect_status_code(404):
@@ -935,7 +939,8 @@ def test_delete_datasource(testing_datasource, aclient: AdminAPIClient, aclient_
     aclient.delete_datasource(organization_id=org_id, datasource_id=ds_id, allow_missing=True)
 
     list_datasources3 = aclient.list_organization_datasources(organization_id=org_id).data
-    assert not list_datasources3.items, list_datasources3  # empty list
+    assert len(list_datasources3.items) == 1, list_datasources3
+    assert list_datasources3.items[0].name == DEFAULT_NO_DWH_SOURCE_NAME
 
 
 async def test_webhook_lifecycle(aclient: AdminAPIClient):

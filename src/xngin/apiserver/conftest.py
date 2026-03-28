@@ -32,7 +32,6 @@ from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.exceptionhandlers import XHTTPValidationError
 from xngin.apiserver.main import app
 from xngin.apiserver.routers.admin import admin_api_types as aapi
-from xngin.apiserver.routers.admin import admin_common
 from xngin.apiserver.routers.auth import auth_dependencies
 from xngin.apiserver.routers.auth.auth_dependencies import (
     PRIVILEGED_EMAIL,
@@ -361,18 +360,6 @@ async def _make_datasource_metadata(
         )
 
     key_response = aclient.create_api_key(datasource_id=datasource_id).data
-    default_nodwh_ds = next(
-        (
-            ds
-            for ds in aclient.list_organization_datasources(organization_id=org_id).data.items
-            if ds.name == admin_common.DEFAULT_NO_DWH_SOURCE_NAME
-        ),
-        None,
-    )
-    if default_nodwh_ds is not None:
-        # TODO: Update tests and remove this delete.
-        aclient.delete_datasource(organization_id=org_id, datasource_id=default_nodwh_ds.id)
-
     api_org = aclient.get_organization(organization_id=org_id).data
     api_ds = aclient.get_datasource(datasource_id=datasource_id).data
 
