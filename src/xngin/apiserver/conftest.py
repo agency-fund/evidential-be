@@ -1,11 +1,11 @@
 """conftest configures FastAPI dependency injection for testing and also does some setup before tests in
 this module are run."""
 
+import base64
 import contextlib
 import dataclasses
 import enum
 import os
-import secrets
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -13,25 +13,24 @@ from typing import Any, assert_never, cast
 
 import pytest
 import sqlalchemy
-from sqlalchemy import delete, make_url, select
+from sqlalchemy import delete, make_url
 from sqlalchemy.dialects.postgresql import psycopg
 from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.engine.url import URL
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
 )
-from sqlalchemy.orm import selectinload
 from sqlalchemy_bigquery import dialect as bigquery_dialect
 from starlette.testclient import TestClient
 
-from xngin.apiserver import database, flags
-from xngin.apiserver.apikeys import hash_key_or_raise, make_key
+from xngin.apiserver import database, flags, settings
 from xngin.apiserver.dependencies import (
     random_seed_dependency,
 )
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.exceptionhandlers import XHTTPValidationError
 from xngin.apiserver.main import app
+from xngin.apiserver.routers.admin import admin_api_types as aapi
 from xngin.apiserver.routers.auth import auth_dependencies
 from xngin.apiserver.routers.auth.auth_dependencies import (
     PRIVILEGED_EMAIL,
@@ -42,7 +41,6 @@ from xngin.apiserver.routers.auth.auth_dependencies import (
 from xngin.apiserver.settings import (
     Dsn,
     ParticipantsDef,
-    RemoteDatabaseConfig,
 )
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing import (
@@ -280,16 +278,22 @@ def fixture_use_deterministic_random():
         custom_functions.USE_DETERMINISTIC_RANDOM = original
 
 
-@dataclass
+@dataclass(slots=True)
 class DatasourceMetadata:
-    """Describes an ephemeral datasource, organization, and API key."""
+    """Describes an ephemeral datasource, organization, and API key.
+
+    Tests should prefer to use the API responses and avoid using the ORM entities. We return the ORM entities only for
+    tests that are not yet migrated to use the API endpoints, or that cannot use them because they are testing a lower
+    level intentionally.
+    """
 
     org: tables.Organization
     ds: tables.Datasource
+    api_org: aapi.GetOrganizationResponse
+    api_ds: aapi.GetDatasourceResponse
+    organization_id: str
+    datasource_id: str
     pt: ParticipantsDef
-
-    # The SQLAlchemy DSN
-    dsn: str
 
     # An API key suitable for use in the Authorization: header.
     key: str
@@ -297,80 +301,117 @@ class DatasourceMetadata:
 
 
 @pytest.fixture(name="testing_datasource")
-async def fixture_testing_datasource(xngin_session: AsyncSession) -> DatasourceMetadata:
-    """Adds to db a new Organization, Datasource, and API key."""
+async def fixture_testing_datasource(
+    xngin_session: AsyncSession, aclient: admin_api_client.AdminAPIClient
+) -> DatasourceMetadata:
+    """Creates a datasource fixture using the Admin API."""
     return await _make_datasource_metadata(
         xngin_session,
-        new_name="testing datasource",
+        aclient=aclient,
+        org_name="testing datasource",
     )
 
 
-@pytest.fixture(name="testing_datasource_with_user")
-async def fixture_testing_datasource_with_user(
+@pytest.fixture(name="testing_datasource_other")
+async def fixture_testing_datasource_other(
     xngin_session: AsyncSession,
+    aclient: admin_api_client.AdminAPIClient,
 ) -> DatasourceMetadata:
-    """Adds to db a new Org w/ PRIVILEGED_EMAIL user, Datasource, and API key."""
-    metadata = await _make_datasource_metadata(
+    """Creates a second datasource fixture using the Admin API."""
+    return await _make_datasource_metadata(
         xngin_session,
-        new_name="testing datasource with user",
+        aclient=aclient,
+        org_name="testing datasource other",
     )
-    user = (
-        await xngin_session.execute(
-            select(tables.User)
-            .options(selectinload(tables.User.organizations))
-            .where(tables.User.email == PRIVILEGED_EMAIL)
-        )
-    ).scalar_one()
-    user.organizations.append(metadata.org)
-    await xngin_session.commit()
-    return metadata
 
 
 async def _make_datasource_metadata(
-    xngin_session: AsyncSession,
-    *,
-    new_name: str,
-    new_datasource_id: str | None = None,
-    participants_def_list: list[ParticipantsDef] | None = None,
+    xngin_session: AsyncSession, *, aclient: admin_api_client.AdminAPIClient, org_name: str
 ) -> DatasourceMetadata:
-    """Generates a new Organization, Datasource, and API key in the database for testing.
+    """Generates a new Organization, Datasource, and API key for testing.
 
     Args:
-    db_session - the database session to use for adding our objects to the database.
-    new_name - the friendly name of the datasource.
-    new_datasource_id - unique ID of the datasource. If not provided, it will be randomly generated.
-    participants_def_list - Allows overriding the new ds's `participants` list of participant types.
+    aclient - API client used to create the test entities.
+    org_name - the friendly name of the datasource.
     """
-    run_id = secrets.token_hex(8)
+    dwh = Dsn.from_url(flags.XNGIN_DEVDWH_DSN)
+    org_id = aclient.create_organizations(aapi.CreateOrganizationRequest(name="test organization")).data.id
 
-    org = tables.Organization(id="org" + run_id, name="test organization")
+    datasource_id = aclient.create_datasource(
+        body=aapi.CreateDatasourceRequest(
+            organization_id=org_id,
+            name=org_name,
+            dsn=_convert_dwh_to_create_api_dsn(dwh),
+        )
+    ).data.id
 
-    # Now make a new test datasource attached to the org. Use a random ID if none is specified.
-    new_datasource_id = new_datasource_id or "ds" + run_id
-    datasource = tables.Datasource(id=new_datasource_id, name=new_name)
-    datasource.organization = org
-    # Initialize our ds config to point to our testing dwh.
-    test_dwh_dsn = Dsn.from_url(flags.XNGIN_DEVDWH_DSN)
-    # If no override is provided, use the default testing participant type.
-    pt_list = participants_def_list or [TESTING_DWH_PARTICIPANT_DEF]
-    datasource.set_config(RemoteDatabaseConfig(type="remote", participants=pt_list, dwh=test_dwh_dsn))
+    aclient.create_participant_type(
+        datasource_id=datasource_id,
+        body=aapi.CreateParticipantsTypeRequest(
+            participant_type=TESTING_DWH_PARTICIPANT_DEF.participant_type,
+            schema_def=TESTING_DWH_PARTICIPANT_DEF,
+        ),
+    )
 
-    # Make this ds also accessible via an API key.
-    key_id, key = make_key()
-    kt = tables.ApiKey(id=key_id, key=hash_key_or_raise(key))
-    kt.datasource = datasource
+    key_response = aclient.create_api_key(datasource_id=datasource_id).data
+    api_org = aclient.get_organization(organization_id=org_id).data
+    api_ds = aclient.get_datasource(datasource_id=datasource_id).data
 
-    xngin_session.add_all([org, datasource, kt])
-    await xngin_session.commit()
+    org = await xngin_session.get_one(tables.Organization, org_id)
+    datasource = await xngin_session.get_one(tables.Datasource, datasource_id)
+    datasource_config = datasource.get_config()
 
     return DatasourceMetadata(
         ds=datasource,
-        pt=datasource.get_config().participants[0],
-        dsn=datasource.get_config().to_sqlalchemy_url().render_as_string(False),
-        key=key,
-        key_id=key_id,
+        api_org=api_org,
+        api_ds=api_ds,
+        organization_id=api_org.id,
+        datasource_id=api_ds.id,
+        pt=datasource_config.participants[0],
+        key=key_response.key,
+        key_id=key_response.id,
         org=org,
     )
+
+
+def _convert_dwh_to_create_api_dsn(dwh: settings.Dwh) -> aapi.Dsn:
+    """Converts a trusted settings DWH config into a create_datasource request payload with revealed credentials."""
+    match dwh:
+        case Dsn():
+            if dwh.is_redshift():
+                return aapi.RedshiftDsn(
+                    dbname=dwh.dbname,
+                    host=dwh.host,
+                    password=aapi.RevealedStr(value=dwh.password),
+                    port=dwh.port,
+                    search_path=dwh.search_path,
+                    user=dwh.user,
+                )
+            return aapi.PostgresDsn(
+                dbname=dwh.dbname,
+                host=dwh.host,
+                password=aapi.RevealedStr(value=dwh.password),
+                port=dwh.port,
+                search_path=dwh.search_path,
+                sslmode=dwh.sslmode,
+                user=dwh.user,
+            )
+        case settings.BqDsn():
+            match dwh.credentials:
+                case settings.GcpServiceAccountInfo():
+                    credentials_content = base64.standard_b64decode(dwh.credentials.content_base64).decode()
+                case settings.GcpServiceAccountFile():
+                    with open(dwh.credentials.path, encoding="utf-8") as credentials_file:
+                        credentials_content = credentials_file.read()
+                case _:
+                    raise TypeError(f"Unsupported BigQuery credentials type: {type(dwh.credentials).__name__}")
+            return aapi.BqDsn(
+                project_id=dwh.project_id,
+                dataset_id=dwh.dataset_id,
+                credentials=aapi.GcpServiceAccount(content=credentials_content),
+            )
+        case _:
+            raise TypeError(f"Unsupported DWH type for test datasource creation: {type(dwh).__name__}")
 
 
 @dataclass
