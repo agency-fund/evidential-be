@@ -280,12 +280,16 @@ def fixture_use_deterministic_random():
         custom_functions.USE_DETERMINISTIC_RANDOM = original
 
 
-@dataclass
+@dataclass(slots=True)
 class DatasourceMetadata:
     """Describes an ephemeral datasource, organization, and API key."""
 
     org: tables.Organization
     ds: tables.Datasource
+    api_org: aapi.GetOrganizationResponse
+    api_ds: aapi.GetDatasourceResponse
+    organization_id: str
+    datasource_id: str
     pt: ParticipantsDef
 
     # The SQLAlchemy DSN
@@ -366,6 +370,8 @@ async def _make_datasource_metadata(
         )
 
     key_response = aclient.create_api_key(datasource_id=datasource.id).data
+    api_org = aclient.get_organization(organization_id=org_id).data
+    api_ds = aclient.get_datasource(datasource_id=datasource_id).data
 
     await xngin_session.execute(
         # TODO: Update tests and remove this delete.
@@ -404,6 +410,10 @@ async def _make_datasource_metadata(
 
     return DatasourceMetadata(
         ds=datasource,
+        api_org=api_org,
+        api_ds=api_ds,
+        organization_id=api_org.id,
+        datasource_id=api_ds.id,
         pt=datasource_config.participants[0],
         dsn=datasource_config.to_sqlalchemy_url().render_as_string(False),
         key=key_response.key,

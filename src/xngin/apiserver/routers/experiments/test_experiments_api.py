@@ -109,10 +109,10 @@ async def create_online_experiment(
         )
 
     request = CreateExperimentRequest(design_spec=design_spec)
-    created_experiment = aclient.create_experiment(datasource_id=datasource_metadata.ds.id, body=request).data
-    aclient.commit_experiment(datasource_metadata.ds.id, created_experiment.experiment_id)
+    created_experiment = aclient.create_experiment(datasource_id=datasource_metadata.datasource_id, body=request).data
+    aclient.commit_experiment(datasource_metadata.datasource_id, created_experiment.experiment_id)
     config = aclient.get_experiment_for_ui(
-        datasource_id=datasource_metadata.ds.id,
+        datasource_id=datasource_metadata.datasource_id,
         experiment_id=created_experiment.experiment_id,
     ).data.config
     return TypeAdapter(ExperimentConfig).validate_python(config)
@@ -121,7 +121,7 @@ async def create_online_experiment(
 async def create_preassigned_experiment(datasource_metadata, aclient: AdminAPIClient):
     """Creates a preassigned experiment using the Admin API."""
     aclient.add_member_to_organization(
-        organization_id=datasource_metadata.org.id,
+        organization_id=datasource_metadata.organization_id,
         body=AddMemberToOrganizationRequest(email=PRIVILEGED_EMAIL),
     )
     design_spec = PreassignedFrequentistExperimentSpec(
@@ -142,13 +142,13 @@ async def create_preassigned_experiment(datasource_metadata, aclient: AdminAPICl
 
     request = CreateExperimentRequest(design_spec=design_spec)
     created_experiment = aclient.create_experiment(
-        datasource_id=datasource_metadata.ds.id,
+        datasource_id=datasource_metadata.datasource_id,
         body=request,
         desired_n=1,
     ).data
-    aclient.commit_experiment(datasource_metadata.ds.id, created_experiment.experiment_id)
+    aclient.commit_experiment(datasource_metadata.datasource_id, created_experiment.experiment_id)
     config = aclient.get_experiment_for_ui(
-        datasource_id=datasource_metadata.ds.id,
+        datasource_id=datasource_metadata.datasource_id,
         experiment_id=created_experiment.experiment_id,
     ).data.config
     return TypeAdapter(ExperimentConfig).validate_python(config)
@@ -174,7 +174,7 @@ async def test_list_experiments_with_various_insufficient_headers(
 ):
     """Tests that listing experiments tied to a db datasource requires an API key."""
     await create_online_experiment(testing_datasource_with_user, aclient)
-    kwargs = {"datasource_id": testing_datasource_with_user.ds.id}
+    kwargs = {"datasource_id": testing_datasource_with_user.datasource_id}
     if key is not None:
         kwargs["api_key"] = key
     with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
@@ -189,7 +189,7 @@ async def test_list_experiments_with_api_key(
     """Tests that listing experiments tied to a db datasource with an API key works."""
     new_experiment = await create_online_experiment(testing_datasource_with_user, aclient)
     experiments = eclient.list_experiments(
-        api_key=testing_datasource_with_user.key, datasource_id=testing_datasource_with_user.ds.id
+        api_key=testing_datasource_with_user.key, datasource_id=testing_datasource_with_user.datasource_id
     ).data
     assert len(experiments.items) == 1
     assert experiments.items[0].state == ExperimentState.COMMITTED
@@ -199,7 +199,7 @@ async def test_list_experiments_with_api_key(
 async def test_get_experiment(testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient):
     new_experiment = await create_preassigned_experiment(testing_datasource, aclient)
     response = eclient.get_experiment(api_key=testing_datasource.key, experiment_id=new_experiment.experiment_id).data
-    assert response.datasource_id == testing_datasource.ds.id
+    assert response.datasource_id == testing_datasource.datasource_id
     assert response.state == ExperimentState.COMMITTED
     assert isinstance(response.design_spec, PreassignedFrequentistExperimentSpec)
     assert response.design_spec == new_experiment.design_spec
