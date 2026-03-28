@@ -13,7 +13,7 @@ from typing import Any, assert_never, cast
 
 import pytest
 import sqlalchemy
-from sqlalchemy import delete, make_url, select
+from sqlalchemy import delete, make_url
 from sqlalchemy.dialects.postgresql import psycopg
 from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.engine.url import URL
@@ -304,12 +304,11 @@ class DatasourceMetadata:
 async def fixture_testing_datasource(
     xngin_session: AsyncSession, aclient: admin_api_client.AdminAPIClient
 ) -> DatasourceMetadata:
-    """Creates a datasource fixture using the Admin API, without granting org access to the seeded user."""
+    """Creates a datasource fixture using the Admin API."""
     return await _make_datasource_metadata(
         xngin_session,
         aclient=aclient,
         new_name="testing datasource",
-        add_privileged_user_to_org=False,
     )
 
 
@@ -318,12 +317,11 @@ async def fixture_testing_datasource_with_user(
     xngin_session: AsyncSession,
     aclient: admin_api_client.AdminAPIClient,
 ) -> DatasourceMetadata:
-    """Creates a datasource fixture using the Admin API, keeping the seeded privileged user on the org."""
+    """Creates a datasource fixture using the Admin API."""
     return await _make_datasource_metadata(
         xngin_session,
         aclient=aclient,
         new_name="testing datasource with user",
-        add_privileged_user_to_org=True,
     )
 
 
@@ -331,7 +329,6 @@ async def _make_datasource_metadata(
     xngin_session: AsyncSession,
     *,
     aclient: admin_api_client.AdminAPIClient,
-    add_privileged_user_to_org: bool,
     new_name: str,
     participants_def_list: list[ParticipantsDef] | None = None,
 ) -> DatasourceMetadata:
@@ -378,22 +375,6 @@ async def _make_datasource_metadata(
 
     api_org = aclient.get_organization(organization_id=org_id).data
     api_ds = aclient.get_datasource(datasource_id=datasource_id).data
-
-    if not add_privileged_user_to_org:
-        privileged_user = (
-            await xngin_session.execute(
-                select(tables.User)
-                .options(selectinload(tables.User.organizations))
-                .where(tables.User.email == PRIVILEGED_EMAIL)
-            )
-        ).scalar_one()
-        await xngin_session.execute(
-            delete(tables.UserOrganization).where(
-                tables.UserOrganization.organization_id == org_id,
-                tables.UserOrganization.user_id == privileged_user.id,
-            )
-        )
-        await xngin_session.commit()
 
     org = await xngin_session.get_one(tables.Organization, org_id)
     datasource = await xngin_session.get_one(
