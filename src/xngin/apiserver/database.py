@@ -15,6 +15,8 @@ from xngin.apiserver import flags
 # sqlalchemy.engine.Engine.xngin_app.
 SA_LOGGER_NAME_FOR_APP = "xngin_app"
 
+APP_DB_APPLICATION_NAME = f"api-{os.getpid()}"
+
 DEFAULT_POSTGRES_DIALECT = "postgresql+psycopg"
 
 
@@ -78,7 +80,7 @@ async def setup():
 
     async_engine = create_async_engine(
         database_url,
-        connect_args={"application_name": f"api-{os.getpid()}"},
+        connect_args={"application_name": APP_DB_APPLICATION_NAME},
         execution_options={"logging_token": "app_async"},
         logging_name=SA_LOGGER_NAME_FOR_APP,
     )
