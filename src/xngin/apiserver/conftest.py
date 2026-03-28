@@ -312,16 +312,16 @@ async def fixture_testing_datasource(
     )
 
 
-@pytest.fixture(name="testing_datasource_with_user")
-async def fixture_testing_datasource_with_user(
+@pytest.fixture(name="testing_datasource_other")
+async def fixture_testing_datasource_other(
     xngin_session: AsyncSession,
     aclient: admin_api_client.AdminAPIClient,
 ) -> DatasourceMetadata:
-    """Creates a datasource fixture using the Admin API."""
+    """Creates a second datasource fixture using the Admin API."""
     return await _make_datasource_metadata(
         xngin_session,
         aclient=aclient,
-        new_name="testing datasource with user",
+        new_name="testing datasource other",
     )
 
 
