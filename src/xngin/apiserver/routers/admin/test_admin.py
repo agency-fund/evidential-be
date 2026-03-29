@@ -304,7 +304,7 @@ def test_create_and_get_organization(aclient: AdminAPIClient):
     """Test basic organization creation."""
     # Create an organization
     org_name = "New Organization"
-    create_response = aclient.create_organizations(CreateOrganizationRequest(name=org_name)).data
+    create_response = aclient.create_organizations(body=CreateOrganizationRequest(name=org_name)).data
 
     # Fetch the organization
     org_response = aclient.get_organization(organization_id=create_response.id).data
