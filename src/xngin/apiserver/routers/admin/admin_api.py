@@ -1887,9 +1887,6 @@ async def power_check(
         )
     dsconfig = ds.get_config()
 
-    if body.table_name is None or body.primary_key is None:
-        raise LateValidationError("Power checks without a table name and primary key are not supported.")
-
     async with DwhSession(dsconfig.dwh) as dwh:
         sa_table = await dwh.inspect_table(body.table_name)
         # Validate the fields used in the design spec are present in the table and that filter values are valid.

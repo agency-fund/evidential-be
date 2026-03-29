@@ -1537,9 +1537,11 @@ async def test_power_check_validations(testing_datasource_with_user, aclient: Ad
     assert power_response.analyses[0].metric_spec.field_name == "current_income"
     assert power_response.analyses[0].target_n is not None
 
-    # Now check varying failure scenarios
-    with expect_status_code(422, detail_eq="Power checks without a table name and primary key are not supported."):
-        aclient.power_check(datasource_id=datasource_id, body=PowerRequest(design_spec=design_spec))
+    # Now check various failure scenarios
+    with expect_status_code(404, message_contains="The table '' does not exist."):
+        aclient.power_check(
+            datasource_id=datasource_id, body=PowerRequest(design_spec=design_spec, table_name="", primary_key="")
+        )
 
     with expect_status_code(422, detail_contains="(check your Datasource configuration): no_such_primary_key"):
         aclient.power_check(
