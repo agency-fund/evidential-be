@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from xngin.apiserver.sqla import tables
 from xngin.events.webhook_sent import WebhookSentEvent
 from xngin.tq.task_payload_types import WebhookOutboundTask
-from xngin.tq.task_queue import Task
+from xngin.tq.task_queue import TQ_DB_APPLICATION_NAME, Task
 
 
 def make_webhook_outbound_handler(dsn: str):
@@ -18,7 +18,9 @@ def make_webhook_outbound_handler(dsn: str):
     Also creates an entry in the Event table with information that will be useful for
     customers when debugging.
     """
-    engine = sqlalchemy.create_engine(dsn, poolclass=NullPool)
+    engine = sqlalchemy.create_engine(
+        dsn, connect_args={"application_name": TQ_DB_APPLICATION_NAME}, poolclass=NullPool
+    )
 
     def webhook_outbound_handler(task: Task):
         """Handle a webhook.outbound task.
