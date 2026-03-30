@@ -285,7 +285,7 @@ IS_NULLABLE_CASES = [
 
 
 @pytest.mark.parametrize("testcase", IS_NULLABLE_CASES, ids=lambda d: str(d))
-def test_is_nullable(testcase, queries_dwh_session, shared_sample_tables, use_deterministic_random):
+def test_is_nullable(testcase, queries_dwh_session, shared_sample_tables):
     testcase.filters = [Filter.model_validate(filt.model_dump()) for filt in testcase.filters]
     table: Table = shared_sample_tables.sample_nullable_table
     select_columns = set(table.c.keys())
@@ -421,7 +421,7 @@ RELATION_CASES = [
 
 
 @pytest.mark.parametrize("testcase", RELATION_CASES)
-def test_relations(testcase, queries_dwh_session, shared_sample_tables, use_deterministic_random):
+def test_relations(testcase, queries_dwh_session, shared_sample_tables):
     testcase.filters = [Filter.model_validate(filt.model_dump()) for filt in testcase.filters]
     table: Table = shared_sample_tables.sample_table
     select_columns = set(table.c.keys())

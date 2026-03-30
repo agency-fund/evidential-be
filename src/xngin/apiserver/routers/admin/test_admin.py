@@ -1682,7 +1682,6 @@ async def test_create_freq_preassigned_experiment(
 
 async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
     testing_datasource_with_user,
-    use_deterministic_random,
     aclient: AdminAPIClient,
 ):
     datasource_id = testing_datasource_with_user.ds.id
@@ -3302,7 +3301,7 @@ def test_create_experiment_primary_key_requires_table_name(testing_datasource_wi
 
 
 async def test_create_preassigned_experiment_with_table_name_and_primary_key(
-    xngin_session: AsyncSession, testing_datasource_with_user, use_deterministic_random, aclient: AdminAPIClient
+    xngin_session: AsyncSession, testing_datasource_with_user, aclient: AdminAPIClient
 ):
     """Test creating a preassigned experiment with table_name and primary_key."""
     ds_id = testing_datasource_with_user.ds.id
