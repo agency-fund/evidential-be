@@ -235,7 +235,7 @@ async def fetch_fields_from_table_or_raise(
     missing_fields = referenced_fields - referenced_fields_and_types.keys()
     if missing_fields:
         raise LateValidationError(
-            f"Invalid DesignSpec fields (check your Datasource configuration): {', '.join(sorted(missing_fields))}"
+            f"The .design_spec field refers to columns that do not exist in the table: {', '.join(sorted(missing_fields))}"
         )
 
     bad_metric_types = [
@@ -246,7 +246,7 @@ async def fetch_fields_from_table_or_raise(
     if bad_metric_types:
         raise LateValidationError(
             f"Invalid metric field(s): ({', '.join(bad_metric_types)}). "
-            "Only boolean or numeric data types are supportedas metrics."
+            "Only boolean or numeric data types are supported as metrics."
         )
 
     for filter_ in design_spec.filters:
