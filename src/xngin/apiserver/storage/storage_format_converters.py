@@ -468,6 +468,7 @@ class ExperimentStorageConverter:
 
                 arm_weights = design_spec.get_validated_arm_weights()
                 if arm_weights:
+                    # TODO: this method can be expensive and should be on a thread.
                     param1, param2 = convert_arm_weights_to_prior_params(
                         arm_weights=arm_weights,
                         prior_type=design_spec.prior_type,

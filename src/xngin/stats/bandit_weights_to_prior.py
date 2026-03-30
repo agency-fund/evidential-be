@@ -128,8 +128,6 @@ def convert_arm_weights_to_prior_params(
     arm_weights: list[float], prior_type: PriorTypes, num_contexts: int = 1
 ) -> tuple[list[float], list[float]]:
     expected_probabilities = np.array(arm_weights, dtype=np.float64)
-    if expected_probabilities.sum() != 100:
-        raise ValueError("Expected probabilities must sum to 100.")
 
     if prior_type == PriorTypes.BETA:
         alpha, beta = bandit_weights_to_beta_prior(expected_probabilities)

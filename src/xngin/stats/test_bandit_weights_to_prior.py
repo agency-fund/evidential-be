@@ -56,9 +56,3 @@ def test_convert_bandit_weights_to_prior_params(prior_type: PriorTypes, expected
     assert len(params) == 2
     assert params[0] == pytest.approx(expected_params, rel=1e-2)
     assert params[1] == [1.0] * len(expected_params)
-
-
-def test_convert_bandit_weights_to_prior_params_invalid_weights():
-    arm_weights = [20.0, 30.0]
-    with pytest.raises(ValueError, match=r"Expected probabilities must sum to 100\."):
-        convert_arm_weights_to_prior_params(arm_weights, prior_type=PriorTypes.BETA)

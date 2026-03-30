@@ -1217,21 +1217,21 @@ async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_dat
         assert context.context_id is not None
 
     # Verify arms were created in database
-    arms = (await xngin_session.scalars(select(tables.Arm).where(tables.Arm.experiment_id == experiment.id))).all()
-    assert len(arms) == 2
-    arm_ids = {arm.id for arm in arms}
+    db_experiment = await get_experiment_preloaded(xngin_session, response.experiment_id)
+
+    db_arms = db_experiment.arms
+    assert len(db_arms) == 2
+    arm_ids = {arm.id for arm in db_arms}
     expected_arm_ids = {arm.arm_id for arm in response.design_spec.arms}
     assert arm_ids == expected_arm_ids
     # Verify arm positions were stored correctly
-    for i, (req_arm, db_arm) in enumerate(zip(request.design_spec.arms, arms, strict=True), start=1):
+    for i, (req_arm, db_arm) in enumerate(zip(request.design_spec.arms, db_arms, strict=True), start=1):
         assert db_arm.position == i
         assert req_arm.arm_name == db_arm.name
         assert req_arm.arm_weight is None
 
     # Verify contexts were created in database
-    contexts = (
-        await xngin_session.scalars(select(tables.Context).where(tables.Context.experiment_id == experiment.id))
-    ).all()
+    contexts = db_experiment.contexts
     assert len(contexts) == 2
     context_ids = {context.id for context in contexts}
     expected_context_ids = {context.context_id for context in response.design_spec.contexts}
@@ -1320,13 +1320,11 @@ async def test_create_experiment_impl_for_bandit_with_arm_weights(
         assert response.design_spec.arms[1].alpha_init is not None and response.design_spec.arms[1].alpha is not None
         assert response.design_spec.arms[1].beta_init is not None and response.design_spec.arms[1].beta is not None
 
-    # Verify database state
-    experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
+    # Verify updated experiment state
 
-    # Verify arms were created in database
-    arms = (await xngin_session.scalars(select(tables.Arm).where(tables.Arm.experiment_id == experiment.id))).all()
+    experiment = await get_experiment_preloaded(xngin_session, response.experiment_id)
     # Verify arm parameters were stored correctly
-    for req_arm, db_arm in zip(response.design_spec.arms, arms, strict=True):
+    for req_arm, db_arm in zip(response.design_spec.arms, experiment.arms, strict=True):
         assert req_arm.arm_weight == db_arm.arm_weight
         assert req_arm.mu_init == db_arm.mu_init
         assert req_arm.sigma_init == db_arm.sigma_init
@@ -1367,9 +1365,7 @@ async def test_create_experiment_impl_no_metric_stratification(
     assert response.design_spec.strata == [Stratum(field_name="gender")]
 
     # Verify database state
-    experiment = (
-        await xngin_session.scalars(select(tables.Experiment).where(tables.Experiment.id == response.experiment_id))
-    ).one()
+    experiment = await get_experiment_preloaded(xngin_session, response.experiment_id)
     # Verify assignments were created
     assignments = (
         await xngin_session.scalars(
