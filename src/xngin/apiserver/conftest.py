@@ -335,7 +335,7 @@ async def _make_datasource_metadata(
     org_name - the friendly name of the datasource.
     """
     dwh = Dsn.from_url(flags.XNGIN_DEVDWH_DSN)
-    org_id = aclient.create_organizations(aapi.CreateOrganizationRequest(name="test organization")).data.id
+    org_id = aclient.create_organizations(body=aapi.CreateOrganizationRequest(name="test organization")).data.id
 
     datasource_id = aclient.create_datasource(
         body=aapi.CreateDatasourceRequest(

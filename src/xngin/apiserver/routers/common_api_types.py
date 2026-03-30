@@ -878,6 +878,28 @@ class BaseDesignSpec(ApiBaseModel):
         """True if any IDs are present."""
         return any(arm.arm_id is not None for arm in self.arms)
 
+    def get_validated_arm_weights(self) -> list[float] | None:
+        """If weights exist, validate they match the number of arms and sum to 100 before returning."""
+        arm_weights = [arm.arm_weight for arm in self.arms if arm.arm_weight is not None]
+
+        if len(arm_weights) == 0:
+            return None
+
+        if len(arm_weights) != len(self.arms):
+            raise ValueError(f"Number of arm weights ({len(arm_weights)}) must match number of arms ({len(self.arms)})")
+
+        # Check that weights sum to 100 (tolerance aligned with stochatreat's own check)
+        total = sum(arm_weights)
+        if not math.isclose(total, 100.0, rel_tol=1e-9):
+            raise ValueError(f"arm_weights must sum to 100, got {total}")
+
+        return arm_weights
+
+    @model_validator(mode="after")
+    def validate_arm_weights(self) -> Self:
+        _ = self.get_validated_arm_weights()
+        return self
+
 
 class BaseFrequentistDesignSpec(BaseDesignSpec):
     """Experiment design parameters for frequentist experiments."""
@@ -920,28 +942,6 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
             "If provided, calculates minimum detectable effect instead of required sample size.",
         ),
     ] = None
-
-    def get_validated_arm_weights(self) -> list[float] | None:
-        """If weights exist, validate they match the number of arms and sum to 100 before returning."""
-        arm_weights = [arm.arm_weight for arm in self.arms if arm.arm_weight is not None]
-
-        if len(arm_weights) == 0:
-            return None
-
-        if len(arm_weights) != len(self.arms):
-            raise ValueError(f"Number of arm weights ({len(arm_weights)}) must match number of arms ({len(self.arms)})")
-
-        # Check that weights sum to 100 (tolerance aligned with stochatreat's own check)
-        total = sum(arm_weights)
-        if not math.isclose(total, 100.0, rel_tol=1e-9):
-            raise ValueError(f"arm_weights must sum to 100, got {total}")
-
-        return arm_weights
-
-    @model_validator(mode="after")
-    def validate_arm_weights(self) -> Self:
-        _ = self.get_validated_arm_weights()
-        return self
 
     # stat parameters
     power: Annotated[
@@ -1018,29 +1018,32 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
         """
         Check if the arm reward type is same as the experiment reward type.
         """
+
         prior_type = self.prior_type
         arms = self.arms
+        arm_weights = self.get_validated_arm_weights()
 
-        prior_params = {
-            PriorTypes.BETA: ("alpha_init", "beta_init"),
-            PriorTypes.NORMAL: ("mu_init", "sigma_init"),
-        }
+        if not arm_weights:
+            prior_params = {
+                PriorTypes.BETA: ("alpha_init", "beta_init"),
+                PriorTypes.NORMAL: ("mu_init", "sigma_init"),
+            }
 
-        if prior_type not in prior_params:
-            raise ValueError(
-                f"Unsupported prior type: {prior_type}. Supported types are: {', '.join(prior_params.keys())}."
-            )
+            if prior_type not in prior_params:
+                raise ValueError(
+                    f"Unsupported prior type: {prior_type}. Supported types are: {', '.join(prior_params.keys())}."
+                )
 
-        for arm in arms:
-            arm_dict = arm.model_dump()
-            missing_params = []
-            for param in prior_params[prior_type]:
-                if param not in arm_dict or arm_dict[param] is None:
-                    missing_params.append(param)
+            for arm in arms:
+                arm_dict = arm.model_dump()
+                missing_params = []
+                for param in prior_params[prior_type]:
+                    if param not in arm_dict or arm_dict[param] is None:
+                        missing_params.append(param)
 
-            if missing_params:
-                val = prior_type.value
-                raise ValueError(f"{val} prior needs {','.join(missing_params)}.")
+                if missing_params:
+                    val = prior_type.value
+                    raise ValueError(f"{val} prior needs {','.join(missing_params)}.")
         return self
 
     @model_validator(mode="after")
@@ -1130,22 +1133,10 @@ type DesignSpec = Annotated[
 class PowerRequest(ApiBaseModel):
     design_spec: DesignSpec
     table_name: Annotated[
-        str | None,
-        Field(
-            default=None,
-            description="Optional table name for ad-hoc power calculations. When provided with primary_key, "
-            "synthesizes a participant schema instead of looking up from datasource configuration. When set, the "
-            "participant_type value is ignored.",
-        ),
-    ] = None
-    primary_key: Annotated[
-        str | None,
-        Field(
-            default=None,
-            description="Optional primary key field name. Must be provided together with table_name. When set, the "
-            "participant_type value is ignored.",
-        ),
-    ] = None
+        str,
+        Field(description="Table name for ad-hoc power calculations. Fields are verified against the inspected table."),
+    ]
+    primary_key: Annotated[str, Field(description="Primary key field name.")]
 
     @model_validator(mode="after")
     def check_table_name_and_primary_key_together(self) -> Self:

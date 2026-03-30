@@ -241,18 +241,18 @@ class ExperimentsAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def list_experiments(
         self,
-        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        api_key: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> ExperimentsAPIClientResult[Literal[HTTPStatus.OK], ListExperimentsResponse, type[ListExperimentsResponse]]: ...
     @overload
     def list_experiments(
         self,
-        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        api_key: str,
         raise_if_not_default_status: Literal[False],
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> (
@@ -268,9 +268,9 @@ class ExperimentsAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def list_experiments(
         self,
-        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        api_key: str,
         raise_if_not_default_status: bool = True,
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> (
@@ -310,8 +310,8 @@ class ExperimentsAPIClient:  # noqa: RUF100,PLR0904
                     HTTPStatus.UNPROCESSABLE_CONTENT: ExperimentsAPIClientHTTPValidationError,
                 },
                 header_params={
-                    "X-API-Key": api_key,
                     "Datasource-ID": datasource_id,
+                    "X-API-Key": api_key,
                 },
                 raise_if_not_default_status=raise_if_not_default_status,
                 client_exts=client_exts,
@@ -321,18 +321,18 @@ class ExperimentsAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def get_experiment(
         self,
-        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         *,
+        experiment_id: str,
+        api_key: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> ExperimentsAPIClientResult[Literal[HTTPStatus.OK], GetExperimentResponse, type[GetExperimentResponse]]: ...
     @overload
     def get_experiment(
         self,
-        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         *,
+        experiment_id: str,
+        api_key: str,
         raise_if_not_default_status: Literal[False],
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> (
@@ -348,9 +348,9 @@ class ExperimentsAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def get_experiment(
         self,
-        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         *,
+        experiment_id: str,
+        api_key: str,
         raise_if_not_default_status: bool = True,
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> (
@@ -401,9 +401,9 @@ class ExperimentsAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def get_experiment_assignments(
         self,
-        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         *,
+        experiment_id: str,
+        api_key: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> ExperimentsAPIClientResult[
@@ -412,9 +412,9 @@ class ExperimentsAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def get_experiment_assignments(
         self,
-        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         *,
+        experiment_id: str,
+        api_key: str,
         raise_if_not_default_status: Literal[False],
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> (
@@ -432,9 +432,9 @@ class ExperimentsAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def get_experiment_assignments(
         self,
-        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         *,
+        experiment_id: str,
+        api_key: str,
         raise_if_not_default_status: bool = True,
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> (
@@ -489,18 +489,18 @@ class ExperimentsAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def get_experiment_assignments_as_csv(
         self,
-        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         *,
+        experiment_id: str,
+        api_key: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> ExperimentsAPIClientResult[Literal[HTTPStatus.OK], Any, type[Any]]: ...
     @overload
     def get_experiment_assignments_as_csv(
         self,
-        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         *,
+        experiment_id: str,
+        api_key: str,
         raise_if_not_default_status: Literal[False],
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> (
@@ -516,9 +516,9 @@ class ExperimentsAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def get_experiment_assignments_as_csv(
         self,
-        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         *,
+        experiment_id: str,
+        api_key: str,
         raise_if_not_default_status: bool = True,
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> (
@@ -569,12 +569,12 @@ class ExperimentsAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def get_assignment(
         self,
-        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        create_if_none: bool = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        max_age: int = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        participant_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         *,
+        experiment_id: str,
+        participant_id: str,
+        api_key: str,
+        create_if_none: bool = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
+        max_age: int = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> ExperimentsAPIClientResult[
@@ -583,12 +583,12 @@ class ExperimentsAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def get_assignment(
         self,
-        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        create_if_none: bool = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        max_age: int = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        participant_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         *,
+        experiment_id: str,
+        participant_id: str,
+        api_key: str,
+        create_if_none: bool = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
+        max_age: int = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> (
@@ -606,12 +606,12 @@ class ExperimentsAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def get_assignment(
         self,
-        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        create_if_none: bool = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        max_age: int = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        participant_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         *,
+        experiment_id: str,
+        participant_id: str,
+        api_key: str,
+        create_if_none: bool = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
+        max_age: int = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> (
@@ -671,13 +671,13 @@ class ExperimentsAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def get_assignment_filtered(
         self,
-        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        body: OnlineAssignmentWithFiltersRequest = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        create_if_none: bool = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        participant_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        random_state: int | None = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         *,
+        experiment_id: str,
+        participant_id: str,
+        body: OnlineAssignmentWithFiltersRequest,
+        api_key: str,
+        create_if_none: bool = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
+        random_state: int | None = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> ExperimentsAPIClientResult[
@@ -686,13 +686,13 @@ class ExperimentsAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def get_assignment_filtered(
         self,
-        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        body: OnlineAssignmentWithFiltersRequest = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        create_if_none: bool = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        participant_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        random_state: int | None = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         *,
+        experiment_id: str,
+        participant_id: str,
+        body: OnlineAssignmentWithFiltersRequest,
+        api_key: str,
+        create_if_none: bool = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
+        random_state: int | None = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> (
@@ -710,13 +710,13 @@ class ExperimentsAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def get_assignment_filtered(
         self,
-        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        body: OnlineAssignmentWithFiltersRequest = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        create_if_none: bool = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        participant_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        random_state: int | None = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         *,
+        experiment_id: str,
+        participant_id: str,
+        body: OnlineAssignmentWithFiltersRequest,
+        api_key: str,
+        create_if_none: bool = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
+        random_state: int | None = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> (
@@ -779,13 +779,13 @@ class ExperimentsAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def get_assignment_cmab(
         self,
-        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        body: CMABContextInputRequest = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        create_if_none: bool = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        participant_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        random_state: int | None = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         *,
+        experiment_id: str,
+        participant_id: str,
+        body: CMABContextInputRequest,
+        api_key: str,
+        create_if_none: bool = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
+        random_state: int | None = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> ExperimentsAPIClientResult[
@@ -794,13 +794,13 @@ class ExperimentsAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def get_assignment_cmab(
         self,
-        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        body: CMABContextInputRequest = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        create_if_none: bool = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        participant_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        random_state: int | None = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         *,
+        experiment_id: str,
+        participant_id: str,
+        body: CMABContextInputRequest,
+        api_key: str,
+        create_if_none: bool = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
+        random_state: int | None = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> (
@@ -818,13 +818,13 @@ class ExperimentsAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def get_assignment_cmab(
         self,
-        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        body: CMABContextInputRequest = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        create_if_none: bool = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        participant_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        random_state: int | None = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         *,
+        experiment_id: str,
+        participant_id: str,
+        body: CMABContextInputRequest,
+        api_key: str,
+        create_if_none: bool = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
+        random_state: int | None = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> (
@@ -887,22 +887,22 @@ class ExperimentsAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def update_bandit_arm_with_participant_outcome(
         self,
-        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        body: UpdateBanditArmOutcomeRequest = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        participant_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         *,
+        experiment_id: str,
+        participant_id: str,
+        body: UpdateBanditArmOutcomeRequest,
+        api_key: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> ExperimentsAPIClientResult[Literal[HTTPStatus.OK], ArmBandit, type[ArmBandit]]: ...
     @overload
     def update_bandit_arm_with_participant_outcome(
         self,
-        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        body: UpdateBanditArmOutcomeRequest = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        participant_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         *,
+        experiment_id: str,
+        participant_id: str,
+        body: UpdateBanditArmOutcomeRequest,
+        api_key: str,
         raise_if_not_default_status: Literal[False],
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> (
@@ -918,11 +918,11 @@ class ExperimentsAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def update_bandit_arm_with_participant_outcome(
         self,
-        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        body: UpdateBanditArmOutcomeRequest = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
-        participant_id: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         *,
+        experiment_id: str,
+        participant_id: str,
+        body: UpdateBanditArmOutcomeRequest,
+        api_key: str,
         raise_if_not_default_status: bool = True,
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> (

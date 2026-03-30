@@ -110,7 +110,9 @@ async def create_online_experiment(
 
     request = CreateExperimentRequest(design_spec=design_spec)
     created_experiment = aclient.create_experiment(datasource_id=datasource_metadata.datasource_id, body=request).data
-    aclient.commit_experiment(datasource_metadata.datasource_id, created_experiment.experiment_id)
+    aclient.commit_experiment(
+        datasource_id=datasource_metadata.datasource_id, experiment_id=created_experiment.experiment_id
+    )
     config = aclient.get_experiment_for_ui(
         datasource_id=datasource_metadata.datasource_id,
         experiment_id=created_experiment.experiment_id,
@@ -146,7 +148,9 @@ async def create_preassigned_experiment(datasource_metadata, aclient: AdminAPICl
         body=request,
         desired_n=1,
     ).data
-    aclient.commit_experiment(datasource_metadata.datasource_id, created_experiment.experiment_id)
+    aclient.commit_experiment(
+        datasource_id=datasource_metadata.datasource_id, experiment_id=created_experiment.experiment_id
+    )
     config = aclient.get_experiment_for_ui(
         datasource_id=datasource_metadata.datasource_id,
         experiment_id=created_experiment.experiment_id,
@@ -160,6 +164,7 @@ async def create_preassigned_experiment(datasource_metadata, aclient: AdminAPICl
         ("", 400, "request header is required"),
         ("a", 400, "must start with"),
         ("xat_", 403, "invalid or does not have access"),
+        ("xat_abc", 403, "invalid or does not have access"),
         ("xata", 403, "invalid or does not have access"),
         (None, 400, "request header is required"),
     ],
@@ -174,11 +179,15 @@ async def test_list_experiments_with_various_insufficient_headers(
 ):
     """Tests that listing experiments tied to a db datasource requires an API key."""
     await create_online_experiment(testing_datasource, aclient)
-    kwargs = {"datasource_id": testing_datasource.datasource_id}
-    if key is not None:
-        kwargs["api_key"] = key
+    # Special case the absent header for compatibility with the generated client's argument types.
+    if key is None:
+        response = eclient.client.get("/v1/experiments", headers={"Datasource-ID": testing_datasource.datasource_id})
+        assert response.status_code == expected_status
+        assert expected_message in response.json()["message"], response.content
+        return
+
     with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
-        eclient.list_experiments(**kwargs)
+        eclient.list_experiments(api_key=key, datasource_id=testing_datasource.datasource_id)
     assert exc.value.result.status.value == expected_status
     assert expected_message in exc.value.result.data["message"], exc.value.result.response.content
 

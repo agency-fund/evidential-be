@@ -69,6 +69,7 @@ from xngin.apiserver.routers.common_api_types import (
     ExperimentsType,
     Filter,
     FreqExperimentAnalysisResponse,
+    GetExperimentResponse,
     LikelihoodTypes,
     MABExperimentSpec,
     OnlineFrequentistExperimentSpec,
@@ -304,7 +305,7 @@ def test_create_and_get_organization(aclient: AdminAPIClient):
     """Test basic organization creation."""
     # Create an organization
     org_name = "New Organization"
-    create_response = aclient.create_organizations(CreateOrganizationRequest(name=org_name)).data
+    create_response = aclient.create_organizations(body=CreateOrganizationRequest(name=org_name)).data
 
     # Fetch the organization
     org_response = aclient.get_organization(organization_id=create_response.id).data
@@ -1478,7 +1479,7 @@ async def test_power_check_with_unbalanced_arms(testing_datasource, aclient: Adm
     """Test power check endpoint with balanced vs unbalanced arms."""
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        participant_type="test_participant_type",
+        participant_type="",
         experiment_name="test power check",
         description="test power check with unbalanced arms",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -1494,7 +1495,8 @@ async def test_power_check_with_unbalanced_arms(testing_datasource, aclient: Adm
 
     # Call the power check endpoint
     power_response = aclient.power_check(
-        datasource_id=testing_datasource.ds.id, body=PowerRequest(design_spec=design_spec)
+        datasource_id=testing_datasource.ds.id,
+        body=PowerRequest(design_spec=design_spec, table_name="dwh", primary_key="id"),
     ).data
     assert len(power_response.analyses) == 1
     metric_analysis = power_response.analyses[0]
@@ -1506,7 +1508,8 @@ async def test_power_check_with_unbalanced_arms(testing_datasource, aclient: Adm
     design_spec.arms[0].arm_weight = 20.0
     design_spec.arms[1].arm_weight = 80.0
     power_response2 = aclient.power_check(
-        datasource_id=testing_datasource.ds.id, body=PowerRequest(design_spec=design_spec)
+        datasource_id=testing_datasource.ds.id,
+        body=PowerRequest(design_spec=design_spec, table_name="dwh", primary_key="id"),
     ).data
     assert len(power_response2.analyses) == 1
     metric_analysis2 = power_response2.analyses[0]
@@ -1520,7 +1523,8 @@ async def test_power_check_with_unbalanced_arms(testing_datasource, aclient: Adm
     design_spec.arms[1].arm_weight = 50
     design_spec.arms[2].arm_weight = 40
     power_response3 = aclient.power_check(
-        datasource_id=testing_datasource.ds.id, body=PowerRequest(design_spec=design_spec)
+        datasource_id=testing_datasource.ds.id,
+        body=PowerRequest(design_spec=design_spec, table_name="dwh", primary_key="id"),
     ).data
     assert len(power_response3.analyses) == 1
     metric_analysis3 = power_response3.analyses[0]
@@ -1532,8 +1536,8 @@ async def test_power_check_with_unbalanced_arms(testing_datasource, aclient: Adm
     assert metric_analysis3.target_n == math.ceil(metric_analysis2.target_n * 0.2 / 0.10)
 
 
-async def test_power_check_with_synthesized_schema(testing_datasource, aclient: AdminAPIClient):
-    """Test power check with synthesized participant schema via table_name and primary_key."""
+async def test_power_check_validations(testing_datasource, aclient: AdminAPIClient):
+    """Test power check validations."""
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
         participant_type="ignored_when_synthesized",
@@ -1550,17 +1554,47 @@ async def test_power_check_with_synthesized_schema(testing_datasource, aclient: 
         filters=[],
     )
 
+    # First check a valid power check
+    datasource_id = testing_datasource.ds.id
     power_response = aclient.power_check(
-        datasource_id=testing_datasource.ds.id,
-        body=PowerRequest(
-            design_spec=design_spec,
-            table_name="dwh",  # Test DWH table name
-            primary_key="id",  # Test DWH primary key
-        ),
+        datasource_id=datasource_id,
+        body=PowerRequest(design_spec=design_spec, table_name="dwh", primary_key="id"),
     ).data
     assert len(power_response.analyses) == 1
     assert power_response.analyses[0].metric_spec.field_name == "current_income"
     assert power_response.analyses[0].target_n is not None
+
+    # Now check various failure scenarios
+    with expect_status_code(404, message_contains="The table '' does not exist."):
+        aclient.power_check(
+            datasource_id=datasource_id, body=PowerRequest(design_spec=design_spec, table_name="", primary_key="")
+        )
+
+    with expect_status_code(422, detail_contains="columns that do not exist in the table: no_such_primary_key"):
+        aclient.power_check(
+            datasource_id=datasource_id,
+            body=PowerRequest(design_spec=design_spec, table_name="dwh", primary_key="no_such_primary_key"),
+        )
+
+    with expect_status_code(
+        422, detail_contains="columns that do not exist in the table: bad_filter, bad_metric, bad_stratum"
+    ):
+        bad_design_spec = design_spec.model_copy(deep=True)
+        bad_design_spec.metrics = [DesignSpecMetricRequest(field_name="bad_metric", metric_pct_change=0.1)]
+        bad_design_spec.strata = [Stratum(field_name="bad_stratum")]
+        bad_design_spec.filters = [Filter(field_name="bad_filter", relation=Relation.INCLUDES, value=["value"])]
+        aclient.power_check(
+            datasource_id=datasource_id,
+            body=PowerRequest(design_spec=bad_design_spec, table_name="dwh", primary_key="id"),
+        )
+
+    with expect_status_code(422, detail_contains="Invalid metric field(s): (gender). Only boolean or numeric"):
+        bad_design_spec = design_spec.model_copy(deep=True)
+        bad_design_spec.metrics = [DesignSpecMetricRequest(field_name="gender", metric_pct_change=0.1)]
+        aclient.power_check(
+            datasource_id=datasource_id,
+            body=PowerRequest(design_spec=bad_design_spec, table_name="dwh", primary_key="id"),
+        )
 
 
 async def test_create_experiment_with_invalid_design_url(testing_datasource, aclient: AdminAPIClient):
@@ -1623,12 +1657,12 @@ async def test_create_freq_preassigned_experiment(
     experiment_id = created_experiment.experiment_id
     (arm1_id, arm2_id) = [arm.arm_id for arm in created_experiment.design_spec.arms]
 
-    # Check getting the experiment is consistent with the created experiment.
-    experiment_for_ui = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=experiment_id).data
+    # Check getting the experiment from the integration API is consistent with the created experiment.
+    experiment = eclient.get_experiment(api_key=testing_datasource.key, experiment_id=experiment_id).data
     diff = DeepDiff(
         created_experiment,
-        experiment_for_ui.config,
-        ignore_type_in_groups=[(CreateExperimentResponse, ExperimentConfig)],
+        experiment,
+        ignore_type_in_groups=[(CreateExperimentResponse, GetExperimentResponse)],
     )
     assert not diff, f"Objects differ:\n{diff.pretty()}"
 
@@ -1760,6 +1794,35 @@ async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
     for line in csv_lines[1:]:
         # CSV lines should have values for all fields
         assert len([value for value in line.split(",") if value != ""]) == 6
+
+
+def test_preassigned_experiment_assign_summary_matches_get(testing_datasource, aclient: AdminAPIClient):
+    """The assign_summary from create_experiment must match the persisted experiment summary."""
+    datasource_id = testing_datasource.ds.id
+    request_obj = make_create_preassigned_experiment_request()
+
+    created = aclient.create_experiment(
+        datasource_id=datasource_id, body=request_obj, desired_n=100, random_state=42
+    ).data
+    create_summary = created.assign_summary
+    assert create_summary is not None
+
+    aclient.commit_experiment(datasource_id=datasource_id, experiment_id=created.experiment_id)
+
+    get_summary = aclient.get_experiment_for_ui(
+        datasource_id=datasource_id, experiment_id=created.experiment_id
+    ).data.config.assign_summary
+    assert get_summary is not None
+
+    assert create_summary.sample_size == get_summary.sample_size
+    assert create_summary.balance_check == get_summary.balance_check
+    assert create_summary.arm_sizes is not None
+    assert get_summary.arm_sizes is not None
+    assert len(create_summary.arm_sizes) == len(get_summary.arm_sizes)
+    for create_arm, get_arm in zip(create_summary.arm_sizes, get_summary.arm_sizes, strict=True):
+        assert create_arm.arm.arm_id == get_arm.arm.arm_id
+        assert create_arm.arm.arm_name == get_arm.arm.arm_name
+        assert create_arm.size == get_arm.size
 
 
 def test_create_freq_online_experiment(testing_datasource, use_deterministic_random, aclient: AdminAPIClient):
@@ -1915,6 +1978,48 @@ def test_create_online_cmab_experiment(testing_datasource, aclient: AdminAPIClie
     for context in actual_design_spec.contexts:
         context.context_id = None
     assert actual_design_spec == request_obj.design_spec
+
+
+@pytest.mark.parametrize(
+    "experiment_type,reward_type,prior_type",
+    [
+        (ExperimentsType.MAB_ONLINE, LikelihoodTypes.NORMAL, PriorTypes.NORMAL),
+        (ExperimentsType.MAB_ONLINE, LikelihoodTypes.BERNOULLI, PriorTypes.BETA),
+        (ExperimentsType.CMAB_ONLINE, LikelihoodTypes.NORMAL, PriorTypes.NORMAL),
+    ],
+)
+def test_create_online_mab_and_cmab_experiment_with_arm_weights(
+    testing_datasource, aclient: AdminAPIClient, experiment_type, reward_type, prior_type
+):
+    datasource_id = testing_datasource.ds.id
+    request_obj = make_create_online_bandit_experiment_request(
+        experiment_type=experiment_type, reward_type=reward_type, prior_type=prior_type
+    )
+    # Replace mu, sigma, alpha and beta and add arm_weights instead
+    arm_weights = [25.0, 75.0]
+    for i, arm in enumerate(request_obj.design_spec.arms):
+        assert isinstance(arm, ArmBandit)
+        arm.mu_init = None
+        arm.sigma_init = None
+        arm.alpha_init = None
+        arm.beta_init = None
+        arm.arm_weight = arm_weights[i]
+
+    created_experiment = aclient.create_experiment(datasource_id=datasource_id, body=request_obj, random_state=42).data
+    parsed_experiment_id = created_experiment.experiment_id
+    assert parsed_experiment_id is not None
+    for arm in created_experiment.design_spec.arms:
+        assert isinstance(arm, ArmBandit)
+        if prior_type == PriorTypes.BETA:
+            assert arm.alpha_init is not None
+            assert arm.alpha is not None
+            assert arm.beta_init is not None
+            assert arm.beta is not None
+        elif prior_type == PriorTypes.NORMAL:
+            assert arm.mu_init is not None
+            assert arm.mu is not None
+            assert arm.sigma_init is not None
+            assert arm.covariance is not None
 
 
 async def test_update_experiment_invalid_impact(testing_experiment, aclient: AdminAPIClient):
@@ -2969,7 +3074,7 @@ async def test_delete_experiment_data_draws(
 
     # Delete draws
     aclient.delete_experiment_data(
-        datasource_id=ds_id, experiment_id=experiment_id, body=DeleteExperimentDataRequest(draws=True)
+        datasource_id=ds_id, experiment_id=experiment_id, body=DeleteExperimentDataRequest(assignments=True)
     )
 
     # Verify zero arm sizes after data deletion
