@@ -192,6 +192,71 @@ async def maybe_synthesize_participant_type(
     return updated_body
 
 
+async def fetch_fields_or_raise(
+    datasource: tables.Datasource, design_spec: BaseFrequentistDesignSpec, table_name: str, primary_key: str
+) -> dict[str, DataType]:
+    """Inspect an explicit table/primary_key experiment request and return field metadata.
+
+    Returns: Field name => datatype map.
+    Raises: LateValidationError if any fields used in the request are not found, invalid for a
+    certain use, or if filter values are invalid for the field type.
+    """
+    async with DwhSession(datasource.get_config().dwh) as dwh:
+        sa_table = await dwh.inspect_table(table_name)
+        return await fetch_fields_from_table_or_raise(sa_table, design_spec, primary_key)
+
+
+async def fetch_fields_from_table_or_raise(
+    table: Table,
+    design_spec: BaseFrequentistDesignSpec,
+    primary_key: str,
+) -> dict[str, DataType]:
+    """Helper to fetch_fields_or_raise that operates on a pre-inspected SQLAlchemy table."""
+    schema_supported_fields_map: dict[str, DataType] = {}
+    for column in table.columns.values():
+        data_type = DataType.match(column.type)
+        if data_type.is_supported():
+            schema_supported_fields_map[column.name] = data_type
+
+    referenced_fields = {
+        *[metric.field_name for metric in design_spec.metrics],
+        *[filter_.field_name for filter_ in design_spec.filters],
+        *[stratum.field_name for stratum in design_spec.strata],
+        primary_key,
+    }
+
+    referenced_fields_and_types = {
+        field_name: schema_supported_fields_map[field_name]
+        for field_name in referenced_fields
+        if field_name in schema_supported_fields_map
+    }
+
+    missing_fields = referenced_fields - referenced_fields_and_types.keys()
+    if missing_fields:
+        raise LateValidationError(
+            "The .design_spec field refers to columns that do not exist in the table: "
+            f"{', '.join(sorted(missing_fields))}"
+        )
+
+    bad_metric_types = [
+        m.field_name
+        for m in design_spec.metrics
+        if not referenced_fields_and_types[m.field_name].is_supported_as_metric()
+    ]
+    if bad_metric_types:
+        raise LateValidationError(
+            f"Invalid metric field(s): ({', '.join(bad_metric_types)}). "
+            "Only boolean or numeric data types are supported as metrics."
+        )
+
+    for filter_ in design_spec.filters:
+        field_type = referenced_fields_and_types[filter_.field_name]
+        for value in filter_.value:
+            validate_filter_value(filter_.field_name, value, field_type)
+
+    return referenced_fields_and_types
+
+
 async def create_experiment_impl(
     request: CreateExperimentRequest,
     datasource: tables.Datasource,
@@ -707,15 +772,13 @@ async def get_existing_assignment_for_participant(
     return None
 
 
-def _participant_passes_filters(experiment: tables.Experiment, properties: list[ParticipantProperty]) -> bool:
-    if not properties or experiment.experiment_type != ExperimentsType.FREQ_ONLINE.value:
+def _participant_passes_filters(experiment: tables.Experiment, participant_props: list[ParticipantProperty]) -> bool:
+    if not participant_props or experiment.experiment_type != ExperimentsType.FREQ_ONLINE.value:
         return True
 
-    datasource_config = experiment.datasource.get_config()
-    participant_type = datasource_config.find_participants(experiment.participant_type)
+    props_map = {p.field_name: p.value for p in participant_props}
     experiment_converter = ExperimentStorageConverter(experiment)
-    props_map = {p.field_name: p.value for p in properties}
-    field_map = {field.field_name: field.data_type for field in participant_type.fields}
+    field_map = experiment_converter.get_field_type_map()
     return passes_filters(props_map, field_map, experiment_converter.get_design_spec_filters())
 
 
