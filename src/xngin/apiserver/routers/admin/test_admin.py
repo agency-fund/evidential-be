@@ -3037,7 +3037,7 @@ async def test_delete_experiment_data_draws(
 
     # Delete draws
     aclient.delete_experiment_data(
-        datasource_id=ds_id, experiment_id=experiment_id, body=DeleteExperimentDataRequest(draws=True)
+        datasource_id=ds_id, experiment_id=experiment_id, body=DeleteExperimentDataRequest(assignments=True)
     )
 
     # Verify zero arm sizes after data deletion
