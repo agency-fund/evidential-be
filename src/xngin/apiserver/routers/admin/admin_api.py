@@ -37,7 +37,6 @@ from xngin.apiserver.dwh.dwh_session import (
     DwhSession,
     NoDwh,
 )
-from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.dwh.inspections import (
     build_proposed_and_drift,
     create_inspect_table_response_from_table,
@@ -131,7 +130,10 @@ from xngin.apiserver.routers.common_api_types import (
 )
 from xngin.apiserver.routers.common_enums import ExperimentState, PreloadMethod
 from xngin.apiserver.routers.experiments import experiments_common, experiments_common_csv
-from xngin.apiserver.routers.experiments.experiments_common import AbandonExperimentResult
+from xngin.apiserver.routers.experiments.experiments_common import (
+    AbandonExperimentResult,
+    fetch_fields_from_table_or_raise,
+)
 from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
 from xngin.apiserver.settings import (
     ParticipantsDef,
@@ -1892,18 +1894,10 @@ async def power_check(
         )
     dsconfig = ds.get_config()
 
-    if body.table_name is not None and body.primary_key is not None:
-        # If the power check request includes a table name and primary key, we trust the table name.
-        table_name = body.table_name
-    else:
-        # If the power check request refers to a participant type, we look up the participant type and validate it
-        # against the design spec.
-        participants_cfg = dsconfig.find_participants(design_spec.participant_type)
-        validate_schema_metrics_or_raise(design_spec, participants_cfg)
-        table_name = participants_cfg.table_name
-
     async with DwhSession(dsconfig.dwh) as dwh:
-        sa_table = await dwh.inspect_table(table_name)
+        sa_table = await dwh.inspect_table(body.table_name)
+        # Validate the fields used in the design spec are present in the table and that filter values are valid.
+        _ = await fetch_fields_from_table_or_raise(sa_table, design_spec, body.primary_key)
         metric_stats = await asyncio.to_thread(
             get_stats_on_metrics,
             dwh.session,
@@ -1924,16 +1918,6 @@ async def power_check(
             desired_n=design_spec.desired_n,
         )
     )
-
-
-def validate_schema_metrics_or_raise(design_spec: BaseFrequentistDesignSpec, schema: ParticipantsSchema):
-    metric_fields = {m.field_name for m in schema.fields if m.is_metric}
-    metrics_requested = {m.field_name for m in design_spec.metrics}
-    invalid_metrics = metrics_requested - metric_fields
-    if len(invalid_metrics) > 0:
-        raise LateValidationError(
-            f"Invalid DesignSpec metrics (check your Datasource configuration): {invalid_metrics}"
-        )
 
 
 def raise_unless_safe_hostname(dsn):
