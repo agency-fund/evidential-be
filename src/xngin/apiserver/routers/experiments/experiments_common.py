@@ -4,13 +4,12 @@ import io
 import secrets
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import cast
 
 import numpy as np
 import pandas as pd
 from fastapi import HTTPException, status
 from pandas import DataFrame
-from sqlalchemy import Select, Table, func, insert, select
+from sqlalchemy import Select, Table, func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -65,6 +64,7 @@ from xngin.apiserver.storage.storage_format_converters import ExperimentStorageC
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent
 from xngin.stats.analysis import analyze_experiment as analyze_freq_experiment
+from xngin.stats.assignment import AssignmentResult
 from xngin.stats.bandit_analysis import analyze_experiment as analyze_bandit_experiment
 from xngin.stats.bandit_sampling import choose_arm as choose_bandit_arm
 from xngin.stats.bandit_sampling import update_arm as update_bandit_arm
@@ -434,11 +434,7 @@ async def create_preassigned_experiment_impl(
         assignment_result=assignment_result,
     )
 
-    await xngin_session.flush()
-
-    assign_summary = await get_assign_summary(
-        xngin_session, (await experiment.awaitable_attrs.id), balance_check, ExperimentsType.FREQ_PREASSIGNED
-    )
+    assign_summary = convert_assignment_results_to_assign_summary(experiment.arms, assignment_result, balance_check)
     webhook_ids = [webhook.id for webhook in validated_webhooks]
     return await experiment_converter.get_create_experiment_response(assign_summary, webhook_ids)
 
@@ -1016,29 +1012,28 @@ async def update_bandit_arm_with_outcome_impl(
         raise LateValidationError(f"Invalid outcome for binary reward type: {outcome}. Must be 0 or 1.")
 
     try:
-        draw_record = await xngin_session.scalar(
-            select(tables.Draw).where(
+        result = await xngin_session.execute(
+            update(tables.Draw)
+            .where(
                 tables.Draw.participant_id == participant_id,
                 tables.Draw.experiment_id == experiment.id,
+                tables.Draw.outcome.is_(None),  # guard against double-write at DB level
             )
+            .values(observed_at=datetime.now(UTC), outcome=outcome)
+            .returning(tables.Draw.arm_id, tables.Draw.context_vals)
         )
+        draw_record = result.one_or_none()
         if draw_record is None:
             raise ExperimentsAssignmentError(
-                f"No draw record found for participant '{participant_id}' for this experiment"
+                f"Participant '{participant_id}' already has a recorded outcome for this experiment.",
             )
-        if draw_record.outcome is not None:
-            raise ExperimentsAssignmentError(
-                f"Participant '{participant_id}' already has an outcome recorded for experiment '{experiment.id}'"
-            )
-
-        draw_record.observed_at = datetime.now(UTC)
-        draw_record.outcome = outcome
 
         arm_to_update = next(arm for arm in experiment.arms if arm.id == draw_record.arm_id)
 
         # Get all prior draws for this arm, sorted by creation date
-        stmt = (
-            select(tables.Draw)
+        has_context = draw_record.context_vals is not None
+        subq = (
+            select(tables.Draw.outcome, tables.Draw.context_vals)
             .where(
                 tables.Draw.experiment_id == experiment.id,
                 tables.Draw.arm_id == draw_record.arm_id,
@@ -1046,16 +1041,17 @@ async def update_bandit_arm_with_outcome_impl(
             )
             .order_by(tables.Draw.created_at.desc())
             .limit(100)  # TODO: Make draw limiting configurable
+            .subquery()
         )
+        agg_cols = [func.array_agg(subq.c.outcome)]
+        if has_context:
+            agg_cols.append(func.array_agg(subq.c.context_vals))
+        agg_result = await xngin_session.execute(select(*agg_cols).select_from(subq))
+        agg_row = agg_result.one()
 
-        relevant_draws = await xngin_session.scalars(stmt)
-
-        outcomes = [outcome] + [cast(float, d.outcome) for d in relevant_draws]
-        context_vals = (
-            None
-            if draw_record.context_vals is None
-            else ([draw_record.context_vals] + [cast(list[float], d.context_vals) for d in relevant_draws])
-        )
+        all_prior_outcomes = agg_row[0]
+        outcomes = [outcome] + (all_prior_outcomes or [])
+        context_vals = ([draw_record.context_vals] + (agg_row[1] or [])) if has_context else None
 
         updated_parameters = update_bandit_arm(
             experiment=experiment,
@@ -1065,15 +1061,20 @@ async def update_bandit_arm_with_outcome_impl(
         )
 
         # Update the draw record and arm with the new parameters
+        update_draw_params: dict[str, float | list[float] | list[list[float]]]
         match updated_parameters:
             case UpdateTypeBeta():
-                draw_record.current_alpha = updated_parameters.alpha
-                draw_record.current_beta = updated_parameters.beta
+                update_draw_params = {
+                    "current_alpha": updated_parameters.alpha,
+                    "current_beta": updated_parameters.beta,
+                }
                 arm_to_update.alpha = updated_parameters.alpha
                 arm_to_update.beta = updated_parameters.beta
             case UpdateTypeNormal():
-                draw_record.current_mu = updated_parameters.mu
-                draw_record.current_covariance = updated_parameters.covariance
+                update_draw_params = {
+                    "current_mu": updated_parameters.mu,
+                    "current_covariance": updated_parameters.covariance,
+                }
                 arm_to_update.mu = updated_parameters.mu
                 arm_to_update.covariance = updated_parameters.covariance
             case _:
@@ -1081,7 +1082,15 @@ async def update_bandit_arm_with_outcome_impl(
                     f"Unsupported prior update type: {type(updated_parameters)} for prior type {experiment.prior_type}"
                 )
 
-        xngin_session.add(draw_record)
+        await xngin_session.execute(
+            update(tables.Draw)
+            .where(
+                tables.Draw.participant_id == participant_id,
+                tables.Draw.experiment_id == experiment.id,
+                tables.Draw.arm_id == arm_to_update.id,
+            )
+            .values(**update_draw_params)
+        )
         xngin_session.add(arm_to_update)
         await xngin_session.commit()
 
@@ -1092,6 +1101,27 @@ async def update_bandit_arm_with_outcome_impl(
         ) from e
 
     return arm_to_update
+
+
+def convert_assignment_results_to_assign_summary(
+    arms: Sequence[tables.Arm],
+    assignment_result: AssignmentResult,
+    balance_check: BalanceCheck | None,
+) -> AssignSummary:
+    """Build an AssignSummary directly from in-memory assignment results."""
+    counts = np.bincount(assignment_result.treatment_ids, minlength=len(arms))
+    arm_sizes = [
+        ArmSize(
+            arm=Arm(arm_id=arm.id, arm_name=arm.name),
+            size=int(counts[i]),
+        )
+        for i, arm in enumerate(arms)
+    ]
+    return AssignSummary(
+        balance_check=balance_check,
+        arm_sizes=arm_sizes,
+        sample_size=len(assignment_result.treatment_ids),
+    )
 
 
 async def get_assign_summary(
