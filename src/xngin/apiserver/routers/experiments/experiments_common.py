@@ -235,7 +235,8 @@ async def fetch_fields_from_table_or_raise(
     missing_fields = referenced_fields - referenced_fields_and_types.keys()
     if missing_fields:
         raise LateValidationError(
-            f"The .design_spec field refers to columns that do not exist in the table: {', '.join(sorted(missing_fields))}"
+            "The .design_spec field refers to columns that do not exist in the table: "
+            f"{', '.join(sorted(missing_fields))}"
         )
 
     bad_metric_types = [

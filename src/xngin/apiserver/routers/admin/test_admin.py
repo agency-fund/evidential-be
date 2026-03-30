@@ -1565,14 +1565,14 @@ async def test_power_check_validations(testing_datasource_with_user, aclient: Ad
             datasource_id=datasource_id, body=PowerRequest(design_spec=design_spec, table_name="", primary_key="")
         )
 
-    with expect_status_code(422, detail_contains="(check your Datasource configuration): no_such_primary_key"):
+    with expect_status_code(422, detail_contains="columns that do not exist in the table: no_such_primary_key"):
         aclient.power_check(
             datasource_id=datasource_id,
             body=PowerRequest(design_spec=design_spec, table_name="dwh", primary_key="no_such_primary_key"),
         )
 
     with expect_status_code(
-        422, detail_contains="(check your Datasource configuration): bad_filter, bad_metric, bad_stratum"
+        422, detail_contains="columns that do not exist in the table: bad_filter, bad_metric, bad_stratum"
     ):
         bad_design_spec = design_spec.model_copy(deep=True)
         bad_design_spec.metrics = [DesignSpecMetricRequest(field_name="bad_metric", metric_pct_change=0.1)]
