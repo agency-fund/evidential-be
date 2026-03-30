@@ -493,6 +493,15 @@ class Arm(Base):
     )
 
 
+class ArmStats(Base):
+    """Denormalized per-arm counters, maintained by insert/delete paths to avoid expensive scans on ArmAssignments."""
+
+    __tablename__ = "arm_stats"
+
+    arm_id: Mapped[str] = mapped_column(ForeignKey("arms.id", ondelete="CASCADE"), primary_key=True)
+    population: Mapped[int] = mapped_column(server_default="0")
+
+
 class Draw(Base):
     """
     Base model for draws.

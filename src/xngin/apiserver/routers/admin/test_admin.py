@@ -1,4 +1,5 @@
 import base64
+import collections
 import copy
 import csv
 import io
@@ -14,6 +15,7 @@ import pytest
 from deepdiff import DeepDiff
 from pydantic import HttpUrl, TypeAdapter
 from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import flags
@@ -201,6 +203,7 @@ async def fixture_testing_experiment(xngin_session: AsyncSession, testing_dataso
 
     # Add fake assignments for each arm for real participant ids in our test data.
     arm_ids = [arm.id for arm in experiment.arms]
+    arm_pop = [0] * len(arm_ids)
     # NOTE: id = 0 doesn't exist in the test data, so we'll have 1 missing participant.
     for i in range(10):
         assignment = tables.ArmAssignment(
@@ -211,6 +214,9 @@ async def fixture_testing_experiment(xngin_session: AsyncSession, testing_dataso
             strata=[],
         )
         xngin_session.add(assignment)
+        arm_pop[i % 2] += 1
+    for j, arm_id in enumerate(arm_ids):
+        xngin_session.add(tables.ArmStats(arm_id=arm_id, population=arm_pop[j]))
     await xngin_session.commit()
     await xngin_session.refresh(experiment, ["arm_assignments"])
     return experiment
@@ -228,10 +234,13 @@ async def fixture_testing_bandit_experiment(request, xngin_session: AsyncSession
     # Add fake assignments for each arm for real participant ids in our test data.
     arm_ids = [arm.id for arm in experiment.arms]
     arm_map = {arm.id: arm for arm in experiment.arms}
+    arm_id_counts = collections.Counter[str]()
     rng = np.random.default_rng(66)
 
     for i in range(num_participants):
         arm_id = arm_ids[i % 2]  # Alternate between the two arms
+        arm_id_counts.update([arm_id])
+
         outcome = rng.binomial(n=1, p=0.5)  # Randomly generate outcome
         # NB: this step hijacks the algorithm to generate realistic arm parameters
         # It's not meant to be a test of the bandit algorithm
@@ -260,6 +269,19 @@ async def fixture_testing_bandit_experiment(request, xngin_session: AsyncSession
         xngin_session.add(assignment)
         xngin_session.add(arm_map[arm_id])
 
+    # Maintain ArmStats table for newly assigned arms.
+    # When this test setup process is replaced by API calls,
+    # this can be removed.
+    for arm_id, count in arm_id_counts.items():
+        stmt = (
+            pg_insert(tables.ArmStats)
+            .values(arm_id=arm_id, population=count)
+            .on_conflict_do_update(
+                index_elements=[tables.ArmStats.arm_id],
+                set_={"population": tables.ArmStats.population + count},
+            )
+        )
+        await xngin_session.execute(stmt)
     await xngin_session.commit()
     await xngin_session.refresh(experiment, ["draws", "arms"])
     return experiment
@@ -2238,6 +2260,7 @@ async def test_analyze_experiment_with_no_assignments_in_one_arm_yet(
             )
         )
     xngin_session.add_all(arm_assignments)
+    xngin_session.add(tables.ArmStats(arm_id=assigned_arm_id, population=expected_num_assignments))
     await xngin_session.commit()
 
     # Test analysis when one arm has no assignments still has the expected ArmAnalysis for each.
@@ -2923,6 +2946,43 @@ async def test_delete_experiment_data_assignments(
     )
     assert len(list(assignments_after)) == 0
 
+    # Verify arm_stats rows are deleted
+    arm_stats_after = (
+        await xngin_session.scalars(
+            select(tables.ArmStats).where(
+                tables.ArmStats.arm_id.in_(select(tables.Arm.id).where(tables.Arm.experiment_id == experiment_id))
+            )
+        )
+    ).all()
+    assert len(arm_stats_after) == 0
+
+
+async def test_delete_experiment_cascades_arm_stats(
+    xngin_session: AsyncSession,
+    testing_experiment: tables.Experiment,
+    testing_datasource_with_user,
+    aclient: AdminAPIClient,
+):
+    """Test that deleting an entire experiment cascade-deletes its arm_stats rows."""
+    ds_id = testing_datasource_with_user.ds.id
+    experiment_id = testing_experiment.id
+    arm_ids = [arm.id for arm in testing_experiment.arms]
+
+    # Verify arm_stats exist before deletion
+    arm_stats_before = (
+        await xngin_session.scalars(select(tables.ArmStats).where(tables.ArmStats.arm_id.in_(arm_ids)))
+    ).all()
+    assert len(arm_stats_before) > 0
+
+    aclient.delete_experiment(datasource_id=ds_id, experiment_id=experiment_id)
+
+    # Verify arm_stats rows were cascade-deleted
+    xngin_session.expire_all()
+    arm_stats_after = (
+        await xngin_session.scalars(select(tables.ArmStats).where(tables.ArmStats.arm_id.in_(arm_ids)))
+    ).all()
+    assert len(arm_stats_after) == 0
+
 
 @pytest.mark.parametrize(
     "testing_bandit_experiment",
@@ -2930,28 +2990,34 @@ async def test_delete_experiment_data_assignments(
     indirect=True,
 )
 async def test_delete_experiment_data_draws(
-    xngin_session: AsyncSession, testing_bandit_experiment: tables.Experiment, testing_datasource_with_user, client
+    testing_bandit_experiment: tables.Experiment,
+    testing_datasource_with_user,
+    aclient: AdminAPIClient,
 ):
     """Test deleting draws for a bandit experiment."""
     ds_id = testing_datasource_with_user.ds.id
     experiment_id = testing_bandit_experiment.id
 
     # Verify draws exist before deletion
-    draws_before = await xngin_session.scalars(select(tables.Draw).where(tables.Draw.experiment_id == experiment_id))
-    assert len(list(draws_before)) > 0
+    experiment = aclient.get_experiment_for_ui(datasource_id=ds_id, experiment_id=experiment_id).data
+    assert experiment.config is not None
+    assert experiment.config.assign_summary is not None
+    assert experiment.config.assign_summary.arm_sizes is not None
+    assert len(experiment.config.assign_summary.arm_sizes) > 0
+    assert all(a.size > 0 for a in experiment.config.assign_summary.arm_sizes)
 
     # Delete draws
-    client.request(
-        "DELETE",
-        f"/v1/m/datasources/{ds_id}/experiments/{experiment_id}/data",
-        json=DeleteExperimentDataRequest(draws=True).model_dump(),
-        headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"},
+    aclient.delete_experiment_data(
+        datasource_id=ds_id, experiment_id=experiment_id, body=DeleteExperimentDataRequest(draws=True)
     )
 
-    # Verify draws are deleted
-    xngin_session.expire_all()
-    draws_after = await xngin_session.scalars(select(tables.Draw).where(tables.Draw.experiment_id == experiment_id))
-    assert len(list(draws_after)) == 0
+    # Verify zero arm sizes after data deletion
+    experiment = aclient.get_experiment_for_ui(datasource_id=ds_id, experiment_id=experiment_id).data
+    assert experiment.config is not None
+    assert experiment.config.assign_summary is not None
+    assert experiment.config.assign_summary.arm_sizes is not None
+    assert len(experiment.config.assign_summary.arm_sizes) > 0
+    assert all(a.size == 0 for a in experiment.config.assign_summary.arm_sizes)
 
 
 async def test_delete_experiment_data_snapshots(

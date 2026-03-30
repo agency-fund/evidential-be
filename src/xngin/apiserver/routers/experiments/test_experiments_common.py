@@ -1498,6 +1498,10 @@ async def test_get_experiment_assignments_impl(xngin_session, testing_datasource
         ),
     ]
     xngin_session.add_all(arm_assignments)
+    xngin_session.add_all([
+        tables.ArmStats(arm_id=arm1_id, population=1),
+        tables.ArmStats(arm_id=arm2_id, population=1),
+    ])
     await xngin_session.commit()
     await xngin_session.refresh(experiment, ["arms", "arm_assignments"])
 
@@ -1684,6 +1688,10 @@ async def make_experiment_with_assignments(
             raise ValueError(f"Unsupported experiment type: {experiment.experiment_type}")
 
     xngin_session.add_all(assignments)
+    xngin_session.add_all([
+        tables.ArmStats(arm_id=arm1_id, population=1),
+        tables.ArmStats(arm_id=arm2_id, population=1),
+    ])
     await xngin_session.commit()
 
     return experiment
@@ -2336,6 +2344,10 @@ async def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_
         ),
     ]
     xngin_session.add_all(arm_assignments)
+    xngin_session.add_all([
+        tables.ArmStats(arm_id=arm1_id, population=1),
+        tables.ArmStats(arm_id=arm2_id, population=1),
+    ])
     await xngin_session.commit()
     await xngin_session.refresh(experiment, ["arms", "arm_assignments"])
 
@@ -2360,6 +2372,36 @@ async def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_
         assert arm_analysis.mean_ci_lower is not None and np.isnan(arm_analysis.mean_ci_lower)
         assert arm_analysis.mean_ci_upper is not None and np.isnan(arm_analysis.mean_ci_upper)
         assert arm_analysis.num_missing_values == -1
+
+
+async def test_arm_population_counter(xngin_session, testing_datasource):
+    """Verify population is incremented on single insert and readable via get_assign_summary."""
+    experiment = await insert_experiment_and_arms(
+        xngin_session, testing_datasource.ds, experiment_type=ExperimentsType.FREQ_ONLINE
+    )
+
+    # Initially no arm_stats rows exist, so get_assign_summary returns zeros
+    summary = await get_assign_summary(xngin_session, experiment.id, None, ExperimentsType.FREQ_ONLINE)
+    assert summary.sample_size == 0
+    assert summary.arm_sizes is not None
+    assert all(a.size == 0 for a in summary.arm_sizes)
+
+    # Single assignment upserts arm_stats and increments population
+    result = await create_assignment_for_participant(
+        xngin_session=xngin_session,
+        experiment=experiment,
+        participant_id="p1",
+    )
+    assert result is not None
+
+    # Verify arm_stats row was created
+    arm_stat = await xngin_session.get(tables.ArmStats, result.arm_id)
+    assert arm_stat is not None
+    assert arm_stat.population == 1
+
+    # get_assign_summary reflects the new count
+    summary = await get_assign_summary(xngin_session, experiment.id, None, ExperimentsType.FREQ_ONLINE)
+    assert summary.sample_size == 1
 
 
 def test_experiment_sql():
