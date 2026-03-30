@@ -1791,6 +1791,35 @@ async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
         assert len([value for value in line.split(",") if value != ""]) == 6
 
 
+def test_preassigned_experiment_assign_summary_matches_get(testing_datasource_with_user, aclient: AdminAPIClient):
+    """The assign_summary from create_experiment must match the persisted experiment summary."""
+    datasource_id = testing_datasource_with_user.ds.id
+    request_obj = make_create_preassigned_experiment_request()
+
+    created = aclient.create_experiment(
+        datasource_id=datasource_id, body=request_obj, desired_n=100, random_state=42
+    ).data
+    create_summary = created.assign_summary
+    assert create_summary is not None
+
+    aclient.commit_experiment(datasource_id=datasource_id, experiment_id=created.experiment_id)
+
+    get_summary = aclient.get_experiment_for_ui(
+        datasource_id=datasource_id, experiment_id=created.experiment_id
+    ).data.config.assign_summary
+    assert get_summary is not None
+
+    assert create_summary.sample_size == get_summary.sample_size
+    assert create_summary.balance_check == get_summary.balance_check
+    assert create_summary.arm_sizes is not None
+    assert get_summary.arm_sizes is not None
+    assert len(create_summary.arm_sizes) == len(get_summary.arm_sizes)
+    for create_arm, get_arm in zip(create_summary.arm_sizes, get_summary.arm_sizes, strict=True):
+        assert create_arm.arm.arm_id == get_arm.arm.arm_id
+        assert create_arm.arm.arm_name == get_arm.arm.arm_name
+        assert create_arm.size == get_arm.size
+
+
 def test_create_freq_online_experiment(testing_datasource_with_user, use_deterministic_random, aclient: AdminAPIClient):
     datasource_id = testing_datasource_with_user.ds.id
     request_obj = make_create_freq_online_experiment_request()
@@ -3008,7 +3037,7 @@ async def test_delete_experiment_data_draws(
 
     # Delete draws
     aclient.delete_experiment_data(
-        datasource_id=ds_id, experiment_id=experiment_id, body=DeleteExperimentDataRequest(draws=True)
+        datasource_id=ds_id, experiment_id=experiment_id, body=DeleteExperimentDataRequest(assignments=True)
     )
 
     # Verify zero arm sizes after data deletion
