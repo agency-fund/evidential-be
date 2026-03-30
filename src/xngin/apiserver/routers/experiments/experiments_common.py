@@ -65,6 +65,7 @@ from xngin.apiserver.storage.storage_format_converters import ExperimentStorageC
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent
 from xngin.stats.analysis import analyze_experiment as analyze_freq_experiment
+from xngin.stats.assignment import AssignmentResult
 from xngin.stats.bandit_analysis import analyze_experiment as analyze_bandit_experiment
 from xngin.stats.bandit_sampling import choose_arm as choose_bandit_arm
 from xngin.stats.bandit_sampling import update_arm as update_bandit_arm
@@ -434,11 +435,7 @@ async def create_preassigned_experiment_impl(
         assignment_result=assignment_result,
     )
 
-    await xngin_session.flush()
-
-    assign_summary = await get_assign_summary(
-        xngin_session, (await experiment.awaitable_attrs.id), balance_check, ExperimentsType.FREQ_PREASSIGNED
-    )
+    assign_summary = convert_assignment_results_to_assign_summary(experiment.arms, assignment_result, balance_check)
     webhook_ids = [webhook.id for webhook in validated_webhooks]
     return await experiment_converter.get_create_experiment_response(assign_summary, webhook_ids)
 
@@ -1092,6 +1089,27 @@ async def update_bandit_arm_with_outcome_impl(
         ) from e
 
     return arm_to_update
+
+
+def convert_assignment_results_to_assign_summary(
+    arms: Sequence[tables.Arm],
+    assignment_result: AssignmentResult,
+    balance_check: BalanceCheck | None,
+) -> AssignSummary:
+    """Build an AssignSummary directly from in-memory assignment results."""
+    counts = np.bincount(assignment_result.treatment_ids, minlength=len(arms))
+    arm_sizes = [
+        ArmSize(
+            arm=Arm(arm_id=arm.id, arm_name=arm.name),
+            size=int(counts[i]),
+        )
+        for i, arm in enumerate(arms)
+    ]
+    return AssignSummary(
+        balance_check=balance_check,
+        arm_sizes=arm_sizes,
+        sample_size=len(assignment_result.treatment_ids),
+    )
 
 
 async def get_assign_summary(
