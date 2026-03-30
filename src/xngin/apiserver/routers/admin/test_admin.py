@@ -1820,7 +1820,7 @@ def test_preassigned_experiment_assign_summary_matches_get(testing_datasource_wi
         assert create_arm.size == get_arm.size
 
 
-def test_create_freq_online_experiment(testing_datasource_with_user, use_deterministic_random, aclient: AdminAPIClient):
+def test_create_freq_online_experiment(testing_datasource_with_user, aclient: AdminAPIClient):
     datasource_id = testing_datasource_with_user.ds.id
     request_obj = make_create_freq_online_experiment_request()
 
@@ -3241,7 +3241,7 @@ async def test_list_participant_types_excludes_hidden(
 
 
 async def test_create_experiment_with_table_name_and_primary_key(
-    xngin_session: AsyncSession, testing_datasource_with_user, use_deterministic_random, aclient: AdminAPIClient
+    xngin_session: AsyncSession, testing_datasource_with_user, aclient: AdminAPIClient
 ):
     """Test creating an experiment with table_name and primary_key instead of participant_type."""
     ds_id = testing_datasource_with_user.ds.id
