@@ -30,19 +30,19 @@
 | src/xngin/apiserver/routers/admin/admin\_api.py                      |      622 |       49 |     92% |256, 355, 367, 378, 382, 391, 580, 805, 809, 868-874, 1057, 1094, 1211-1289, 1336, 1338-1341, 1381, 1503, 1508, 1568, 1581-1582, 1607, 1886, 1892 |
 | src/xngin/apiserver/routers/admin/admin\_api\_converters.py          |       62 |        9 |     85% |29, 73-74, 84, 110-111, 118, 123-124 |
 | src/xngin/apiserver/routers/admin/admin\_api\_types.py               |      125 |        2 |     98% |    39, 41 |
-| src/xngin/apiserver/routers/admin/test\_admin.py                     |     1415 |        1 |     99% |       384 |
+| src/xngin/apiserver/routers/admin/test\_admin.py                     |     1442 |        1 |     99% |       384 |
 | src/xngin/apiserver/routers/auth/auth\_api.py                        |       61 |       33 |     46% |33-36, 66-77, 83-107, 112-149 |
 | src/xngin/apiserver/routers/auth/auth\_dependencies.py               |      137 |       32 |     77% |99, 112-118, 125-152, 249, 257, 270-272 |
 | src/xngin/apiserver/routers/auth/test\_auth\_dependencies.py         |      159 |        7 |     96% | 48, 55-61 |
 | src/xngin/apiserver/routers/auth/token\_cryptor.py                   |       43 |        4 |     91% |16-17, 53-54 |
-| src/xngin/apiserver/routers/common\_api\_types.py                    |      313 |       27 |     91% |122, 148, 150, 426, 428, 430, 487, 768-775, 813, 1030, 1039, 1042-1043, 1053, 1055, 1065, 1067, 1141, 1296, 1457, 1459-1461 |
+| src/xngin/apiserver/routers/common\_api\_types.py                    |      315 |       27 |     91% |122, 148, 150, 426, 428, 430, 487, 768-775, 813, 1033, 1042, 1045-1046, 1056, 1058, 1068, 1070, 1144, 1299, 1460, 1462-1464 |
 | src/xngin/apiserver/routers/common\_enums.py                         |      201 |       40 |     80% |73, 75, 98-107, 112, 149-165, 187-188, 207-211, 252, 287, 303-306, 315, 354-355, 359, 391 |
 | src/xngin/apiserver/routers/experiments/dependencies.py              |       61 |        3 |     95% |39, 60, 67 |
 | src/xngin/apiserver/routers/experiments/experiments\_common.py       |      433 |       34 |     92% |144, 167, 275, 282, 284, 302, 324, 349-350, 376, 456, 470, 497, 509, 677-678, 752-753, 774, 878, 882, 886, 943-944, 947, 986, 1004, 1012, 1027, 1080-1081, 1097-1099 |
 | src/xngin/apiserver/routers/experiments/experiments\_common\_csv.py  |       39 |        2 |     95% |     81-82 |
 | src/xngin/apiserver/routers/experiments/property\_filters.py         |       96 |        8 |     92% |25, 28, 32, 95-96, 148, 160-161 |
 | src/xngin/apiserver/routers/experiments/test\_experiments\_api.py    |      285 |        1 |     99% |        58 |
-| src/xngin/apiserver/routers/experiments/test\_experiments\_common.py |     1000 |       11 |     99% |194-195, 1132-1134, 1385-1387, 1687-1688, 2141 |
+| src/xngin/apiserver/routers/experiments/test\_experiments\_common.py |     1045 |       11 |     99% |194-195, 1132-1134, 1475-1477, 1777-1778, 2231 |
 | src/xngin/apiserver/routers/experiments/test\_property\_filters.py   |       41 |        1 |     98% |        24 |
 | src/xngin/apiserver/routers/healthchecks\_api.py                     |       16 |        2 |     88% |     26-27 |
 | src/xngin/apiserver/routers/test\_assignment\_adapters.py            |      198 |        1 |     99% |       102 |
@@ -52,7 +52,7 @@
 | src/xngin/apiserver/sql/queries.py                                   |       38 |       10 |     74% | 22, 60-69 |
 | src/xngin/apiserver/sqla/tables.py                                   |      306 |        3 |     99% |155, 354, 358 |
 | src/xngin/apiserver/storage/bootstrap.py                             |       41 |        1 |     98% |        58 |
-| src/xngin/apiserver/storage/storage\_format\_converters.py           |      157 |        8 |     95% |54-56, 272, 307, 447, 486-487 |
+| src/xngin/apiserver/storage/storage\_format\_converters.py           |      169 |        8 |     95% |57-59, 275, 311, 451, 508-509 |
 | src/xngin/apiserver/testing/admin\_api\_client.py                    |      186 |       14 |     92% |158-161, 206, 223-230, 255-259, 315, 1655, 2601, 3819 |
 | src/xngin/apiserver/testing/assertions.py                            |        7 |        1 |     86% |         7 |
 | src/xngin/apiserver/testing/experiments\_api\_client.py              |       96 |       11 |     89% |164, 181-188, 202-203, 213-217, 224, 535 |
@@ -68,6 +68,7 @@
 | src/xngin/stats/balance.py                                           |       67 |        2 |     97% |  110, 138 |
 | src/xngin/stats/bandit\_analysis.py                                  |       75 |        5 |     93% |135, 137, 139, 202-203 |
 | src/xngin/stats/bandit\_sampling.py                                  |       73 |        7 |     90% |162, 186, 191, 214, 238, 240, 272 |
+| src/xngin/stats/bandit\_weights\_to\_prior.py                        |       50 |        2 |     96% |   75, 138 |
 | src/xngin/stats/power.py                                             |      118 |        5 |     96% |71, 74, 118-119, 195 |
 | src/xngin/xsecrets/chafernet.py                                      |       52 |        1 |     98% |        92 |
 | src/xngin/xsecrets/gcp\_kms\_provider.py                             |       70 |       28 |     60% |64-79, 86-87, 104-108, 111, 115-123, 127-134 |
@@ -75,9 +76,9 @@
 | src/xngin/xsecrets/secretservice.py                                  |       60 |        4 |     93% |41-42, 100, 122 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                       |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                           |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                            | **11168** |  **731** | **93%** |           |
+| **TOTAL**                                                            | **11329** |  **733** | **94%** |           |
 
-63 files skipped due to complete coverage.
+64 files skipped due to complete coverage.
 
 
 ## Setup coverage badge
