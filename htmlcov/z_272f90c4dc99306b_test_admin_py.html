@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_71f21e912c1997f1_auth_api_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-30 19:34 +0000
+            created at 2026-03-30 22:30 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -387,7 +387,7 @@
     <p class="pln"><span class="n"><a id="t305" href="#t305">305</a></span><span class="t">    <span class="str">"""Test basic organization creation."""</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t306" href="#t306">306</a></span><span class="t">    <span class="com"># Create an organization</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t307" href="#t307">307</a></span><span class="t">    <span class="nam">org_name</span> <span class="op">=</span> <span class="str">"New Organization"</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t308" href="#t308">308</a></span><span class="t">    <span class="nam">create_response</span> <span class="op">=</span> <span class="nam">aclient</span><span class="op">.</span><span class="nam">create_organizations</span><span class="op">(</span><span class="nam">CreateOrganizationRequest</span><span class="op">(</span><span class="nam">name</span><span class="op">=</span><span class="nam">org_name</span><span class="op">)</span><span class="op">)</span><span class="op">.</span><span class="nam">data</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t308" href="#t308">308</a></span><span class="t">    <span class="nam">create_response</span> <span class="op">=</span> <span class="nam">aclient</span><span class="op">.</span><span class="nam">create_organizations</span><span class="op">(</span><span class="nam">body</span><span class="op">=</span><span class="nam">CreateOrganizationRequest</span><span class="op">(</span><span class="nam">name</span><span class="op">=</span><span class="nam">org_name</span><span class="op">)</span><span class="op">)</span><span class="op">.</span><span class="nam">data</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t309" href="#t309">309</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t310" href="#t310">310</a></span><span class="t">    <span class="com"># Fetch the organization</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t311" href="#t311">311</a></span><span class="t">    <span class="nam">org_response</span> <span class="op">=</span> <span class="nam">aclient</span><span class="op">.</span><span class="nam">get_organization</span><span class="op">(</span><span class="nam">organization_id</span><span class="op">=</span><span class="nam">create_response</span><span class="op">.</span><span class="nam">id</span><span class="op">)</span><span class="op">.</span><span class="nam">data</span>&nbsp;</span><span class="r"></span></p>
@@ -3677,7 +3677,7 @@
             <a class="nav" href="z_71f21e912c1997f1_auth_api_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.1">coverage.py v7.13.1</a>,
-            created at 2026-03-30 19:34 +0000
+            created at 2026-03-30 22:30 +0000
         </p>
     </div>
 </footer>
