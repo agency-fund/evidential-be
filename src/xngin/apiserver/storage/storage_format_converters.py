@@ -228,6 +228,10 @@ class ExperimentStorageConverter:
                 strata.append(api_stratum)
         return strata
 
+    def get_field_type_map(self) -> dict[str, DataType]:
+        """Return a map of all the field names used in the experiment to their respective data types."""
+        return {ef.field_name: DataType(ef.data_type) for ef in self.experiment.experiment_fields}
+
     async def get_design_spec(self) -> capi.DesignSpec:
         """Converts stored experiment metadata to a DesignSpec object."""
         base_experiment_dict = {

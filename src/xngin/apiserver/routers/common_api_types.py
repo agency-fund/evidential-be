@@ -628,6 +628,61 @@ class MetricPowerAnalysis(ApiBaseModel):
     ] = None
 
 
+class ClusterMetricPowerAnalysis(MetricPowerAnalysis):
+    """
+    Power analysis results for cluster-randomized designs.
+
+    Extends MetricPowerAnalysis with cluster-specific information
+    for designs where randomization occurs at the cluster level
+    (e.g., schools, hospitals, clinics) rather than individual level.
+
+    Note: Cluster-specific fields will be None if the power analysis failed
+    (e.g., missing baseline, zero variance, insufficient data).
+    """
+
+    # Design parameters (always present - user provides these)
+    icc: Annotated[
+        float,
+        Field(description="Intracluster correlation coefficient used in calculation"),
+    ]
+
+    avg_cluster_size: Annotated[
+        float,
+        Field(description="Average number of individuals per cluster"),
+    ]
+
+    cv: Annotated[
+        float,
+        Field(description="Coefficient of variation in cluster sizes (0 = equal sizes)"),
+    ] = 0.0
+
+    # Results (None if analysis failed)
+    num_clusters_total: Annotated[
+        int | None,
+        Field(description="Total number of clusters needed across all arms"),
+    ] = None
+
+    clusters_per_arm: Annotated[
+        list[int] | None,
+        Field(description="Number of clusters needed for each arm (one entry per arm)"),
+    ] = None
+
+    n_per_arm: Annotated[
+        list[int] | None,
+        Field(description="Number of participants for each arm (one entry per arm)"),
+    ] = None
+
+    design_effect: Annotated[
+        float | None,
+        Field(description="Design effect (DEFF) - clustering penalty multiplier"),
+    ] = None
+
+    effective_sample_size: Annotated[
+        int | None,
+        Field(description="Effective sample size accounting for clustering (total_n / DEFF)"),
+    ] = None
+
+
 class GetStrataResponseElement(ApiBaseModel):
     """Describes a stratification variable."""
 
@@ -1078,22 +1133,10 @@ type DesignSpec = Annotated[
 class PowerRequest(ApiBaseModel):
     design_spec: DesignSpec
     table_name: Annotated[
-        str | None,
-        Field(
-            default=None,
-            description="Optional table name for ad-hoc power calculations. When provided with primary_key, "
-            "synthesizes a participant schema instead of looking up from datasource configuration. When set, the "
-            "participant_type value is ignored.",
-        ),
-    ] = None
-    primary_key: Annotated[
-        str | None,
-        Field(
-            default=None,
-            description="Optional primary key field name. Must be provided together with table_name. When set, the "
-            "participant_type value is ignored.",
-        ),
-    ] = None
+        str,
+        Field(description="Table name for ad-hoc power calculations. Fields are verified against the inspected table."),
+    ]
+    primary_key: Annotated[str, Field(description="Primary key field name.")]
 
     @model_validator(mode="after")
     def check_table_name_and_primary_key_together(self) -> Self:
