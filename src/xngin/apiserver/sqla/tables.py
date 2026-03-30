@@ -529,6 +529,15 @@ class Draw(Base):
     arm: Mapped[Arm] = relationship("Arm", back_populates="draws", lazy="joined")
     experiment: Mapped[Experiment] = relationship("Experiment", back_populates="draws", lazy="joined")
 
+    __table_args__ = (
+        Index(
+            "ix_draws_arm_id_created_at",
+            arm_id,
+            created_at.desc(),
+            postgresql_where=sqlalchemy.text("outcome IS NOT NULL"),
+        ),
+    )
+
 
 class Context(Base):
     """
