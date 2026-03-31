@@ -42,7 +42,7 @@
 | src/xngin/apiserver/routers/experiments/experiments\_common\_csv.py  |       39 |        2 |     95% |     81-82 |
 | src/xngin/apiserver/routers/experiments/property\_filters.py         |       96 |        8 |     92% |25, 28, 32, 95-96, 148, 160-161 |
 | src/xngin/apiserver/routers/experiments/test\_experiments\_api.py    |      287 |        1 |     99% |        58 |
-| src/xngin/apiserver/routers/experiments/test\_experiments\_common.py |     1045 |       11 |     99% |194-195, 1132-1134, 1475-1477, 1777-1778, 2231 |
+| src/xngin/apiserver/routers/experiments/test\_experiments\_common.py |     1045 |       11 |     99% |194-195, 1125-1127, 1468-1470, 1770-1771, 2224 |
 | src/xngin/apiserver/routers/experiments/test\_property\_filters.py   |       41 |        1 |     98% |        24 |
 | src/xngin/apiserver/routers/healthchecks\_api.py                     |       16 |        2 |     88% |     26-27 |
 | src/xngin/apiserver/routers/test\_assignment\_adapters.py            |      198 |        1 |     99% |       102 |
