@@ -17,7 +17,7 @@ MAX_LENGTH_OF_NAME_VALUE = 100
 MAX_LENGTH_OF_PARTICIPANT_ID_VALUE = 64
 
 # Maximum number of arms allowed in an experiment.
-MAX_NUMBER_OF_ARMS = 10
+MAX_NUMBER_OF_ARMS = 20
 
 # Maximum number of contexts allowed for bandits.
 MAX_NUMBER_OF_CONTEXTS = 10
