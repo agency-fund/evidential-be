@@ -22,6 +22,9 @@ from xngin.apiserver.routers.common_enums import (
     StopAssignmentReason,
 )
 from xngin.apiserver.sqla import tables
+from xngin.stats.bandit_weights_to_prior import (
+    convert_arm_weights_to_prior_params,
+)
 
 
 class ExperimentStorageConverter:
@@ -288,6 +291,7 @@ class ExperimentStorageConverter:
                         "arm_id": arm.id,
                         "arm_name": arm.name,
                         "arm_description": arm.description,
+                        "arm_weight": arm.arm_weight,
                         "mu_init": arm.mu_init,
                         "sigma_init": arm.sigma_init,
                         "alpha_init": arm.alpha_init,
@@ -448,9 +452,8 @@ class ExperimentStorageConverter:
                     raise ValueError("Contexts are required for CMAB experiments.")
 
                 # Set bandit fields
-                context_len = 1
+                context_len = len(design_spec.contexts) if design_spec.contexts else 1
                 if design_spec.contexts:
-                    context_len = len(design_spec.contexts)
                     experiment.contexts = [
                         tables.Context(
                             name=context.context_name,
@@ -464,10 +467,29 @@ class ExperimentStorageConverter:
                 experiment.prior_type = design_spec.prior_type.value
                 experiment.n_trials = n_trials
 
+                arm_weights = design_spec.get_validated_arm_weights()
+                if arm_weights:
+                    # TODO: this method can be expensive and should be on a thread.
+                    param1, param2 = convert_arm_weights_to_prior_params(
+                        arm_weights=arm_weights,
+                        prior_type=design_spec.prior_type,
+                        num_contexts=context_len,
+                    )
+                    match design_spec.prior_type:
+                        case capi.PriorTypes.BETA:
+                            for arm, alpha, beta in zip(design_spec.arms, param1, param2, strict=True):
+                                arm.alpha_init = alpha
+                                arm.beta_init = beta
+                        case capi.PriorTypes.NORMAL:
+                            for arm, mu, sigma in zip(design_spec.arms, param1, param2, strict=True):
+                                arm.mu_init = mu
+                                arm.sigma_init = sigma
+
                 experiment.arms = [
                     tables.Arm(
                         name=arm.arm_name,
                         description=arm.arm_description,
+                        arm_weight=arm.arm_weight,
                         position=i,
                         experiment_id=experiment.id,
                         organization_id=organization_id,

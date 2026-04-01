@@ -1819,12 +1819,13 @@ async def delete_experiment_data(
     experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
 
     if body.assignments:
-        await session.execute(delete(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment.id))
-
-    if body.draws:
-        await session.execute(delete(tables.Draw).where(tables.Draw.experiment_id == experiment.id))
-
-    if body.draws or body.assignments:
+        etype = ExperimentsType(experiment.experiment_type)
+        if etype.is_freq():
+            await session.execute(
+                delete(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == experiment.id)
+            )
+        else:
+            await session.execute(delete(tables.Draw).where(tables.Draw.experiment_id == experiment.id))
         await session.execute(
             delete(tables.ArmStats).where(
                 tables.ArmStats.arm_id.in_(select(tables.Arm.id).where(tables.Arm.experiment_id == experiment.id))

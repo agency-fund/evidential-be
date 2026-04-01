@@ -305,7 +305,7 @@ def test_create_and_get_organization(aclient: AdminAPIClient):
     """Test basic organization creation."""
     # Create an organization
     org_name = "New Organization"
-    create_response = aclient.create_organizations(CreateOrganizationRequest(name=org_name)).data
+    create_response = aclient.create_organizations(body=CreateOrganizationRequest(name=org_name)).data
 
     # Fetch the organization
     org_response = aclient.get_organization(organization_id=create_response.id).data
@@ -1682,7 +1682,6 @@ async def test_create_freq_preassigned_experiment(
 
 async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
     testing_datasource_with_user,
-    use_deterministic_random,
     aclient: AdminAPIClient,
 ):
     datasource_id = testing_datasource_with_user.ds.id
@@ -1792,7 +1791,36 @@ async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
         assert len([value for value in line.split(",") if value != ""]) == 6
 
 
-def test_create_freq_online_experiment(testing_datasource_with_user, use_deterministic_random, aclient: AdminAPIClient):
+def test_preassigned_experiment_assign_summary_matches_get(testing_datasource_with_user, aclient: AdminAPIClient):
+    """The assign_summary from create_experiment must match the persisted experiment summary."""
+    datasource_id = testing_datasource_with_user.ds.id
+    request_obj = make_create_preassigned_experiment_request()
+
+    created = aclient.create_experiment(
+        datasource_id=datasource_id, body=request_obj, desired_n=100, random_state=42
+    ).data
+    create_summary = created.assign_summary
+    assert create_summary is not None
+
+    aclient.commit_experiment(datasource_id=datasource_id, experiment_id=created.experiment_id)
+
+    get_summary = aclient.get_experiment_for_ui(
+        datasource_id=datasource_id, experiment_id=created.experiment_id
+    ).data.config.assign_summary
+    assert get_summary is not None
+
+    assert create_summary.sample_size == get_summary.sample_size
+    assert create_summary.balance_check == get_summary.balance_check
+    assert create_summary.arm_sizes is not None
+    assert get_summary.arm_sizes is not None
+    assert len(create_summary.arm_sizes) == len(get_summary.arm_sizes)
+    for create_arm, get_arm in zip(create_summary.arm_sizes, get_summary.arm_sizes, strict=True):
+        assert create_arm.arm.arm_id == get_arm.arm.arm_id
+        assert create_arm.arm.arm_name == get_arm.arm.arm_name
+        assert create_arm.size == get_arm.size
+
+
+def test_create_freq_online_experiment(testing_datasource_with_user, aclient: AdminAPIClient):
     datasource_id = testing_datasource_with_user.ds.id
     request_obj = make_create_freq_online_experiment_request()
 
@@ -1945,6 +1973,48 @@ def test_create_online_cmab_experiment(testing_datasource_with_user, aclient: Ad
     for context in actual_design_spec.contexts:
         context.context_id = None
     assert actual_design_spec == request_obj.design_spec
+
+
+@pytest.mark.parametrize(
+    "experiment_type,reward_type,prior_type",
+    [
+        (ExperimentsType.MAB_ONLINE, LikelihoodTypes.NORMAL, PriorTypes.NORMAL),
+        (ExperimentsType.MAB_ONLINE, LikelihoodTypes.BERNOULLI, PriorTypes.BETA),
+        (ExperimentsType.CMAB_ONLINE, LikelihoodTypes.NORMAL, PriorTypes.NORMAL),
+    ],
+)
+def test_create_online_mab_and_cmab_experiment_with_arm_weights(
+    testing_datasource_with_user, aclient: AdminAPIClient, experiment_type, reward_type, prior_type
+):
+    datasource_id = testing_datasource_with_user.ds.id
+    request_obj = make_create_online_bandit_experiment_request(
+        experiment_type=experiment_type, reward_type=reward_type, prior_type=prior_type
+    )
+    # Replace mu, sigma, alpha and beta and add arm_weights instead
+    arm_weights = [25.0, 75.0]
+    for i, arm in enumerate(request_obj.design_spec.arms):
+        assert isinstance(arm, ArmBandit)
+        arm.mu_init = None
+        arm.sigma_init = None
+        arm.alpha_init = None
+        arm.beta_init = None
+        arm.arm_weight = arm_weights[i]
+
+    created_experiment = aclient.create_experiment(datasource_id=datasource_id, body=request_obj, random_state=42).data
+    parsed_experiment_id = created_experiment.experiment_id
+    assert parsed_experiment_id is not None
+    for arm in created_experiment.design_spec.arms:
+        assert isinstance(arm, ArmBandit)
+        if prior_type == PriorTypes.BETA:
+            assert arm.alpha_init is not None
+            assert arm.alpha is not None
+            assert arm.beta_init is not None
+            assert arm.beta is not None
+        elif prior_type == PriorTypes.NORMAL:
+            assert arm.mu_init is not None
+            assert arm.mu is not None
+            assert arm.sigma_init is not None
+            assert arm.covariance is not None
 
 
 async def test_update_experiment_invalid_impact(testing_experiment, aclient: AdminAPIClient):
@@ -3015,7 +3085,7 @@ async def test_delete_experiment_data_draws(
 
     # Delete draws
     aclient.delete_experiment_data(
-        datasource_id=ds_id, experiment_id=experiment_id, body=DeleteExperimentDataRequest(draws=True)
+        datasource_id=ds_id, experiment_id=experiment_id, body=DeleteExperimentDataRequest(assignments=True)
     )
 
     # Verify zero arm sizes after data deletion
@@ -3177,7 +3247,7 @@ async def test_list_participant_types_excludes_hidden(
 
 
 async def test_create_experiment_with_table_name_and_primary_key(
-    xngin_session: AsyncSession, testing_datasource_with_user, use_deterministic_random, aclient: AdminAPIClient
+    xngin_session: AsyncSession, testing_datasource_with_user, aclient: AdminAPIClient
 ):
     """Test creating an experiment with table_name and primary_key instead of participant_type."""
     ds_id = testing_datasource_with_user.ds.id
@@ -3232,7 +3302,7 @@ def test_create_experiment_primary_key_requires_table_name(testing_datasource_wi
 
 
 async def test_create_preassigned_experiment_with_table_name_and_primary_key(
-    xngin_session: AsyncSession, testing_datasource_with_user, use_deterministic_random, aclient: AdminAPIClient
+    xngin_session: AsyncSession, testing_datasource_with_user, aclient: AdminAPIClient
 ):
     """Test creating a preassigned experiment with table_name and primary_key."""
     ds_id = testing_datasource_with_user.ds.id

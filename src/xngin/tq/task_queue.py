@@ -1,5 +1,6 @@
 """Task queue implementation using Postgres."""
 
+import os
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -8,6 +9,8 @@ from typing import Any, Protocol
 import psycopg
 from loguru import logger
 from psycopg.rows import dict_row
+
+TQ_DB_APPLICATION_NAME = f"tq-{os.getpid()}"
 
 
 @dataclass
@@ -211,7 +214,11 @@ class TaskQueue:
         # Main task handling loop: Handle any new tasks, then wait for NOTIFY or polling_interval, repeat.
         while True:
             try:
-                with psycopg.connect(self.dsn, autocommit=False) as conn:
+                with psycopg.connect(
+                    self.dsn,
+                    autocommit=False,
+                    application_name=TQ_DB_APPLICATION_NAME,
+                ) as conn:
                     self._setup_notifications(conn)
 
                     task = self._fetch_task(conn)

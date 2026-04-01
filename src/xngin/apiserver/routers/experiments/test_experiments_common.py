@@ -347,7 +347,6 @@ async def test_create_preassigned_experiment_impl(
     xngin_session: AsyncSession,
     testing_datasource,
     sample_table,
-    use_deterministic_random,
     reorder_arms: bool,
 ):
     """Test implementation of creating a preassigned experiment."""
@@ -512,7 +511,6 @@ async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
     xngin_session: AsyncSession,
     testing_datasource,
     sample_table,
-    use_deterministic_random,
 ):
     """Test that create_preassigned_experiment_impl raises LateValidationError for duplicate participant IDs."""
     request = make_create_preassigned_experiment_request()
@@ -551,7 +549,6 @@ async def test_create_preassigned_experiment_impl_with_unbalanced_arms(
     xngin_session: AsyncSession,
     testing_datasource,
     sample_table,
-    use_deterministic_random,
 ):
     participants = make_sample_data(n=100)
     request = make_create_preassigned_experiment_request()
@@ -617,7 +614,6 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
     xngin_session: AsyncSession,
     testing_datasource,
     sample_table,
-    use_deterministic_random,
 ):
     participants = make_sample_data(n=150)
     request = make_create_preassigned_experiment_request()
@@ -689,7 +685,6 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
 async def test_create_freq_online_experiment_impl_experiments_fields_are_correctly_stored(
     xngin_session: AsyncSession,
     testing_datasource,
-    use_deterministic_random,
 ):
     """Test creating a freq online experiment with filters, metrics, and strata are correctly stored."""
     experiment_request = CreateExperimentRequest(
@@ -1208,21 +1203,21 @@ async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_dat
         assert context.context_id is not None
 
     # Verify arms were created in database
-    arms = (await xngin_session.scalars(select(tables.Arm).where(tables.Arm.experiment_id == experiment.id))).all()
-    assert len(arms) == 2
-    arm_ids = {arm.id for arm in arms}
+    db_experiment = await get_experiment_preloaded(xngin_session, response.experiment_id)
+
+    db_arms = db_experiment.arms
+    assert len(db_arms) == 2
+    arm_ids = {arm.id for arm in db_arms}
     expected_arm_ids = {arm.arm_id for arm in response.design_spec.arms}
     assert arm_ids == expected_arm_ids
     # Verify arm positions were stored correctly
-    for i, (req_arm, db_arm) in enumerate(zip(request.design_spec.arms, arms, strict=True), start=1):
+    for i, (req_arm, db_arm) in enumerate(zip(request.design_spec.arms, db_arms, strict=True), start=1):
         assert db_arm.position == i
         assert req_arm.arm_name == db_arm.name
         assert req_arm.arm_weight is None
 
     # Verify contexts were created in database
-    contexts = (
-        await xngin_session.scalars(select(tables.Context).where(tables.Context.experiment_id == experiment.id))
-    ).all()
+    contexts = db_experiment.contexts
     assert len(contexts) == 2
     context_ids = {context.id for context in contexts}
     expected_context_ids = {context.context_id for context in response.design_spec.contexts}
@@ -1235,8 +1230,100 @@ async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_dat
     assert len(assignments) == 0
 
 
+@pytest.mark.parametrize(
+    "experiment_type,reward_type,prior_type",
+    [
+        (ExperimentsType.MAB_ONLINE, LikelihoodTypes.NORMAL, PriorTypes.NORMAL),
+        (ExperimentsType.MAB_ONLINE, LikelihoodTypes.BERNOULLI, PriorTypes.BETA),
+        (ExperimentsType.CMAB_ONLINE, LikelihoodTypes.NORMAL, PriorTypes.NORMAL),
+    ],
+)
+async def test_create_experiment_impl_for_bandit_with_arm_weights(
+    xngin_session, testing_datasource, experiment_type, reward_type, prior_type
+):
+    """Test implementation of creating an online experiment."""
+    request = make_create_online_bandit_experiment_request(
+        experiment_type=experiment_type, reward_type=reward_type, prior_type=prior_type
+    )
+    for i, arm in enumerate(request.design_spec.arms):
+        assert isinstance(arm, ArmBandit)
+        arm.arm_weight = 100 * (i + 1) / (len(request.design_spec.arms) + 1)
+        arm.mu_init = None
+        arm.sigma_init = None
+        arm.alpha_init = None
+        arm.beta_init = None
+
+    response = await create_bandit_online_experiment_impl(
+        request=request.model_copy(deep=True),
+        desired_n=None,
+        xngin_session=xngin_session,
+        organization_id=testing_datasource.org.id,
+        datasource_id=testing_datasource.ds.id,
+        validated_webhooks=[],
+    )
+    # Verify response
+    assert response.datasource_id == testing_datasource.ds.id
+    assert response.state == ExperimentState.ASSIGNED
+
+    # Verify design_spec
+    if experiment_type == ExperimentsType.MAB_ONLINE:
+        assert isinstance(response.design_spec, MABExperimentSpec)
+    else:
+        assert isinstance(response.design_spec, CMABExperimentSpec)
+    if experiment_type == ExperimentsType.CMAB_ONLINE:
+        assert (
+            response.design_spec.arms[0].mu_init is not None
+            and response.design_spec.arms[0].mu is not None
+            and len(response.design_spec.arms[0].mu) == 2
+        )
+        assert response.design_spec.arms[0].sigma_init is not None
+        assert (
+            response.design_spec.arms[0].covariance is not None
+            and np.array(response.design_spec.arms[0].covariance).size == 4
+        )
+        assert (
+            response.design_spec.arms[1].mu_init is not None
+            and response.design_spec.arms[1].mu is not None
+            and len(response.design_spec.arms[1].mu) == 2
+        )
+        assert response.design_spec.arms[1].sigma_init is not None
+        assert (
+            response.design_spec.arms[1].covariance is not None
+            and np.array(response.design_spec.arms[1].covariance).size == 4
+        )
+    elif prior_type == PriorTypes.NORMAL:
+        assert response.design_spec.arms[0].mu_init is not None and response.design_spec.arms[0].mu is not None
+        assert (
+            response.design_spec.arms[0].sigma_init is not None and response.design_spec.arms[0].covariance is not None
+        )
+        assert response.design_spec.arms[1].mu_init is not None and response.design_spec.arms[1].mu is not None
+        assert (
+            response.design_spec.arms[1].sigma_init is not None and response.design_spec.arms[1].covariance is not None
+        )
+    elif prior_type == PriorTypes.BETA:
+        assert response.design_spec.arms[0].alpha_init is not None and response.design_spec.arms[0].alpha is not None
+        assert response.design_spec.arms[0].beta_init is not None and response.design_spec.arms[0].beta is not None
+        assert response.design_spec.arms[1].alpha_init is not None and response.design_spec.arms[1].alpha is not None
+        assert response.design_spec.arms[1].beta_init is not None and response.design_spec.arms[1].beta is not None
+
+    # Verify updated experiment state
+
+    experiment = await get_experiment_preloaded(xngin_session, response.experiment_id)
+    # Verify arm parameters were stored correctly
+    for req_arm, db_arm in zip(response.design_spec.arms, experiment.arms, strict=True):
+        assert req_arm.arm_weight == db_arm.arm_weight
+        assert req_arm.mu_init == db_arm.mu_init
+        assert req_arm.sigma_init == db_arm.sigma_init
+        assert req_arm.alpha_init == db_arm.alpha_init
+        assert req_arm.beta_init == db_arm.beta_init
+        assert req_arm.mu == db_arm.mu
+        assert req_arm.covariance == db_arm.covariance
+        assert req_arm.alpha == db_arm.alpha
+        assert req_arm.beta == db_arm.beta
+
+
 async def test_create_experiment_impl_no_metric_stratification(
-    xngin_session, testing_datasource, sample_table, use_deterministic_random
+    xngin_session, testing_datasource, use_deterministic_random
 ):
     """Test implementation of creating an experiment without stratifying on metrics."""
     participants = make_sample_data(n=100)
@@ -1264,9 +1351,7 @@ async def test_create_experiment_impl_no_metric_stratification(
     assert response.design_spec.strata == [Stratum(field_name="gender")]
 
     # Verify database state
-    experiment = (
-        await xngin_session.scalars(select(tables.Experiment).where(tables.Experiment.id == response.experiment_id))
-    ).one()
+    experiment = await get_experiment_preloaded(xngin_session, response.experiment_id)
     # Verify assignments were created
     assignments = (
         await xngin_session.scalars(

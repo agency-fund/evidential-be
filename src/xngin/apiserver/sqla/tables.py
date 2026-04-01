@@ -331,24 +331,23 @@ class ParticipantTypesInspected(Base):
 
 
 class ArmAssignment(Base):
-    """Stores experiment treatment assignments."""
+    """Stores experiment treatment assignments.
+
+    experiment_id and arm_id intentionally omit ForeignKey constraints. Bulk COPY of 1M
+    assignment rows is ~2.5x slower with FK triggers enabled (~14s vs ~6s), and the
+    referenced experiment/arm rows are always written by the same code path. SA-level
+    cascade="all, delete-orphan" on Experiment.arm_assignments handles ORM deletes.
+    """
 
     __tablename__ = "arm_assignments"
 
-    experiment_id: Mapped[str] = mapped_column(
-        String(length=36),
-        ForeignKey("experiments.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
+    experiment_id: Mapped[str] = mapped_column(String(length=36), primary_key=True)
     participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     participant_type: Mapped[str] = mapped_column(String(255))
-    arm_id: Mapped[str] = mapped_column(String(36), ForeignKey("arms.id", ondelete="CASCADE"))
+    arm_id: Mapped[str] = mapped_column(String(36))
     # JSON serialized form of a list of Strata objects (from Assignment.strata).
     strata: Mapped[list[dict[str, str]]] = mapped_column(postgresql.JSONB)
     created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
-
-    experiment: Mapped[Experiment] = relationship(back_populates="arm_assignments")
-    arm: Mapped[Arm] = relationship(back_populates="arm_assignments")
 
     def strata_names(self) -> list[str]:
         """Returns the names of the strata fields."""
@@ -422,8 +421,15 @@ class Experiment(Base):
     impact: Mapped[str] = mapped_column(server_default="")
     decision: Mapped[str] = mapped_column(server_default="")
 
+    # ArmAssignment table has many rows and is subject to bulk data operations;
+    # for efficiency, we do not have a database-enforced ForeignKey constraint. This
+    # explicit join description allows deletes to cascade to ArmAssignment when
+    # an experiment is deleted.
     arm_assignments: Mapped[list[ArmAssignment]] = relationship(
-        back_populates="experiment", cascade="all, delete-orphan", lazy="raise"
+        cascade="all, delete-orphan",
+        lazy="raise",
+        primaryjoin="Experiment.id == ArmAssignment.experiment_id",
+        foreign_keys="ArmAssignment.experiment_id",
     )
     arms: Mapped[list[Arm]] = relationship(
         back_populates="experiment",
@@ -489,7 +495,6 @@ class Arm(Base):
 
     organization: Mapped[Organization] = relationship(back_populates="arms")
     experiment: Mapped[Experiment] = relationship(back_populates="arms")
-    arm_assignments: Mapped[list[ArmAssignment]] = relationship(back_populates="arm", cascade="all, delete-orphan")
     draws: Mapped[list[Draw]] = relationship(
         "Draw",
         back_populates="arm",
@@ -532,6 +537,15 @@ class Draw(Base):
 
     arm: Mapped[Arm] = relationship("Arm", back_populates="draws", lazy="joined")
     experiment: Mapped[Experiment] = relationship("Experiment", back_populates="draws", lazy="joined")
+
+    __table_args__ = (
+        Index(
+            "ix_draws_arm_id_created_at",
+            arm_id,
+            created_at.desc(),
+            postgresql_where=sqlalchemy.text("outcome IS NOT NULL"),
+        ),
+    )
 
 
 class Context(Base):
