@@ -125,21 +125,30 @@ def check_power(
             instead of the minimum sample size for a desired effect. Applies to all metrics.
 
     Returns:
-        List of MetricPowerAnalysis results
+        List of MetricPowerAnalysis results, always including the minimum sample size for a desired
+        effect, and optionally including the MDE for the desired_n if provided.
     """
     analyses = []
     for metric in metrics:
         try:
-            analyses.append(
-                analyze_metric_power(
+            analysis = analyze_metric_power(
+                metric=metric,
+                n_arms=n_arms,
+                arm_weights=arm_weights,
+                power=power,
+                alpha=alpha)
+
+            if desired_n is not None:
+                mde_analysis = analyze_metric_power(
                     metric=metric,
                     n_arms=n_arms,
                     arm_weights=arm_weights,
                     desired_n=desired_n,
                     power=power,
-                    alpha=alpha,
-                )
-            )
+                    alpha=alpha)
+                analysis.pct_change_with_desired_n = mde_analysis.pct_change_possible
+
+            analyses.append(analysis)
         except ValueError as verr:
             raise StatsPowerError(verr, metric) from verr
     return analyses

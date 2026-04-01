@@ -644,6 +644,16 @@ class MetricPowerAnalysis(ApiBaseModel):
         ),
     ] = None
 
+    pct_change_with_desired_n: Annotated[
+        float | None,
+        Field(
+            description=(
+                "The MDE achievable given the user's desired_n, confidence, and power. "
+                "Only present when desired_n is supplied in the power check request."
+            )
+        ),
+    ] = None
+
     msg: Annotated[
         MetricPowerAnalysisMessage | None,
         Field(description="Human friendly message about the above results."),
@@ -1112,6 +1122,12 @@ type DesignSpec = Annotated[
 
 class PowerRequest(ApiBaseModel):
     design_spec: AnyFrequentistDesignSpec
+    desired_n: Annotated[
+        int | None,
+        Field(
+            description="Optional desired sample size. If provided, returns pct_change_with_desired_n for each metric."
+        ),
+    ] = None
 
 
 class PowerResponse(ApiBaseModel):
