@@ -1293,9 +1293,12 @@ class CreateExperimentRequest(ApiBaseModel):
         return v
 
     @model_validator(mode="after")
-    def check_table_name_and_primary_key_together(self) -> Self:
-        if (self.table_name is None) != (self.primary_key is None):
-            raise ValueError("table_name and primary_key must be provided together or both omitted")
+    def check_table_name_and_primary_key_exist_for_frequentist_only(self) -> Self:
+        if self.design_spec.experiment_type in {ExperimentsType.FREQ_ONLINE, ExperimentsType.FREQ_PREASSIGNED}:
+            if self.table_name is None or self.primary_key is None:
+                raise ValueError("table_name and primary_key must be provided together for frequentist experiments.")
+        elif self.table_name is not None or self.primary_key is not None:
+            raise ValueError("table_name and primary_key are not supported for non-frequentist experiments.")
         return self
 
 

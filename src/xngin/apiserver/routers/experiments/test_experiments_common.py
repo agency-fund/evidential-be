@@ -973,9 +973,7 @@ async def test_create_experiment_impl_for_freq_raises_on_bad_filters(
         )
 
 
-async def test_create_experiment_impl_for_freq_online(
-    xngin_session, testing_datasource, sample_table, use_deterministic_random
-):
+async def test_create_experiment_impl_for_freq_online(xngin_session, testing_datasource):
     """Test implementation of creating an online experiment."""
     request = make_create_freq_online_experiment_request()
 

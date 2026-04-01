@@ -204,16 +204,11 @@ async def create_experiment_impl(
 ) -> CreateExperimentResponse:
     match request.design_spec.experiment_type:
         case ExperimentsType.FREQ_PREASSIGNED:
-            table_name = request.table_name
-            primary_key = request.primary_key
-
-            if table_name is None or primary_key is None:
-                # Should not actually ever happen as both ParticipantsSchema and
-                # CreateExperimentRequest validate that there is a unique ID | primary key.
-                raise LateValidationError("Preassigned experiments must have a table name and unique ID field.")
             if desired_n is None:
                 raise LateValidationError("Preassigned experiments must have a desired_n.")
 
+            table_name = cast(str, request.table_name)
+            primary_key = cast(str, request.primary_key)
             field_type_map = await fetch_fields_or_raise(datasource, request.design_spec, table_name, primary_key)
 
             # Get participants and their schema info from the client dwh.
@@ -252,12 +247,8 @@ async def create_experiment_impl(
             )
 
         case ExperimentsType.FREQ_ONLINE:
-            table_name = request.table_name
-            primary_key = request.primary_key
-
-            if table_name is None or primary_key is None:
-                raise LateValidationError("Frequentist online experiments must have a table name and unique ID field.")
-
+            table_name = cast(str, request.table_name)
+            primary_key = cast(str, request.primary_key)
             field_type_map = await fetch_fields_or_raise(datasource, request.design_spec, table_name, primary_key)
 
             return await create_freq_online_experiment_impl(
