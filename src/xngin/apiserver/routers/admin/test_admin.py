@@ -3586,3 +3586,75 @@ async def test_list_organization_events_pagination_with_same_timestamp_is_id_des
     assert page2.items[0].id == expected_tied_order[1]
     assert page2.items[0].id != page1.items[0].id
     assert page2.items[0].created_at == tied_created_at
+
+
+async def test_list_experiments(
+    testing_datasource_with_user,
+    testing_datasource,
+    aclient: AdminAPIClient,
+):
+    """Test that listing experiments returns only non-abandoned/aborted experiments, in reverse chronological order,
+    and scoped to the correct organization."""
+    ds_id = testing_datasource_with_user.ds.id
+    org_id = testing_datasource_with_user.org.id
+
+    # Create three experiments: one will be committed, one left as assigned, one abandoned.
+    exp1 = aclient.create_experiment(
+        datasource_id=ds_id,
+        body=make_create_freq_online_experiment_request(),
+        random_state=42,
+    ).data
+    exp2 = aclient.create_experiment(
+        datasource_id=ds_id,
+        body=make_create_freq_online_experiment_request(),
+        random_state=42,
+    ).data
+    exp3 = aclient.create_experiment(
+        datasource_id=ds_id,
+        body=make_create_freq_online_experiment_request(),
+        random_state=42,
+    ).data
+    aclient.commit_experiment(datasource_id=ds_id, experiment_id=exp1.experiment_id)
+    aclient.abandon_experiment(datasource_id=ds_id, experiment_id=exp3.experiment_id)
+
+    # Create an experiment on a *different* organization's datasource to verify isolation.
+    other_ds_id = testing_datasource.ds.id
+    aclient.add_member_to_organization(
+        organization_id=testing_datasource.org.id,
+        body=AddMemberToOrganizationRequest(email=PRIVILEGED_EMAIL),
+    )
+    aclient.create_experiment(
+        datasource_id=other_ds_id,
+        body=make_create_freq_online_experiment_request(),
+        random_state=42,
+    )
+
+    experiments = aclient.list_organization_experiments(organization_id=org_id).data
+    experiment_ids = [item.experiment_id for item in experiments.items]
+
+    # exp3 (abandoned) should be excluded; the other-org experiment should be excluded.
+    assert len(experiments.items) == 2
+    assert exp3.experiment_id not in experiment_ids
+
+    # Verify ordering: most recently created first (exp2 before exp1).
+    assert experiment_ids == [exp2.experiment_id, exp1.experiment_id]
+
+    # Verify states.
+    states = {item.experiment_id: item.state for item in experiments.items}
+    assert states[exp1.experiment_id] == ExperimentState.COMMITTED
+    assert states[exp2.experiment_id] == ExperimentState.ASSIGNED
+
+    # Verify design_spec round-trips correctly.
+    for item in experiments.items:
+        assert item.design_spec is not None
+        assert isinstance(item.design_spec, OnlineFrequentistExperimentSpec)
+
+
+async def test_list_experiments_empty(
+    testing_datasource_with_user,
+    aclient: AdminAPIClient,
+):
+    """Test that listing experiments for an organization with no experiments returns an empty list."""
+    org_id = testing_datasource_with_user.org.id
+    experiments = aclient.list_organization_experiments(organization_id=org_id).data
+    assert experiments.items == []

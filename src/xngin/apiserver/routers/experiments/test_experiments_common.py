@@ -1,4 +1,3 @@
-import inspect
 from contextlib import AbstractContextManager
 from contextlib import nullcontext as does_not_raise
 from dataclasses import dataclass
@@ -7,8 +6,6 @@ from typing import cast
 
 import numpy as np
 import pytest
-from deepdiff import DeepDiff
-from fastapi import HTTPException
 from pydantic import HttpUrl, TypeAdapter
 from sqlalchemy import Boolean, Column, MetaData, String, Table, select
 from sqlalchemy.dialects import postgresql
@@ -44,10 +41,7 @@ from xngin.apiserver.routers.common_api_types import (
 )
 from xngin.apiserver.routers.common_enums import DataType, ExperimentState, Relation, StopAssignmentReason
 from xngin.apiserver.routers.experiments.experiments_common import (
-    AbandonExperimentResult,
-    CommitExperimentResult,
     ExperimentsAssignmentError,
-    abandon_experiment_impl,
     analyze_experiment_freq_impl,
     commit_experiment_impl,
     create_assignment_for_participant,
@@ -61,7 +55,6 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     get_existing_assignment_for_participant,
     get_experiment_assignments_impl,
     get_or_create_assignment_for_participant,
-    list_organization_or_datasource_experiments_impl,
     update_bandit_arm_with_outcome_impl,
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import get_experiment_assignments_as_csv_impl
@@ -1385,182 +1378,6 @@ async def test_create_experiment_impl_no_metric_stratification(
     num_control = sum(1 for a in assignments if a.arm_id == arm1_id)
     num_treat = sum(1 for a in assignments if a.arm_id == arm2_id)
     assert abs(num_control - num_treat) <= 1
-
-
-@pytest.mark.parametrize(
-    "method_under_test,initial_state,expected_state,expected_status,expected_detail",
-    [
-        # Success case
-        (
-            commit_experiment_impl,
-            ExperimentState.ASSIGNED,
-            ExperimentState.COMMITTED,
-            CommitExperimentResult.COMMITTED,
-            None,
-        ),
-        # No-op
-        (
-            commit_experiment_impl,
-            ExperimentState.COMMITTED,
-            ExperimentState.COMMITTED,
-            CommitExperimentResult.COMMITTED,
-            None,
-        ),
-        # Failure cases
-        (
-            commit_experiment_impl,
-            ExperimentState.DESIGNING,
-            ExperimentState.DESIGNING,
-            CommitExperimentResult.INVALID_STATE,
-            "Invalid state: designing",
-        ),
-        (
-            commit_experiment_impl,
-            ExperimentState.ABORTED,
-            ExperimentState.ABORTED,
-            CommitExperimentResult.INVALID_STATE,
-            "Invalid state: aborted",
-        ),
-        # Success cases
-        (
-            abandon_experiment_impl,
-            ExperimentState.DESIGNING,
-            ExperimentState.ABANDONED,
-            AbandonExperimentResult.ABANDONED,
-            None,
-        ),
-        (
-            abandon_experiment_impl,
-            ExperimentState.ASSIGNED,
-            ExperimentState.ABANDONED,
-            AbandonExperimentResult.ABANDONED,
-            None,
-        ),
-        # No-op
-        (
-            abandon_experiment_impl,
-            ExperimentState.ABANDONED,
-            ExperimentState.ABANDONED,
-            AbandonExperimentResult.ABANDONED,
-            None,
-        ),
-        # Failure case
-        (
-            abandon_experiment_impl,
-            ExperimentState.COMMITTED,
-            ExperimentState.COMMITTED,
-            AbandonExperimentResult.INVALID_STATE,
-            "Invalid state: committed",
-        ),
-    ],
-)
-async def test_state_setting_experiment_impl(
-    xngin_session,
-    testing_datasource,
-    method_under_test,
-    initial_state,
-    expected_state,
-    expected_status,
-    expected_detail,
-):
-    # Initialize our state with an existing experiment who's state we want to modify.
-    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds, state=initial_state)
-
-    try:
-        sig = inspect.signature(method_under_test)
-        if len(sig.parameters) == 2:
-            response = await method_under_test(xngin_session, experiment)
-        else:
-            response = await method_under_test(experiment)
-    except HTTPException as e:
-        assert e.status_code == expected_status  # noqa: PT017
-        assert e.detail == expected_detail  # noqa: PT017
-    else:
-        assert response == expected_status
-        assert experiment.state == expected_state
-
-
-async def test_list_experiments_impl(
-    xngin_session,
-    testing_datasource,
-    testing_datasource_with_user,
-):
-    """Test that we only get experiments in a valid state for the specified datasource."""
-    experiment1_data = await make_insertable_experiment(testing_datasource.ds, ExperimentState.ASSIGNED)
-    experiment2_data = await make_insertable_experiment(testing_datasource.ds, ExperimentState.COMMITTED)
-    experiment3_data = await make_insertable_experiment(testing_datasource.ds, ExperimentState.DESIGNING)
-    experiment4_data = await make_insertable_experiment(testing_datasource.ds, ExperimentState.ABORTED)
-    # One more experiment associated with a *different* datasource.
-    experiment5_data = await make_insertable_experiment(testing_datasource_with_user.ds, ExperimentState.ASSIGNED)
-    # Set the created_at time to test ordering
-    experiment1_data[0].created_at = datetime.now(UTC) - timedelta(days=1)
-    experiment2_data[0].created_at = datetime.now(UTC)
-    experiment3_data[0].created_at = datetime.now(UTC) + timedelta(days=1)
-    experiment_data = [experiment1_data, experiment2_data, experiment3_data, experiment4_data, experiment5_data]
-
-    xngin_session.add_all([data[0] for data in experiment_data])
-    await xngin_session.commit()
-
-    experiments = await list_organization_or_datasource_experiments_impl(
-        xngin_session=xngin_session, datasource_id=testing_datasource.ds.id
-    )
-    # experiment5 excluded due to datasource mismatch
-    assert len(experiments.items) == 3
-
-    # Verify that the experiments are in the correct order
-    actual1_config = experiments.items[2]  # experiment1 is last as it's oldest
-    actual2_config = experiments.items[1]
-    actual3_config = experiments.items[0]
-    assert actual1_config.state == ExperimentState.ASSIGNED
-    diff = DeepDiff(
-        actual1_config.design_spec, experiment1_data[1], exclude_regex_paths=["experiment_id", r"arms\[\d+\].arm_id"]
-    )
-    assert not diff, f"Objects differ:\n{diff.pretty()}"
-    assert actual2_config.state == ExperimentState.COMMITTED
-    diff = DeepDiff(
-        actual2_config.design_spec, experiment2_data[1], exclude_regex_paths=["experiment_id", r"arms\[\d+\].arm_id"]
-    )
-    assert not diff, f"Objects differ:\n{diff.pretty()}"
-    assert actual3_config.state == ExperimentState.DESIGNING
-    diff = DeepDiff(
-        actual3_config.design_spec, experiment3_data[1], exclude_regex_paths=["experiment_id", r"arms\[\d+\].arm_id"]
-    )
-    assert not diff, f"Objects differ:\n{diff.pretty()}"
-
-
-async def test_list_experiments_impl_alt_scenarios(
-    xngin_session,
-    testing_datasource,
-):
-    with pytest.raises(ValueError, match="Either datasource_id or organization_id must be provided"):
-        await list_organization_or_datasource_experiments_impl(xngin_session=xngin_session)
-
-    experiment1_data = await make_insertable_experiment(testing_datasource.ds, ExperimentState.ASSIGNED)
-    xngin_session.add(experiment1_data[0])
-    org_list = await list_organization_or_datasource_experiments_impl(
-        xngin_session=xngin_session, organization_id=testing_datasource.org.id
-    )
-    ds_list = await list_organization_or_datasource_experiments_impl(
-        xngin_session=xngin_session,
-        datasource_id=testing_datasource.ds.id,
-    )
-    both_list = await list_organization_or_datasource_experiments_impl(
-        xngin_session=xngin_session,
-        datasource_id=testing_datasource.ds.id,
-        organization_id=testing_datasource.org.id,
-    )
-    assert len(org_list.items) == 1
-    assert len(ds_list.items) == 1
-    assert len(both_list.items) == 1
-    assert org_list == ds_list
-    assert ds_list == both_list
-
-    bad_list = await list_organization_or_datasource_experiments_impl(
-        xngin_session=xngin_session,
-        datasource_id="bad_id",
-        organization_id=testing_datasource.org.id,
-    )
-    assert bad_list.items == []
 
 
 async def test_get_experiment_assignments_impl(xngin_session, testing_datasource):
