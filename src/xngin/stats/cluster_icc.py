@@ -89,10 +89,10 @@ def calculate_icc_from_dataframe(
     missing = [name for name in (cluster_column, outcome_column) if name not in df.columns]
     if missing:
         raise ValueError(f"DataFrame is missing columns: {', '.join(missing)}")
-
     if df[cluster_column].nunique() < 2:
         raise ValueError("Need at least 2 clusters to calculate ICC")
-
+    if df[cluster_column].isna().any():
+        raise ValueError(f"cluster column '{cluster_column}' contains NaN values")
     if df[outcome_column].isna().any():
         raise ValueError(f"outcome column '{outcome_column}' contains NaN values")
 
