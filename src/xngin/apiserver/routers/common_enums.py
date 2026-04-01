@@ -125,6 +125,21 @@ class DataType(enum.StrEnum):
             DataType.UNKNOWN,
         }
 
+    @classmethod
+    def is_supported_metric_type(cls, data_type: Self) -> bool:
+        """Returns True if the type may be used as a metric."""
+        return data_type in {
+            DataType.BOOLEAN,
+            DataType.BIGINT,
+            DataType.INTEGER,
+            DataType.DOUBLE_PRECISION,
+            DataType.NUMERIC,
+        }
+
+    def is_supported_as_metric(self) -> bool:
+        """Returns True if the type may be used as a metric."""
+        return DataType.is_supported_metric_type(self)
+
     def is_supported(self):
         """Returns True if the type is supported as a strata, filter, and/or metric."""
         return DataType.is_supported_type(self)

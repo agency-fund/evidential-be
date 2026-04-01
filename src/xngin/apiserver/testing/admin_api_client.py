@@ -395,22 +395,22 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def get_snapshot(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        snapshot_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        datasource_id: str,
+        experiment_id: str,
+        snapshot_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], GetSnapshotResponse, type[GetSnapshotResponse]]: ...
     @overload
     def get_snapshot(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        snapshot_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        datasource_id: str,
+        experiment_id: str,
+        snapshot_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -427,11 +427,11 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def get_snapshot(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        snapshot_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        datasource_id: str,
+        experiment_id: str,
+        snapshot_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -472,9 +472,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                     HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
                 },
                 path_params={
+                    "organization_id": organization_id,
                     "datasource_id": datasource_id,
                     "experiment_id": experiment_id,
-                    "organization_id": organization_id,
                     "snapshot_id": snapshot_id,
                 },
                 raise_if_not_default_status=raise_if_not_default_status,
@@ -485,28 +485,28 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def list_snapshots(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
+        *,
+        organization_id: str,
+        datasource_id: str,
+        experiment_id: str,
+        status_: list[SnapshotStatus] | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         page_size: int = ADMIN_API_CLIENT_NOT_REQUIRED,
         page_token: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         skip: int = ADMIN_API_CLIENT_NOT_REQUIRED,
-        status_: list[SnapshotStatus] | None = ADMIN_API_CLIENT_NOT_REQUIRED,
-        *,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ListSnapshotsResponse, type[ListSnapshotsResponse]]: ...
     @overload
     def list_snapshots(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
+        *,
+        organization_id: str,
+        datasource_id: str,
+        experiment_id: str,
+        status_: list[SnapshotStatus] | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         page_size: int = ADMIN_API_CLIENT_NOT_REQUIRED,
         page_token: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         skip: int = ADMIN_API_CLIENT_NOT_REQUIRED,
-        status_: list[SnapshotStatus] | None = ADMIN_API_CLIENT_NOT_REQUIRED,
-        *,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -523,14 +523,14 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def list_snapshots(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
+        *,
+        organization_id: str,
+        datasource_id: str,
+        experiment_id: str,
+        status_: list[SnapshotStatus] | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         page_size: int = ADMIN_API_CLIENT_NOT_REQUIRED,
         page_token: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         skip: int = ADMIN_API_CLIENT_NOT_REQUIRED,
-        status_: list[SnapshotStatus] | None = ADMIN_API_CLIENT_NOT_REQUIRED,
-        *,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -571,15 +571,15 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                     HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
                 },
                 path_params={
+                    "organization_id": organization_id,
                     "datasource_id": datasource_id,
                     "experiment_id": experiment_id,
-                    "organization_id": organization_id,
                 },
                 query_params={
+                    "status": status_,
                     "page_size": page_size,
                     "page_token": page_token,
                     "skip": skip,
-                    "status": status_,
                 },
                 raise_if_not_default_status=raise_if_not_default_status,
                 client_exts=client_exts,
@@ -589,24 +589,24 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def delete_snapshot(
         self,
-        _organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        snapshot_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        _organization_id: str,
+        datasource_id: str,
+        experiment_id: str,
+        snapshot_id: str,
+        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], Any, type[Any]]: ...
     @overload
     def delete_snapshot(
         self,
-        _organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        snapshot_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        _organization_id: str,
+        datasource_id: str,
+        experiment_id: str,
+        snapshot_id: str,
+        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -623,12 +623,12 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def delete_snapshot(
         self,
-        _organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        snapshot_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        _organization_id: str,
+        datasource_id: str,
+        experiment_id: str,
+        snapshot_id: str,
+        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -685,20 +685,20 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def create_snapshot(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        datasource_id: str,
+        experiment_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], CreateSnapshotResponse, type[CreateSnapshotResponse]]: ...
     @overload
     def create_snapshot(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        datasource_id: str,
+        experiment_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -715,10 +715,10 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def create_snapshot(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        datasource_id: str,
+        experiment_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -759,9 +759,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                     HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
                 },
                 path_params={
+                    "organization_id": organization_id,
                     "datasource_id": datasource_id,
                     "experiment_id": experiment_id,
-                    "organization_id": organization_id,
                 },
                 raise_if_not_default_status=raise_if_not_default_status,
                 client_exts=client_exts,
@@ -827,16 +827,16 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def create_organizations(
         self,
-        body: CreateOrganizationRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        body: CreateOrganizationRequest,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], CreateOrganizationResponse, type[CreateOrganizationResponse]]: ...
     @overload
     def create_organizations(
         self,
-        body: CreateOrganizationRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        body: CreateOrganizationRequest,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -853,8 +853,8 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def create_organizations(
         self,
-        body: CreateOrganizationRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        body: CreateOrganizationRequest,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -907,9 +907,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def add_webhook_to_organization(
         self,
-        body: AddWebhookToOrganizationRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        body: AddWebhookToOrganizationRequest,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[
@@ -918,9 +918,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def add_webhook_to_organization(
         self,
-        body: AddWebhookToOrganizationRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        body: AddWebhookToOrganizationRequest,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -939,9 +939,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def add_webhook_to_organization(
         self,
-        body: AddWebhookToOrganizationRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        body: AddWebhookToOrganizationRequest,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -999,16 +999,16 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def list_organization_webhooks(
         self,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ListWebhooksResponse, type[ListWebhooksResponse]]: ...
     @overload
     def list_organization_webhooks(
         self,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -1025,8 +1025,8 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def list_organization_webhooks(
         self,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -1077,20 +1077,20 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def update_organization_webhook(
         self,
-        body: UpdateOrganizationWebhookRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        webhook_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        webhook_id: str,
+        body: UpdateOrganizationWebhookRequest,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
     @overload
     def update_organization_webhook(
         self,
-        body: UpdateOrganizationWebhookRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        webhook_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        webhook_id: str,
+        body: UpdateOrganizationWebhookRequest,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -1107,10 +1107,10 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def update_organization_webhook(
         self,
-        body: UpdateOrganizationWebhookRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        webhook_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        webhook_id: str,
+        body: UpdateOrganizationWebhookRequest,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -1165,18 +1165,18 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def regenerate_webhook_auth_token(
         self,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        webhook_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        webhook_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
     @overload
     def regenerate_webhook_auth_token(
         self,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        webhook_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        webhook_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -1193,9 +1193,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def regenerate_webhook_auth_token(
         self,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        webhook_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        webhook_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -1247,20 +1247,20 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def delete_webhook_from_organization(
         self,
-        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        webhook_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        webhook_id: str,
+        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
     @overload
     def delete_webhook_from_organization(
         self,
-        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        webhook_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        webhook_id: str,
+        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -1277,10 +1277,10 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def delete_webhook_from_organization(
         self,
-        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        webhook_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        webhook_id: str,
+        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -1335,11 +1335,11 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def list_organization_events(
         self,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
+        *,
+        organization_id: str,
         page_size: int = ADMIN_API_CLIENT_NOT_REQUIRED,
         page_token: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         skip: int = ADMIN_API_CLIENT_NOT_REQUIRED,
-        *,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[
@@ -1348,11 +1348,11 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def list_organization_events(
         self,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
+        *,
+        organization_id: str,
         page_size: int = ADMIN_API_CLIENT_NOT_REQUIRED,
         page_token: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         skip: int = ADMIN_API_CLIENT_NOT_REQUIRED,
-        *,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -1371,11 +1371,11 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def list_organization_events(
         self,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
+        *,
+        organization_id: str,
         page_size: int = ADMIN_API_CLIENT_NOT_REQUIRED,
         page_token: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         skip: int = ADMIN_API_CLIENT_NOT_REQUIRED,
-        *,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -1435,18 +1435,18 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def add_member_to_organization(
         self,
-        body: AddMemberToOrganizationRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        body: AddMemberToOrganizationRequest,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
     @overload
     def add_member_to_organization(
         self,
-        body: AddMemberToOrganizationRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        body: AddMemberToOrganizationRequest,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -1463,9 +1463,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def add_member_to_organization(
         self,
-        body: AddMemberToOrganizationRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        body: AddMemberToOrganizationRequest,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -1519,20 +1519,20 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def remove_member_from_organization(
         self,
-        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        user_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        user_id: str,
+        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
     @overload
     def remove_member_from_organization(
         self,
-        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        user_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        user_id: str,
+        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -1549,10 +1549,10 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def remove_member_from_organization(
         self,
-        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        user_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        user_id: str,
+        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -1607,18 +1607,18 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def update_organization(
         self,
-        body: UpdateOrganizationRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        body: UpdateOrganizationRequest,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], Any, type[Any]]: ...
     @overload
     def update_organization(
         self,
-        body: UpdateOrganizationRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        body: UpdateOrganizationRequest,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -1635,9 +1635,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def update_organization(
         self,
-        body: UpdateOrganizationRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        body: UpdateOrganizationRequest,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -1691,16 +1691,16 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def get_organization(
         self,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], GetOrganizationResponse, type[GetOrganizationResponse]]: ...
     @overload
     def get_organization(
         self,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -1717,8 +1717,8 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def get_organization(
         self,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -1769,16 +1769,16 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def list_organization_datasources(
         self,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ListDatasourcesResponse, type[ListDatasourcesResponse]]: ...
     @overload
     def list_organization_datasources(
         self,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -1795,8 +1795,8 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def list_organization_datasources(
         self,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -1847,18 +1847,18 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def create_datasource(
         self,
-        body: CreateDatasourceRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        connectivity_check: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        body: CreateDatasourceRequest,
+        connectivity_check: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], CreateDatasourceResponse, type[CreateDatasourceResponse]]: ...
     @overload
     def create_datasource(
         self,
-        body: CreateDatasourceRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        connectivity_check: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        body: CreateDatasourceRequest,
+        connectivity_check: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -1875,9 +1875,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def create_datasource(
         self,
-        body: CreateDatasourceRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        connectivity_check: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        body: CreateDatasourceRequest,
+        connectivity_check: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -1933,18 +1933,18 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def update_datasource(
         self,
-        body: UpdateDatasourceRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        body: UpdateDatasourceRequest,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
     @overload
     def update_datasource(
         self,
-        body: UpdateDatasourceRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        body: UpdateDatasourceRequest,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -1961,9 +1961,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def update_datasource(
         self,
-        body: UpdateDatasourceRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        body: UpdateDatasourceRequest,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -2017,16 +2017,16 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def get_datasource(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], GetDatasourceResponse, type[GetDatasourceResponse]]: ...
     @overload
     def get_datasource(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -2043,8 +2043,8 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def get_datasource(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -2095,18 +2095,18 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def inspect_datasource(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], InspectDatasourceResponse, type[InspectDatasourceResponse]]: ...
     @overload
     def inspect_datasource(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -2123,9 +2123,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def inspect_datasource(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -2181,10 +2181,10 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def inspect_table_in_datasource(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        table_name: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        table_name: str,
+        refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[
@@ -2193,10 +2193,10 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def inspect_table_in_datasource(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        table_name: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        table_name: str,
+        refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -2215,10 +2215,10 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def inspect_table_in_datasource(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        table_name: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        table_name: str,
+        refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -2279,20 +2279,20 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def delete_datasource(
         self,
-        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        datasource_id: str,
+        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
     @overload
     def delete_datasource(
         self,
-        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        datasource_id: str,
+        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -2309,10 +2309,10 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def delete_datasource(
         self,
-        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
+        datasource_id: str,
+        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -2353,8 +2353,8 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                     HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
                 },
                 path_params={
-                    "datasource_id": datasource_id,
                     "organization_id": organization_id,
+                    "datasource_id": datasource_id,
                 },
                 query_params={
                     "allow_missing": allow_missing,
@@ -2367,8 +2367,8 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def list_participant_types(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[
@@ -2377,8 +2377,8 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def list_participant_types(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -2395,8 +2395,8 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def list_participant_types(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -2449,9 +2449,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def create_participant_type(
         self,
-        body: CreateParticipantsTypeRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        body: CreateParticipantsTypeRequest,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[
@@ -2460,9 +2460,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def create_participant_type(
         self,
-        body: CreateParticipantsTypeRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        body: CreateParticipantsTypeRequest,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -2481,9 +2481,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def create_participant_type(
         self,
-        body: CreateParticipantsTypeRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        body: CreateParticipantsTypeRequest,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -2541,11 +2541,11 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def inspect_participant_types(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        expensive: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        participant_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        participant_id: str,
+        refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
+        expensive: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[
@@ -2554,11 +2554,11 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def inspect_participant_types(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        expensive: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        participant_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        participant_id: str,
+        refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
+        expensive: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -2577,11 +2577,11 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def inspect_participant_types(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        expensive: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        participant_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        participant_id: str,
+        refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
+        expensive: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -2632,8 +2632,8 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                     "participant_id": participant_id,
                 },
                 query_params={
-                    "expensive": expensive,
                     "refresh": refresh,
+                    "expensive": expensive,
                 },
                 raise_if_not_default_status=raise_if_not_default_status,
                 client_exts=client_exts,
@@ -2643,9 +2643,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def get_participant_type(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        participant_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        participant_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[
@@ -2654,9 +2654,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def get_participant_type(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        participant_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        participant_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -2673,9 +2673,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def get_participant_type(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        participant_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        participant_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -2731,10 +2731,10 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def update_participant_type(
         self,
-        body: UpdateParticipantsTypeRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        participant_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        participant_id: str,
+        body: UpdateParticipantsTypeRequest,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[
@@ -2743,10 +2743,10 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def update_participant_type(
         self,
-        body: UpdateParticipantsTypeRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        participant_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        participant_id: str,
+        body: UpdateParticipantsTypeRequest,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -2765,10 +2765,10 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def update_participant_type(
         self,
-        body: UpdateParticipantsTypeRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        participant_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        participant_id: str,
+        body: UpdateParticipantsTypeRequest,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -2827,20 +2827,20 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def delete_participant(
         self,
-        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        participant_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        participant_id: str,
+        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
     @overload
     def delete_participant(
         self,
-        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        participant_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        participant_id: str,
+        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -2857,10 +2857,10 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def delete_participant(
         self,
-        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        participant_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        participant_id: str,
+        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -2915,16 +2915,16 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def list_api_keys(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ListApiKeysResponse, type[ListApiKeysResponse]]: ...
     @overload
     def list_api_keys(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -2941,8 +2941,8 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def list_api_keys(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -2993,16 +2993,16 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def create_api_key(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], CreateApiKeyResponse, type[CreateApiKeyResponse]]: ...
     @overload
     def create_api_key(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -3019,8 +3019,8 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def create_api_key(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -3071,20 +3071,20 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def delete_api_key(
         self,
-        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        api_key_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        api_key_id: str,
+        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
     @overload
     def delete_api_key(
         self,
-        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        api_key_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        api_key_id: str,
+        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -3101,10 +3101,10 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def delete_api_key(
         self,
-        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        api_key_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        api_key_id: str,
+        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -3145,8 +3145,8 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                     HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
                 },
                 path_params={
-                    "api_key_id": api_key_id,
                     "datasource_id": datasource_id,
+                    "api_key_id": api_key_id,
                 },
                 query_params={
                     "allow_missing": allow_missing,
@@ -3159,24 +3159,24 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def create_experiment(
         self,
-        body: CreateExperimentRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        desired_n: int | None = ADMIN_API_CLIENT_NOT_REQUIRED,
-        random_state: int | None = ADMIN_API_CLIENT_NOT_REQUIRED,
-        stratify_on_metrics: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        body: CreateExperimentRequest,
+        desired_n: int | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        stratify_on_metrics: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
+        random_state: int | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], CreateExperimentResponse, type[CreateExperimentResponse]]: ...
     @overload
     def create_experiment(
         self,
-        body: CreateExperimentRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        desired_n: int | None = ADMIN_API_CLIENT_NOT_REQUIRED,
-        random_state: int | None = ADMIN_API_CLIENT_NOT_REQUIRED,
-        stratify_on_metrics: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        body: CreateExperimentRequest,
+        desired_n: int | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        stratify_on_metrics: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
+        random_state: int | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -3193,12 +3193,12 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def create_experiment(
         self,
-        body: CreateExperimentRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        desired_n: int | None = ADMIN_API_CLIENT_NOT_REQUIRED,
-        random_state: int | None = ADMIN_API_CLIENT_NOT_REQUIRED,
-        stratify_on_metrics: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        body: CreateExperimentRequest,
+        desired_n: int | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        stratify_on_metrics: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
+        random_state: int | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -3243,8 +3243,8 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                 },
                 query_params={
                     "desired_n": desired_n,
-                    "random_state": random_state,
                     "stratify_on_metrics": stratify_on_metrics,
+                    "random_state": random_state,
                 },
                 body_params={
                     "body": body,
@@ -3257,20 +3257,20 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def analyze_experiment(
         self,
-        baseline_arm_id: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
+        baseline_arm_id: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ExperimentAnalysisResponse, type[ExperimentAnalysisResponse]]: ...
     @overload
     def analyze_experiment(
         self,
-        baseline_arm_id: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
+        baseline_arm_id: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -3287,10 +3287,10 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def analyze_experiment(
         self,
-        baseline_arm_id: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
+        baseline_arm_id: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -3347,20 +3347,20 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def analyze_cmab_experiment(
         self,
-        body: CMABContextInputRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
+        body: CMABContextInputRequest,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ExperimentAnalysisResponse, type[ExperimentAnalysisResponse]]: ...
     @overload
     def analyze_cmab_experiment(
         self,
-        body: CMABContextInputRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
+        body: CMABContextInputRequest,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -3377,10 +3377,10 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def analyze_cmab_experiment(
         self,
-        body: CMABContextInputRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
+        body: CMABContextInputRequest,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -3437,18 +3437,18 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def commit_experiment(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
     @overload
     def commit_experiment(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -3466,9 +3466,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def commit_experiment(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -3523,18 +3523,18 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def abandon_experiment(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
     @overload
     def abandon_experiment(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -3552,9 +3552,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def abandon_experiment(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -3609,16 +3609,16 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def list_organization_experiments(
         self,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ListExperimentsResponse, type[ListExperimentsResponse]]: ...
     @overload
     def list_organization_experiments(
         self,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -3635,8 +3635,8 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def list_organization_experiments(
         self,
-        organization_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        organization_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -3687,18 +3687,18 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def get_experiment_for_ui(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], GetExperimentForUiResponse, type[GetExperimentForUiResponse]]: ...
     @overload
     def get_experiment_for_ui(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -3715,9 +3715,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def get_experiment_for_ui(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -3771,18 +3771,18 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def get_experiment_assignments_as_csv_for_ui(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], Any, type[Any]]: ...
     @overload
     def get_experiment_assignments_as_csv_for_ui(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -3799,9 +3799,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def get_experiment_assignments_as_csv_for_ui(
         self,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -3853,20 +3853,20 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def update_experiment(
         self,
-        body: UpdateExperimentRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
+        body: UpdateExperimentRequest,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
     @overload
     def update_experiment(
         self,
-        body: UpdateExperimentRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
+        body: UpdateExperimentRequest,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -3883,10 +3883,10 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def update_experiment(
         self,
-        body: UpdateExperimentRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
+        body: UpdateExperimentRequest,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -3941,20 +3941,20 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def delete_experiment(
         self,
-        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
+        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
     @overload
     def delete_experiment(
         self,
-        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
+        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -3971,10 +3971,10 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def delete_experiment(
         self,
-        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
+        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -4029,20 +4029,20 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def delete_experiment_data(
         self,
-        body: DeleteExperimentDataRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
+        body: DeleteExperimentDataRequest,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
     @overload
     def delete_experiment_data(
         self,
-        body: DeleteExperimentDataRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
+        body: DeleteExperimentDataRequest,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -4059,10 +4059,10 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def delete_experiment_data(
         self,
-        body: DeleteExperimentDataRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
+        body: DeleteExperimentDataRequest,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -4117,22 +4117,22 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def update_arm(
         self,
-        arm_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        body: UpdateArmRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
+        arm_id: str,
+        body: UpdateArmRequest,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
     @overload
     def update_arm(
         self,
-        arm_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        body: UpdateArmRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
+        arm_id: str,
+        body: UpdateArmRequest,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -4149,11 +4149,11 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def update_arm(
         self,
-        arm_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        body: UpdateArmRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
-        experiment_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        experiment_id: str,
+        arm_id: str,
+        body: UpdateArmRequest,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -4194,9 +4194,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                     HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
                 },
                 path_params={
-                    "arm_id": arm_id,
                     "datasource_id": datasource_id,
                     "experiment_id": experiment_id,
+                    "arm_id": arm_id,
                 },
                 body_params={
                     "body": body,
@@ -4209,18 +4209,18 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     @overload
     def power_check(
         self,
-        body: PowerRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        body: PowerRequest,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], PowerResponse, type[PowerResponse]]: ...
     @overload
     def power_check(
         self,
-        body: PowerRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        body: PowerRequest,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -4237,9 +4237,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     ): ...
     def power_check(
         self,
-        body: PowerRequest = ADMIN_API_CLIENT_NOT_REQUIRED,
-        datasource_id: str = ADMIN_API_CLIENT_NOT_REQUIRED,
         *,
+        datasource_id: str,
+        body: PowerRequest,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
