@@ -15,17 +15,17 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Relax hostname checks.
-  ALLOW_CONNECTING_TO_PRIVATE_IPS: "1"
   ATLAS_NO_ANON_TELEMETRY: "true"
-
   DEBIAN_FRONTEND: noninteractive
   FORCE_COLOR: "1"
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   PIP_PROGRESS_BAR: "off"
   PYTHONUNBUFFERED: "1"
 
-  # Tests should never connect to this DSN but it must be set.
+  # Relax hostname checks in safe_resolve.
+  ALLOW_CONNECTING_TO_PRIVATE_IPS: "1"
+
+  # Tests should never connect to this DSN, but it must be set.
   DATABASE_URL: "postgresql://fail:fail@127.0.0.2:5499/fail"
 
   # Server startup will fail without these values being set.
