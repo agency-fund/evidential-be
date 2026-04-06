@@ -17,9 +17,12 @@ concurrency:
 env:
   # Relax hostname checks.
   ALLOW_CONNECTING_TO_PRIVATE_IPS: "1"
+  ATLAS_NO_ANON_TELEMETRY: "true"
 
   DEBIAN_FRONTEND: noninteractive
   FORCE_COLOR: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PIP_PROGRESS_BAR: "off"
   PYTHONUNBUFFERED: "1"
 
   # Tests should never connect to this DSN but it must be set.
@@ -29,6 +32,116 @@ env:
   GOOGLE_OIDC_CLIENT_ID: "unset-google-oidc-client-id"
   GOOGLE_OIDC_CLIENT_SECRET: "unset-google-oidc-client-secret"
 jobs:
+
+  ruff-annotations:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@e06108dd0aef18192324c70427afc47652e63a82 # v7.5.0
+      - name: Run ruff
+        run: uv run ruff check --output-format=github .
+
+  pre-commit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@e06108dd0aef18192324c70427afc47652e63a82 # v7.5.0
+      - run: echo PYTHON_DIR=$(uv python dir) | tee -a $GITHUB_ENV
+      - name: Configure cache for pre-commit
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-4|${{ env.PYTHON_DIR }}|${{ hashFiles('.pre-commit-config.yaml') }}|${{ hashFiles('pyproject.toml') }}
+      - run: uv run pre-commit run --show-diff-on-failure --color=always --all-files
+
+  check-migrations:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: ariga/setup-atlas@2f3c785c89a15e1c0d07bcae3900fb5feb969eea # v0.3
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@e06108dd0aef18192324c70427afc47652e63a82 # v7.5.0
+      - name: check that migrations are valid
+        run: uv run atlas migrate validate --env sa_postgres
+      - name: lint migrations
+        if: github.event_name == 'pull_request'
+        run: |
+          uv run atlas migrate lint --env sa_postgres --git-base origin/main | tee -a lint-output
+
+          {
+            echo '## Migration Lint'
+            echo
+            if [[ -s lint-output ]]; then
+              echo '```'
+              cat lint-output
+              echo '```'
+            else
+              echo Lint output was empty.
+            fi
+            echo
+          } | tee -a migration-lint.md
+
+          if [[ -s lint-output ]]; then
+            cat migration-lint.md >> comment.md
+          fi
+      - name: ensure migrations have been created for the latest code changes
+        run: |
+          before=$(sha256sum migrations/sa_postgres/atlas.sum)
+          uv run atlas migrate diff --env sa_postgres
+          after=$(sha256sum migrations/sa_postgres/atlas.sum)
+
+          if [[ "${before}" == "${after}" ]]; then
+            exit 0
+          fi
+
+          {
+            echo '## Missing Migration Files'
+            echo
+            echo "The committed migration files do not match the table definitions."
+            echo
+
+            echo '### git status'
+            echo
+            echo '```'
+            git status migrations
+            echo '```'
+            echo
+
+            untracked=$(git ls-files --other --directory --exclude-standard migrations)
+            for migf in ${untracked}; do
+              echo
+              echo '###' "${migf}"
+              echo
+              echo '```sql'
+              cat "${migf}"
+              echo '```'
+              echo
+            done
+          } | tee -a comment.md "${GITHUB_STEP_SUMMARY}"
+          exit 1
+      - name: post comment
+        if: always() && github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ -s comment.md ]]; then
+            gh pr comment "${PR_NUMBER}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --body-file comment.md
+          fi
 
   changes:
     runs-on: ubuntu-22.04
