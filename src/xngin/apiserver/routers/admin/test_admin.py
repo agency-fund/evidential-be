@@ -922,7 +922,7 @@ def test_delete_datasource(testing_datasource, aclient: AdminAPIClient, aclient_
         aclient_unpriv.delete_datasource(organization_id=org_id, datasource_id=ds_id)
 
     list_datasources1 = aclient.list_organization_datasources(organization_id=org_id).data
-    assert list_datasources1.items, list_datasources1  # non-empty list
+    assert len(list_datasources1.items) == 2, list_datasources1  # non-empty list
 
     # Delete the datasource as a privileged user.
     aclient.delete_datasource(organization_id=org_id, datasource_id=ds_id)
