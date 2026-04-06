@@ -224,7 +224,7 @@ jobs:
           export DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
           uv run pytest -v -rA src/xngin/apiserver/dwh/test_queries.py
       - name: bq cleanup
-        if: failure() || success()
+        if: always()
         run: |
           for ds in "${DWH_DATASET_NAME}" "${QUERIES_DATASET_NAME}"; do
             uv run xngin-cli bigquery-dataset-delete \
