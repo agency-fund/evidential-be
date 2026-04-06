@@ -354,7 +354,6 @@ async def test_create_preassigned_experiment_impl(
     xngin_session: AsyncSession,
     testing_datasource,
     sample_table,
-    use_deterministic_random,
     reorder_arms: bool,
 ):
     """Test implementation of creating a preassigned experiment."""
@@ -520,7 +519,6 @@ async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
     xngin_session: AsyncSession,
     testing_datasource,
     sample_table,
-    use_deterministic_random,
 ):
     """Test that create_preassigned_experiment_impl raises LateValidationError for duplicate participant IDs."""
     request = make_create_preassigned_experiment_request()
@@ -559,7 +557,6 @@ async def test_create_preassigned_experiment_impl_with_unbalanced_arms(
     xngin_session: AsyncSession,
     testing_datasource,
     sample_table,
-    use_deterministic_random,
 ):
     participants = make_sample_data(n=100)
     request = make_create_preassigned_experiment_request()
@@ -626,7 +623,6 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
     xngin_session: AsyncSession,
     testing_datasource,
     sample_table,
-    use_deterministic_random,
 ):
     participants = make_sample_data(n=150)
     request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_PREASSIGNED)
@@ -698,7 +694,6 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
 async def test_create_freq_online_experiment_impl_experiments_fields_are_correctly_stored(
     xngin_session: AsyncSession,
     testing_datasource,
-    use_deterministic_random,
 ):
     """Test creating a freq online experiment with filters, metrics, and strata are correctly stored."""
     experiment_request = CreateExperimentRequest(
@@ -983,9 +978,7 @@ async def test_create_experiment_impl_for_freq_raises_on_bad_filters(
         )
 
 
-async def test_create_experiment_impl_for_freq_online(
-    xngin_session, testing_datasource, sample_table, use_deterministic_random
-):
+async def test_create_experiment_impl_for_freq_online(xngin_session, testing_datasource, sample_table):
     """Test implementation of creating an online experiment."""
     request = make_create_freq_online_experiment_request()
 

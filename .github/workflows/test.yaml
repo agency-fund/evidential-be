@@ -5,6 +5,7 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -167,7 +168,8 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-22.04
     needs: changes
-    if: needs.changes.outputs.queries == 'true'
+    if: needs.changes.outputs.queries == 'true' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     env:
       DWH_DATASET_NAME: bqintegration_${{ github.run_id }}_${{ github.run_attempt }}_dwh
       QUERIES_DATASET_NAME: bqintegration_${{ github.run_id }}_${{ github.run_attempt }}_q
