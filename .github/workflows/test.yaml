@@ -172,7 +172,7 @@ jobs:
 
   osx-setup:
     needs: changes
-    if: ${{ needs.changes.outputs.pydependencies == 'true' }}
+    if: needs.changes.outputs.pydependencies == 'true'
     timeout-minutes: 15
     runs-on: macos-14
     steps:
