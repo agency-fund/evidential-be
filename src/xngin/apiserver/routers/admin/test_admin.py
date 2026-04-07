@@ -3645,10 +3645,10 @@ async def test_list_experiments(
 
 
 async def test_list_experiments_empty(
-    testing_datasource_with_user,
+    testing_datasource,
     aclient: AdminAPIClient,
 ):
     """Test that listing experiments for an organization with no experiments returns an empty list."""
-    org_id = testing_datasource_with_user.org.id
+    org_id = testing_datasource.org.id
     experiments = aclient.list_organization_experiments(organization_id=org_id).data
     assert experiments.items == []
