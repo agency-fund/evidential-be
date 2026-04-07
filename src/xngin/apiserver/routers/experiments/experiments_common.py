@@ -1,7 +1,6 @@
 import asyncio
 import enum
 import io
-import secrets
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
@@ -118,7 +117,7 @@ def make_participants_def_from_experiment(experiment: tables.Experiment) -> Part
             fd.is_strata = True
 
     hidden = experiment.participant_type.strip() != ""
-    ptype = experiment.participant_type if not hidden else f"__{table_name}_{secrets.token_hex(4)}"
+    ptype = experiment.participant_type if not hidden else ""
     return ParticipantsDef(
         type="schema",
         table_name=table_name,
