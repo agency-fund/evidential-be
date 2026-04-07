@@ -1456,11 +1456,10 @@ async def test_state_setting_experiment_impl(
 async def test_list_experiments_impl(
     xngin_session,
     testing_datasource,
-    testing_datasource_with_user,
+    testing_datasource_other,
 ):
     """Test that we only get experiments in a valid state for the specified datasource."""
     ds = testing_datasource.ds
-    dsu = testing_datasource_with_user.ds
     table = TESTING_DWH_PARTICIPANT_DEF.table_name
     pk = "id"
     experiment1_data = await make_insertable_experiment(ds, ExperimentState.ASSIGNED, table_name=table, primary_key=pk)
@@ -1468,7 +1467,9 @@ async def test_list_experiments_impl(
     experiment3_data = await make_insertable_experiment(ds, ExperimentState.DESIGNING, table_name=table, primary_key=pk)
     experiment4_data = await make_insertable_experiment(ds, ExperimentState.ABORTED, table_name=table, primary_key=pk)
     # One more experiment associated with a *different* datasource.
-    experiment5_data = await make_insertable_experiment(dsu, ExperimentState.ASSIGNED, table_name=table, primary_key=pk)
+    experiment5_data = await make_insertable_experiment(
+        testing_datasource_other.ds, ExperimentState.ASSIGNED, table_name=table, primary_key=pk
+    )
     # Set the created_at time to test ordering
     experiment1_data[0].created_at = datetime.now(UTC) - timedelta(days=1)
     experiment2_data[0].created_at = datetime.now(UTC)

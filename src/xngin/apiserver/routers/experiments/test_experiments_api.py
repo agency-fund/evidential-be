@@ -74,11 +74,13 @@ async def create_experiment(
     if experiment_type == ExperimentsType.FREQ_PREASSIGNED:
         result = aclient.create_experiment(datasource_id=datasource_metadata.ds.id, body=request, desired_n=1)
     else:
-        result = aclient.create_experiment(datasource_id=datasource_metadata.ds.id, body=request)
+        result = aclient.create_experiment(datasource_id=datasource_metadata.datasource_id, body=request)
     created_experiment = result.data
-    aclient.commit_experiment(datasource_id=datasource_metadata.ds.id, experiment_id=created_experiment.experiment_id)
+    aclient.commit_experiment(
+        datasource_id=datasource_metadata.datasource_id, experiment_id=created_experiment.experiment_id
+    )
     config = aclient.get_experiment_for_ui(
-        datasource_id=datasource_metadata.ds.id,
+        datasource_id=datasource_metadata.datasource_id,
         experiment_id=created_experiment.experiment_id,
     ).data.config
     return TypeAdapter(ExperimentConfig).validate_python(config)
@@ -179,7 +181,7 @@ def make_unvalidated_create_experiment_request(
     ],
 )
 async def test_list_experiments_with_various_insufficient_headers(
-    testing_datasource_with_user,
+    testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
     key,
@@ -187,39 +189,37 @@ async def test_list_experiments_with_various_insufficient_headers(
     expected_message,
 ):
     """Tests that listing experiments tied to a db datasource requires an API key."""
-    await create_experiment(testing_datasource_with_user, aclient)
+    await create_experiment(testing_datasource, aclient)
     # Special case the absent header for compatibility with the generated client's argument types.
     if key is None:
-        response = eclient.client.get("/v1/experiments", headers={"Datasource-ID": testing_datasource_with_user.ds.id})
+        response = eclient.client.get("/v1/experiments", headers={"Datasource-ID": testing_datasource.datasource_id})
         assert response.status_code == expected_status
         assert expected_message in response.json()["message"], response.content
         return
 
     with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
-        eclient.list_experiments(api_key=key, datasource_id=testing_datasource_with_user.ds.id)
+        eclient.list_experiments(api_key=key, datasource_id=testing_datasource.datasource_id)
     assert exc.value.result.status.value == expected_status
     assert expected_message in exc.value.result.data["message"], exc.value.result.response.content
 
 
 async def test_list_experiments_with_api_key(
-    testing_datasource_with_user, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """Tests that listing experiments tied to a db datasource with an API key works."""
-    new_experiment = await create_experiment(testing_datasource_with_user, aclient)
+    new_experiment = await create_experiment(testing_datasource, aclient)
     experiments = eclient.list_experiments(
-        api_key=testing_datasource_with_user.key, datasource_id=testing_datasource_with_user.ds.id
+        api_key=testing_datasource.key, datasource_id=testing_datasource.datasource_id
     ).data
     assert len(experiments.items) == 1
     assert experiments.items[0].state == ExperimentState.COMMITTED
     assert new_experiment.design_spec == experiments.items[0].design_spec
 
 
-async def test_get_experiment(testing_datasource_with_user, aclient: AdminAPIClient, eclient: ExperimentsAPIClient):
-    new_experiment = await create_preassigned_experiment(testing_datasource_with_user, aclient)
-    response = eclient.get_experiment(
-        api_key=testing_datasource_with_user.key, experiment_id=new_experiment.experiment_id
-    ).data
-    assert response.datasource_id == testing_datasource_with_user.ds.id
+async def test_get_experiment(testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient):
+    new_experiment = await create_preassigned_experiment(testing_datasource, aclient)
+    response = eclient.get_experiment(api_key=testing_datasource.key, experiment_id=new_experiment.experiment_id).data
+    assert response.datasource_id == testing_datasource.datasource_id
     assert response.state == ExperimentState.COMMITTED
     assert isinstance(response.design_spec, PreassignedFrequentistExperimentSpec)
     assert response.design_spec == new_experiment.design_spec
@@ -243,7 +243,7 @@ async def test_get_experiment(testing_datasource_with_user, aclient: AdminAPICli
     ],
 )
 async def test_create_experiment_api_table_name_and_primary_key_presence(
-    testing_datasource_with_user,
+    testing_datasource,
     aclient: AdminAPIClient,
     experiment_type: ExperimentsType,
     table_name: str | None,
@@ -257,7 +257,7 @@ async def test_create_experiment_api_table_name_and_primary_key_presence(
         primary_key=primary_key,
     )
     result = aclient.create_experiment(
-        datasource_id=testing_datasource_with_user.ds.id,
+        datasource_id=testing_datasource.datasource_id,
         body=request,
         raise_if_not_default_status=False,
         desired_n=1,
@@ -279,10 +279,10 @@ def test_get_experiment_assignments_not_found(testing_datasource, eclient: Exper
 
 
 async def test_get_experiment_assignments_wrong_datasource(
-    testing_datasource, testing_datasource_with_user, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+    testing_datasource, testing_datasource_other, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """Test getting assignments for an experiment from a different datasource."""
-    experiment = await create_experiment(testing_datasource_with_user, aclient)
+    experiment = await create_experiment(testing_datasource_other, aclient)
 
     # Try to get testing_datasource's experiment from another datasource's key.
     with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
@@ -292,16 +292,16 @@ async def test_get_experiment_assignments_wrong_datasource(
 
 
 async def test_get_experiment_assignments_success(
-    testing_datasource_with_user, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
-    experiment = await create_experiment(testing_datasource_with_user, aclient)
+    experiment = await create_experiment(testing_datasource, aclient)
     first_assignment = eclient.get_assignment(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=experiment.experiment_id,
         participant_id="participant_1",
     ).data
     second_assignment = eclient.get_assignment(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=experiment.experiment_id,
         participant_id="participant_2",
     ).data
@@ -310,7 +310,7 @@ async def test_get_experiment_assignments_success(
     assert second_assignment.assignment is not None
 
     parsed = eclient.get_experiment_assignments(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=experiment.experiment_id,
     ).data
     assert parsed.experiment_id == experiment.experiment_id
@@ -321,12 +321,12 @@ async def test_get_experiment_assignments_success(
 
 
 async def test_get_experiment_assignments_as_csv_success(
-    testing_datasource_with_user, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
-    experiment = await create_experiment(testing_datasource_with_user, aclient)
+    experiment = await create_experiment(testing_datasource, aclient)
     for i in range(10):
         assignment_response = eclient.get_assignment(
-            api_key=testing_datasource_with_user.key,
+            api_key=testing_datasource.key,
             experiment_id=experiment.experiment_id,
             participant_id=f"participant_{i}",
         ).data
@@ -334,7 +334,7 @@ async def test_get_experiment_assignments_as_csv_success(
 
     response = eclient.client.get(
         f"/v1/experiments/{experiment.experiment_id}/assignments/csv",
-        headers={"X-API-Key": testing_datasource_with_user.key},
+        headers={"X-API-Key": testing_datasource.key},
     )
 
     assert response.status_code == HTTPStatus.OK, response.content
@@ -353,11 +353,11 @@ async def test_get_experiment_assignments_as_csv_success(
 
 async def test_get_assignment_preassigned(
     xngin_session,
-    testing_datasource_with_user,
+    testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
 ):
-    preassigned_experiment = await create_preassigned_experiment(testing_datasource_with_user, aclient)
+    preassigned_experiment = await create_preassigned_experiment(testing_datasource, aclient)
     assignment = tables.ArmAssignment(
         experiment_id=preassigned_experiment.experiment_id,
         participant_id="assigned_id",
@@ -369,7 +369,7 @@ async def test_get_assignment_preassigned(
     await xngin_session.commit()
 
     parsed = eclient.get_assignment(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=preassigned_experiment.experiment_id,
         participant_id="unassigned_id",
     ).data
@@ -378,7 +378,7 @@ async def test_get_assignment_preassigned(
     assert parsed.assignment is None
 
     parsed = eclient.get_assignment(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=preassigned_experiment.experiment_id,
         participant_id="assigned_id",
     ).data
@@ -388,14 +388,12 @@ async def test_get_assignment_preassigned(
     assert parsed.assignment.arm_name == "control"
 
 
-async def test_get_assignment_online(
-    testing_datasource_with_user, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
-):
+async def test_get_assignment_online(testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient):
     """Test endpoint that gets an assignment for a participant via API key."""
-    online_experiment = await create_experiment(testing_datasource_with_user, aclient)
+    online_experiment = await create_experiment(testing_datasource, aclient)
 
     parsed = eclient.get_assignment(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=online_experiment.experiment_id,
         participant_id="1",
     ).data
@@ -409,14 +407,14 @@ async def test_get_assignment_online(
 
     # Test that we get the same assignment for the same participant.
     parsed2 = eclient.get_assignment(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=online_experiment.experiment_id,
         participant_id="1",
     ).data
     assert parsed2 == parsed
 
     assignments = eclient.get_experiment_assignments(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=online_experiment.experiment_id,
     ).data
     assert assignments.sample_size == 1
@@ -425,23 +423,19 @@ async def test_get_assignment_online(
     assert str(assignments.assignments[0].arm_id) == str(parsed.assignment.arm_id)
 
     experiment = eclient.get_experiment(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=online_experiment.experiment_id,
     ).data
     assert experiment.stopped_assignments_at is None
     assert experiment.stopped_assignments_reason is None
 
 
-async def test_get_assignment_mab_online(
-    testing_datasource_with_user, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
-):
+async def test_get_assignment_mab_online(testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient):
     """Test endpoint that gets an assignment for a participant via API key."""
-    online_experiment = await create_experiment(
-        testing_datasource_with_user, aclient, experiment_type=ExperimentsType.MAB_ONLINE
-    )
+    online_experiment = await create_experiment(testing_datasource, aclient, experiment_type=ExperimentsType.MAB_ONLINE)
 
     parsed = eclient.get_assignment(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=online_experiment.experiment_id,
         participant_id="1",
     ).data
@@ -457,14 +451,14 @@ async def test_get_assignment_mab_online(
 
     # Test that we get the same assignment for the same participant.
     parsed2 = eclient.get_assignment(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=online_experiment.experiment_id,
         participant_id="1",
     ).data
     assert parsed2 == parsed
 
     assignments = eclient.get_experiment_assignments(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=online_experiment.experiment_id,
     ).data
     assert assignments.sample_size == 1
@@ -476,7 +470,7 @@ async def test_get_assignment_mab_online(
     assert assignments.assignments[0].context_values is None
 
     experiment = eclient.get_experiment(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=online_experiment.experiment_id,
     ).data
     assert experiment.stopped_assignments_at is None
@@ -484,13 +478,13 @@ async def test_get_assignment_mab_online(
 
 
 async def test_get_assignment_online_dont_create(
-    testing_datasource_with_user, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """Verify endpoint doesn't create an assignment when create_if_none=False."""
-    online_experiment = await create_experiment(testing_datasource_with_user, aclient)
+    online_experiment = await create_experiment(testing_datasource, aclient)
 
     parsed = eclient.get_assignment(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         create_if_none=False,
         experiment_id=online_experiment.experiment_id,
         participant_id="1",
@@ -501,17 +495,17 @@ async def test_get_assignment_online_dont_create(
 
 
 async def test_get_assignment_online_past_end_date(
-    testing_datasource_with_user, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """Verify endpoint doesn't create an assignment for an online experiment that has ended."""
     online_experiment = await create_experiment(
-        testing_datasource_with_user,
+        testing_datasource,
         aclient,
         end_date=datetime.now(UTC) - timedelta(days=1),
     )
 
     parsed = eclient.get_assignment(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=online_experiment.experiment_id,
         participant_id="1",
     ).data
@@ -520,7 +514,7 @@ async def test_get_assignment_online_past_end_date(
     assert parsed.assignment is None
 
     experiment = eclient.get_experiment(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=online_experiment.experiment_id,
     ).data
     assert experiment.stopped_assignments_at is not None
@@ -528,13 +522,13 @@ async def test_get_assignment_online_past_end_date(
 
 
 async def test_get_cmab_experiment_assignment_for_online_participant(
-    testing_datasource_with_user, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """
     Test getting the assignment for a participant in a CMAB online experiment.
     """
     online_experiment = await create_experiment(
-        testing_datasource_with_user, aclient, experiment_type=ExperimentsType.CMAB_ONLINE
+        testing_datasource, aclient, experiment_type=ExperimentsType.CMAB_ONLINE
     )
 
     context_inputs = [
@@ -542,7 +536,7 @@ async def test_get_cmab_experiment_assignment_for_online_participant(
         for context in sorted(online_experiment.design_spec.contexts, key=lambda c: c.context_id)
     ]
     parsed = eclient.get_assignment_cmab(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         body=CMABContextInputRequest(context_inputs=context_inputs),
         experiment_id=online_experiment.experiment_id,
         participant_id="1",
@@ -559,14 +553,14 @@ async def test_get_cmab_experiment_assignment_for_online_participant(
 
     # Test that we get the same assignment for the same participant.
     parsed2 = eclient.get_assignment(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=online_experiment.experiment_id,
         participant_id="1",
     ).data
     assert parsed2 == parsed
 
     assignments = eclient.get_experiment_assignments(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=online_experiment.experiment_id,
     ).data
     assert assignments.sample_size == 1
@@ -576,7 +570,7 @@ async def test_get_cmab_experiment_assignment_for_online_participant(
     assert assignments.assignments[0].context_values == [1.0, 1.0]
 
     experiment = eclient.get_experiment(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=online_experiment.experiment_id,
     ).data
     assert experiment.stopped_assignments_at is None
@@ -584,7 +578,7 @@ async def test_get_cmab_experiment_assignment_for_online_participant(
 
 
 async def test_get_cmab_experiment_assignment_for_online_participant_glific_unwrap(
-    testing_datasource_with_user, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """
     Verifies that a call resembling the webhook request from Glific can use the ?_unwrap=
@@ -595,7 +589,7 @@ async def test_get_cmab_experiment_assignment_for_online_participant_glific_unwr
     but with different HTTP client behavior.
     """
     online_experiment = await create_experiment(
-        testing_datasource_with_user, aclient, experiment_type=ExperimentsType.CMAB_ONLINE
+        testing_datasource, aclient, experiment_type=ExperimentsType.CMAB_ONLINE
     )
 
     input_data = {
@@ -617,7 +611,7 @@ async def test_get_cmab_experiment_assignment_for_online_participant_glific_unwr
     response = eclient.client.post(
         f"/v1/experiments/{online_experiment.experiment_id}/assignments/1/assign_cmab"
         "?_unwrap=/variables~1custom/controllable_field",
-        headers={"X-API-Key": testing_datasource_with_user.key},
+        headers={"X-API-Key": testing_datasource.key},
         json=fake_glific_request,
     )
     assert response.status_code == HTTPStatus.OK, response.content
@@ -634,13 +628,13 @@ async def test_get_cmab_experiment_assignment_for_online_participant_glific_unwr
 
 
 async def test_assign_cmab_wrong_experiment_type(
-    testing_datasource_with_user, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
-    online_experiment = await create_experiment(testing_datasource_with_user, aclient)
+    online_experiment = await create_experiment(testing_datasource, aclient)
 
     with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
         eclient.get_assignment_cmab(
-            api_key=testing_datasource_with_user.key,
+            api_key=testing_datasource.key,
             body=CMABContextInputRequest(context_inputs=[]),
             experiment_id=online_experiment.experiment_id,
             participant_id="1",
@@ -651,17 +645,17 @@ async def test_assign_cmab_wrong_experiment_type(
 
 async def test_assign_with_filters_wrong_experiment_type(
     xngin_session,
-    testing_datasource_with_user,
+    testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
 ):
     """Test that assign_with_filters endpoint rejects non-FREQ_ONLINE experiments."""
-    preassigned_exp = await create_preassigned_experiment(testing_datasource_with_user, aclient)
+    preassigned_exp = await create_preassigned_experiment(testing_datasource, aclient)
 
     # Expect a 422 because we are using the get_assignment_filtered endpoint incorrectly.
     with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
         eclient.get_assignment_filtered(
-            api_key=testing_datasource_with_user.key,
+            api_key=testing_datasource.key,
             body=OnlineAssignmentWithFiltersRequest(properties=[]),
             experiment_id=preassigned_exp.experiment_id,
             participant_id="participant_1",
@@ -671,17 +665,17 @@ async def test_assign_with_filters_wrong_experiment_type(
 
 
 async def test_assign_with_filters_participant_passes_filters(
-    testing_datasource_with_user, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """Test that participant passing filters gets assigned."""
     experiment = await create_experiment(
-        testing_datasource_with_user,
+        testing_datasource,
         aclient,
         filters=[Filter(field_name="current_income", relation=Relation.BETWEEN, value=[1000, 5000])],
     )
 
     parsed = eclient.get_assignment_filtered(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         body=OnlineAssignmentWithFiltersRequest(properties=[{"field_name": "current_income", "value": 2500}]),
         experiment_id=experiment.experiment_id,
         participant_id="participant_1",
@@ -694,17 +688,17 @@ async def test_assign_with_filters_participant_passes_filters(
 
 
 async def test_assign_with_filters_ignores_missing_content_type_header(
-    testing_datasource_with_user, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     experiment = await create_experiment(
-        testing_datasource_with_user,
+        testing_datasource,
         aclient,
         filters=[Filter(field_name="current_income", relation=Relation.BETWEEN, value=[1000, 5000])],
     )
 
     response = eclient.client.post(
         f"/v1/experiments/{experiment.experiment_id}/assignments/participant_1/assign_with_filters?random_state=42",
-        headers={"X-API-Key": testing_datasource_with_user.key},
+        headers={"X-API-Key": testing_datasource.key},
         content=OnlineAssignmentWithFiltersRequest(
             properties=[ParticipantProperty(field_name="current_income", value=2500)]
         ).model_dump_json(),
@@ -721,12 +715,12 @@ async def test_assign_with_filters_ignores_missing_content_type_header(
 
 async def test_get_assignment_preassigned_cache_headers(
     xngin_session,
-    testing_datasource_with_user,
+    testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
 ):
     """Test Cache-Control headers for preassigned experiments."""
-    preassigned_experiment = await create_preassigned_experiment(testing_datasource_with_user, aclient)
+    preassigned_experiment = await create_preassigned_experiment(testing_datasource, aclient)
     assignment = tables.ArmAssignment(
         experiment_id=preassigned_experiment.experiment_id,
         participant_id="assigned_id",
@@ -739,7 +733,7 @@ async def test_get_assignment_preassigned_cache_headers(
 
     # No assignment = no cache header
     response = eclient.get_assignment(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=preassigned_experiment.experiment_id,
         participant_id="unassigned_id",
     )
@@ -747,7 +741,7 @@ async def test_get_assignment_preassigned_cache_headers(
 
     # With assignment = cache header
     response = eclient.get_assignment(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=preassigned_experiment.experiment_id,
         participant_id="assigned_id",
     )
@@ -755,14 +749,14 @@ async def test_get_assignment_preassigned_cache_headers(
 
 
 async def test_get_assignment_online_cache_headers(
-    testing_datasource_with_user, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """Test Cache-Control headers for online experiments."""
-    online_experiment = await create_experiment(testing_datasource_with_user, aclient)
+    online_experiment = await create_experiment(testing_datasource, aclient)
 
     # No assignment when create_if_none=false = no cache header
     response = eclient.get_assignment(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         create_if_none=False,
         experiment_id=online_experiment.experiment_id,
         participant_id="1",
@@ -771,7 +765,7 @@ async def test_get_assignment_online_cache_headers(
 
     # Default max_age when assignment created
     response = eclient.get_assignment(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=online_experiment.experiment_id,
         participant_id="1",
     )
@@ -779,7 +773,7 @@ async def test_get_assignment_online_cache_headers(
 
     # max_age=0 disables caching
     response = eclient.get_assignment(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=online_experiment.experiment_id,
         max_age=0,
         participant_id="1",
@@ -788,7 +782,7 @@ async def test_get_assignment_online_cache_headers(
 
     # Custom max_age
     response = eclient.get_assignment(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=online_experiment.experiment_id,
         max_age=100,
         participant_id="1",
@@ -798,7 +792,7 @@ async def test_get_assignment_online_cache_headers(
     # Invalid max_age returns 422
     with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
         eclient.get_assignment(
-            api_key=testing_datasource_with_user.key,
+            api_key=testing_datasource.key,
             experiment_id=online_experiment.experiment_id,
             max_age=-100,
             participant_id="1",
@@ -807,16 +801,14 @@ async def test_get_assignment_online_cache_headers(
 
 
 async def test_get_assignment_mab_cache_headers(
-    testing_datasource_with_user, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """Test Cache-Control headers for MAB experiments (only cached after outcome recorded)."""
-    mab_experiment = await create_experiment(
-        testing_datasource_with_user, aclient, experiment_type=ExperimentsType.MAB_ONLINE
-    )
+    mab_experiment = await create_experiment(testing_datasource, aclient, experiment_type=ExperimentsType.MAB_ONLINE)
 
     # Get assignment - no cache header since no outcome yet
     response = eclient.get_assignment(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=mab_experiment.experiment_id,
         participant_id="1",
     )
@@ -826,7 +818,7 @@ async def test_get_assignment_mab_cache_headers(
 
     # Record outcome
     _ = eclient.update_bandit_arm_with_participant_outcome(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         body=UpdateBanditArmOutcomeRequest(outcome=1.0),
         experiment_id=mab_experiment.experiment_id,
         participant_id="1",
@@ -834,7 +826,7 @@ async def test_get_assignment_mab_cache_headers(
 
     # Get assignment again - should have cache header now
     response = eclient.get_assignment(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=mab_experiment.experiment_id,
         participant_id="1",
     )
@@ -844,12 +836,10 @@ async def test_get_assignment_mab_cache_headers(
 
 
 async def test_get_assignment_cmab_cache_headers(
-    testing_datasource_with_user, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """Test Cache-Control headers for CMAB experiments (only cached after outcome recorded)."""
-    cmab_experiment = await create_experiment(
-        testing_datasource_with_user, aclient, experiment_type=ExperimentsType.CMAB_ONLINE
-    )
+    cmab_experiment = await create_experiment(testing_datasource, aclient, experiment_type=ExperimentsType.CMAB_ONLINE)
 
     context_inputs = [
         {"context_id": context.context_id, "context_value": 1.0}
@@ -858,7 +848,7 @@ async def test_get_assignment_cmab_cache_headers(
 
     # Create assignment via CMAB endpoint
     _ = eclient.get_assignment_cmab(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         body=CMABContextInputRequest(context_inputs=context_inputs),
         experiment_id=cmab_experiment.experiment_id,
         participant_id="1",
@@ -866,7 +856,7 @@ async def test_get_assignment_cmab_cache_headers(
 
     # Get assignment via GET - no cache header since no outcome yet
     response = eclient.get_assignment(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=cmab_experiment.experiment_id,
         participant_id="1",
     )
@@ -876,7 +866,7 @@ async def test_get_assignment_cmab_cache_headers(
 
     # Record outcome
     _ = eclient.update_bandit_arm_with_participant_outcome(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         body=UpdateBanditArmOutcomeRequest(outcome=1.0),
         experiment_id=cmab_experiment.experiment_id,
         participant_id="1",
@@ -884,7 +874,7 @@ async def test_get_assignment_cmab_cache_headers(
 
     # Get assignment again - should have cache header now
     response = eclient.get_assignment(
-        api_key=testing_datasource_with_user.key,
+        api_key=testing_datasource.key,
         experiment_id=cmab_experiment.experiment_id,
         participant_id="1",
     )

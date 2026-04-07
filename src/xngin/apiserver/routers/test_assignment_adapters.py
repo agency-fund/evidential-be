@@ -8,11 +8,13 @@ from decimal import Decimal
 import numpy as np
 import pandas as pd
 import pytest
-from sqlalchemy import DECIMAL, Boolean, Column, Float, Integer, MetaData, String, Table, delete, select
+from sqlalchemy import DECIMAL, Boolean, Column, Float, Integer, MetaData, String, Table, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver.conftest import DatasourceMetadata, RowProtocolMixin
+from xngin.apiserver.routers.admin.admin_api_types import DeleteExperimentDataRequest
 from xngin.apiserver.routers.assignment_adapters import (
+    _is_present_scalar,  # noqa: PLC2701
     assign_treatments_with_balance,
     bulk_insert_arm_assignments,
     make_balance_check,
@@ -24,6 +26,7 @@ from xngin.apiserver.routers.common_api_types import (
 )
 from xngin.apiserver.routers.experiments.test_experiments_common import insert_experiment_and_arms
 from xngin.apiserver.sqla import tables
+from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.stats.assignment import AssignmentResult
 from xngin.stats.balance import BalanceResult
 
@@ -158,6 +161,27 @@ def test_make_balance_check_with_different_thresholds():
     assert thresh4 and thresh4.balance_ok
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, False),
+        (pd.NA, False),
+        (pd.NaT, False),
+        (np.nan, False),
+        (np.float64(np.nan), False),
+        (float("NaN"), False),
+        (Decimal("NaN"), False),
+        (0, True),
+        (False, True),
+        ("", True),
+        (Decimal(1), True),
+        (pd.Timestamp("2024-01-01"), True),
+    ],
+)
+def test_is_present_scalar(value, expected):
+    assert _is_present_scalar(value) is expected
+
+
 def test_assign_treatments_with_balance_basic(sample_table, sample_rows):
     """Test that assign_treatments_with_balance returns proper AssignmentResult."""
     result = assign_treatments_with_balance(
@@ -256,7 +280,11 @@ MAX_SAFE_INTEGER = (1 << 53) - 1  # 9007199254740991
 
 
 async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
-    xngin_session: AsyncSession, testing_datasource, sample_table, sample_data
+    xngin_session: AsyncSession,
+    testing_datasource: DatasourceMetadata,
+    sample_table,
+    sample_data,
+    aclient: AdminAPIClient,
 ):
     """Test assignment with large integer participant IDs (underlying type as Decimal and int64)."""
     # First create an experiment and arms in db
@@ -311,8 +339,12 @@ async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
         # Assert that the inserted id was derived from the original id
         assert orig_id in orig_ids, f"id {orig_id} not found"
 
-    # Reset the assignments
-    await xngin_session.execute(delete(tables.ArmAssignment))
+    await xngin_session.commit()
+    aclient.delete_experiment_data(
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=experiment.id,
+        body=DeleteExperimentDataRequest(assignments=True),
+    )
 
     # Test: handle very big negatives as well
     sample_data["id"] = orig_ids.apply(lambda x: Decimal(-MAX_SAFE_INTEGER - x))
@@ -326,8 +358,12 @@ async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
         # Assert that the inserted id was derived from the original id
         assert orig_id in orig_ids, f"id {orig_id} not found"
 
-    # Reset the assignments
-    await xngin_session.execute(delete(tables.ArmAssignment))
+    await xngin_session.commit()
+    aclient.delete_experiment_data(
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=experiment.id,
+        body=DeleteExperimentDataRequest(assignments=True),
+    )
 
     # Test: check that stochatreat isn't upcasting int64 to float64:
     sample_data["id"] = orig_ids.astype("int64")

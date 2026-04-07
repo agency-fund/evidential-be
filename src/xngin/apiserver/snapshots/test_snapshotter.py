@@ -87,8 +87,8 @@ async def get_latest_snapshot_analysis(xngin_session, experiment_id):
     return FreqExperimentAnalysisResponse.model_validate(snapshot.data)
 
 
-async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_datasource_with_user):
-    datasource = testing_datasource_with_user.ds
+async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_datasource):
+    datasource = testing_datasource.ds
 
     # Create a preassigned frequentist experiment design spec
     design_spec = PreassignedFrequentistExperimentSpec(

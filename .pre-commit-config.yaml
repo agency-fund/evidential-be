@@ -66,6 +66,6 @@ repos:
         pass_filenames: false
         require_serial: true
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: 1e30511413f07e516c1844ba91abce8aca984963  # frozen: v1.18.0
+    rev: ea2eb407b4cbce87cf0d502f36578950494f5ac9  # frozen: v1.23.1
     hooks:
       - id: zizmor
