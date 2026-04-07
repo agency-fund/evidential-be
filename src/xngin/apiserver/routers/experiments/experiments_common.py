@@ -236,24 +236,21 @@ async def create_experiment_impl(
                 request=request,
                 datasource_id=datasource.id,
                 organization_id=datasource.organization_id,
-                participant_unique_id_field=primary_key,
                 dwh_sa_table=sa_table,
                 dwh_participants=participants,
                 random_state=random_state,
                 xngin_session=xngin_session,
                 stratify_on_metrics=stratify_on_metrics,
                 validated_webhooks=validated_webhooks,
-                table_name=table_name,
                 field_type_map=field_type_map,
-                unique_id_name=primary_key,
             )
 
         case ExperimentsType.FREQ_ONLINE:
             assert request.table_name is not None
             assert request.primary_key is not None
-            table_name = request.table_name
-            primary_key = request.primary_key
-            field_type_map = await fetch_fields_or_raise(datasource, request.design_spec, table_name, primary_key)
+            field_type_map = await fetch_fields_or_raise(
+                datasource, request.design_spec, request.table_name, request.primary_key
+            )
 
             return await create_freq_online_experiment_impl(
                 request=request,
@@ -261,9 +258,7 @@ async def create_experiment_impl(
                 organization_id=datasource.organization_id,
                 xngin_session=xngin_session,
                 validated_webhooks=validated_webhooks,
-                table_name=table_name,
                 field_type_map=field_type_map,
-                unique_id_name=primary_key,
             )
 
         case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
@@ -285,22 +280,23 @@ async def create_experiment_impl(
 
 async def create_preassigned_experiment_impl(
     request: CreateExperimentRequest,
+    *,
     datasource_id: str,
     organization_id: str,
-    participant_unique_id_field: str,
     dwh_sa_table: Table,
     dwh_participants: Sequence[RowProtocol],
     random_state: int | None,
     xngin_session: AsyncSession,
     stratify_on_metrics: bool,
     validated_webhooks: list[tables.Webhook],
-    table_name: str | None,
     field_type_map: dict[str, DataType],
-    unique_id_name: str | None,
 ) -> CreateExperimentResponse:
     """Create a frequentist preassigned experiment and persist it to the database."""
 
     design_spec = request.design_spec
+    table_name = request.table_name
+    unique_id_name = request.primary_key
+    assert table_name is not None and unique_id_name is not None
 
     if design_spec.experiment_type != ExperimentsType.FREQ_PREASSIGNED:
         raise MismatchedExperimentTypeError(f"can't create preassigned exp of type: {design_spec.experiment_type}")
@@ -312,7 +308,7 @@ async def create_preassigned_experiment_impl(
     # Check for unique participant IDs after filtering
     seen_participant_ids = set()
     for participant in dwh_participants:
-        participant_id = getattr(participant, participant_unique_id_field)
+        participant_id = getattr(participant, unique_id_name)
         if participant_id in seen_participant_ids:
             raise LateValidationError(f"Duplicate participant ID found after filtering: '{participant_id}'.")
         seen_participant_ids.add(participant_id)
@@ -324,7 +320,7 @@ async def create_preassigned_experiment_impl(
         sa_table=dwh_sa_table,
         data=dwh_participants,
         stratum_cols=stratum_cols,
-        id_col=participant_unique_id_field,
+        id_col=unique_id_name,
         n_arms=len(design_spec.arms),
         quantiles=4,
         random_state=random_state,
@@ -359,7 +355,7 @@ async def create_preassigned_experiment_impl(
         experiment_id=experiment.id,
         arm_ids=[arm.id for arm in experiment.arms],
         participant_type=experiment.participant_type,
-        participant_id_col=participant_unique_id_field,
+        participant_id_col=unique_id_name,
         data=dwh_participants,
         assignment_result=assignment_result,
     )
@@ -371,16 +367,18 @@ async def create_preassigned_experiment_impl(
 
 async def create_freq_online_experiment_impl(
     request: CreateExperimentRequest,
+    *,
     datasource_id: str,
     organization_id: str,
     xngin_session: AsyncSession,
     validated_webhooks: list[tables.Webhook],
-    table_name: str | None,
     field_type_map: dict[str, DataType],
-    unique_id_name: str | None,
 ) -> CreateExperimentResponse:
     """Create a frequentist online experiment and persist it to the database."""
     design_spec = request.design_spec
+    table_name = request.table_name
+    unique_id_name = request.primary_key
+    assert table_name is not None and unique_id_name is not None
 
     if design_spec.experiment_type != ExperimentsType.FREQ_ONLINE:
         raise MismatchedExperimentTypeError(f"Can't create freq online exp of type: {design_spec.experiment_type}")

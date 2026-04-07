@@ -311,7 +311,7 @@ async def get_experiment_preloaded(session: AsyncSession, experiment_id: str) ->
 class MockRow(RowProtocolMixin):
     """Simulate the bits of a sqlalchemy Row that we need here."""
 
-    participant_id: str
+    id: str
     gender: str = "M"
     is_onboarded: bool = True
 
@@ -334,7 +334,7 @@ def make_sample_data(n=100):
     rs = np.random.default_rng(42)
     return [
         MockRow(
-            participant_id=f"p{i}",
+            id=f"p{i}",
             gender=rs.choice(["M", "F"]),
             is_onboarded=bool(rs.choice([True, False], p=[0.5, 0.5])),
         )
@@ -369,16 +369,13 @@ async def test_create_preassigned_experiment_impl(
         request=request.model_copy(deep=True),  # we'll use the original request for assertions
         datasource_id=testing_datasource.ds.id,
         organization_id=testing_datasource.ds.organization_id,
-        participant_unique_id_field="participant_id",
         dwh_sa_table=sample_table,
         dwh_participants=participants,
         random_state=42,
         xngin_session=xngin_session,
         stratify_on_metrics=True,
         validated_webhooks=[],
-        table_name=request.table_name,
         field_type_map=field_type_map,
-        unique_id_name=request.primary_key,
     )
 
     # Verify response
@@ -469,7 +466,7 @@ async def test_create_preassigned_experiment_impl(
     assert len(assignments) == len(participants)
     # Verify all participant IDs in the db are the participants in the request
     assignment_participant_ids = {a.participant_id for a in assignments}
-    assert assignment_participant_ids == {p.participant_id for p in participants}
+    assert assignment_participant_ids == {p.id for p in participants}
     assert len(assignment_participant_ids) == len(participants)
 
     # Verify arms were created in database
@@ -517,9 +514,9 @@ async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
 
     # Create mock participants with a duplicate ID
     participants_with_duplicate = [
-        MockRow(participant_id="id_1", gender="M", is_onboarded=True),
-        MockRow(participant_id="id_2", gender="F", is_onboarded=False),
-        MockRow(participant_id="id_1", gender="F", is_onboarded=True),  # Duplicate ID
+        MockRow(id="id_1", gender="M", is_onboarded=True),
+        MockRow(id="id_2", gender="F", is_onboarded=False),
+        MockRow(id="id_1", gender="F", is_onboarded=True),  # Duplicate ID
     ]
 
     spec = cast(PreassignedFrequentistExperimentSpec, request.design_spec)
@@ -532,16 +529,13 @@ async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
             request=request,
             datasource_id=testing_datasource.ds.id,
             organization_id=testing_datasource.ds.organization_id,
-            participant_unique_id_field="participant_id",
             dwh_sa_table=sample_table,
             dwh_participants=participants_with_duplicate,
             random_state=42,
             xngin_session=xngin_session,
             stratify_on_metrics=False,
             validated_webhooks=[],
-            table_name=request.table_name,
             field_type_map=field_type_map,
-            unique_id_name=request.primary_key,
         )
 
 
@@ -565,16 +559,13 @@ async def test_create_preassigned_experiment_impl_with_unbalanced_arms(
         request=request,
         datasource_id=testing_datasource.ds.id,
         organization_id=testing_datasource.ds.organization_id,
-        participant_unique_id_field="participant_id",
         dwh_sa_table=sample_table,
         dwh_participants=participants,
         random_state=42,
         xngin_session=xngin_session,
         stratify_on_metrics=True,
         validated_webhooks=[],
-        table_name=request.table_name,
         field_type_map=field_type_map,
-        unique_id_name=request.primary_key,
     )
 
     experiment_id = response.experiment_id
@@ -633,16 +624,13 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
         request=request,
         datasource_id=testing_datasource.ds.id,
         organization_id=testing_datasource.ds.organization_id,
-        participant_unique_id_field="participant_id",
         dwh_sa_table=sample_table,
         dwh_participants=participants,
         random_state=42,
         xngin_session=xngin_session,
         stratify_on_metrics=False,
         validated_webhooks=[],
-        table_name=request.table_name,
         field_type_map=field_type_map,
-        unique_id_name=request.primary_key,
     )
 
     experiment_id = response.experiment_id
@@ -718,6 +706,7 @@ async def test_create_freq_online_experiment_impl_experiments_fields_are_correct
         ),
         webhooks=[],
     )
+    assert experiment_request.table_name is not None and experiment_request.primary_key is not None
 
     # Fake our field type map. Normally extracted from datasource schema.
     field_type_map: dict[str, DataType] = {
@@ -738,9 +727,7 @@ async def test_create_freq_online_experiment_impl_experiments_fields_are_correct
         organization_id=testing_datasource.ds.organization_id,
         xngin_session=xngin_session,
         validated_webhooks=[],
-        table_name=experiment_request.table_name,
         field_type_map=field_type_map,
-        unique_id_name=experiment_request.primary_key,
     )
 
     # Verify API response
