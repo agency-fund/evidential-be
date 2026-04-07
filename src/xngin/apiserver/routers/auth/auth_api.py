@@ -63,7 +63,7 @@ async def auth_callback(
     use to authenticate the user for the remainder of their session.
     """
     id_token = await _exchange_code_for_idtoken(oidc_config, httpx_client, body.code, body.code_verifier)
-    decoded = _validate_idtoken(oidc_config, id_token)
+    decoded = _validate_idtoken(oidc_config, id_token=id_token, nonce=body.nonce)
     session_token = session_cryptor.encode(
         Principal(
             email=decoded["email"],
@@ -106,7 +106,7 @@ async def _exchange_code_for_idtoken(
     return id_token
 
 
-def _validate_idtoken(oidc_config: GoogleOidcConfig, id_token: str) -> dict:
+def _validate_idtoken(oidc_config: GoogleOidcConfig, *, id_token: str, nonce: str) -> dict:
     """Validates a Google ID token (JWT) and returns the claims as a Python dictionary."""
     try:
         header = jwt.get_unverified_header(id_token)
@@ -140,6 +140,8 @@ def _validate_idtoken(oidc_config: GoogleOidcConfig, id_token: str) -> dict:
         # issues a token where azp an aud don't match then we would like to know about it.
         if decoded["azp"] != decoded["aud"]:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid azp/aud")
+        if decoded.get("nonce") != nonce:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid nonce")
     except JWTError as e:
         logger.warning(f"JWT validation failed: {e}")
         raise HTTPException(
