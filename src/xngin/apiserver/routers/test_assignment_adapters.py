@@ -8,11 +8,10 @@ from decimal import Decimal
 import numpy as np
 import pandas as pd
 import pytest
-from pydantic import TypeAdapter
 from sqlalchemy import DECIMAL, Boolean, Column, Float, Integer, MetaData, String, Table, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from xngin.apiserver.conftest import RowProtocolMixin
+from xngin.apiserver.conftest import DatasourceMetadata, RowProtocolMixin
 from xngin.apiserver.routers.assignment_adapters import (
     assign_treatments_with_balance,
     bulk_insert_arm_assignments,
@@ -24,7 +23,6 @@ from xngin.apiserver.routers.common_api_types import (
     Strata,
 )
 from xngin.apiserver.routers.experiments.test_experiments_common import insert_experiment_and_arms
-from xngin.apiserver.settings import RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
 from xngin.stats.assignment import AssignmentResult
 from xngin.stats.balance import BalanceResult
@@ -191,16 +189,17 @@ def test_assign_treatments_with_balance_basic(sample_table, sample_rows):
 @pytest.mark.parametrize("stratum_id_name", [None, "stratum_id"])
 async def test_bulk_insert_arm_assignments_basic(
     xngin_session: AsyncSession,
-    testing_datasource,
+    testing_datasource: DatasourceMetadata,
     sample_rows,
     stratum_id_name: str | None,
 ):
     """Test bulk inserts of arm assignments, with and without strata group ids."""
     # First create an experiment and arms in db
-    ds: tables.Datasource = testing_datasource.ds
-    pt = testing_datasource.pt
-    experiment = await insert_experiment_and_arms(xngin_session, ds)
+    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
     arm_ids = [arm.id for arm in experiment.arms]
+    unique_id_field = experiment.unique_id_field()
+    assert unique_id_field is not None
+    participant_type_name = "participant_type_is_deprecated"
 
     # Simulate 2 arms with stratification
     fake_assignment_results = AssignmentResult(
@@ -215,8 +214,8 @@ async def test_bulk_insert_arm_assignments_basic(
         xngin_session=xngin_session,
         experiment_id=experiment.id,
         arm_ids=arm_ids,
-        participant_type=pt.participant_type,
-        participant_id_col=pt.get_unique_id_field(),
+        participant_type=participant_type_name,
+        participant_id_col=unique_id_field.field_name,
         data=sample_rows,
         assignment_result=fake_assignment_results,
         stratum_id_name=stratum_id_name,
@@ -240,7 +239,7 @@ async def test_bulk_insert_arm_assignments_basic(
     # Verify arm assignments
     for assignment in assignments:
         assert assignment.experiment_id == experiment.id
-        assert assignment.participant_type == pt.participant_type
+        assert assignment.participant_type == participant_type_name
         assert assignment.arm_id in arm_ids
 
         # Verify strata are properly stored
@@ -261,11 +260,11 @@ async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
 ):
     """Test assignment with large integer participant IDs (underlying type as Decimal and int64)."""
     # First create an experiment and arms in db
-    ds: tables.Datasource = testing_datasource.ds
-    ds_config = TypeAdapter(RemoteDatabaseConfig).validate_python(ds.config)
-    pt = ds_config.participants[0]
-    experiment = await insert_experiment_and_arms(xngin_session, ds)
+    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
     arm_ids = [arm.id for arm in experiment.arms]
+    unique_id_field = experiment.unique_id_field()
+    assert unique_id_field is not None
+    participant_type_name = "participant_type_is_deprecated"
 
     async def _assign_test(data):
         rows = [Row(**row) for row in data.to_dict("records")]
@@ -283,8 +282,8 @@ async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
             xngin_session=xngin_session,
             experiment_id=experiment.id,
             arm_ids=arm_ids,
-            participant_type=pt.participant_type,
-            participant_id_col="id",
+            participant_type=participant_type_name,
+            participant_id_col=unique_id_field.field_name,
             data=rows,
             assignment_result=assignment_result,
         )
@@ -350,10 +349,11 @@ async def test_bulk_insert_renders_decimal_and_bool_strata_correctly(
 ):
     """Test that the adapter correctly renders decimal and bool strata as strings."""
     # First create an experiment and arms in db
-    ds: tables.Datasource = testing_datasource.ds
-    pt = testing_datasource.pt
-    experiment = await insert_experiment_and_arms(xngin_session, ds)
+    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
     arm_ids = [arm.id for arm in experiment.arms]
+    unique_id_field = experiment.unique_id_field()
+    assert unique_id_field is not None
+    participant_type_name = "participant_type_is_deprecated"
 
     fake_assignment_results = AssignmentResult(
         treatment_ids=[0, 1] * (len(sample_rows) // 2),
@@ -367,8 +367,8 @@ async def test_bulk_insert_renders_decimal_and_bool_strata_correctly(
         xngin_session=xngin_session,
         experiment_id=experiment.id,
         arm_ids=arm_ids,
-        participant_type=pt.participant_type,
-        participant_id_col=pt.get_unique_id_field(),
+        participant_type=participant_type_name,
+        participant_id_col=unique_id_field.field_name,
         data=sample_rows,
         assignment_result=fake_assignment_results,
     )
@@ -390,10 +390,11 @@ async def test_bulk_insert_renders_decimal_and_bool_strata_correctly(
 async def test_bulk_insert_with_no_stratification(xngin_session: AsyncSession, testing_datasource, sample_rows):
     """Test assignment with no stratification columns."""
     # First create an experiment and arms in db
-    ds: tables.Datasource = testing_datasource.ds
-    pt = testing_datasource.pt
-    experiment = await insert_experiment_and_arms(xngin_session, ds)
+    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
     arm_ids = [arm.id for arm in experiment.arms]
+    unique_id_field = experiment.unique_id_field()
+    assert unique_id_field is not None
+    participant_type_name = "participant_type_is_deprecated"
 
     fake_assignment_results = AssignmentResult(
         treatment_ids=[0, 1] * (len(sample_rows) // 2),
@@ -407,8 +408,8 @@ async def test_bulk_insert_with_no_stratification(xngin_session: AsyncSession, t
         xngin_session=xngin_session,
         experiment_id=experiment.id,
         arm_ids=arm_ids,
-        participant_type=pt.participant_type,
-        participant_id_col=pt.get_unique_id_field(),
+        participant_type=participant_type_name,
+        participant_id_col=unique_id_field.field_name,
         data=sample_rows,
         assignment_result=fake_assignment_results,
     )
@@ -430,10 +431,11 @@ async def test_bulk_insert_with_no_stratification(xngin_session: AsyncSession, t
 async def test_bulk_insert_with_no_valid_strata(xngin_session: AsyncSession, testing_datasource, sample_rows):
     """Test assignment when a strata column has only a single value."""
     # First create an experiment and arms in db
-    ds: tables.Datasource = testing_datasource.ds
-    pt = testing_datasource.pt
-    experiment = await insert_experiment_and_arms(xngin_session, ds)
+    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
     arm_ids = [arm.id for arm in experiment.arms]
+    unique_id_field = experiment.unique_id_field()
+    assert unique_id_field is not None
+    participant_type_name = "participant_type_is_deprecated"
 
     # Simulate no stratification case: the strata column only has a single value.
     fake_assignment_results = AssignmentResult(
@@ -448,8 +450,8 @@ async def test_bulk_insert_with_no_valid_strata(xngin_session: AsyncSession, tes
         xngin_session=xngin_session,
         experiment_id=experiment.id,
         arm_ids=arm_ids,
-        participant_type=pt.participant_type,
-        participant_id_col=pt.get_unique_id_field(),
+        participant_type=participant_type_name,
+        participant_id_col=unique_id_field.field_name,
         data=sample_rows,
         assignment_result=fake_assignment_results,
     )
@@ -468,10 +470,11 @@ async def test_bulk_insert_renders_missing_strata_values_as_na(
     xngin_session: AsyncSession, testing_datasource, sample_rows, missing_value
 ):
     """Test that missing strata values are rendered as "NA" regardless of sentinel."""
-    ds: tables.Datasource = testing_datasource.ds
-    pt = testing_datasource.pt
-    experiment = await insert_experiment_and_arms(xngin_session, ds)
+    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
     arm_ids = [arm.id for arm in experiment.arms]
+    unique_id_field = experiment.unique_id_field()
+    assert unique_id_field is not None
+    participant_type_name = "participant_type_is_deprecated"
 
     rows = [dataclasses.replace(row, nullable_value=missing_value) for row in sample_rows]
     fake_assignment_results = AssignmentResult(
@@ -486,8 +489,8 @@ async def test_bulk_insert_renders_missing_strata_values_as_na(
         xngin_session=xngin_session,
         experiment_id=experiment.id,
         arm_ids=arm_ids,
-        participant_type=pt.participant_type,
-        participant_id_col=pt.get_unique_id_field(),
+        participant_type=participant_type_name,
+        participant_id_col=unique_id_field.field_name,
         data=rows,
         assignment_result=fake_assignment_results,
     )
