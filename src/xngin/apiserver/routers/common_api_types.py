@@ -1339,11 +1339,11 @@ class ExperimentConfig(ApiBaseModel):
     experiment_id: Annotated[str, Field(description="Server-generated ID of the experiment.")]
     datasource_id: str
     participant_type_deprecated: Annotated[
-        str | None,
+        str,
         Field(
             max_length=MAX_LENGTH_OF_NAME_VALUE,
             description="(legacy experiments) Persisted participant-type name for backwards compatibility. "
-            "New experiments should not have this set.",
+            "New experiments will have this set to the empty string.",
         ),
     ]
     state: Annotated[ExperimentState, Field(description="Current state of this experiment.")]

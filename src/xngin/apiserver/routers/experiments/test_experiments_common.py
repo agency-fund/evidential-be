@@ -31,6 +31,7 @@ from xngin.apiserver.routers.common_api_types import (
     DesignSpecMetricRequest,
     ExperimentsType,
     Filter,
+    GetExperimentResponse,
     LikelihoodTypes,
     MABExperimentSpec,
     MetricPowerAnalysis,
@@ -59,6 +60,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     get_assign_summary,
     get_existing_assignment_for_participant,
     get_experiment_assignments_impl,
+    get_experiment_impl,
     get_or_create_assignment_for_participant,
     list_organization_or_datasource_experiments_impl,
     update_bandit_arm_with_outcome_impl,
@@ -302,6 +304,7 @@ async def get_experiment_preloaded(session: AsyncSession, experiment_id: str) ->
         selectinload(tables.Experiment.arms),
         selectinload(tables.Experiment.experiment_fields).selectinload(tables.ExperimentField.experiment_filters),
         selectinload(tables.Experiment.experiment_filters),
+        selectinload(tables.Experiment.webhooks),
     ]
     stmt = select(tables.Experiment).where(tables.Experiment.id == experiment_id).options(*preload)
     return (await session.scalars(stmt)).one()
@@ -382,6 +385,9 @@ async def test_create_preassigned_experiment_impl(
     experiment_id = response.experiment_id
     assert response.datasource_id == testing_datasource.ds.id
     assert response.state == ExperimentState.ASSIGNED
+    assert response.participant_type_deprecated == ""
+    assert response.power_analyses is not None
+    assert response.power_analyses == request.power_analyses
     # Verify design_spec
     assert response.design_spec.arms[0].arm_id is not None
     assert response.design_spec.arms[1].arm_id is not None
@@ -395,8 +401,6 @@ async def test_create_preassigned_experiment_impl(
     assert response.design_spec.experiment_type == ExperimentsType.FREQ_PREASSIGNED
     assert isinstance(response.design_spec, PreassignedFrequentistExperimentSpec)
     assert response.design_spec.strata == [Stratum(field_name="gender")]
-    assert response.power_analyses is not None
-    assert response.power_analyses == request.power_analyses
     # Verify assign_summary
     assert response.assign_summary is not None
     assert response.assign_summary.sample_size == len(participants)
@@ -734,6 +738,8 @@ async def test_create_freq_online_experiment_impl_experiments_fields_are_correct
     assert response.experiment_id is not None
     assert response.datasource_id == testing_datasource.ds.id
     assert response.state == ExperimentState.ASSIGNED
+    assert response.power_analyses is None
+    assert response.participant_type_deprecated == ""
 
     assert isinstance(response.design_spec, OnlineFrequentistExperimentSpec)
     assert response.design_spec.experiment_name == experiment_request.design_spec.experiment_name
@@ -1451,6 +1457,39 @@ async def test_state_setting_experiment_impl(
     else:
         assert response == expected_status
         assert experiment.state == expected_state
+
+
+async def test_get_experiment_impl_of_legacy_experiment(xngin_session, testing_datasource):
+    """Basic test for get_experiment_impl returning expected properties."""
+    # Insert a committed experiment and get its ID.
+    experiment_db, expected_design_spec = await make_insertable_experiment(
+        testing_datasource.ds,
+        ExperimentState.COMMITTED,
+        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
+    )
+    experiment_db.webhooks = [
+        tables.Webhook(
+            id="wh1", name="wh", type="experiment.created", url="https://url", organization_id=testing_datasource.org.id
+        )
+    ]
+    experiment_db.participant_type = "experiment_1.0_type"
+    xngin_session.add(experiment_db)
+    await xngin_session.commit()
+
+    experiment_db = await get_experiment_preloaded(xngin_session, experiment_db.id)
+    result: GetExperimentResponse = await get_experiment_impl(xngin_session=xngin_session, experiment=experiment_db)
+
+    # Simple field presence checks
+    assert result.experiment_id == experiment_db.id
+    assert result.datasource_id == testing_datasource.ds.id
+    assert result.state == ExperimentState.COMMITTED
+    assert result.participant_type_deprecated == "experiment_1.0_type"
+    assert result.power_analyses is None
+    assert result.assign_summary is not None
+    assert result.webhooks == ["wh1"]
+    diff = DeepDiff(result.design_spec, expected_design_spec, exclude_regex_paths=[r"arms\[\d+\].arm_id"])
+    assert not diff, f"Objects differ:\n{diff.pretty()}"
 
 
 async def test_list_experiments_impl(

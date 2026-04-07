@@ -1353,6 +1353,8 @@ async def test_lifecycle_with_db(testing_datasource, aclient: AdminAPIClient, ac
     assert created_experiment.stopped_assignments_reason == StopAssignmentReason.PREASSIGNED
     parsed_arm_ids = [arm.arm_id for arm in created_experiment.design_spec.arms]
     assert len(parsed_arm_ids) == 2
+    # Confirm that the deprecated participant type is set to the empty string for new experiments
+    assert created_experiment.participant_type_deprecated == ""
 
     # Commit the new experiment.
     aclient.commit_experiment(datasource_id=testing_datasource.ds.id, experiment_id=parsed_experiment_id)
@@ -1374,6 +1376,9 @@ async def test_lifecycle_with_db(testing_datasource, aclient: AdminAPIClient, ac
         datasource_id=testing_datasource.ds.id, experiment_id=parsed_experiment_id
     ).data
     assert get_exp.config.state == ExperimentState.COMMITTED
+    assert get_exp.config.participant_type_deprecated == ""
+    assert get_exp.participant_type is not None
+    assert get_exp.participant_type.participant_type == ""
 
     # Update the experiment.
     aclient.update_experiment(
