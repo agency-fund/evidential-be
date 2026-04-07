@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 import httpx
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
+from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from jose import JWTError, jwt
 from loguru import logger
 from starlette import status
@@ -12,7 +12,7 @@ from starlette import status
 from xngin.apiserver import constants, flags
 from xngin.apiserver.dependencies import retrying_httpx_dependency
 from xngin.apiserver.routers.auth import auth_dependencies
-from xngin.apiserver.routers.auth.auth_api_types import CallbackResponse
+from xngin.apiserver.routers.auth.auth_api_types import CallbackRequest, CallbackResponse
 from xngin.apiserver.routers.auth.auth_dependencies import (
     GoogleOidcConfig,
     SessionTokenCryptor,
@@ -49,10 +49,9 @@ router = APIRouter(
 )
 
 
-@router.get("/callback")
+@router.post("/callback")
 async def auth_callback(
-    code: Annotated[str, Query(...)],
-    code_verifier: Annotated[str, Query(min_length=43, max_length=128, pattern=r"^[A-Za-z0-9._~-]+$")],
+    body: CallbackRequest,
     oidc_config: Annotated[GoogleOidcConfig, Depends(get_google_configuration)],
     httpx_client: Annotated[httpx.AsyncClient, Depends(retrying_httpx_dependency)],
     session_cryptor: Annotated[SessionTokenCryptor, Depends()],
@@ -63,7 +62,7 @@ async def auth_callback(
     verifying the identity token from Google, we return a signed application-specific token that the frontend can
     use to authenticate the user for the remainder of their session.
     """
-    id_token = await _exchange_code_for_idtoken(oidc_config, httpx_client, code, code_verifier)
+    id_token = await _exchange_code_for_idtoken(oidc_config, httpx_client, body.code, body.code_verifier)
     decoded = _validate_idtoken(oidc_config, id_token)
     session_token = session_cryptor.encode(
         Principal(
