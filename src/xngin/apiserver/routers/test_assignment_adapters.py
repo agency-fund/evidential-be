@@ -282,14 +282,14 @@ MAX_SAFE_INTEGER = (1 << 53) - 1  # 9007199254740991
 
 async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
     xngin_session: AsyncSession,
-    testing_datasource_with_user,
+    testing_datasource,
     sample_table,
     sample_data,
     aclient: AdminAPIClient,
 ):
     """Test assignment with large integer participant IDs (underlying type as Decimal and int64)."""
     # First create an experiment and arms in db
-    ds: tables.Datasource = testing_datasource_with_user.ds
+    ds: tables.Datasource = testing_datasource.ds
     ds_config = TypeAdapter(RemoteDatabaseConfig).validate_python(ds.config)
     pt = ds_config.participants[0]
     experiment = await insert_experiment_and_arms(xngin_session, ds)
