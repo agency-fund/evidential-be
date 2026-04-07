@@ -1666,6 +1666,7 @@ async def test_create_and_get_freq_preassigned_experiment(
     admin_experiment = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=experiment_id).data
     assert admin_experiment.participant_type is not None
     assert admin_experiment.participant_type.participant_type == ""
+    assert admin_experiment.participant_type.hidden is True
     ui_experiment = admin_experiment.config
     diff = DeepDiff(
         created_experiment,
@@ -1876,6 +1877,7 @@ def test_create_and_get_freq_online_experiment(testing_datasource, aclient: Admi
     fetched_resp = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=parsed_experiment_id).data
     assert fetched_resp.participant_type is not None
     assert fetched_resp.participant_type.participant_type == ""
+    assert fetched_resp.participant_type.hidden is True
     ui_experiment = fetched_resp.config
     diff = DeepDiff(
         created_experiment,

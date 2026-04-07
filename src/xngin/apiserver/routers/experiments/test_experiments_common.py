@@ -63,6 +63,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     get_experiment_impl,
     get_or_create_assignment_for_participant,
     list_organization_or_datasource_experiments_impl,
+    make_participants_def_from_experiment,
     update_bandit_arm_with_outcome_impl,
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import get_experiment_assignments_as_csv_impl
@@ -343,6 +344,122 @@ def make_sample_data(n=100):
         )
         for i in range(n)
     ]
+
+
+def _make_experiment_field(
+    field_name: str,
+    data_type: DataType,
+    *,
+    is_unique_id: bool = False,
+    is_strata: bool = False,
+    metric_pct_change: float | None = None,
+    filters: list[tables.ExperimentFilter] | None = None,
+) -> tables.ExperimentField:
+    """Build a detached ExperimentField suitable for unit-testing without a DB session.
+
+    Don't pass experiment_filters in the constructor for non-filter fields — on a
+    detached (sessionless) instance the attribute stays None, so is_filter returns False.
+    Only pass an explicit list when the field should act as a filter.
+    """
+    field = tables.ExperimentField(
+        field_name=field_name,
+        data_type=data_type.value,
+        is_unique_id=is_unique_id,
+        is_strata=is_strata,
+        metric_pct_change=metric_pct_change,
+    )
+    if filters is not None:
+        field.experiment_filters = filters
+    return field
+
+
+def _make_experiment(
+    experiment_type: ExperimentsType,
+    *,
+    participant_type: str = "",
+    datasource_table: str | None = "my_table",
+    fields: list[tables.ExperimentField] | None = None,
+) -> tables.Experiment:
+    """Build a detached Experiment suitable for unit-testing without a DB session."""
+    exp = tables.Experiment(
+        datasource_id="ds-test",
+        experiment_type=experiment_type.value,
+        participant_type=participant_type,
+        datasource_table=datasource_table,
+        name="test",
+        description="test",
+        state="assigned",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime(2025, 1, 1, tzinfo=UTC),
+    )
+    exp.experiment_fields = fields or []
+    return exp
+
+
+def test_make_participants_def_from_experiment_non_frequentist_returns_none():
+    exp = _make_experiment(ExperimentsType.MAB_ONLINE)
+    assert make_participants_def_from_experiment(exp) is None
+
+
+def test_make_participants_def_from_experiment_missing_uid_returns_none():
+    # No field has is_unique_id=True, so unique_id_field() returns None.
+    exp = _make_experiment(
+        ExperimentsType.FREQ_ONLINE,
+        fields=[_make_experiment_field("revenue", DataType.DOUBLE_PRECISION, metric_pct_change=0.1)],
+    )
+    assert make_participants_def_from_experiment(exp) is None
+
+
+def test_make_participants_def_from_experiment_missing_table_returns_none():
+    exp = _make_experiment(
+        ExperimentsType.FREQ_PREASSIGNED,
+        datasource_table=None,
+        fields=[_make_experiment_field("id", DataType.INTEGER, is_unique_id=True)],
+    )
+    assert make_participants_def_from_experiment(exp) is None
+
+
+@pytest.mark.parametrize("participant_type", ["", "experiment_1.0"])
+def test_make_participants_def_from_experiment_builds_participants_def(participant_type: str):
+    fields = [
+        _make_experiment_field("id", DataType.INTEGER, is_unique_id=True),
+        _make_experiment_field("revenue", DataType.DOUBLE_PRECISION, metric_pct_change=0.05),
+        _make_experiment_field(
+            "country",
+            DataType.CHARACTER_VARYING,
+            is_strata=True,
+            filters=[
+                tables.ExperimentFilter(
+                    position=1,
+                    field_name="country",
+                    relation=Relation.INCLUDES,
+                    string_values=["US"],
+                ),
+            ],
+        ),
+    ]
+    exp = _make_experiment(
+        ExperimentsType.FREQ_PREASSIGNED,
+        participant_type=participant_type,
+        datasource_table="my_table",
+        fields=fields,
+    )
+
+    result = make_participants_def_from_experiment(exp)
+
+    assert result is not None
+    assert result.table_name == "my_table"
+    assert result.participant_type == participant_type
+    assert result.hidden is (participant_type == "")
+    field_names = [f.field_name for f in result.fields]
+    assert field_names == ["country", "id", "revenue"]  # sorted by name
+    id_fd = next(f for f in result.fields if f.field_name == "id")
+    assert id_fd.is_unique_id is True
+    revenue_fd = next(f for f in result.fields if f.field_name == "revenue")
+    assert revenue_fd.is_metric is True
+    country_fd = next(f for f in result.fields if f.field_name == "country")
+    assert country_fd.is_strata is True
+    assert country_fd.is_filter is True
 
 
 @pytest.mark.parametrize("reorder_arms", [True, False])
