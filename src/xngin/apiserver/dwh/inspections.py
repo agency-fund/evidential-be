@@ -46,9 +46,7 @@ def create_schema_from_table(table: sqlalchemy.Table, unique_id_col: str | None 
             r.field_name,
         ),
     )
-    return ParticipantsSchema.model_validate(
-        {"table_name": table.name, "fields": rows}, context={"skip_unique_id_check": not set_unique_id}
-    )
+    return ParticipantsSchema.model_validate({"table_name": table.name, "fields": rows})
 
 
 def create_inspect_table_response_from_table(

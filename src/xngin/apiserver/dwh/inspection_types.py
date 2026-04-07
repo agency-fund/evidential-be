@@ -59,6 +59,19 @@ class ParticipantsSchema(SchemaBaseModel):
         return next((i.field_name for i in self.fields if i.is_unique_id), None)
 
     @model_validator(mode="after")
+    def check_one_unique_id(self) -> ParticipantsSchema:
+        """
+        Checks that there is at most one column marked as the unique ID.
+        """
+        uniques = [r.field_name for r in self.fields if r.is_unique_id]
+        if len(uniques) > 1:
+            raise ValueError(
+                f"There are {len(uniques)} columns marked as the unique ID, but there should "
+                f"only be one: {', '.join(sorted(uniques))}"
+            )
+        return self
+
+    @model_validator(mode="after")
     def check_unique_fields(self) -> ParticipantsSchema:
         counted = Counter([".".join(row.field_name) for row in self.fields])
         duplicates = [item for item, count in counted.items() if count > 1]
