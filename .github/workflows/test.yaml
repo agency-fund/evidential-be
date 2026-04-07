@@ -55,10 +55,10 @@ jobs:
       - uses: astral-sh/setup-uv@e06108dd0aef18192324c70427afc47652e63a82 # v7.5.0
       - run: echo PYTHON_DIR="$(uv python dir)" | tee -a "$GITHUB_ENV"
       - name: Configure cache for pre-commit
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: ~/.cache/pre-commit
-          key: pre-commit-4|${{ env.PYTHON_DIR }}|${{ hashFiles('.pre-commit-config.yaml') }}|${{ hashFiles('pyproject.toml') }}
+          key: pre-commit-5|${{ env.PYTHON_DIR }}|${{ hashFiles('.pre-commit-config.yaml') }}|${{ hashFiles('pyproject.toml') }}
       - run: uv run pre-commit run --show-diff-on-failure --color=always --all-files
 
   check-migrations:
