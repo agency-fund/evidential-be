@@ -112,9 +112,9 @@ def _validate_idtoken(oidc_config: GoogleOidcConfig, id_token: str) -> dict:
     try:
         header = jwt.get_unverified_header(id_token)
     except JWTError as e:
+        logger.warning(f"JWT header parsing failed: {e}")
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid authentication credentials: {e}",
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials"
         ) from e
     key = next((jwk for jwk in oidc_config.jwks["keys"] if jwk["kid"] == header["kid"]), None)
     if not key:
@@ -142,8 +142,8 @@ def _validate_idtoken(oidc_config: GoogleOidcConfig, id_token: str) -> dict:
         if decoded["azp"] != decoded["aud"]:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid azp/aud")
     except JWTError as e:
+        logger.warning(f"JWT validation failed: {e}")
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid authentication credentials: {e}",
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials"
         ) from e
     return decoded
