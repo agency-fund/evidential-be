@@ -1622,7 +1622,7 @@ async def test_create_experiment_with_invalid_design_url(testing_datasource, acl
         aclient.create_experiment(datasource_id=datasource_id, body=request, desired_n=1)
 
 
-async def test_create_freq_preassigned_experiment(
+async def test_create_and_get_freq_preassigned_experiment(
     testing_datasource,
     use_deterministic_random,
     aclient: AdminAPIClient,
@@ -1662,11 +1662,23 @@ async def test_create_freq_preassigned_experiment(
     experiment_id = created_experiment.experiment_id
     (arm1_id, arm2_id) = [arm.arm_id for arm in created_experiment.design_spec.arms]
 
-    # Check getting the experiment from the integration API is consistent with the created experiment.
-    experiment = eclient.get_experiment(api_key=testing_datasource.key, experiment_id=experiment_id).data
+    # Now get the experiment using the admin API and verify config matches the created experiment.
+    admin_experiment = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=experiment_id).data
+    assert admin_experiment.participant_type is not None
+    assert admin_experiment.participant_type.participant_type == ""
+    ui_experiment = admin_experiment.config
     diff = DeepDiff(
         created_experiment,
-        experiment,
+        ui_experiment,
+        ignore_type_in_groups=[(CreateExperimentResponse, ExperimentConfig)],
+    )
+    assert not diff, f"Objects differ:\n{diff.pretty()}"
+
+    # Check getting the experiment from the integration API is consistent with the created experiment.
+    integration_experiment = eclient.get_experiment(api_key=testing_datasource.key, experiment_id=experiment_id).data
+    diff = DeepDiff(
+        created_experiment,
+        integration_experiment,
         ignore_type_in_groups=[(CreateExperimentResponse, GetExperimentResponse)],
     )
     assert not diff, f"Objects differ:\n{diff.pretty()}"
@@ -1830,7 +1842,7 @@ def test_preassigned_experiment_assign_summary_matches_get(testing_datasource, a
         assert create_arm.size == get_arm.size
 
 
-def test_create_freq_online_experiment(testing_datasource, aclient: AdminAPIClient):
+def test_create_and_get_freq_online_experiment(testing_datasource, aclient: AdminAPIClient):
     datasource_id = testing_datasource.ds.id
     request_obj = make_create_freq_online_experiment_request()
 
@@ -1860,6 +1872,18 @@ def test_create_freq_online_experiment(testing_datasource, aclient: AdminAPIClie
     actual_design_spec.arms[1].arm_id = None
     assert actual_design_spec == request_obj.design_spec
 
+    # Now get the experiment using the admin API and verify config matches the created experiment.
+    fetched_resp = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=parsed_experiment_id).data
+    assert fetched_resp.participant_type is not None
+    assert fetched_resp.participant_type.participant_type == ""
+    ui_experiment = fetched_resp.config
+    diff = DeepDiff(
+        created_experiment,
+        ui_experiment,
+        ignore_type_in_groups=[(CreateExperimentResponse, ExperimentConfig)],
+    )
+    assert not diff, f"Objects differ:\n{diff.pretty()}"
+
 
 @pytest.mark.parametrize(
     "reward_type,prior_type",
@@ -1869,7 +1893,7 @@ def test_create_freq_online_experiment(testing_datasource, aclient: AdminAPIClie
         (LikelihoodTypes.BERNOULLI, PriorTypes.NORMAL),
     ],
 )
-def test_create_online_mab_experiment(testing_datasource, aclient: AdminAPIClient, reward_type, prior_type):
+def test_create_and_get_online_mab_experiment(testing_datasource, aclient: AdminAPIClient, reward_type, prior_type):
     datasource_id = testing_datasource.ds.id
     request_obj = make_create_online_bandit_experiment_request(reward_type=reward_type, prior_type=prior_type)
     created_experiment = aclient.create_experiment(datasource_id=datasource_id, body=request_obj, random_state=42).data
@@ -1919,6 +1943,17 @@ def test_create_online_mab_experiment(testing_datasource, aclient: AdminAPIClien
         arm.mu = None
         arm.covariance = None
     assert actual_design_spec == request_obj.design_spec
+
+    # Now get the experiment using the admin API and verify config matches the created experiment.
+    fetched_resp = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=parsed_experiment_id).data
+    assert fetched_resp.participant_type is None
+    ui_experiment = fetched_resp.config
+    diff = DeepDiff(
+        created_experiment,
+        ui_experiment,
+        ignore_type_in_groups=[(CreateExperimentResponse, ExperimentConfig)],
+    )
+    assert not diff, f"Objects differ:\n{diff.pretty()}"
 
 
 @pytest.mark.parametrize(

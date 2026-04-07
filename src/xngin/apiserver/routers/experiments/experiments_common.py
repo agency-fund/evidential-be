@@ -403,7 +403,7 @@ async def create_freq_online_experiment_impl(
     empty_assign_summary = AssignSummary(
         balance_check=None,
         sample_size=0,
-        arm_sizes=[ArmSize(arm=arm.model_copy(), size=0) for arm in design_spec.arms],
+        arm_sizes=[ArmSize(arm=Arm(arm_id=arm.id, arm_name=arm.name), size=0) for arm in experiment.arms],
     )
     webhook_ids = [webhook.id for webhook in validated_webhooks]
     return await experiment_converter.get_create_experiment_response(empty_assign_summary, webhook_ids)
@@ -442,7 +442,7 @@ async def create_bandit_online_experiment_impl(
     empty_assign_summary = AssignSummary(
         balance_check=None,
         sample_size=0,
-        arm_sizes=[ArmSize(arm=arm.model_copy(), size=0) for arm in design_spec.arms],
+        arm_sizes=[ArmSize(arm=Arm(arm_id=arm.id, arm_name=arm.name), size=0) for arm in experiment.arms],
     )
     webhook_ids = [webhook.id for webhook in validated_webhooks]
     return await experiment_converter.get_create_experiment_response(empty_assign_summary, webhook_ids)
