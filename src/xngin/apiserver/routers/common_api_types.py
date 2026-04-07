@@ -3,7 +3,7 @@ import json
 import math
 import uuid
 from collections.abc import Sequence
-from typing import Annotated, Literal, Self
+from typing import Annotated, Literal, Self, TypedDict
 
 import sqlalchemy.sql
 from annotated_types import MaxLen, MinLen
@@ -1147,6 +1147,13 @@ class PowerRequest(ApiBaseModel):
 
 class PowerResponse(ApiBaseModel):
     analyses: Annotated[list[MetricPowerAnalysis], Field(max_length=MAX_NUMBER_OF_FIELDS)]
+
+
+class StrataTypedDict(TypedDict):
+    """Strata as a TypedDict to avoid Pydantic model work on hot paths."""
+
+    field_name: str
+    strata_value: str | None
 
 
 class Strata(ApiBaseModel):

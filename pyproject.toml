@@ -12,6 +12,7 @@ dependencies = [
     "httpx>=0.28.1,<0.29.0",
     "loguru>=0.7.3,<0.8.0",
     "numpy>=2.3,<2.4",
+    "orjson>=3.11.7,<4",
     "pandas-gbq>=0.33.0,<0.34",
     "pandas>=2.3.3,<3",
     "psycopg2-binary>=2.9.11,<3; sys_platform == 'darwin'",
