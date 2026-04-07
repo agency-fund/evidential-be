@@ -4,6 +4,7 @@ import os
 
 from loguru import logger
 
+from xngin.apiserver import flags
 from xngin.xsecrets import (
     gcp_kms_provider,
     nacl_provider,
@@ -32,6 +33,13 @@ def setup():
 
     backend_spec = os.environ.get(ENV_XNGIN_SECRETS_BACKEND, noop_provider.NAME)
     if backend_spec == noop_provider.NAME:
+        if not flags.is_dev_environment():
+            raise InvalidSecretStoreConfigurationError(
+                f"{ENV_XNGIN_SECRETS_BACKEND} is unset or set to '{noop_provider.NAME}', which stores secrets "
+                f"in plaintext. This is not allowed outside of development environments. "
+                f"Set {ENV_XNGIN_SECRETS_BACKEND} to a real encryption backend (e.g. '{nacl_provider.NAME}' "
+                f"or '{gcp_kms_provider.NAME}')."
+            )
         logger.warning(
             f"Secrets: Encryption is disabled because {ENV_XNGIN_SECRETS_BACKEND} is unset "
             f"or set to {noop_provider.NAME}."
