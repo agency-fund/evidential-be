@@ -525,7 +525,7 @@ class GetExperimentForUiResponse(AdminApiBaseModel):
         ParticipantsDef | None,
         Field(
             description="If available, the Participant Type information for this experiment. "
-            "May not exist if the experiment is not backed by a real datasource."
+            "This field is null for experiments that only use an 'API Only' datasource."
         ),
     ]
 

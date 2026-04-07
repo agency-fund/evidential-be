@@ -456,7 +456,6 @@ class Experiment(Base):
     )
     snapshots: Mapped[Snapshot] = relationship(viewonly=True)
 
-    @property
     def unique_id_field(self) -> ExperimentField | None:
         return next((f for f in self.experiment_fields if f.is_unique_id), None)
 

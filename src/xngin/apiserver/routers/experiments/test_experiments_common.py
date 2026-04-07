@@ -1010,7 +1010,7 @@ async def test_create_experiment_impl_for_freq_online(xngin_session, testing_dat
     experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
     assert experiment.experiment_type == ExperimentsType.FREQ_ONLINE
     assert experiment.participant_type == ""
-    assert response.participant_type == ""
+    assert response.participant_type_deprecated == ""
     assert experiment.datasource_table == TESTING_DWH_PARTICIPANT_DEF.table_name
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
@@ -1095,7 +1095,7 @@ async def test_create_experiment_impl_for_mab_online(xngin_session, testing_data
 
     assert experiment.experiment_type == ExperimentsType.MAB_ONLINE
     assert experiment.participant_type == ""
-    assert response.participant_type == ""
+    assert response.participant_type_deprecated == ""
     assert experiment.datasource_table is None
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
@@ -1178,7 +1178,7 @@ async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_dat
     experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
     assert experiment.experiment_type == ExperimentsType.CMAB_ONLINE
     assert experiment.participant_type == ""
-    assert response.participant_type == ""
+    assert response.participant_type_deprecated == ""
     assert experiment.datasource_table is None
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description

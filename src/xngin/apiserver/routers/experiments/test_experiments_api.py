@@ -361,7 +361,7 @@ async def test_get_assignment_preassigned(
     assignment = tables.ArmAssignment(
         experiment_id=preassigned_experiment.experiment_id,
         participant_id="assigned_id",
-        participant_type=preassigned_experiment.participant_type,
+        participant_type=preassigned_experiment.participant_type_deprecated,
         arm_id=preassigned_experiment.design_spec.arms[0].arm_id,
         strata=[],
     )
@@ -730,7 +730,7 @@ async def test_get_assignment_preassigned_cache_headers(
     assignment = tables.ArmAssignment(
         experiment_id=preassigned_experiment.experiment_id,
         participant_id="assigned_id",
-        participant_type=preassigned_experiment.participant_type,
+        participant_type=preassigned_experiment.participant_type_deprecated,
         arm_id=preassigned_experiment.design_spec.arms[0].arm_id,
         strata=[],
     )

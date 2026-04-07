@@ -346,7 +346,7 @@ class ExperimentStorageConverter:
         return capi.GetExperimentResponse(
             experiment_id=(await self.experiment.awaitable_attrs.id),
             datasource_id=self.experiment.datasource_id,
-            participant_type=self.experiment.participant_type,
+            participant_type_deprecated=self.experiment.participant_type,
             state=ExperimentState(self.experiment.state),
             stopped_assignments_at=self.experiment.stopped_assignments_at,
             stopped_assignments_reason=StopAssignmentReason.from_str(self.experiment.stopped_assignments_reason),

@@ -1331,7 +1331,7 @@ class ExperimentConfig(ApiBaseModel):
 
     experiment_id: Annotated[str, Field(description="Server-generated ID of the experiment.")]
     datasource_id: str
-    participant_type: Annotated[
+    participant_type_deprecated: Annotated[
         str | None,
         Field(
             max_length=MAX_LENGTH_OF_NAME_VALUE,

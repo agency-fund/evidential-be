@@ -3266,7 +3266,7 @@ async def test_create_experiment_with_table_name_and_primary_key(
         random_state=42,
     ).data
 
-    assert created.participant_type == ""
+    assert created.participant_type_deprecated == ""
 
     # Verify no participant type was persisted to datasource config.
     ds = await xngin_session.get_one(tables.Datasource, ds_id)
@@ -3321,7 +3321,7 @@ async def test_create_preassigned_experiment_with_table_name_and_primary_key(
         random_state=42,
     ).data
 
-    assert created.participant_type == ""
+    assert created.participant_type_deprecated == ""
     assert created.assign_summary is not None
     assert created.assign_summary.sample_size == 100
 

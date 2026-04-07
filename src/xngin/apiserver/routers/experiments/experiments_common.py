@@ -4,7 +4,6 @@ import io
 import secrets
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -98,7 +97,7 @@ def make_participants_def_from_experiment(experiment: tables.Experiment) -> Part
     if experiment.experiment_type not in {ExperimentsType.FREQ_ONLINE.value, ExperimentsType.FREQ_PREASSIGNED.value}:
         return None
 
-    uid = experiment.unique_id_field
+    uid = experiment.unique_id_field()
     table_name = experiment.datasource_table
     if uid is None or table_name is None:
         return None
@@ -208,8 +207,10 @@ async def create_experiment_impl(
             if desired_n is None:
                 raise LateValidationError("Preassigned experiments must have a desired_n.")
 
-            table_name = cast(str, request.table_name)
-            primary_key = cast(str, request.primary_key)
+            assert request.table_name is not None
+            assert request.primary_key is not None
+            table_name = request.table_name
+            primary_key = request.primary_key
             field_type_map = await fetch_fields_or_raise(datasource, request.design_spec, table_name, primary_key)
 
             # Get participants and their schema info from the client dwh.
@@ -248,8 +249,10 @@ async def create_experiment_impl(
             )
 
         case ExperimentsType.FREQ_ONLINE:
-            table_name = cast(str, request.table_name)
-            primary_key = cast(str, request.primary_key)
+            assert request.table_name is not None
+            assert request.primary_key is not None
+            table_name = request.table_name
+            primary_key = request.primary_key
             field_type_map = await fetch_fields_or_raise(datasource, request.design_spec, table_name, primary_key)
 
             return await create_freq_online_experiment_impl(
@@ -1094,7 +1097,7 @@ async def analyze_experiment_freq_impl(
 ) -> FreqExperimentAnalysisResponse:
     """Analyze a frequentist experiment. Assumes arms and arm_assignments are preloaded."""
 
-    unique_id_field = experiment.unique_id_field
+    unique_id_field = experiment.unique_id_field()
     if experiment.datasource_table is None or unique_id_field is None:
         raise StatsAnalysisError("Experiment must have a datasource table and unique ID field to analyze.")
 
