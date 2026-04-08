@@ -7,6 +7,7 @@ class CallbackRequest(BaseModel):
     """Contains the OIDC authorization code and PKCE verifier for the token exchange."""
 
     code: str
+    # Pattern specified in https://datatracker.ietf.org/doc/html/rfc7636#section-4.1
     code_verifier: Annotated[str, Field(min_length=43, max_length=128, pattern=r"^[A-Za-z0-9._~-]+$")]
 
 
