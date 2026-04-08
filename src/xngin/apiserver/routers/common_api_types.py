@@ -622,6 +622,16 @@ class MetricPowerAnalysis(ApiBaseModel):
         ),
     ] = None
 
+    pct_change_with_desired_n: Annotated[
+        float | None,
+        Field(
+            description=(
+                "The MDE achievable given the user's desired_n, confidence, and power. "
+                "Only present when desired_n is supplied in the power check request."
+            )
+        ),
+    ] = None
+
     msg: Annotated[
         MetricPowerAnalysisMessage | None,
         Field(description="Human friendly message about the above results."),
@@ -1134,6 +1144,12 @@ class PowerRequest(ApiBaseModel):
         Field(description="Table name for ad-hoc power calculations. Fields are verified against the inspected table."),
     ]
     primary_key: Annotated[str, Field(description="Primary key field name.")]
+    desired_n: Annotated[
+        int | None,
+        Field(
+            description="Optional desired sample size. If provided, returns pct_change_with_desired_n for each metric."
+        ),
+    ] = None
 
     @model_validator(mode="after")
     def check_table_name_and_primary_key_together(self) -> Self:

@@ -425,7 +425,18 @@ def check_power(
     analyses = []
     for metric in metrics:
         try:
-            analyses.append(analyze_metric_power(metric, n_arms, power, alpha, arm_weights, desired_n))
+            analysis = analyze_metric_power(metric, n_arms, power, alpha, arm_weights)
+            if desired_n is not None:
+                _, pct_change = calculate_mde_with_desired_n(
+                    desired_n=desired_n,
+                    metric=metric,
+                    n_arms=n_arms,
+                    alpha=alpha,
+                    power=power,
+                    arm_weights=arm_weights,
+                )
+                analysis.pct_change_with_desired_n = pct_change
+            analyses.append(analysis)
         except ValueError as verr:
             raise StatsPowerError(verr, metric) from verr
     return analyses
