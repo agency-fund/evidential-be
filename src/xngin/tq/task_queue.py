@@ -1,5 +1,7 @@
 """Task queue implementation using Postgres."""
 
+# mypy: disable-error-code="misc"
+
 import os
 import time
 from dataclasses import dataclass
@@ -107,21 +109,20 @@ class TaskQueue:
         """Fetch a task from the queue."""
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
-                """
+                t"""
                 UPDATE tasks
                 SET status = 'running', updated_at = NOW()
                 WHERE id IN (
                     SELECT id FROM tasks
                     WHERE status = 'pending'
                     AND embargo_until <= NOW()
-                    AND retry_count <= %s
+                    AND retry_count <= {self.max_retries}
                     ORDER BY created_at
                     LIMIT 1
                     FOR UPDATE SKIP LOCKED
                 )
                 RETURNING *
-                """,
-                (self.max_retries,),
+                """
             )
             row = cur.fetchone()
             if row:
@@ -151,12 +152,11 @@ class TaskQueue:
         """Mark a task as completed by setting its status to 'success'."""
         with conn.cursor() as cur:
             cur.execute(
-                """
+                t"""
                 UPDATE tasks
                 SET status = 'success', updated_at = NOW(), message = null
-                WHERE id = %s
-                """,
-                (task.id,),
+                WHERE id = {task.id}
+                """
             )
             conn.commit()
             logger.info(f"Task {task.id} completed and marked as successful")
@@ -167,18 +167,14 @@ class TaskQueue:
             if task.retry_count >= self.max_retries:
                 # Mark as dead if max retries reached
                 cur.execute(
-                    """
+                    t"""
                     UPDATE tasks
                     SET status = 'dead',
                         retry_count = retry_count + 1,
                         updated_at = NOW(),
-                        message = %s
-                    WHERE id = %s
-                    """,
-                    (
-                        err,
-                        task.id,
-                    ),
+                        message = {err}
+                    WHERE id = {task.id}
+                    """
                 )
                 logger.warning(f"Task {task.id} failed and reached max retries, marked as dead")
             else:
@@ -187,16 +183,15 @@ class TaskQueue:
 
                 # Reset to pending for retry with embargo using Postgres interval
                 cur.execute(
-                    """
+                    t"""
                     UPDATE tasks
                     SET status = 'pending',
                         retry_count = retry_count + 1,
                         updated_at = NOW(),
-                        embargo_until = NOW() + INTERVAL '%s minutes',
-                        message = %s
-                    WHERE id = %s
-                    """,
-                    (backoff_minutes, err, task.id),
+                        embargo_until = NOW() + make_interval(mins => {backoff_minutes}),
+                        message = {err}
+                    WHERE id = {task.id}
+                    """
                 )
                 logger.info(
                     f"Task {task.id} failed, retry count now {task.retry_count + 1}, next attempt after "
