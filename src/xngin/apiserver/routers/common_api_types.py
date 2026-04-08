@@ -167,7 +167,7 @@ class OnlineAssignmentWithFiltersRequest(ApiBaseModel):
     1. Currently only used for FREQ_ONLINE experiments.
     2. If the experiment defines no filters, use the corresponding GET endpoint instead.
     3. If an assignment already exists for a given participant, the property list is ignored and assignment returned.
-    4. Property names must reference a valid field_name from the participant_type defined in the experiment.
+    4. Property names must reference a valid field_name from the experiment's fields.
     5. Property list may be empty.
     6. If a filter is specified but no value is found, it is treated as NULL.
     7. Other differences from the SQL-based filtering logic:
@@ -851,9 +851,6 @@ ConstrainedUrl = Annotated[HttpUrl, UrlConstraints(max_length=MAX_LENGTH_OF_URL_
 class BaseDesignSpec(ApiBaseModel):
     """Experiment design metadata and target metrics common to all experiment types."""
 
-    # The name of the participant type. This may be "user" for some MAB and CMAB experiments.
-    participant_type: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
-
     experiment_type: Annotated[
         ExperimentsType,
         Field(
@@ -908,7 +905,7 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
     strata: Annotated[
         list[Stratum],
         Field(
-            description="Optional participant_type fields to use for stratified assignment.",
+            description="Optional fields to use for stratified assignment.",
             max_length=MAX_NUMBER_OF_FIELDS,
         ),
     ]
@@ -927,7 +924,7 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         list[Filter],
         Field(
             description=(
-                "Optional filters that constrain a general participant_type to a specific subset "
+                "Optional filters that constrain a general eligible audience to a specific subset "
                 "who can participate in an experiment."
             ),
             max_length=MAX_NUMBER_OF_FILTERS,
@@ -1286,8 +1283,7 @@ class CreateExperimentRequest(ApiBaseModel):
         Field(
             default=None,
             description="Optional table name for creating experiments without a pre-registered participant type. "
-            "When provided with primary_key, synthesizes a participant schema and persists it. "
-            "The design_spec.participant_type field is ignored when this is set.",
+            "When provided with primary_key, inspects the datasource table to derive experiment field metadata.",
         ),
     ] = None
     primary_key: Annotated[
@@ -1307,9 +1303,12 @@ class CreateExperimentRequest(ApiBaseModel):
         return v
 
     @model_validator(mode="after")
-    def check_table_name_and_primary_key_together(self) -> Self:
-        if (self.table_name is None) != (self.primary_key is None):
-            raise ValueError("table_name and primary_key must be provided together or both omitted")
+    def check_table_name_and_primary_key_exist_for_frequentist_only(self) -> Self:
+        if self.design_spec.experiment_type in {ExperimentsType.FREQ_ONLINE, ExperimentsType.FREQ_PREASSIGNED}:
+            if self.table_name is None or self.primary_key is None:
+                raise ValueError("table_name and primary_key must be provided together for frequentist experiments.")
+        elif self.table_name is not None or self.primary_key is not None:
+            raise ValueError("table_name and primary_key are not supported for non-frequentist experiments.")
         return self
 
 
@@ -1339,6 +1338,14 @@ class ExperimentConfig(ApiBaseModel):
 
     experiment_id: Annotated[str, Field(description="Server-generated ID of the experiment.")]
     datasource_id: str
+    participant_type_deprecated: Annotated[
+        str,
+        Field(
+            max_length=MAX_LENGTH_OF_NAME_VALUE,
+            description="(legacy experiments) Persisted participant-type name for backwards compatibility. "
+            "New experiments will have this set to the empty string.",
+        ),
+    ]
     state: Annotated[ExperimentState, Field(description="Current state of this experiment.")]
     stopped_assignments_at: Annotated[
         datetime.datetime | None,

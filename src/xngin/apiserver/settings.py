@@ -59,7 +59,7 @@ class ParticipantsDef(ParticipantsSchema):
         str,
         Field(
             description="The name of the set of participants defined by the filters. This name must be unique "
-            "within a datasource."
+            "within a datasource when not hidden (i.e. not auto-generated)."
         ),
     ]
     hidden: Annotated[
