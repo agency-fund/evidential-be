@@ -3,6 +3,7 @@
 # mypy: disable-error-code="misc"
 
 import os
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -83,7 +84,8 @@ class TaskQueue:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                CREATE OR REPLACE FUNCTION notify_task_queue() RETURNS TRIGGER AS $$
+                CREATE OR REPLACE FUNCTION notify_task_queue() RETURNS TRIGGER AS
+                $$
                 BEGIN
                     PERFORM pg_notify('task_queue', 'new_task');
                     RETURN NEW;
@@ -95,8 +97,9 @@ class TaskQueue:
             cur.execute(
                 """
                 CREATE OR REPLACE TRIGGER task_queue_notify_trigger
-                AFTER INSERT ON tasks
-                FOR EACH ROW
+                    AFTER INSERT
+                    ON tasks
+                    FOR EACH ROW
                 EXECUTE FUNCTION notify_task_queue();
                 """
             )
@@ -199,15 +202,16 @@ class TaskQueue:
                 )
             conn.commit()
 
-    def run(self) -> None:
+    def run(self, cancel: threading.Event | None = None) -> None:
         """Run the task queue processor.
 
-        This method will run indefinitely, processing tasks as they become available.
+        This method will run indefinitely, processing tasks as they become available. If cancel is provided, the loop
+        will eventually exit when the cancel event is set.
         """
         logger.info(f"Starting task queue with DSN: {self.dsn}")
 
         # Main task handling loop: Handle any new tasks, then wait for NOTIFY or polling_interval, repeat.
-        while True:
+        while cancel is None or not cancel.is_set():
             try:
                 with psycopg.connect(
                     self.dsn,
@@ -223,6 +227,9 @@ class TaskQueue:
 
                     logger.debug("No tasks available, waiting for notifications...")
                     conn.commit()
+
+                    if cancel is not None and cancel.is_set():
+                        break
 
                     try:
                         gen = conn.notifies(timeout=self.poll_interval)
