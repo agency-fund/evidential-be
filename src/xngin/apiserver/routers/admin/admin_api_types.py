@@ -522,7 +522,11 @@ class GetExperimentForUiResponse(AdminApiBaseModel):
 
     config: Annotated[ExperimentConfig, Field()]
     participant_type: Annotated[
-        ParticipantsDef | None, Field(description="If available, the Participant Type information for this experiment.")
+        ParticipantsDef | None,
+        Field(
+            description="If available, the Participant Type information for this experiment. "
+            "This field is null for experiments that only use an 'API Only' datasource."
+        ),
     ]
 
 

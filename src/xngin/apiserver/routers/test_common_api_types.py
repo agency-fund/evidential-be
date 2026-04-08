@@ -153,7 +153,6 @@ def test_arm_weights_validation():
     """Test validation of arm_weights in BaseFrequentistDesignSpec"""
     # Test: weights sum to 100 and match number of arms
     valid_spec = {
-        "participant_type": "test_participant",
         "experiment_type": "freq_preassigned",
         "experiment_name": "test",
         "description": "test",

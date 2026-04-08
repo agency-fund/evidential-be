@@ -5,12 +5,11 @@ from typing import TYPE_CHECKING
 import pytest
 from pydantic import TypeAdapter
 
-from xngin.apiserver.conftest import PRIVILEGED_EMAIL
-from xngin.apiserver.routers.admin.admin_api_types import AddMemberToOrganizationRequest
 from xngin.apiserver.routers.common_api_types import (
     Arm,
     ArmBandit,
     BaseDesignSpec,
+    BaseFrequentistDesignSpec,
     CMABContextInputRequest,
     CMABExperimentSpec,
     Context,
@@ -32,6 +31,7 @@ from xngin.apiserver.routers.common_api_types import (
 )
 from xngin.apiserver.routers.common_enums import ContextType, ExperimentState, Relation, StopAssignmentReason
 from xngin.apiserver.sqla import tables
+from xngin.apiserver.testing.admin_api_client import AdminAPIClientHTTPValidationError
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClientNotDefaultStatusError
 
 if TYPE_CHECKING:
@@ -39,77 +39,43 @@ if TYPE_CHECKING:
     from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
 
 
-async def create_online_experiment(
+async def create_experiment(
     datasource_metadata,
     aclient: AdminAPIClient,
     *,
     experiment_type: ExperimentsType = ExperimentsType.FREQ_ONLINE,
+    table_name: str | None = None,
+    primary_key: str | None = None,
     end_date: datetime | None = None,
     filters: list[Filter] | None = None,
 ):
     """Creates an online experiment using the Admin API."""
-    end_date = end_date or datetime.now(UTC) + timedelta(days=1)
-    filters = filters or []
     if experiment_type not in {
+        ExperimentsType.FREQ_PREASSIGNED,
         ExperimentsType.FREQ_ONLINE,
         ExperimentsType.MAB_ONLINE,
         ExperimentsType.CMAB_ONLINE,
     }:
         raise ValueError(f"create_online_experiment only supports online experiment types, got {experiment_type}")
 
-    base_kwargs = BaseDesignSpec.model_construct(
+    if experiment_type in {ExperimentsType.FREQ_ONLINE, ExperimentsType.FREQ_PREASSIGNED}:
+        # Set defaults for our frequentist experiments
+        table_name = table_name or "dwh"
+        primary_key = primary_key or "id"
+
+    request = make_unvalidated_create_experiment_request(
         experiment_type=experiment_type,
-        participant_type="test_participant_type",
-        experiment_name="test experiment",
-        description="test experiment",
-        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        table_name=table_name,
+        primary_key=primary_key,
         end_date=end_date,
-        arms=[  # overwritten below
-            Arm(arm_name="overwritten1", arm_description=""),
-            Arm(arm_name="overwritten2", arm_description=""),
-        ],
-    ).model_dump(exclude={"arms"})
-
-    design_spec: OnlineFrequentistExperimentSpec | MABExperimentSpec | CMABExperimentSpec
-    if experiment_type == ExperimentsType.FREQ_ONLINE:
-        design_spec = OnlineFrequentistExperimentSpec(
-            **base_kwargs,
-            arms=[
-                Arm(arm_name="control", arm_description="Control group"),
-                Arm(arm_name="treatment", arm_description="Treatment group"),
-            ],
-            metrics=[DesignSpecMetricRequest(field_name="is_onboarded", metric_pct_change=0.1)],
-            strata=[Stratum(field_name="gender")],
-            filters=filters,
-        )
-    elif experiment_type == ExperimentsType.MAB_ONLINE:
-        design_spec = MABExperimentSpec(
-            **base_kwargs,
-            arms=[
-                ArmBandit(arm_name="control", arm_description="Control group", mu_init=0.0, sigma_init=1.0),
-                ArmBandit(arm_name="treatment", arm_description="Treatment group", mu_init=0.0, sigma_init=1.0),
-            ],
-            prior_type=PriorTypes.NORMAL,
-            reward_type=LikelihoodTypes.NORMAL,
-            contexts=None,
-        )
+        filters=filters,
+    )
+    request = CreateExperimentRequest.model_validate(request, from_attributes=True)
+    if experiment_type == ExperimentsType.FREQ_PREASSIGNED:
+        result = aclient.create_experiment(datasource_id=datasource_metadata.ds.id, body=request, desired_n=1)
     else:
-        design_spec = CMABExperimentSpec(
-            **base_kwargs,
-            arms=[
-                ArmBandit(arm_name="control", arm_description="Control group", mu_init=0.0, sigma_init=1.0),
-                ArmBandit(arm_name="treatment", arm_description="Treatment group", mu_init=0.0, sigma_init=1.0),
-            ],
-            prior_type=PriorTypes.NORMAL,
-            reward_type=LikelihoodTypes.NORMAL,
-            contexts=[
-                Context(context_name="context_1", context_description="Context 1", value_type=ContextType.REAL_VALUED),
-                Context(context_name="context_2", context_description="Context 2", value_type=ContextType.REAL_VALUED),
-            ],
-        )
-
-    request = CreateExperimentRequest(design_spec=design_spec)
-    created_experiment = aclient.create_experiment(datasource_id=datasource_metadata.datasource_id, body=request).data
+        result = aclient.create_experiment(datasource_id=datasource_metadata.datasource_id, body=request)
+    created_experiment = result.data
     aclient.commit_experiment(
         datasource_id=datasource_metadata.datasource_id, experiment_id=created_experiment.experiment_id
     )
@@ -122,40 +88,85 @@ async def create_online_experiment(
 
 async def create_preassigned_experiment(datasource_metadata, aclient: AdminAPIClient):
     """Creates a preassigned experiment using the Admin API."""
-    aclient.add_member_to_organization(
-        organization_id=datasource_metadata.organization_id,
-        body=AddMemberToOrganizationRequest(email=PRIVILEGED_EMAIL),
-    )
-    design_spec = PreassignedFrequentistExperimentSpec(
-        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        participant_type="test_participant_type",
+    return await create_experiment(datasource_metadata, aclient, experiment_type=ExperimentsType.FREQ_PREASSIGNED)
+
+
+def make_unvalidated_create_experiment_request(
+    *,
+    experiment_type: ExperimentsType,
+    table_name: str | None,
+    primary_key: str | None,
+    end_date: datetime | None = None,
+    filters: list[Filter] | None = None,
+) -> CreateExperimentRequest:
+    end_date = end_date or datetime.now(UTC) + timedelta(days=1)
+    filters = filters or []
+    base_kwargs = BaseDesignSpec.model_construct(
+        experiment_type=experiment_type,
         experiment_name="test experiment",
         description="test experiment",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
-        end_date=datetime.now(UTC) + timedelta(days=1),
-        arms=[
-            Arm(arm_name="control", arm_description="Control group"),
-            Arm(arm_name="treatment", arm_description="Treatment group"),
-        ],
-        metrics=[DesignSpecMetricRequest(field_name="is_onboarded", metric_pct_change=0.1)],
-        strata=[Stratum(field_name="gender")],
-        filters=[],
-    )
+        end_date=end_date,
+        arms=[Arm(arm_name="overwritten1", arm_description=""), Arm(arm_name="overwritten2", arm_description="")],
+    ).model_dump(exclude={"arms"})
 
-    request = CreateExperimentRequest(design_spec=design_spec)
-    created_experiment = aclient.create_experiment(
-        datasource_id=datasource_metadata.datasource_id,
-        body=request,
-        desired_n=1,
-    ).data
-    aclient.commit_experiment(
-        datasource_id=datasource_metadata.datasource_id, experiment_id=created_experiment.experiment_id
+    design_spec: BaseFrequentistDesignSpec | MABExperimentSpec | CMABExperimentSpec
+    match experiment_type:
+        case ExperimentsType.FREQ_PREASSIGNED:
+            design_spec = PreassignedFrequentistExperimentSpec(
+                **base_kwargs,
+                arms=[
+                    Arm(arm_name="control", arm_description="Control group"),
+                    Arm(arm_name="treatment", arm_description="Treatment group"),
+                ],
+                metrics=[DesignSpecMetricRequest(field_name="is_onboarded", metric_pct_change=0.1)],
+                strata=[Stratum(field_name="gender")],
+                filters=filters,
+            )
+        case ExperimentsType.FREQ_ONLINE:
+            design_spec = OnlineFrequentistExperimentSpec(
+                **base_kwargs,
+                arms=[
+                    Arm(arm_name="control", arm_description="Control group"),
+                    Arm(arm_name="treatment", arm_description="Treatment group"),
+                ],
+                metrics=[DesignSpecMetricRequest(field_name="is_onboarded", metric_pct_change=0.1)],
+                strata=[Stratum(field_name="gender")],
+                filters=filters,
+            )
+        case ExperimentsType.MAB_ONLINE:
+            design_spec = MABExperimentSpec(
+                **base_kwargs,
+                arms=[
+                    ArmBandit(arm_name="control", arm_description="Control group", mu_init=0.0, sigma_init=1.0),
+                    ArmBandit(arm_name="treatment", arm_description="Treatment group", mu_init=0.0, sigma_init=1.0),
+                ],
+                prior_type=PriorTypes.NORMAL,
+                reward_type=LikelihoodTypes.NORMAL,
+                contexts=None,
+            )
+        case ExperimentsType.CMAB_ONLINE:
+            design_spec = CMABExperimentSpec(
+                **base_kwargs,
+                arms=[
+                    ArmBandit(arm_name="control", arm_description="Control group", mu_init=0.0, sigma_init=1.0),
+                    ArmBandit(arm_name="treatment", arm_description="Treatment group", mu_init=0.0, sigma_init=1.0),
+                ],
+                prior_type=PriorTypes.NORMAL,
+                reward_type=LikelihoodTypes.NORMAL,
+                contexts=[
+                    Context(context_name="c1", context_description="Context 1", value_type=ContextType.REAL_VALUED),
+                    Context(context_name="c2", context_description="Context 2", value_type=ContextType.REAL_VALUED),
+                ],
+            )
+        case _:
+            raise ValueError(f"Invalid experiment type: {experiment_type}")
+
+    return CreateExperimentRequest.model_construct(
+        design_spec=design_spec,
+        table_name=table_name,
+        primary_key=primary_key,
     )
-    config = aclient.get_experiment_for_ui(
-        datasource_id=datasource_metadata.datasource_id,
-        experiment_id=created_experiment.experiment_id,
-    ).data.config
-    return TypeAdapter(ExperimentConfig).validate_python(config)
 
 
 @pytest.mark.parametrize(
@@ -178,7 +189,7 @@ async def test_list_experiments_with_various_insufficient_headers(
     expected_message,
 ):
     """Tests that listing experiments tied to a db datasource requires an API key."""
-    await create_online_experiment(testing_datasource, aclient)
+    await create_experiment(testing_datasource, aclient)
     # Special case the absent header for compatibility with the generated client's argument types.
     if key is None:
         response = eclient.client.get("/v1/experiments", headers={"Datasource-ID": testing_datasource.datasource_id})
@@ -196,7 +207,7 @@ async def test_list_experiments_with_api_key(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """Tests that listing experiments tied to a db datasource with an API key works."""
-    new_experiment = await create_online_experiment(testing_datasource, aclient)
+    new_experiment = await create_experiment(testing_datasource, aclient)
     experiments = eclient.list_experiments(
         api_key=testing_datasource.key, datasource_id=testing_datasource.datasource_id
     ).data
@@ -214,6 +225,51 @@ async def test_get_experiment(testing_datasource, aclient: AdminAPIClient, eclie
     assert response.design_spec == new_experiment.design_spec
 
 
+@pytest.mark.parametrize(
+    "experiment_type, table_name, primary_key, expected_status, expected_message",
+    [
+        (ExperimentsType.FREQ_PREASSIGNED, None, None, 422, "table_name and primary_key must be provided"),
+        (ExperimentsType.FREQ_PREASSIGNED, "dwh", None, 422, "table_name and primary_key must be provided"),
+        (ExperimentsType.FREQ_PREASSIGNED, None, "id", 422, "table_name and primary_key must be provided"),
+        (ExperimentsType.FREQ_PREASSIGNED, "dwh", "id", 200, None),
+        (ExperimentsType.FREQ_ONLINE, None, None, 422, "table_name and primary_key must be provided"),
+        (ExperimentsType.FREQ_ONLINE, "dwh", None, 422, "table_name and primary_key must be provided"),
+        (ExperimentsType.FREQ_ONLINE, None, "id", 422, "table_name and primary_key must be provided"),
+        (ExperimentsType.FREQ_ONLINE, "dwh", "id", 200, None),
+        (ExperimentsType.MAB_ONLINE, "dwh", "id", 422, "table_name and primary_key are not supported"),
+        (ExperimentsType.MAB_ONLINE, None, "id", 422, "table_name and primary_key are not supported"),
+        (ExperimentsType.CMAB_ONLINE, "dwh", "id", 422, "table_name and primary_key are not supported"),
+        (ExperimentsType.CMAB_ONLINE, "dwh", None, 422, "table_name and primary_key are not supported"),
+    ],
+)
+async def test_create_experiment_api_table_name_and_primary_key_presence(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    experiment_type: ExperimentsType,
+    table_name: str | None,
+    primary_key: str | None,
+    expected_status: HTTPStatus,
+    expected_message: str | None,
+):
+    request = make_unvalidated_create_experiment_request(
+        experiment_type=experiment_type,
+        table_name=table_name,
+        primary_key=primary_key,
+    )
+    result = aclient.create_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        body=request,
+        raise_if_not_default_status=False,
+        desired_n=1,
+    )
+
+    assert result.status == expected_status, result.data
+    if expected_message is not None:
+        assert isinstance(result.data, AdminAPIClientHTTPValidationError)
+        print(result.data.detail[0])
+        assert expected_message in result.data.detail[0].msg
+
+
 def test_get_experiment_assignments_not_found(testing_datasource, eclient: ExperimentsAPIClient):
     """Test getting assignments for a non-existent experiment."""
     with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
@@ -226,7 +282,7 @@ async def test_get_experiment_assignments_wrong_datasource(
     testing_datasource, testing_datasource_other, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """Test getting assignments for an experiment from a different datasource."""
-    experiment = await create_online_experiment(testing_datasource_other, aclient)
+    experiment = await create_experiment(testing_datasource_other, aclient)
 
     # Try to get testing_datasource's experiment from another datasource's key.
     with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
@@ -238,7 +294,7 @@ async def test_get_experiment_assignments_wrong_datasource(
 async def test_get_experiment_assignments_success(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
-    experiment = await create_online_experiment(testing_datasource, aclient)
+    experiment = await create_experiment(testing_datasource, aclient)
     first_assignment = eclient.get_assignment(
         api_key=testing_datasource.key,
         experiment_id=experiment.experiment_id,
@@ -267,7 +323,7 @@ async def test_get_experiment_assignments_success(
 async def test_get_experiment_assignments_as_csv_success(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
-    experiment = await create_online_experiment(testing_datasource, aclient)
+    experiment = await create_experiment(testing_datasource, aclient)
     for i in range(10):
         assignment_response = eclient.get_assignment(
             api_key=testing_datasource.key,
@@ -305,7 +361,7 @@ async def test_get_assignment_preassigned(
     assignment = tables.ArmAssignment(
         experiment_id=preassigned_experiment.experiment_id,
         participant_id="assigned_id",
-        participant_type=preassigned_experiment.design_spec.participant_type,
+        participant_type=preassigned_experiment.participant_type_deprecated,
         arm_id=preassigned_experiment.design_spec.arms[0].arm_id,
         strata=[],
     )
@@ -334,7 +390,7 @@ async def test_get_assignment_preassigned(
 
 async def test_get_assignment_online(testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient):
     """Test endpoint that gets an assignment for a participant via API key."""
-    online_experiment = await create_online_experiment(testing_datasource, aclient)
+    online_experiment = await create_experiment(testing_datasource, aclient)
 
     parsed = eclient.get_assignment(
         api_key=testing_datasource.key,
@@ -376,9 +432,7 @@ async def test_get_assignment_online(testing_datasource, aclient: AdminAPIClient
 
 async def test_get_assignment_mab_online(testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient):
     """Test endpoint that gets an assignment for a participant via API key."""
-    online_experiment = await create_online_experiment(
-        testing_datasource, aclient, experiment_type=ExperimentsType.MAB_ONLINE
-    )
+    online_experiment = await create_experiment(testing_datasource, aclient, experiment_type=ExperimentsType.MAB_ONLINE)
 
     parsed = eclient.get_assignment(
         api_key=testing_datasource.key,
@@ -427,7 +481,7 @@ async def test_get_assignment_online_dont_create(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """Verify endpoint doesn't create an assignment when create_if_none=False."""
-    online_experiment = await create_online_experiment(testing_datasource, aclient)
+    online_experiment = await create_experiment(testing_datasource, aclient)
 
     parsed = eclient.get_assignment(
         api_key=testing_datasource.key,
@@ -444,7 +498,7 @@ async def test_get_assignment_online_past_end_date(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """Verify endpoint doesn't create an assignment for an online experiment that has ended."""
-    online_experiment = await create_online_experiment(
+    online_experiment = await create_experiment(
         testing_datasource,
         aclient,
         end_date=datetime.now(UTC) - timedelta(days=1),
@@ -473,7 +527,7 @@ async def test_get_cmab_experiment_assignment_for_online_participant(
     """
     Test getting the assignment for a participant in a CMAB online experiment.
     """
-    online_experiment = await create_online_experiment(
+    online_experiment = await create_experiment(
         testing_datasource, aclient, experiment_type=ExperimentsType.CMAB_ONLINE
     )
 
@@ -534,7 +588,7 @@ async def test_get_cmab_experiment_assignment_for_online_participant_glific_unwr
     This is the same as test_get_cmab_experiment_assignment_for_online_participant
     but with different HTTP client behavior.
     """
-    online_experiment = await create_online_experiment(
+    online_experiment = await create_experiment(
         testing_datasource, aclient, experiment_type=ExperimentsType.CMAB_ONLINE
     )
 
@@ -576,7 +630,7 @@ async def test_get_cmab_experiment_assignment_for_online_participant_glific_unwr
 async def test_assign_cmab_wrong_experiment_type(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
-    online_experiment = await create_online_experiment(testing_datasource, aclient)
+    online_experiment = await create_experiment(testing_datasource, aclient)
 
     with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
         eclient.get_assignment_cmab(
@@ -614,7 +668,7 @@ async def test_assign_with_filters_participant_passes_filters(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """Test that participant passing filters gets assigned."""
-    experiment = await create_online_experiment(
+    experiment = await create_experiment(
         testing_datasource,
         aclient,
         filters=[Filter(field_name="current_income", relation=Relation.BETWEEN, value=[1000, 5000])],
@@ -636,7 +690,7 @@ async def test_assign_with_filters_participant_passes_filters(
 async def test_assign_with_filters_ignores_missing_content_type_header(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
-    experiment = await create_online_experiment(
+    experiment = await create_experiment(
         testing_datasource,
         aclient,
         filters=[Filter(field_name="current_income", relation=Relation.BETWEEN, value=[1000, 5000])],
@@ -670,7 +724,7 @@ async def test_get_assignment_preassigned_cache_headers(
     assignment = tables.ArmAssignment(
         experiment_id=preassigned_experiment.experiment_id,
         participant_id="assigned_id",
-        participant_type=preassigned_experiment.design_spec.participant_type,
+        participant_type=preassigned_experiment.participant_type_deprecated,
         arm_id=preassigned_experiment.design_spec.arms[0].arm_id,
         strata=[],
     )
@@ -698,7 +752,7 @@ async def test_get_assignment_online_cache_headers(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """Test Cache-Control headers for online experiments."""
-    online_experiment = await create_online_experiment(testing_datasource, aclient)
+    online_experiment = await create_experiment(testing_datasource, aclient)
 
     # No assignment when create_if_none=false = no cache header
     response = eclient.get_assignment(
@@ -750,9 +804,7 @@ async def test_get_assignment_mab_cache_headers(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """Test Cache-Control headers for MAB experiments (only cached after outcome recorded)."""
-    mab_experiment = await create_online_experiment(
-        testing_datasource, aclient, experiment_type=ExperimentsType.MAB_ONLINE
-    )
+    mab_experiment = await create_experiment(testing_datasource, aclient, experiment_type=ExperimentsType.MAB_ONLINE)
 
     # Get assignment - no cache header since no outcome yet
     response = eclient.get_assignment(
@@ -787,9 +839,7 @@ async def test_get_assignment_cmab_cache_headers(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """Test Cache-Control headers for CMAB experiments (only cached after outcome recorded)."""
-    cmab_experiment = await create_online_experiment(
-        testing_datasource, aclient, experiment_type=ExperimentsType.CMAB_ONLINE
-    )
+    cmab_experiment = await create_experiment(testing_datasource, aclient, experiment_type=ExperimentsType.CMAB_ONLINE)
 
     context_inputs = [
         {"context_id": context.context_id, "context_value": 1.0}

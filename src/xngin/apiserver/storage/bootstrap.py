@@ -35,7 +35,11 @@ ALT_TESTING_DWH_DATASOURCE_NAME = "Alternate Local DWH"
 
 
 async def _create_and_commit_experiment(
-    session: AsyncSession, datasource: tables.Datasource, create_experiment_request: CreateExperimentRequest
+    session: AsyncSession,
+    datasource: tables.Datasource,
+    create_experiment_request: CreateExperimentRequest,
+    *,
+    participant_type_deprecated: str | None = None,
 ):
     result = await experiments_common.create_experiment_impl(
         create_experiment_request,
@@ -48,6 +52,11 @@ async def _create_and_commit_experiment(
     )
     experiment = await session.get_one(tables.Experiment, result.experiment_id)
     await experiments_common.commit_experiment_impl(session, experiment)
+    # We can't use the API anymore to simulate a user setting the participant type, so do it manually.
+    if participant_type_deprecated is not None:
+        experiment.participant_type = participant_type_deprecated
+        await session.commit()
+
     return experiment
 
 
@@ -92,9 +101,10 @@ async def _maybe_create_developer_samples(
         session,
         datasource,
         CreateExperimentRequest(
+            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+            primary_key="id",
             design_spec=PreassignedFrequentistExperimentSpec(
-                participant_type=TESTING_DWH_PARTICIPANT_DEF.participant_type,
-                experiment_name="Preassigned",
+                experiment_name="Preassigned steady gain",
                 description="Hypothesis",
                 start_date=datetime.datetime.now() - datetime.timedelta(days=7),
                 end_date=datetime.datetime.now() + datetime.timedelta(days=7),
@@ -105,8 +115,9 @@ async def _maybe_create_developer_samples(
                 filters=[Filter(field_name="baseline_income", relation=Relation.BETWEEN, value=[100, None])],
                 strata=[],
                 metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.10)],
-            )
+            ),
         ),
+        participant_type_deprecated="test_participant_type",
     )
     await seed_historical_snapshots(session, preassigned, STEADY_GAIN)
 
@@ -117,7 +128,6 @@ async def _maybe_create_developer_samples(
             table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
             primary_key="id",
             design_spec=PreassignedFrequentistExperimentSpec(
-                participant_type="",
                 experiment_name="Preassigned 2.0",
                 description="Hypothesis",
                 start_date=datetime.datetime.now() - datetime.timedelta(days=7),
@@ -138,8 +148,9 @@ async def _maybe_create_developer_samples(
         session,
         datasource,
         CreateExperimentRequest(
+            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+            primary_key="id",
             design_spec=OnlineFrequentistExperimentSpec(
-                participant_type=TESTING_DWH_PARTICIPANT_DEF.participant_type,
                 experiment_name="Online",
                 description="Hypothesis",
                 start_date=datetime.datetime.now() - datetime.timedelta(days=7),
@@ -151,8 +162,9 @@ async def _maybe_create_developer_samples(
                 filters=[],
                 strata=[],
                 metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.10)],
-            )
+            ),
         ),
+        participant_type_deprecated="test_participant_type",
     )
 
     # Create an online frequentist experiment with table name and primary key instead of a participant type
@@ -163,7 +175,6 @@ async def _maybe_create_developer_samples(
             table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
             primary_key="id",
             design_spec=OnlineFrequentistExperimentSpec(
-                participant_type="",
                 experiment_name="Online 2.0",
                 description="Hypothesis",
                 start_date=datetime.datetime.now() - datetime.timedelta(days=7),
@@ -184,7 +195,6 @@ async def _maybe_create_developer_samples(
         datasource,
         CreateExperimentRequest(
             design_spec=MABExperimentSpec(
-                participant_type="user",
                 experiment_name="MAB",
                 description="Hypothesis",
                 start_date=datetime.datetime.now() - datetime.timedelta(days=7),
@@ -204,7 +214,6 @@ async def _maybe_create_developer_samples(
         datasource,
         CreateExperimentRequest(
             design_spec=CMABExperimentSpec(
-                participant_type="user",
                 experiment_name="CMAB",
                 description="Hypothesis",
                 start_date=datetime.datetime.now() - datetime.timedelta(days=7),
@@ -233,8 +242,9 @@ async def _maybe_create_developer_samples(
         session,
         alt_datasource,
         CreateExperimentRequest(
+            table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
+            primary_key="id",
             design_spec=PreassignedFrequentistExperimentSpec(
-                participant_type=WIDE_DWH_PARTICIPANT_DEF.participant_type,
                 experiment_name="Wide Preassigned",
                 description="Hypothesis",
                 start_date=datetime.datetime.now() - datetime.timedelta(days=7),
@@ -246,7 +256,7 @@ async def _maybe_create_developer_samples(
                 filters=[Filter(field_name="household_income", relation=Relation.BETWEEN, value=[100, None])],
                 strata=[],
                 metrics=[DesignSpecMetricRequest(field_name="savings_balance", metric_pct_change=0.10)],
-            )
+            ),
         ),
     )
 
