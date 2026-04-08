@@ -9,6 +9,7 @@ from xngin.apiserver import (
     customlogging,
     database,
     exceptionhandlers,
+    flags,
     middleware,
     routes,
 )
@@ -43,9 +44,15 @@ async def lifespan(_app: FastAPI):
             "credentials on behalf of end-user requests. "
             "Please unset GOOGLE_APPLICATION_CREDENTIALS and try again."
         )
-    else:
-        async with database.setup():
-            yield
+    if not flags.is_dev_environment() and not flags.CORS_ALLOWED_ORIGINS:
+        raise MisconfiguredError(
+            "CORS_ALLOWED_ORIGINS environment variable is not set. "
+            "In non-development environments this must be set to a comma-separated list of "
+            "allowed origins (e.g. https://frontend.example.com)."
+        )
+
+    async with database.setup():
+        yield
 
 
 app = FastAPI(
