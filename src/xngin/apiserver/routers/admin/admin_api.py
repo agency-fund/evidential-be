@@ -1932,11 +1932,6 @@ async def power_check(
 ) -> PowerResponse:
     """Performs a power check for the specified datasource."""
     design_spec = body.design_spec
-    if not isinstance(design_spec, BaseFrequentistDesignSpec):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Power checks are only supported for frequentist experiments",
-        )
     ds = await get_datasource_or_raise(session, user, datasource_id)
     if isinstance(ds.config, NoDwh):
         raise HTTPException(
@@ -1946,7 +1941,7 @@ async def power_check(
     dsconfig = ds.get_config()
 
     async with DwhSession(dsconfig.dwh) as dwh:
-        sa_table = await dwh.inspect_table(body.table_name)
+        sa_table = await dwh.inspect_table(design_spec.table_name)
         # Validate the fields used in the design spec are present in the table and that filter values are valid.
         _ = await fetch_fields_from_table_or_raise(sa_table, design_spec)
         metric_stats = await asyncio.to_thread(

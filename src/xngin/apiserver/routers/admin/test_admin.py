@@ -1486,6 +1486,7 @@ async def test_abandon_experiment(testing_datasource, aclient: AdminAPIClient):
 
 async def test_power_check_with_unbalanced_arms(testing_datasource, aclient: AdminAPIClient):
     """Test power check endpoint with balanced vs unbalanced arms."""
+    ds_id = testing_datasource.datasource_id
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
         experiment_name="test power check",
@@ -1504,10 +1505,7 @@ async def test_power_check_with_unbalanced_arms(testing_datasource, aclient: Adm
     )
 
     # Call the power check endpoint
-    power_response = aclient.power_check(
-        datasource_id=testing_datasource.ds.id,
-        body=PowerRequest(design_spec=design_spec, table_name="dwh", primary_key="id"),
-    ).data
+    power_response = aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=design_spec)).data
     assert len(power_response.analyses) == 1
     metric_analysis = power_response.analyses[0]
     assert metric_analysis.metric_spec.field_name == "current_income"
@@ -1517,10 +1515,7 @@ async def test_power_check_with_unbalanced_arms(testing_datasource, aclient: Adm
     # Now check with unbalanced arms
     design_spec.arms[0].arm_weight = 20.0
     design_spec.arms[1].arm_weight = 80.0
-    power_response2 = aclient.power_check(
-        datasource_id=testing_datasource.ds.id,
-        body=PowerRequest(design_spec=design_spec, table_name="dwh", primary_key="id"),
-    ).data
+    power_response2 = aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=design_spec)).data
     assert len(power_response2.analyses) == 1
     metric_analysis2 = power_response2.analyses[0]
     assert metric_analysis2.metric_spec.field_name == "current_income"
@@ -1532,10 +1527,7 @@ async def test_power_check_with_unbalanced_arms(testing_datasource, aclient: Adm
     design_spec.arms[0].arm_weight = 10
     design_spec.arms[1].arm_weight = 50
     design_spec.arms[2].arm_weight = 40
-    power_response3 = aclient.power_check(
-        datasource_id=testing_datasource.ds.id,
-        body=PowerRequest(design_spec=design_spec, table_name="dwh", primary_key="id"),
-    ).data
+    power_response3 = aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=design_spec)).data
     assert len(power_response3.analyses) == 1
     metric_analysis3 = power_response3.analyses[0]
     assert metric_analysis3.metric_spec.field_name == "current_income"
@@ -1548,6 +1540,7 @@ async def test_power_check_with_unbalanced_arms(testing_datasource, aclient: Adm
 
 async def test_power_check_validations(testing_datasource, aclient: AdminAPIClient):
     """Test power check validations."""
+    ds_id = testing_datasource.datasource_id
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
         experiment_name="test power check with synthesized schema",
@@ -1566,26 +1559,21 @@ async def test_power_check_validations(testing_datasource, aclient: AdminAPIClie
     )
 
     # First check a valid power check
-    datasource_id = testing_datasource.ds.id
-    power_response = aclient.power_check(
-        datasource_id=datasource_id,
-        body=PowerRequest(design_spec=design_spec, table_name="dwh", primary_key="id"),
-    ).data
+    power_response = aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=design_spec)).data
     assert len(power_response.analyses) == 1
     assert power_response.analyses[0].metric_spec.field_name == "current_income"
     assert power_response.analyses[0].target_n is not None
 
     # Now check various failure scenarios
     with expect_status_code(404, message_contains="The table '' does not exist."):
-        aclient.power_check(
-            datasource_id=datasource_id, body=PowerRequest(design_spec=design_spec, table_name="", primary_key="")
-        )
+        bad_design_spec = design_spec.model_copy(deep=True)
+        bad_design_spec.table_name = ""
+        aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=bad_design_spec))
 
     with expect_status_code(422, detail_contains="columns that do not exist in the table: no_such_primary_key"):
-        aclient.power_check(
-            datasource_id=datasource_id,
-            body=PowerRequest(design_spec=design_spec, table_name="dwh", primary_key="no_such_primary_key"),
-        )
+        bad_design_spec = design_spec.model_copy(deep=True)
+        bad_design_spec.primary_key = "no_such_primary_key"
+        aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=bad_design_spec))
 
     with expect_status_code(
         422, detail_contains="columns that do not exist in the table: bad_filter, bad_metric, bad_stratum"
@@ -1594,18 +1582,12 @@ async def test_power_check_validations(testing_datasource, aclient: AdminAPIClie
         bad_design_spec.metrics = [DesignSpecMetricRequest(field_name="bad_metric", metric_pct_change=0.1)]
         bad_design_spec.strata = [Stratum(field_name="bad_stratum")]
         bad_design_spec.filters = [Filter(field_name="bad_filter", relation=Relation.INCLUDES, value=["value"])]
-        aclient.power_check(
-            datasource_id=datasource_id,
-            body=PowerRequest(design_spec=bad_design_spec, table_name="dwh", primary_key="id"),
-        )
+        aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=bad_design_spec))
 
     with expect_status_code(422, detail_contains="Invalid metric field(s): (gender). Only boolean or numeric"):
         bad_design_spec = design_spec.model_copy(deep=True)
         bad_design_spec.metrics = [DesignSpecMetricRequest(field_name="gender", metric_pct_change=0.1)]
-        aclient.power_check(
-            datasource_id=datasource_id,
-            body=PowerRequest(design_spec=bad_design_spec, table_name="dwh", primary_key="id"),
-        )
+        aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=bad_design_spec))
 
 
 async def test_create_experiment_with_invalid_design_url(testing_datasource, aclient: AdminAPIClient):

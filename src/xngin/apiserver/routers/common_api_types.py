@@ -905,7 +905,7 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         str,
         Field(
             max_length=MAX_LENGTH_OF_NAME_VALUE,
-            description="Datasource table used to resolve participant field types and metric baselines.",
+            description="Datasource table used to resolve participant field metadata.",
         ),
     ]
     primary_key: Annotated[
@@ -1140,18 +1140,7 @@ type DesignSpec = Annotated[
 
 
 class PowerRequest(ApiBaseModel):
-    design_spec: DesignSpec
-    table_name: Annotated[
-        str,
-        Field(description="Table name for ad-hoc power calculations. Fields are verified against the inspected table."),
-    ]
-    primary_key: Annotated[str, Field(description="Primary key field name.")]
-
-    @model_validator(mode="after")
-    def check_table_name_and_primary_key_together(self) -> Self:
-        if (self.table_name is None) != (self.primary_key is None):
-            raise ValueError("table_name and primary_key must be provided together or both omitted")
-        return self
+    design_spec: BaseFrequentistDesignSpec
 
 
 class PowerResponse(ApiBaseModel):
