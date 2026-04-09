@@ -4,7 +4,6 @@ import threading
 import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
-from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import psycopg
@@ -20,12 +19,6 @@ from xngin.tq.task_queue import Task, TaskQueue
 pytest_plugins = ("xngin.apiserver.conftest",)
 
 STATUS_TIMEOUT_SECS = 5.0
-
-
-@dataclass(slots=True)
-class TqHandle:
-    cancel: threading.Event
-    error_collector: queue.SimpleQueue[BaseException]
 
 
 def start_task_queue_in_thread(
