@@ -173,9 +173,7 @@ class DwhSession:
         metadata = sqlalchemy.MetaData()
         try:
             with engine.begin() as connection:
-                safe_table = sqlalchemy.quoted_name(table_name, quote=True)
-                # Create a select statement - this is safe from SQL injection
-                query = sqlalchemy.select(text("*")).select_from(text(safe_table)).limit(0)
+                query = query_constructors.create_inspect_table_from_cursor_query(table_name)
                 result = connection.execute(query)
                 description = result.cursor.description
                 for col in description:
@@ -420,7 +418,8 @@ class DwhSession:
                 existing_autocommit = dbapi_connection.autocommit
                 dbapi_connection.autocommit = True
                 cursor = dbapi_connection.cursor()
-                cursor.execute(f"SET SESSION search_path={self.dwh_config.search_path}")  # type: ignore[union-attr]
+                path = getattr(self.dwh_config, "search_path", "public")
+                cursor.execute(query_constructors.build_search_path_sql(engine.dialect.identifier_preparer, path))
                 cursor.close()
                 dbapi_connection.autocommit = existing_autocommit
 

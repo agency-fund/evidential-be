@@ -20,7 +20,14 @@ from xngin.apiserver.dwh.dwh_test_support import (
     Case,
     SampleTable,
 )
-from xngin.apiserver.dwh.query_constructors import compose_query, create_filter, create_query_filters, make_csv_regex
+from xngin.apiserver.dwh.query_constructors import (
+    build_search_path_sql,
+    compose_query,
+    create_filter,
+    create_inspect_table_from_cursor_query,
+    create_query_filters,
+    make_csv_regex,
+)
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import Filter, Relation
 from xngin.apiserver.routers.common_enums import DataType
@@ -637,6 +644,47 @@ REGEX_TESTS = [
     ("b,a", ["b", ""], True),
     ("c,a,b,d", ["a"], True),
 ]
+
+
+@pytest.mark.parametrize(
+    "table_name",
+    [
+        pytest.param("my_table; DROP TABLE users", id="semicolon_injection"),
+        pytest.param("my_table' OR '1'='1", id="quote_injection"),
+        pytest.param("my_table\x00attack", id="null_byte_injection"),
+    ],
+)
+def test_create_inspect_table_from_cursor_query_quotes_table_name(table_name):
+    """Verifies that injection payloads cannot escape the identifier context."""
+    dialect = sqlalchemy.dialects.postgresql.psycopg2.dialect()
+    query = create_inspect_table_from_cursor_query(table_name)
+    sql = str(query.compile(dialect=dialect))
+    # The raw payload should never appear unquoted in the output.
+    # Specifically, statement-terminating characters must not appear outside quotes.
+    assert ";" not in sql.replace(f'"{table_name}"', ""), f"Bad quoting of {table_name}: {sql}"
+    # The full table name must appear as a quoted identifier.
+    assert f'"{table_name}"' in sql, f"Expected quoted identifier in: {sql}"
+
+
+@pytest.mark.parametrize(
+    "search_path, expected_sql",
+    [
+        pytest.param("public", 'SET SESSION search_path="public"', id="single_schema"),
+        pytest.param("public, myschema", 'SET SESSION search_path="public", "myschema"', id="multiple_schemas"),
+        pytest.param('foo"bar', 'SET SESSION search_path="foo""bar"', id="embedded_double_quote"),
+        pytest.param(
+            'public"; DROP TABLE users; --',
+            'SET SESSION search_path="public""; DROP TABLE users; --"',
+            id="semicolon_injection",
+        ),
+    ],
+)
+def test_build_search_path_sql_quotes_schema_names(search_path: str, expected_sql: str):
+    """Verifies that the dialect preparer's quoting prevents injection payloads from
+    breaking out of the identifier context."""
+    preparer = sqlalchemy.dialects.postgresql.psycopg2.dialect().identifier_preparer
+    actual = build_search_path_sql(preparer, search_path)
+    assert actual == expected_sql
 
 
 @pytest.mark.parametrize("csv,values,expected", REGEX_TESTS)
