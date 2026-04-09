@@ -667,23 +667,23 @@ def test_create_inspect_table_from_cursor_query_quotes_table_name(table_name):
 
 
 @pytest.mark.parametrize(
-    "schemas, expected_sql",
+    "search_path, expected_sql",
     [
-        pytest.param(["public"], 'SET SESSION search_path="public"', id="single_schema"),
-        pytest.param(["public", "myschema"], 'SET SESSION search_path="public", "myschema"', id="multiple_schemas"),
-        pytest.param(['foo"bar'], 'SET SESSION search_path="foo""bar"', id="embedded_double_quote"),
+        pytest.param("public", 'SET SESSION search_path="public"', id="single_schema"),
+        pytest.param("public, myschema", 'SET SESSION search_path="public", "myschema"', id="multiple_schemas"),
+        pytest.param('foo"bar', 'SET SESSION search_path="foo""bar"', id="embedded_double_quote"),
         pytest.param(
-            ['public"; DROP TABLE users; --'],
+            'public"; DROP TABLE users; --',
             'SET SESSION search_path="public""; DROP TABLE users; --"',
             id="semicolon_injection",
         ),
     ],
 )
-def test_build_search_path_sql_quotes_schema_names(schemas: list[str], expected_sql: str):
+def test_build_search_path_sql_quotes_schema_names(search_path: str, expected_sql: str):
     """Verifies that the dialect preparer's quoting prevents injection payloads from
     breaking out of the identifier context."""
     preparer = sqlalchemy.dialects.postgresql.psycopg2.dialect().identifier_preparer
-    actual = build_search_path_sql(preparer, schemas)
+    actual = build_search_path_sql(preparer, search_path)
     assert actual == expected_sql
 
 

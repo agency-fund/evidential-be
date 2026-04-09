@@ -135,15 +135,16 @@ def create_inspect_table_from_cursor_query(table_name: str) -> sqlalchemy.Select
     return select(literal_column("*")).select_from(sa_table(table_name)).limit(0)
 
 
-def build_search_path_sql(preparer: sqlalchemy.sql.compiler.IdentifierPreparer, schemas: list[str]) -> str:
+def build_search_path_sql(preparer: sqlalchemy.sql.compiler.IdentifierPreparer, raw_search_path: str) -> str:
     """Builds a SET SESSION search_path=... statement with quoted identifiers.
 
     Uses the provided SQLA engine dialect's IdentifierPreparer to handle double-quote escaping and
     identifier length limits.
 
-    Schema names are also expected to have been validated against SEARCH_PATH_PATTERN (enforced by
+    raw_search_path is expected to have been validated against SEARCH_PATH_PATTERN (enforced by
     models in settings.py and admin_api_types.py).
     """
+    schemas = [s.strip() for s in raw_search_path.split(",")]
     return f"SET SESSION search_path={', '.join(preparer.quote_identifier(s) for s in schemas)}"
 
 

@@ -418,8 +418,8 @@ class DwhSession:
                 existing_autocommit = dbapi_connection.autocommit
                 dbapi_connection.autocommit = True
                 cursor = dbapi_connection.cursor()
-                schemas = [s.strip() for s in self.dwh_config.search_path.split(",")]  # type: ignore[union-attr]
-                cursor.execute(query_constructors.build_search_path_sql(engine.dialect.identifier_preparer, schemas))
+                path = getattr(self.dwh_config, "search_path", "public")
+                cursor.execute(query_constructors.build_search_path_sql(engine.dialect.identifier_preparer, path))
                 cursor.close()
                 dbapi_connection.autocommit = existing_autocommit
 
