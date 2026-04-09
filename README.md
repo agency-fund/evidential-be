@@ -69,15 +69,15 @@
 | src/xngin/stats/bandit\_weights\_to\_prior.py                        |       50 |        2 |     96% |   75, 138 |
 | src/xngin/stats/cluster\_icc.py                                      |       40 |        2 |     95% |    33, 57 |
 | src/xngin/stats/power.py                                             |      118 |        5 |     96% |71, 74, 118-119, 195 |
-| src/xngin/tq/task\_queue.py                                          |       96 |        9 |     91% |   234-244 |
-| src/xngin/tq/test\_tq.py                                             |      108 |        6 |     94% |33-34, 59-60, 97, 99 |
+| src/xngin/tq/task\_queue.py                                          |       96 |        2 |     98% |   237-238 |
+| src/xngin/tq/test\_tq.py                                             |      108 |        5 |     95% |33-34, 60, 97, 99 |
 | src/xngin/xsecrets/chafernet.py                                      |       52 |        1 |     98% |        92 |
 | src/xngin/xsecrets/gcp\_kms\_provider.py                             |       70 |       28 |     60% |64-79, 86-87, 104-108, 111, 115-123, 127-134 |
 | src/xngin/xsecrets/provider.py                                       |       19 |        1 |     95% |        46 |
 | src/xngin/xsecrets/secretservice.py                                  |       63 |        5 |     92% |37, 49-50, 108, 130 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                       |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                           |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                            | **11806** |  **794** | **93%** |           |
+| **TOTAL**                                                            | **11806** |  **786** | **93%** |           |
 
 67 files skipped due to complete coverage.
 
