@@ -1558,11 +1558,6 @@ async def create_experiment(
     if body.design_spec.ids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
 
-    if (body.table_name is not None or body.primary_key is not None) and not isinstance(
-        body.design_spec, BaseFrequentistDesignSpec
-    ):
-        raise LateValidationError("table_name/primary_key is only supported for frequentist experiment types")
-
     # Validate webhook IDs exist and belong to organization
     organization_id = datasource.organization_id
     validated_webhooks = await validate_webhooks(
@@ -1953,7 +1948,7 @@ async def power_check(
     async with DwhSession(dsconfig.dwh) as dwh:
         sa_table = await dwh.inspect_table(body.table_name)
         # Validate the fields used in the design spec are present in the table and that filter values are valid.
-        _ = await fetch_fields_from_table_or_raise(sa_table, design_spec, body.primary_key)
+        _ = await fetch_fields_from_table_or_raise(sa_table, design_spec)
         metric_stats = await asyncio.to_thread(
             get_stats_on_metrics,
             dwh.session,

@@ -128,7 +128,8 @@ def make_participants_def_from_experiment(experiment: tables.Experiment) -> Part
 
 
 async def fetch_fields_or_raise(
-    datasource: tables.Datasource, design_spec: BaseFrequentistDesignSpec, table_name: str, primary_key: str
+    datasource: tables.Datasource,
+    design_spec: BaseFrequentistDesignSpec,
 ) -> dict[str, DataType]:
     """Inspect an explicit table/primary_key experiment request and return field metadata.
 
@@ -137,15 +138,11 @@ async def fetch_fields_or_raise(
     certain use, or if filter values are invalid for the field type.
     """
     async with DwhSession(datasource.get_config().dwh) as dwh:
-        sa_table = await dwh.inspect_table(table_name)
-        return await fetch_fields_from_table_or_raise(sa_table, design_spec, primary_key)
+        sa_table = await dwh.inspect_table(design_spec.table_name)
+        return await fetch_fields_from_table_or_raise(sa_table, design_spec)
 
 
-async def fetch_fields_from_table_or_raise(
-    table: Table,
-    design_spec: BaseFrequentistDesignSpec,
-    primary_key: str,
-) -> dict[str, DataType]:
+async def fetch_fields_from_table_or_raise(table: Table, design_spec: BaseFrequentistDesignSpec) -> dict[str, DataType]:
     """Helper to fetch_fields_or_raise that operates on a pre-inspected SQLAlchemy table."""
     schema_supported_fields_map: dict[str, DataType] = {}
     for column in table.columns.values():
@@ -157,7 +154,7 @@ async def fetch_fields_from_table_or_raise(
         *[metric.field_name for metric in design_spec.metrics],
         *[filter_.field_name for filter_ in design_spec.filters],
         *[stratum.field_name for stratum in design_spec.strata],
-        primary_key,
+        design_spec.primary_key,
     }
 
     referenced_fields_and_types = {
@@ -206,11 +203,11 @@ async def create_experiment_impl(
             if desired_n is None:
                 raise LateValidationError("Preassigned experiments must have a desired_n.")
 
-            assert request.table_name is not None
-            assert request.primary_key is not None
-            table_name = request.table_name
-            primary_key = request.primary_key
-            field_type_map = await fetch_fields_or_raise(datasource, request.design_spec, table_name, primary_key)
+            preassigned_spec = request.design_spec
+            assert isinstance(preassigned_spec, BaseFrequentistDesignSpec)
+            table_name = preassigned_spec.table_name
+            primary_key = preassigned_spec.primary_key
+            field_type_map = await fetch_fields_or_raise(datasource, preassigned_spec)
 
             # Get participants and their schema info from the client dwh.
             # Only fetch the columns we might need for stratified random assignment.
@@ -245,11 +242,9 @@ async def create_experiment_impl(
             )
 
         case ExperimentsType.FREQ_ONLINE:
-            assert request.table_name is not None
-            assert request.primary_key is not None
-            field_type_map = await fetch_fields_or_raise(
-                datasource, request.design_spec, request.table_name, request.primary_key
-            )
+            online_spec = request.design_spec
+            assert isinstance(online_spec, BaseFrequentistDesignSpec)
+            field_type_map = await fetch_fields_or_raise(datasource, online_spec)
 
             return await create_freq_online_experiment_impl(
                 request=request,
@@ -293,9 +288,9 @@ async def create_preassigned_experiment_impl(
     """Create a frequentist preassigned experiment and persist it to the database."""
 
     design_spec = request.design_spec
-    table_name = request.table_name
-    unique_id_name = request.primary_key
-    assert table_name is not None and unique_id_name is not None
+    assert isinstance(design_spec, BaseFrequentistDesignSpec)
+    table_name = design_spec.table_name
+    unique_id_name = design_spec.primary_key
 
     if design_spec.experiment_type != ExperimentsType.FREQ_PREASSIGNED:
         raise MismatchedExperimentTypeError(f"can't create preassigned exp of type: {design_spec.experiment_type}")
@@ -375,9 +370,9 @@ async def create_freq_online_experiment_impl(
 ) -> CreateExperimentResponse:
     """Create a frequentist online experiment and persist it to the database."""
     design_spec = request.design_spec
-    table_name = request.table_name
-    unique_id_name = request.primary_key
-    assert table_name is not None and unique_id_name is not None
+    assert isinstance(design_spec, BaseFrequentistDesignSpec)
+    table_name = design_spec.table_name
+    unique_id_name = design_spec.primary_key
 
     if design_spec.experiment_type != ExperimentsType.FREQ_ONLINE:
         raise MismatchedExperimentTypeError(f"Can't create freq online exp of type: {design_spec.experiment_type}")

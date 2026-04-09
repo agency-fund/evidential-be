@@ -75,8 +75,11 @@ from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 
 def make_createexperimentrequest_json(
     experiment_type: str = "freq_preassigned",
+    *,
     prior_type: PriorTypes = PriorTypes.NORMAL,
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
+    table_name: str | None = None,
+    primary_key: str | None = None,
 ):
     """Make a basic CreateExperimentRequest JSON object.
 
@@ -85,10 +88,12 @@ def make_createexperimentrequest_json(
     experiment_type = ExperimentsType(experiment_type)
     match experiment_type:
         case ExperimentsType.FREQ_PREASSIGNED | ExperimentsType.FREQ_ONLINE:
+            table_name = table_name or TESTING_DWH_PARTICIPANT_DEF.table_name
+            primary_key = primary_key or "id"
             return {
-                "table_name": TESTING_DWH_PARTICIPANT_DEF.table_name,
-                "primary_key": "id",
                 "design_spec": {
+                    "table_name": table_name,
+                    "primary_key": primary_key,
                     "experiment_name": "test",
                     "description": "test",
                     "experiment_type": experiment_type,
@@ -223,20 +228,23 @@ async def make_insertable_experiment(
     experiment_type: ExperimentsType = ExperimentsType.FREQ_PREASSIGNED,
     prior_type: PriorTypes = PriorTypes.NORMAL,
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
-    design_spec: DesignSpec | None = None,
     table_name: str | None = None,
     primary_key: str | None = None,
+    design_spec: DesignSpec | None = None,
 ) -> tuple[tables.Experiment, DesignSpec]:
     """Make a minimal experiment with arms ready for insertion into the database for tests.
 
-    If a design_spec is not provided, a new design_spec is created using the provided
-    experiment_type, prior_type, and reward_type. An experiment is then created using the spec and
-    any table_name and primary_key if provided.
-    This does not add any power analyses or balance checks.
+    If a design_spec is not provided, a new design_spec is created using the other arguments.
+    An experiment is then created using the spec.  This does not add any power analyses or balance
+    checks.
     """
     if design_spec is None:
         request = make_createexperimentrequest_json(
-            experiment_type=experiment_type, prior_type=prior_type, reward_type=reward_type
+            experiment_type=experiment_type,
+            prior_type=prior_type,
+            reward_type=reward_type,
+            table_name=table_name,
+            primary_key=primary_key,
         )
         design_spec = TypeAdapter(DesignSpec).validate_python(request["design_spec"])
 
@@ -250,11 +258,13 @@ async def make_insertable_experiment(
 
     # Get participants schema from datasource for frequentist experiments
     field_type_map = None
+    exp_table_name: str | None = None
+    exp_primary_key: str | None = None
     if experiment_type in {ExperimentsType.FREQ_PREASSIGNED, ExperimentsType.FREQ_ONLINE}:
         assert isinstance(design_spec, PreassignedFrequentistExperimentSpec | OnlineFrequentistExperimentSpec)
-        table_name = TESTING_DWH_PARTICIPANT_DEF.table_name if table_name is None else table_name
-        primary_key = "id" if primary_key is None else primary_key
-        field_type_map = await fetch_fields_or_raise(datasource, design_spec, table_name, primary_key)
+        exp_table_name = design_spec.table_name
+        exp_primary_key = design_spec.primary_key
+        field_type_map = await fetch_fields_or_raise(datasource, design_spec)
 
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
@@ -264,9 +274,9 @@ async def make_insertable_experiment(
         state=state,
         stopped_assignments_at=stopped_assignments_at,
         stopped_assignments_reason=stopped_assignments_reason,
-        table_name=table_name,
+        table_name=exp_table_name,
+        unique_id_name=exp_primary_key,
         field_type_map=field_type_map,
-        unique_id_name=primary_key,
     )
     experiment = experiment_converter.get_experiment()
     return experiment, await experiment_converter.get_design_spec()
@@ -482,8 +492,7 @@ async def test_create_preassigned_experiment_impl(
         ]
     )
 
-    assert request.table_name is not None and request.primary_key is not None
-    field_type_map = await fetch_fields_or_raise(testing_datasource.ds, spec, request.table_name, request.primary_key)
+    field_type_map = await fetch_fields_or_raise(testing_datasource.ds, spec)
 
     response = await create_preassigned_experiment_impl(
         request=request.model_copy(deep=True),  # we'll use the original request for assertions
@@ -517,6 +526,8 @@ async def test_create_preassigned_experiment_impl(
     # original strata are not augmented with the metric names.
     assert response.design_spec.experiment_type == ExperimentsType.FREQ_PREASSIGNED
     assert isinstance(response.design_spec, PreassignedFrequentistExperimentSpec)
+    assert response.design_spec.table_name == spec.table_name
+    assert response.design_spec.primary_key == spec.primary_key
     assert response.design_spec.strata == [Stratum(field_name="gender")]
     # Verify assign_summary
     assert response.assign_summary is not None
@@ -542,7 +553,9 @@ async def test_create_preassigned_experiment_impl(
 
     assert experiment.experiment_type == ExperimentsType.FREQ_PREASSIGNED
     assert experiment.participant_type == ""
-    assert experiment.datasource_table == request.table_name
+    assert experiment.datasource_table == spec.table_name
+    unique_id_field = experiment.unique_id_field()
+    assert unique_id_field is not None and unique_id_field.field_name == spec.primary_key
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
     assert experiment.design_url == expected_design_url
@@ -641,9 +654,7 @@ async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
     ]
 
     spec = cast(PreassignedFrequentistExperimentSpec, request.design_spec)
-    assert request.table_name is not None
-    assert request.primary_key is not None
-    field_type_map = await fetch_fields_or_raise(testing_datasource.ds, spec, request.table_name, request.primary_key)
+    field_type_map = await fetch_fields_or_raise(testing_datasource.ds, spec)
 
     with pytest.raises(LateValidationError, match="Duplicate participant ID found after filtering:"):
         await create_preassigned_experiment_impl(
@@ -672,9 +683,7 @@ async def test_create_preassigned_experiment_impl_with_unbalanced_arms(
     spec.arms[0].arm_weight = expected_weights[0]
     spec.arms[1].arm_weight = expected_weights[1]
 
-    assert request.table_name is not None
-    assert request.primary_key is not None
-    field_type_map = await fetch_fields_or_raise(testing_datasource.ds, spec, request.table_name, request.primary_key)
+    field_type_map = await fetch_fields_or_raise(testing_datasource.ds, spec)
 
     response = await create_preassigned_experiment_impl(
         request=request,
@@ -737,9 +746,7 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
     spec.arms[1].arm_weight = expected_weights[1]
     spec.arms[2].arm_weight = expected_weights[2]
 
-    assert request.table_name is not None
-    assert request.primary_key is not None
-    field_type_map = await fetch_fields_or_raise(testing_datasource.ds, spec, request.table_name, request.primary_key)
+    field_type_map = await fetch_fields_or_raise(testing_datasource.ds, spec)
 
     response = await create_preassigned_experiment_impl(
         request=request,
@@ -797,14 +804,14 @@ async def test_create_freq_online_experiment_impl_experiments_fields_are_correct
 ):
     """Test creating a freq online experiment with filters, metrics, and strata are correctly stored."""
     experiment_request = CreateExperimentRequest(
-        table_name="dwh",
-        primary_key="id",
         design_spec=OnlineFrequentistExperimentSpec(
             experiment_type="freq_online",
             experiment_name="Test Experiment with Filters",
             description="Testing field storage",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
             end_date=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
+            table_name="dwh",
+            primary_key="id",
             arms=[Arm(arm_name="control", arm_description=""), Arm(arm_name="treatment", arm_description="")],
             metrics=[
                 DesignSpecMetricRequest(field_name="current_income", metric_pct_change=5),
@@ -827,7 +834,6 @@ async def test_create_freq_online_experiment_impl_experiments_fields_are_correct
         ),
         webhooks=[],
     )
-    assert experiment_request.table_name is not None and experiment_request.primary_key is not None
 
     # Fake our field type map. Normally extracted from datasource schema.
     field_type_map: dict[str, DataType] = {
@@ -859,6 +865,8 @@ async def test_create_freq_online_experiment_impl_experiments_fields_are_correct
     assert response.participant_type_deprecated == ""
 
     assert isinstance(response.design_spec, OnlineFrequentistExperimentSpec)
+    assert response.design_spec.table_name == "dwh"
+    assert response.design_spec.primary_key == "id"
     assert response.design_spec.experiment_name == experiment_request.design_spec.experiment_name
     assert response.design_spec.description == experiment_request.design_spec.description
     assert response.design_spec.start_date == experiment_request.design_spec.start_date
@@ -1096,15 +1104,19 @@ async def test_create_experiment_impl_for_freq_online(xngin_session, testing_dat
     assert response.state == ExperimentState.ASSIGNED
 
     # Verify design_spec
+    req_online_spec = request.design_spec
+    assert isinstance(req_online_spec, OnlineFrequentistExperimentSpec)
     assert response.experiment_id is not None
     assert response.design_spec.arms[0].arm_id is not None
     assert response.design_spec.arms[1].arm_id is not None
-    assert response.design_spec.experiment_name == request.design_spec.experiment_name
-    assert response.design_spec.description == request.design_spec.description
+    assert response.design_spec.experiment_name == req_online_spec.experiment_name
+    assert response.design_spec.description == req_online_spec.description
     assert response.design_spec.design_url is None
-    assert response.design_spec.start_date == request.design_spec.start_date
-    assert response.design_spec.end_date == request.design_spec.end_date
+    assert response.design_spec.start_date == req_online_spec.start_date
+    assert response.design_spec.end_date == req_online_spec.end_date
     assert isinstance(response.design_spec, OnlineFrequentistExperimentSpec)
+    assert response.design_spec.table_name == req_online_spec.table_name
+    assert response.design_spec.primary_key == req_online_spec.primary_key
     assert response.design_spec.strata == [Stratum(field_name="gender")]
     # Online experiments don't have power analyses by default
     assert response.power_analyses is None
@@ -1121,20 +1133,19 @@ async def test_create_experiment_impl_for_freq_online(xngin_session, testing_dat
     assert experiment.experiment_type == ExperimentsType.FREQ_ONLINE
     assert experiment.participant_type == ""
     assert response.participant_type_deprecated == ""
-    assert experiment.datasource_table == TESTING_DWH_PARTICIPANT_DEF.table_name
-    assert experiment.name == request.design_spec.experiment_name
-    assert experiment.description == request.design_spec.description
+    assert experiment.datasource_table == req_online_spec.table_name
+    assert experiment.name == req_online_spec.experiment_name
+    assert experiment.description == req_online_spec.description
     assert experiment.design_url == ""
     # Online experiments still go through a review step before being committed
     assert experiment.state == ExperimentState.ASSIGNED
     assert experiment.datasource_id == testing_datasource.ds.id
-    assert_dates_equal(experiment.start_date, request.design_spec.start_date)
-    assert_dates_equal(experiment.end_date, request.design_spec.end_date)
+    assert_dates_equal(experiment.start_date, req_online_spec.start_date)
+    assert_dates_equal(experiment.end_date, req_online_spec.end_date)
     # Verify stats parameters were stored correctly
-    assert isinstance(request.design_spec, OnlineFrequentistExperimentSpec)
-    assert experiment.power == request.design_spec.power
-    assert experiment.alpha == request.design_spec.alpha
-    assert experiment.fstat_thresh == request.design_spec.fstat_thresh
+    assert experiment.power == req_online_spec.power
+    assert experiment.alpha == req_online_spec.alpha
+    assert experiment.fstat_thresh == req_online_spec.fstat_thresh
     # Verify design_spec was stored correctly
     converter = ExperimentStorageConverter(experiment)
     assert await converter.get_design_spec() == response.design_spec
@@ -1148,7 +1159,7 @@ async def test_create_experiment_impl_for_freq_online(xngin_session, testing_dat
     expected_arm_ids = {arm.arm_id for arm in response.design_spec.arms}
     assert arm_ids == expected_arm_ids
     # Verify arm positions were stored correctly
-    for i, (req_arm, db_arm) in enumerate(zip(request.design_spec.arms, arms, strict=True), start=1):
+    for i, (req_arm, db_arm) in enumerate(zip(req_online_spec.arms, arms, strict=True), start=1):
         assert db_arm.position == i
         assert req_arm.arm_name == db_arm.name
         assert req_arm.arm_weight is None
@@ -1933,11 +1944,11 @@ async def collect_streaming_response_body(response) -> bytes:
 async def test_get_experiment_assignments_as_csv_impl(xngin_session, testing_datasource):
     experiment, _ = await make_insertable_experiment(
         testing_datasource.ds,
-        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
-        primary_key="id",
         design_spec=PreassignedFrequentistExperimentSpec(
             experiment_name="test experiment",
             description="test experiment",
+            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+            primary_key="id",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
             end_date=datetime.now(UTC) + timedelta(days=1),
             arms=[Arm(arm_name="control", arm_description=""), Arm(arm_name="treatment", arm_description="")],
@@ -1967,11 +1978,11 @@ async def test_get_experiment_assignments_as_csv_impl_emits_null_for_missing_met
 ):
     experiment, _ = await make_insertable_experiment(
         testing_datasource.ds,
-        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
-        primary_key="id",
         design_spec=PreassignedFrequentistExperimentSpec(
             experiment_name="test experiment",
             description="test experiment",
+            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+            primary_key="id",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
             end_date=datetime.now(UTC) + timedelta(days=1),
             arms=[Arm(arm_name="control", arm_description=""), Arm(arm_name="treatment", arm_description="")],
@@ -2015,11 +2026,11 @@ async def test_get_experiment_assignments_as_csv_impl_uses_sorted_strata_header_
 ):
     experiment, _ = await make_insertable_experiment(
         testing_datasource.ds,
-        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
-        primary_key="id",
         design_spec=PreassignedFrequentistExperimentSpec(
             experiment_name="test experiment",
             description="test experiment",
+            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+            primary_key="id",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
             end_date=datetime.now(UTC) + timedelta(days=1),
             arms=[Arm(arm_name="control", arm_description=""), Arm(arm_name="treatment", arm_description="")],
@@ -2041,11 +2052,11 @@ async def test_get_experiment_assignments_as_csv_impl_omits_strata_columns_when_
 ):
     experiment, _ = await make_insertable_experiment(
         testing_datasource.ds,
-        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
-        primary_key="id",
         design_spec=PreassignedFrequentistExperimentSpec(
             experiment_name="test experiment",
             description="test experiment",
+            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+            primary_key="id",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
             end_date=datetime.now(UTC) + timedelta(days=1),
             arms=[Arm(arm_name="control", arm_description=""), Arm(arm_name="treatment", arm_description="")],
@@ -2163,8 +2174,6 @@ async def test_create_assignment_for_participant_errors(xngin_session, testing_d
         testing_datasource.ds,
         ExperimentState.ASSIGNED,
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
-        primary_key="id",
     )
     experiment.arms = []
     response = await create_assignment_for_participant(xngin_session, experiment, "p1", None, random_state=66)
@@ -2175,8 +2184,6 @@ async def test_create_assignment_for_participant_errors(xngin_session, testing_d
         testing_datasource.ds,
         ExperimentState.ASSIGNED,
         experiment_type=ExperimentsType.FREQ_ONLINE,
-        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
-        primary_key="id",
     )
     with pytest.raises(ExperimentsAssignmentError, match="Invalid experiment state: assigned"):
         await create_assignment_for_participant(xngin_session, experiment, "p1", None, random_state=66)
@@ -2186,8 +2193,6 @@ async def test_create_assignment_for_participant_errors(xngin_session, testing_d
         testing_datasource.ds,
         ExperimentState.COMMITTED,
         experiment_type=ExperimentsType.FREQ_ONLINE,
-        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
-        primary_key="id",
     )
     experiment.arms = []
     with pytest.raises(ExperimentsAssignmentError, match="Experiment has no arms"):
@@ -2398,11 +2403,11 @@ async def test_get_or_create_assignment_for_participant_with_filters_in_online_f
 ):
     experiment, _ = await make_insertable_experiment(
         testing_datasource.ds,
-        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
-        primary_key="id",
         design_spec=OnlineFrequentistExperimentSpec(
             experiment_name="test experiment",
             description="test experiment",
+            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+            primary_key="id",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
             end_date=datetime.now(UTC) + timedelta(days=1),
             arms=[Arm(arm_name="control", arm_description=""), Arm(arm_name="treatment", arm_description="")],
@@ -2552,8 +2557,6 @@ async def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_
         testing_datasource.ds,
         ExperimentState.ASSIGNED,
         experiment_type=ExperimentsType.FREQ_ONLINE,
-        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
-        primary_key="id",
     )
     xngin_session.add(experiment)
     await xngin_session.commit()

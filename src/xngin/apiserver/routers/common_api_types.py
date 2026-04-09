@@ -901,6 +901,18 @@ class BaseDesignSpec(ApiBaseModel):
 class BaseFrequentistDesignSpec(BaseDesignSpec):
     """Experiment design parameters for frequentist experiments."""
 
+    table_name: Annotated[
+        str,
+        Field(
+            max_length=MAX_LENGTH_OF_NAME_VALUE,
+            description="Datasource table used to resolve participant field types and metric baselines.",
+        ),
+    ]
+    primary_key: Annotated[
+        FieldName,
+        Field(description="Column name in table_name that uniquely identifies each participant."),
+    ]
+
     # Frequentist config params
     strata: Annotated[
         list[Stratum],
@@ -1278,21 +1290,6 @@ class CreateExperimentRequest(ApiBaseModel):
             ),
         ),
     ] = []
-    table_name: Annotated[
-        str | None,
-        Field(
-            default=None,
-            description="Optional table name for creating experiments without a pre-registered participant type. "
-            "When provided with primary_key, inspects the datasource table to derive experiment field metadata.",
-        ),
-    ] = None
-    primary_key: Annotated[
-        str | None,
-        Field(
-            default=None,
-            description="Optional primary key field name. Must be provided together with table_name.",
-        ),
-    ] = None
 
     @field_validator("webhooks")
     @classmethod
@@ -1301,15 +1298,6 @@ class CreateExperimentRequest(ApiBaseModel):
         if len(v) != len(set(v)):
             raise ValueError("Webhook IDs must be unique")
         return v
-
-    @model_validator(mode="after")
-    def check_table_name_and_primary_key_exist_for_frequentist_only(self) -> Self:
-        if self.design_spec.experiment_type in {ExperimentsType.FREQ_ONLINE, ExperimentsType.FREQ_PREASSIGNED}:
-            if self.table_name is None or self.primary_key is None:
-                raise ValueError("table_name and primary_key must be provided together for frequentist experiments.")
-        elif self.table_name is not None or self.primary_key is not None:
-            raise ValueError("table_name and primary_key are not supported for non-frequentist experiments.")
-        return self
 
 
 # TODO: make this class work with the Bayesian experiment types and their Draw records.
