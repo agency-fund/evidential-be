@@ -258,6 +258,11 @@ class BqDsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
         )
 
 
+# Allows comma-separated PostgreSQL schema identifiers (alphanumeric, _ and $).
+# Used in both Dsn and the admin API request models to prevent SQL injection.
+SEARCH_PATH_PATTERN = r"^[a-zA-Z_][a-zA-Z0-9_$]*(,\s*[a-zA-Z_][a-zA-Z0-9_$]*)*$"
+
+
 class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
     """Describes a set of parameters suitable for connecting to most types of remote databases."""
 
@@ -273,7 +278,8 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
     dbname: str
     sslmode: Literal["disable", "require", "verify-ca", "verify-full"]
     # Specify the order in which schemas are searched if your dwh supports it.
-    search_path: str | None = None
+    # Validated to only allow safe identifier characters (prevents SQL injection).
+    search_path: Annotated[str | None, Field(pattern=SEARCH_PATH_PATTERN)] = None
 
     def encrypt(self, datasource_id):
         return self.model_copy(

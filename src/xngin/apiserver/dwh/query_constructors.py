@@ -3,7 +3,8 @@ from collections.abc import Sequence
 from datetime import date, datetime
 
 import sqlalchemy
-from sqlalchemy import ColumnElement, Table, and_, func, not_, or_, select
+from sqlalchemy import ColumnElement, Table, and_, func, literal_column, not_, or_, select
+from sqlalchemy import table as sa_table
 
 from xngin.apiserver.routers.common_api_types import EXPERIMENT_IDS_SUFFIX, Filter, FilterValueTypes
 from xngin.apiserver.routers.common_enums import DataType, Relation
@@ -123,6 +124,27 @@ def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:
             return general_includes_filter(col, parsed_values)
         case _:
             raise RuntimeError("Bug: invalid Filter.")
+
+
+def create_inspect_table_from_cursor_query(table_name: str) -> sqlalchemy.Select:
+    """Returns a zero-row SELECT used to read column metadata via cursor.description.
+
+    We use SQLAlchemy's identifier quoting to prevent table-name-based SQL injection
+    (e.g. "foo; DROP TABLE bar" becomes a quoted identifier rather than executable SQL).
+    """
+    return select(literal_column("*")).select_from(sa_table(table_name)).limit(0)
+
+
+def build_search_path_sql(preparer: sqlalchemy.sql.compiler.IdentifierPreparer, schemas: list[str]) -> str:
+    """Builds a SET SESSION search_path=... statement with quoted identifiers.
+
+    Uses the provided SQLA engine dialect's IdentifierPreparer to handle double-quote escaping and
+    identifier length limits.
+
+    Schema names are also expected to have been validated against SEARCH_PATH_PATTERN (enforced by
+    models in settings.py and admin_api_types.py).
+    """
+    return f"SET SESSION search_path={', '.join(preparer.quote_identifier(s) for s in schemas)}"
 
 
 def compose_query(sa_table: Table, select_columns: set[str], filters: list[ColumnElement], desired_n: int):

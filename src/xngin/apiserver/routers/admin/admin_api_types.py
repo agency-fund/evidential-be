@@ -29,7 +29,7 @@ from xngin.apiserver.routers.common_api_types import (
     Impact,
     PaginatedResponse,
 )
-from xngin.apiserver.settings import ParticipantsDef
+from xngin.apiserver.settings import SEARCH_PATH_PATTERN, ParticipantsDef
 
 
 def validate_webhook_url(url: str) -> str:
@@ -298,7 +298,7 @@ class PostgresDsn(AdminApiBaseModel):
     ]
     dbname: str
     sslmode: Literal["disable", "require", "verify-ca", "verify-full"]
-    search_path: str | None
+    search_path: Annotated[str | None, Field(pattern=SEARCH_PATH_PATTERN)]
 
 
 class RedshiftDsn(AdminApiBaseModel):
@@ -321,7 +321,7 @@ class RedshiftDsn(AdminApiBaseModel):
         ),
     ]
     dbname: str
-    search_path: str | None
+    search_path: Annotated[str | None, Field(pattern=SEARCH_PATH_PATTERN)]
 
 
 class BqDsn(AdminApiBaseModel):
