@@ -982,7 +982,7 @@ async def test_webhook_lifecycle(aclient: AdminAPIClient):
     assert webhooks[0].auth_token is not None
 
     # Update the webhook URL
-    new_url = "https://updated-example.com/webhook"
+    new_url = "https://example.com/updated_webhook"
     new_name = "new name"
     aclient.update_organization_webhook(
         organization_id=org_id, webhook_id=webhook_id, body=UpdateOrganizationWebhookRequest(url=new_url, name=new_name)
@@ -1017,12 +1017,48 @@ async def test_webhook_lifecycle(aclient: AdminAPIClient):
         aclient.update_organization_webhook(
             organization_id=org_id,
             webhook_id=webhook_id,
-            body=UpdateOrganizationWebhookRequest(url="https://should-fail.com/webhook", name="fail"),
+            body=UpdateOrganizationWebhookRequest.model_construct(url="https://example.com/should-fail", name="fail"),
         )
 
     # Try to delete a non-existent webhook
     with expect_status_code(404):
         aclient.delete_webhook_from_organization(organization_id=org_id, webhook_id=webhook_id)
+
+
+def test_create_webhook_rejects_ssrf_url(aclient: AdminAPIClient):
+    """Creating a webhook with an internal/unsafe hostname is rejected."""
+    org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="add_webhook_rejects_ssrf")).data.id
+    with expect_status_code(422, detail_contains="URL hostname failed safety validation"):
+        aclient.add_webhook_to_organization(
+            organization_id=org_id,
+            body=AddWebhookToOrganizationRequest.model_construct(
+                type="experiment.created",
+                url=f"http://{safe_resolve.UNSAFE_IP_FOR_TESTING}/steal-creds",
+                name="ssrf attempt",
+            ),
+        )
+
+
+def test_update_webhook_rejects_ssrf_url(aclient: AdminAPIClient):
+    """Updating a webhook to point at an internal/unsafe hostname is rejected."""
+    org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="update_webhook_rejects_ssrf")).data.id
+    webhook_id = aclient.add_webhook_to_organization(
+        organization_id=org_id,
+        body=AddWebhookToOrganizationRequest(
+            type="experiment.created",
+            url="http://8.8.8.8/webhook",
+            name="safe webhook",
+        ),
+    ).data.id
+    with expect_status_code(422, detail_contains="URL hostname failed safety validation"):
+        aclient.update_organization_webhook(
+            organization_id=org_id,
+            webhook_id=webhook_id,
+            body=UpdateOrganizationWebhookRequest.model_construct(
+                url=f"http://{safe_resolve.UNSAFE_IP_FOR_TESTING}/steal-creds",
+                name="ssrf attempt",
+            ),
+        )
 
 
 def test_participants_lifecycle(testing_datasource, aclient: AdminAPIClient):
