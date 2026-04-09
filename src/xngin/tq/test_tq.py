@@ -4,7 +4,7 @@ import threading
 import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import timedelta
 
 import psycopg
 import pytest
@@ -153,7 +153,6 @@ async def test_task_queue_requeues_failed_task_with_backoff(
 
     task_queue.register_handler("test.retry", handler)
     with tq_runner(task_queue):
-        inserted_at = datetime.now(UTC)
         task = await insert_task(
             xngin_session,
             task_type="test.retry",
@@ -170,7 +169,8 @@ async def test_task_queue_requeues_failed_task_with_backoff(
         assert handled_task_ids.empty()
         assert pending_task.retry_count == 1
         assert pending_task.message == "handler failed"
-        assert pending_task.embargo_until > inserted_at
+        assert pending_task.updated_at > task.created_at
+        assert pending_task.embargo_until == pending_task.updated_at + timedelta(minutes=1)
 
 
 def test_task_queue_retries_after_operational_error(monkeypatch: pytest.MonkeyPatch):
