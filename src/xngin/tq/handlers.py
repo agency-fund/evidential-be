@@ -1,11 +1,14 @@
 """Task handlers for the task queue."""
 
+from urllib.parse import urlparse
+
 import httpx
 import sqlalchemy
 from loguru import logger
 from sqlalchemy import NullPool
 from sqlalchemy.orm import Session
 
+from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.sqla import tables
 from xngin.events.webhook_sent import WebhookSentEvent
 from xngin.tq.task_payload_types import WebhookOutboundTask
@@ -33,6 +36,13 @@ def make_webhook_outbound_handler(dsn: str):
 
         request = WebhookOutboundTask.model_validate(task.payload)
         logger.info(f"Processing {request}")
+
+        parsed_url = urlparse(request.url)
+        try:
+            safe_resolve(parsed_url.hostname)
+        except DnsLookupError as e:
+            logger.warning(f"Webhook URL failed safety check at delivery time: {request.url} ({e})")
+            raise
 
         with Session(engine) as session:
             try:

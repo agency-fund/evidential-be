@@ -7,7 +7,9 @@ from annotated_types import Ge, Le
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from xngin.apiserver.common_field_types import FieldName
+from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
+from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.limits import (
     MAX_LENGTH_OF_DESCRIPTION_VALUE,
     MAX_LENGTH_OF_EMAIL_VALUE,
@@ -36,9 +38,13 @@ def validate_webhook_url(url: str) -> str:
     """Validates that a URL is a properly formatted HTTP or HTTPS URL."""
     parsed = urlparse(url)
     if not parsed.scheme or parsed.scheme not in {"http", "https"}:
-        raise ValueError("URL must use http or https scheme")
+        raise LateValidationError("URL must use http or https scheme")
     if not parsed.netloc:
-        raise ValueError("URL must include a valid domain")
+        raise LateValidationError("URL must include a valid domain")
+    try:
+        safe_resolve(parsed.hostname)
+    except DnsLookupError as e:
+        raise LateValidationError(f"URL hostname failed safety validation: {parsed.hostname}") from e
     return url
 
 
