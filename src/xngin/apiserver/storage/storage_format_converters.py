@@ -248,8 +248,15 @@ class ExperimentStorageConverter:
             ExperimentsType.FREQ_ONLINE.value,
             ExperimentsType.FREQ_PREASSIGNED.value,
         }:
+            await self.experiment.awaitable_attrs.experiment_fields
+            primary_key_field = self.experiment.unique_id_field()
+            if self.experiment.datasource_table is None or primary_key_field is None:
+                raise ValueError("Frequentist experiment is missing datasource_table or unique participant key field.")
+
             return TypeAdapter(capi.DesignSpec).validate_python({
                 **base_experiment_dict,
+                "table_name": self.experiment.datasource_table,
+                "primary_key": primary_key_field.field_name,
                 "arms": [
                     {
                         "arm_id": arm.id,
@@ -266,6 +273,7 @@ class ExperimentStorageConverter:
                 "alpha": self.experiment.alpha,
                 "fstat_thresh": self.experiment.fstat_thresh,
             })
+
         if self.experiment.experiment_type in {
             ExperimentsType.MAB_ONLINE.value,
             ExperimentsType.CMAB_ONLINE.value,

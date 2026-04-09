@@ -140,12 +140,12 @@ async def make_freq_online_experiment(
     experiment_id = aclient.create_experiment(
         datasource_id=datasource_id,
         body=CreateExperimentRequest(
-            table_name="dwh",
-            primary_key="id",
             design_spec=OnlineFrequentistExperimentSpec(
                 experiment_type=ExperimentsType.FREQ_ONLINE,
                 experiment_name="test experiment",
                 description="test experiment",
+                table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+                primary_key="id",
                 start_date=datetime(2024, 1, 1, tzinfo=UTC),
                 end_date=end_date,
                 arms=[Arm(arm_name="C", arm_description="C"), Arm(arm_name="T", arm_description="T")],
@@ -174,6 +174,8 @@ async def fixture_testing_experiment(xngin_session: AsyncSession, testing_dataso
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
         experiment_name="test experiment",
         description="test experiment",
+        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
         end_date=datetime.now(UTC) + timedelta(days=1),
         arms=[Arm(arm_name="C", arm_description="C"), Arm(arm_name="T", arm_description="T")],
@@ -181,9 +183,7 @@ async def fixture_testing_experiment(xngin_session: AsyncSession, testing_dataso
         strata=[],
         filters=[],
     )
-    table_name = TESTING_DWH_PARTICIPANT_DEF.table_name
-    primary_key = "id"
-    field_type_map = await fetch_fields_or_raise(datasource, design_spec, table_name, primary_key)
+    field_type_map = await fetch_fields_or_raise(datasource, design_spec)
 
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
@@ -193,9 +193,9 @@ async def fixture_testing_experiment(xngin_session: AsyncSession, testing_dataso
         state=ExperimentState.COMMITTED,
         stopped_assignments_at=datetime.now(UTC),
         stopped_assignments_reason=StopAssignmentReason.PREASSIGNED,
-        table_name=table_name,
+        table_name=design_spec.table_name,
+        unique_id_name=design_spec.primary_key,
         field_type_map=field_type_map,
-        unique_id_name=primary_key,
     )
     experiment = experiment_converter.get_experiment()
     xngin_session.add(experiment)
@@ -1461,6 +1461,8 @@ async def test_abandon_experiment(testing_datasource, aclient: AdminAPIClient):
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
         experiment_name="test experiment",
         description="test experiment",
+        table_name="dwh",
+        primary_key="id",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
         end_date=datetime.now(UTC) + timedelta(days=1),
         arms=[Arm(arm_name="C", arm_description="C"), Arm(arm_name="T", arm_description="T")],
@@ -1470,7 +1472,7 @@ async def test_abandon_experiment(testing_datasource, aclient: AdminAPIClient):
     )
     parsed_response = aclient.create_experiment(
         datasource_id=datasource_id,
-        body=CreateExperimentRequest(design_spec=design_spec, table_name="dwh", primary_key="id"),
+        body=CreateExperimentRequest(design_spec=design_spec),
         desired_n=1,
     ).data
     assert parsed_response.state == ExperimentState.ASSIGNED
@@ -1484,10 +1486,13 @@ async def test_abandon_experiment(testing_datasource, aclient: AdminAPIClient):
 
 async def test_power_check_with_unbalanced_arms(testing_datasource, aclient: AdminAPIClient):
     """Test power check endpoint with balanced vs unbalanced arms."""
+    ds_id = testing_datasource.datasource_id
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
         experiment_name="test power check",
         description="test power check with unbalanced arms",
+        table_name="dwh",
+        primary_key="id",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
         end_date=datetime.now(UTC) + timedelta(days=1),
         arms=[
@@ -1500,10 +1505,7 @@ async def test_power_check_with_unbalanced_arms(testing_datasource, aclient: Adm
     )
 
     # Call the power check endpoint
-    power_response = aclient.power_check(
-        datasource_id=testing_datasource.ds.id,
-        body=PowerRequest(design_spec=design_spec, table_name="dwh", primary_key="id"),
-    ).data
+    power_response = aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=design_spec)).data
     assert len(power_response.analyses) == 1
     metric_analysis = power_response.analyses[0]
     assert metric_analysis.metric_spec.field_name == "current_income"
@@ -1513,10 +1515,7 @@ async def test_power_check_with_unbalanced_arms(testing_datasource, aclient: Adm
     # Now check with unbalanced arms
     design_spec.arms[0].arm_weight = 20.0
     design_spec.arms[1].arm_weight = 80.0
-    power_response2 = aclient.power_check(
-        datasource_id=testing_datasource.ds.id,
-        body=PowerRequest(design_spec=design_spec, table_name="dwh", primary_key="id"),
-    ).data
+    power_response2 = aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=design_spec)).data
     assert len(power_response2.analyses) == 1
     metric_analysis2 = power_response2.analyses[0]
     assert metric_analysis2.metric_spec.field_name == "current_income"
@@ -1528,10 +1527,7 @@ async def test_power_check_with_unbalanced_arms(testing_datasource, aclient: Adm
     design_spec.arms[0].arm_weight = 10
     design_spec.arms[1].arm_weight = 50
     design_spec.arms[2].arm_weight = 40
-    power_response3 = aclient.power_check(
-        datasource_id=testing_datasource.ds.id,
-        body=PowerRequest(design_spec=design_spec, table_name="dwh", primary_key="id"),
-    ).data
+    power_response3 = aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=design_spec)).data
     assert len(power_response3.analyses) == 1
     metric_analysis3 = power_response3.analyses[0]
     assert metric_analysis3.metric_spec.field_name == "current_income"
@@ -1544,10 +1540,13 @@ async def test_power_check_with_unbalanced_arms(testing_datasource, aclient: Adm
 
 async def test_power_check_validations(testing_datasource, aclient: AdminAPIClient):
     """Test power check validations."""
+    ds_id = testing_datasource.datasource_id
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
         experiment_name="test power check with synthesized schema",
         description="test power check using table_name and primary_key",
+        table_name="dwh",
+        primary_key="id",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
         end_date=datetime.now(UTC) + timedelta(days=1),
         arms=[
@@ -1560,26 +1559,21 @@ async def test_power_check_validations(testing_datasource, aclient: AdminAPIClie
     )
 
     # First check a valid power check
-    datasource_id = testing_datasource.ds.id
-    power_response = aclient.power_check(
-        datasource_id=datasource_id,
-        body=PowerRequest(design_spec=design_spec, table_name="dwh", primary_key="id"),
-    ).data
+    power_response = aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=design_spec)).data
     assert len(power_response.analyses) == 1
     assert power_response.analyses[0].metric_spec.field_name == "current_income"
     assert power_response.analyses[0].target_n is not None
 
     # Now check various failure scenarios
     with expect_status_code(404, message_contains="The table '' does not exist."):
-        aclient.power_check(
-            datasource_id=datasource_id, body=PowerRequest(design_spec=design_spec, table_name="", primary_key="")
-        )
+        bad_design_spec = design_spec.model_copy(deep=True)
+        bad_design_spec.table_name = ""
+        aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=bad_design_spec))
 
     with expect_status_code(422, detail_contains="columns that do not exist in the table: no_such_primary_key"):
-        aclient.power_check(
-            datasource_id=datasource_id,
-            body=PowerRequest(design_spec=design_spec, table_name="dwh", primary_key="no_such_primary_key"),
-        )
+        bad_design_spec = design_spec.model_copy(deep=True)
+        bad_design_spec.primary_key = "no_such_primary_key"
+        aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=bad_design_spec))
 
     with expect_status_code(
         422, detail_contains="columns that do not exist in the table: bad_filter, bad_metric, bad_stratum"
@@ -1588,18 +1582,12 @@ async def test_power_check_validations(testing_datasource, aclient: AdminAPIClie
         bad_design_spec.metrics = [DesignSpecMetricRequest(field_name="bad_metric", metric_pct_change=0.1)]
         bad_design_spec.strata = [Stratum(field_name="bad_stratum")]
         bad_design_spec.filters = [Filter(field_name="bad_filter", relation=Relation.INCLUDES, value=["value"])]
-        aclient.power_check(
-            datasource_id=datasource_id,
-            body=PowerRequest(design_spec=bad_design_spec, table_name="dwh", primary_key="id"),
-        )
+        aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=bad_design_spec))
 
     with expect_status_code(422, detail_contains="Invalid metric field(s): (gender). Only boolean or numeric"):
         bad_design_spec = design_spec.model_copy(deep=True)
         bad_design_spec.metrics = [DesignSpecMetricRequest(field_name="gender", metric_pct_change=0.1)]
-        aclient.power_check(
-            datasource_id=datasource_id,
-            body=PowerRequest(design_spec=bad_design_spec, table_name="dwh", primary_key="id"),
-        )
+        aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=bad_design_spec))
 
 
 async def test_create_experiment_with_invalid_design_url(testing_datasource, aclient: AdminAPIClient):
@@ -1709,12 +1697,12 @@ async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
 ):
     datasource_id = testing_datasource.ds.id
     experiment_request = CreateExperimentRequest(
-        table_name="dwh",
-        primary_key="id",
         design_spec=PreassignedFrequentistExperimentSpec(
             experiment_type="freq_preassigned",
             experiment_name="Test Experiment with Filters",
             description="Testing filters roundtrip",
+            table_name="dwh",
+            primary_key="id",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
             end_date=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
             arms=[
@@ -2578,12 +2566,12 @@ async def test_experiment_webhook_integration(testing_datasource, aclient: Admin
 
     # Create an experiment with only the first webhook using proper Pydantic models
     experiment_request = CreateExperimentRequest(
-        table_name="dwh",
-        primary_key="id",
         design_spec=PreassignedFrequentistExperimentSpec(
             experiment_type=ExperimentsType.FREQ_PREASSIGNED,
             experiment_name="Test Experiment with Webhook",
             description="Testing webhook integration",
+            table_name="dwh",
+            primary_key="id",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
             end_date=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
             arms=[
@@ -2616,12 +2604,12 @@ async def test_experiment_webhook_integration(testing_datasource, aclient: Admin
 
     # Test creating an experiment with no webhooks using proper Pydantic models
     experiment_request_no_webhooks = CreateExperimentRequest(
-        table_name="dwh",
-        primary_key="id",
         design_spec=PreassignedFrequentistExperimentSpec(
             experiment_type=ExperimentsType.FREQ_PREASSIGNED,
             experiment_name="Test Experiment without Webhooks",
             description="Testing no webhook integration",
+            table_name="dwh",
+            primary_key="id",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
             end_date=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
             arms=[
@@ -2677,10 +2665,10 @@ def test_snapshots(aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
     experiment_id = aclient.create_experiment(
         datasource_id=create_datasource_response.id,
         body=CreateExperimentRequest(
-            table_name="dwh",
-            primary_key="id",
             design_spec=PreassignedFrequentistExperimentSpec(
                 experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+                table_name="dwh",
+                primary_key="id",
                 experiment_name="test experiment",
                 description="test experiment",
                 start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -2875,10 +2863,10 @@ def test_snapshot_on_ineligible_experiments(testing_datasource, aclient: AdminAP
     experiment_id = aclient.create_experiment(
         datasource_id=ds.id,
         body=CreateExperimentRequest(
-            table_name="dwh",
-            primary_key="id",
             design_spec=PreassignedFrequentistExperimentSpec(
                 experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+                table_name="dwh",
+                primary_key="id",
                 experiment_name="test old experiment",
                 description="too old to be snapshotted",
                 start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -2910,10 +2898,10 @@ def test_snapshot_on_ineligible_experiments(testing_datasource, aclient: AdminAP
     experiment_id = aclient.create_experiment(
         datasource_id=ds.id,
         body=CreateExperimentRequest(
-            table_name="dwh",
-            primary_key="id",
             design_spec=PreassignedFrequentistExperimentSpec(
                 experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+                table_name="dwh",
+                primary_key="id",
                 experiment_name="test just ended experiment",
                 description="just ended within a day of now, so can be snapshotted",
                 start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -2940,10 +2928,10 @@ def test_snapshot_with_nan(testing_datasource, aclient: AdminAPIClient):
     experiment_id = aclient.create_experiment(
         datasource_id=ds.id,
         body=CreateExperimentRequest(
-            table_name="dwh",
-            primary_key="id",
             design_spec=PreassignedFrequentistExperimentSpec(
                 experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+                table_name="dwh",
+                primary_key="id",
                 experiment_name="test experiment",
                 description="test experiment",
                 start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -3291,11 +3279,7 @@ async def test_create_experiment_with_table_name_and_primary_key(
 
     request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
     initial_participant_count = len(testing_datasource.ds.get_config().participants)
-    experiment_request = CreateExperimentRequest.model_validate({
-        **request_json,
-        "table_name": "dwh",  # The actual table name in test DWH
-        "primary_key": "id",
-    })
+    experiment_request = CreateExperimentRequest.model_validate(request_json)
 
     created = aclient.create_experiment(
         datasource_id=ds_id,
@@ -3316,40 +3300,28 @@ async def test_create_experiment_with_table_name_and_primary_key(
     assert experiment.datasource_table == "dwh"
 
 
-def test_create_experiment_table_name_requires_primary_key(testing_datasource, aclient: AdminAPIClient):
-    """Test that table_name requires primary_key."""
+def test_create_experiment_freq_design_spec_requires_primary_key(testing_datasource, aclient: AdminAPIClient):
     ds_id = testing_datasource.ds.id
     request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
-    constructed = CreateExperimentRequest.model_validate(request_json)
-    constructed.primary_key = None
-    constructed.table_name = "some_table"
-    with expect_status_code(422, text="table_name and primary_key must be provided together"):
-        aclient.create_experiment(datasource_id=ds_id, body=constructed)
+    del request_json["design_spec"]["primary_key"]
+    with expect_status_code(422, text="primary_key", detail_eq="Field required"):
+        aclient.create_experiment(datasource_id=ds_id, body=request_json)
 
 
-def test_create_experiment_primary_key_requires_table_name(testing_datasource, aclient: AdminAPIClient):
-    """Test that primary_key requires table_name."""
+def test_create_experiment_freq_design_spec_requires_table_name(testing_datasource, aclient: AdminAPIClient):
     ds_id = testing_datasource.ds.id
     request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
-    constructed = CreateExperimentRequest.model_validate(request_json)
-    constructed.primary_key = "id"
-    constructed.table_name = None
-    with expect_status_code(422, text="table_name and primary_key must be provided together"):
-        aclient.create_experiment(datasource_id=ds_id, body=constructed)
+    del request_json["design_spec"]["table_name"]
+    with expect_status_code(422, text="table_name", detail_eq="Field required"):
+        aclient.create_experiment(datasource_id=ds_id, body=request_json)
 
 
 async def test_create_preassigned_experiment_with_table_name_and_primary_key(
     xngin_session: AsyncSession, testing_datasource, aclient: AdminAPIClient
 ):
-    """Test creating a preassigned experiment with table_name and primary_key."""
     ds_id = testing_datasource.ds.id
-
     request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_PREASSIGNED)
-    experiment_request = CreateExperimentRequest.model_validate({
-        **request_json,
-        "table_name": "dwh",
-        "primary_key": "id",
-    })
+    experiment_request = CreateExperimentRequest.model_validate(request_json)
 
     created = aclient.create_experiment(
         datasource_id=ds_id,
@@ -3401,10 +3373,10 @@ def test_list_snapshots_pagination(aclient: AdminAPIClient):
     experiment_id = aclient.create_experiment(
         datasource_id=ds.id,
         body=CreateExperimentRequest(
-            table_name="dwh",
-            primary_key="id",
             design_spec=PreassignedFrequentistExperimentSpec(
                 experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+                table_name="dwh",
+                primary_key="id",
                 experiment_name="pagination test",
                 description="pagination test",
                 start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -3498,11 +3470,11 @@ def test_list_organization_events_pagination(testing_datasource, aclient: AdminA
         experiment = aclient.create_experiment(
             datasource_id=ds_id,
             body=CreateExperimentRequest(
-                table_name="dwh",
-                primary_key="id",
                 webhooks=[webhook_id],
                 design_spec=PreassignedFrequentistExperimentSpec(
                     experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+                    table_name="dwh",
+                    primary_key="id",
                     experiment_name=f"pagination event test {i}",
                     description=f"pagination event test {i}",
                     start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -3577,10 +3549,10 @@ async def test_list_organization_events_pagination_with_same_timestamp_is_id_des
         experiment = aclient.create_experiment(
             datasource_id=ds_id,
             body=CreateExperimentRequest(
-                table_name="dwh",
-                primary_key="id",
                 design_spec=PreassignedFrequentistExperimentSpec(
                     experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+                    table_name="dwh",
+                    primary_key="id",
                     experiment_name=f"same-ts event test {i}",
                     description=f"same-ts event test {i}",
                     start_date=datetime(2024, 1, 1, tzinfo=UTC),
