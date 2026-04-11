@@ -1,6 +1,5 @@
 # mypy: disable-error-code="misc"
 from collections.abc import AsyncGenerator
-from typing import cast
 
 from fastapi.responses import StreamingResponse
 from psycopg import sql
@@ -164,15 +163,16 @@ async def get_experiment_assignments_impl(
             )
             async for assignment in stream(xngin_session, select_query, JSON_STREAM_FETCH_SIZE_ROWS):
                 participant_id, arm_id, arm_name, created_at, *strata_values = assignment
+                strata: list[StrataTypedDict] = [
+                    {"field_name": strata_names[i], "strata_value": strata_values[i]}
+                    for i, _ in enumerate(strata_names)
+                ]
                 yield {
                     "participant_id": participant_id,
                     "arm_id": arm_id,
                     "arm_name": arm_name,
                     "created_at": created_at,
-                    "strata": [
-                        cast(StrataTypedDict, {"field_name": strata_names[i], "strata_value": strata_values[i]})
-                        for i, _ in enumerate(strata_names)
-                    ],
+                    "strata": strata,
                     "observed_at": None,
                     "outcome": None,
                     "context_values": None,
