@@ -1,11 +1,14 @@
+import asyncio
 import warnings
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
+from xngin.apiserver.routers.admin.admin_api_types import SnapshotStatus
 from xngin.apiserver.routers.common_api_types import (
     Arm,
     BaseFrequentistDesignSpec,
+    CreateExperimentRequest,
     DesignSpec,
     DesignSpecMetricRequest,
     ExperimentsType,
@@ -14,9 +17,15 @@ from xngin.apiserver.routers.common_api_types import (
 )
 from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers.experiments.experiments_common import fetch_fields_or_raise
-from xngin.apiserver.snapshots.snapshotter import create_pending_snapshots, make_first_snapshot
+from xngin.apiserver.snapshots.snapshotter import (
+    SNAPSHOT_TIMEOUT_SECS,
+    create_pending_snapshots,
+    make_first_snapshot,
+    process_pending_snapshots,
+)
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
+from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 
 
@@ -85,6 +94,48 @@ async def get_latest_snapshot_analysis(xngin_session, experiment_id):
     ).scalar_one()
     assert snapshot.status == "success"
     return FreqExperimentAnalysisResponse.model_validate(snapshot.data)
+
+
+def make_snapshot_design_spec(
+    name: str,
+    *,
+    end_date: datetime | None = None,
+) -> PreassignedFrequentistExperimentSpec:
+    return PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name=name,
+        description=name,
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=end_date or (datetime.now(UTC) + timedelta(days=1)),
+        arms=[
+            Arm(arm_name="C", arm_description="C"),
+            Arm(arm_name="T", arm_description="T"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+    )
+
+
+def create_snapshot_experiment(
+    aclient: AdminAPIClient,
+    testing_datasource,
+    *,
+    name: str,
+    desired_n: int = 2,
+    end_date: datetime | None = None,
+) -> str:
+    experiment_id = aclient.create_experiment(
+        datasource_id=testing_datasource.ds.id,
+        body=CreateExperimentRequest(
+            design_spec=make_snapshot_design_spec(name, end_date=end_date),
+            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+            primary_key="id",
+        ),
+        desired_n=desired_n,
+    ).data.experiment_id
+    aclient.commit_experiment(datasource_id=testing_datasource.ds.id, experiment_id=experiment_id)
+    return experiment_id
 
 
 async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_datasource):
@@ -202,3 +253,194 @@ async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_da
     non_baseline_arm = next(a for a in arm_analyses if not a.is_baseline)
     assert baseline_arm.arm_id == experiment.arms[0].id
     assert non_baseline_arm.arm_id == experiment.arms[1].id
+
+
+async def test_make_first_snapshot_is_noop_when_missing_or_not_pending(
+    xngin_session,
+    testing_datasource,
+    aclient: AdminAPIClient,
+):
+    experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="missing snapshot test")
+    completed_snapshot = tables.Snapshot(
+        experiment_id=experiment_id,
+        status="failed",
+        message="already failed",
+    )
+    xngin_session.add(completed_snapshot)
+    await xngin_session.commit()
+
+    def list_snapshots():
+        return aclient.list_snapshots(
+            organization_id=testing_datasource.org.id,
+            datasource_id=testing_datasource.ds.id,
+            experiment_id=experiment_id,
+        ).data.items
+
+    snapshots_before = list_snapshots()
+    assert [snapshot.status for snapshot in snapshots_before] == [SnapshotStatus.FAILED]
+
+    await make_first_snapshot(experiment_id, "sn_missing")
+    await make_first_snapshot(experiment_id, completed_snapshot.id)
+
+    snapshots_after = list_snapshots()
+    assert [snapshot.status for snapshot in snapshots_after] == [SnapshotStatus.FAILED]
+    assert snapshots_after[0].data is None
+    assert snapshots_after[0].details == {"message": "already failed"}
+
+
+async def test_handle_one_snapshot_safely_marks_failed_on_exception(
+    testing_datasource, aclient: AdminAPIClient, mocker
+):
+    experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="handle snapshot failure test")
+
+    # Force the snapshot to fail.
+    mocker.patch(
+        "xngin.apiserver.snapshots.snapshotter._query_dwh_for_snapshot_data",
+        side_effect=RuntimeError("boom"),
+    )
+    aclient.create_snapshot(
+        organization_id=testing_datasource.org.id,
+        datasource_id=testing_datasource.ds.id,
+        experiment_id=experiment_id,
+    )
+
+    snapshots = aclient.list_snapshots(
+        organization_id=testing_datasource.org.id,
+        datasource_id=testing_datasource.ds.id,
+        experiment_id=experiment_id,
+    ).data.items
+    assert [snapshot.status for snapshot in snapshots] == [SnapshotStatus.FAILED]
+    assert snapshots[0].data is None
+    assert snapshots[0].details == {"message": "RuntimeError: boom"}
+
+
+async def test_handle_one_snapshot_safely_marks_failed_on_timeout(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    mocker,
+):
+    experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="handle snapshot timeout test")
+
+    async def slow_query(*args, **kwargs):
+        await asyncio.sleep(0.01)
+
+    mocker.patch("xngin.apiserver.snapshots.snapshotter._query_dwh_for_snapshot_data", side_effect=slow_query)
+    mocker.patch("xngin.apiserver.snapshots.snapshotter.SNAPSHOT_TIMEOUT_SECS", 0)
+    aclient.create_snapshot(
+        organization_id=testing_datasource.org.id,
+        datasource_id=testing_datasource.ds.id,
+        experiment_id=experiment_id,
+    )
+
+    snapshots = aclient.list_snapshots(
+        organization_id=testing_datasource.org.id,
+        datasource_id=testing_datasource.ds.id,
+        experiment_id=experiment_id,
+    ).data.items
+    assert [snapshot.status for snapshot in snapshots] == [SnapshotStatus.FAILED]
+    assert snapshots[0].data is None
+    assert snapshots[0].details is not None
+    assert "TimeoutError" in snapshots[0].details["message"]
+
+
+async def test_create_pending_snapshots_inserts_for_new_stale_and_failed_experiments(
+    xngin_session,
+    testing_datasource,
+    aclient: AdminAPIClient,
+):
+    now = datetime.now(UTC)
+    new_experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="snapshot scheduling test")
+    stale_experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="stale snapshot test")
+    failed_experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="failed snapshot test")
+    fresh_experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="fresh snapshot test")
+    inactive_experiment_id = create_snapshot_experiment(
+        aclient,
+        testing_datasource,
+        name="inactive snapshot test",
+        end_date=now - timedelta(days=2),
+    )
+
+    xngin_session.add_all([
+        tables.Snapshot(
+            experiment_id=stale_experiment_id,
+            status="success",
+            updated_at=now - timedelta(hours=2),
+        ),
+        tables.Snapshot(
+            experiment_id=failed_experiment_id,
+            status="failed",
+            updated_at=now,
+            message="boom",
+        ),
+        tables.Snapshot(
+            experiment_id=fresh_experiment_id,
+            status="success",
+            updated_at=now - timedelta(minutes=5),
+        ),
+    ])
+    await xngin_session.commit()
+
+    await create_pending_snapshots(3600)
+
+    def list_snapshots(experiment_id: str):
+        return aclient.list_snapshots(
+            organization_id=testing_datasource.org.id,
+            datasource_id=testing_datasource.ds.id,
+            experiment_id=experiment_id,
+        ).data.items
+
+    assert [snapshot.status for snapshot in list_snapshots(new_experiment_id)] == [SnapshotStatus.RUNNING]
+
+    assert [snapshot.status for snapshot in list_snapshots(stale_experiment_id)] == [
+        SnapshotStatus.RUNNING,
+        SnapshotStatus.SUCCESS,
+    ]
+
+    assert [snapshot.status for snapshot in list_snapshots(failed_experiment_id)] == [
+        SnapshotStatus.RUNNING,
+        SnapshotStatus.FAILED,
+    ]
+
+    assert [snapshot.status for snapshot in list_snapshots(fresh_experiment_id)] == [SnapshotStatus.SUCCESS]
+
+    assert [snapshot.status for snapshot in list_snapshots(inactive_experiment_id)] == []
+
+
+async def test_process_pending_snapshots_processes_until_empty(
+    xngin_session,
+    testing_datasource,
+    aclient: AdminAPIClient,
+):
+    experiment_ids = [
+        create_snapshot_experiment(
+            aclient,
+            testing_datasource,
+            name=f"process pending snapshot test {i}",
+            desired_n=8,
+        )
+        for i in range(2)
+    ]
+
+    await create_pending_snapshots(0)
+
+    for experiment_id in experiment_ids:
+        snapshots = aclient.list_snapshots(
+            organization_id=testing_datasource.org.id,
+            datasource_id=testing_datasource.ds.id,
+            experiment_id=experiment_id,
+        ).data.items
+        assert len(snapshots) == 1
+        assert snapshots[0].status == SnapshotStatus.RUNNING
+
+    await process_pending_snapshots(SNAPSHOT_TIMEOUT_SECS, max_jitter_secs=0)
+
+    for experiment_id in experiment_ids:
+        snapshots = aclient.list_snapshots(
+            organization_id=testing_datasource.org.id,
+            datasource_id=testing_datasource.ds.id,
+            experiment_id=experiment_id,
+        ).data.items
+        assert len(snapshots) == 1
+        assert snapshots[0].status == SnapshotStatus.SUCCESS
+        analysis = FreqExperimentAnalysisResponse.model_validate(snapshots[0].data)
+        assert isinstance(analysis, FreqExperimentAnalysisResponse)
