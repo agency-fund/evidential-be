@@ -64,7 +64,7 @@ from xngin.apiserver.settings import Datasource
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 
-JSON_STREAM_ROWS_PER_YIELD = 1024
+JSON_STREAM_ROWS_PER_YIELD = 1_000
 
 
 @asynccontextmanager
@@ -303,7 +303,7 @@ async def get_assignment_filtered(
     description="""
     Get or create a CMAB arm assignment for a specific participant. This endpoint is used only for CMAB assignments.
     If there is a pre-existing assignment for a given participant ID, the context inputs in the
-    CreateCMABAssignmentRequest can be None, and will be disregarded if they are not None.
+    CMABContextInputRequest can be None, and will be disregarded if they are not None.
     """,
 )
 async def get_assignment_cmab(
@@ -341,6 +341,8 @@ async def get_assignment_cmab(
 
     if not assignment and create_if_none and experiment.stopped_assignments_at is None:
         context_inputs = body.context_inputs
+        if context_inputs is None:
+            raise LateValidationError("context_inputs must be provided when creating a new CMAB assignment.")
         context_defns = experiment.contexts
         sorted_context_inputs = sort_contexts_by_id_or_raise(context_defns, context_inputs)
         sorted_context_vals = [ctx.context_value for ctx in sorted_context_inputs]

@@ -24,7 +24,13 @@ async def _get_assignment_csv_strata_names_from_experiment(experiment: tables.Ex
     return sorted([ef.field_name for ef in await experiment.awaitable_attrs.experiment_fields if ef.is_strata])
 
 
-def _build_experiment_assignments_select_query(experiment_id: str, experiment_type: str, strata_names: list[str]):
+def _build_experiment_assignments_select_query(
+    experiment_id: str,
+    experiment_type: str,
+    strata_names: list[str],
+    *,
+    with_microseconds: bool = False,
+):
     match experiment_type:
         case ExperimentsType.FREQ_ONLINE.value | ExperimentsType.FREQ_PREASSIGNED.value:
             if strata_names:
@@ -47,12 +53,17 @@ def _build_experiment_assignments_select_query(experiment_id: str, experiment_ty
             else:
                 extra_columns = sql.SQL("")
                 lateral_join = sql.SQL("")
+            created_at_column = sql.SQL("aa.created_at AS created_at")
+            if not with_microseconds:
+                created_at_column = sql.SQL(
+                    """to_char(aa.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at"""
+                )
             return t"""
                 SELECT
                     aa.participant_id AS participant_id,
                     aa.arm_id AS arm_id,
                     a.name AS arm_name,
-                    to_char(aa.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
+                    {created_at_column:q}
                     {extra_columns:q}
                 FROM arm_assignments AS aa
                 JOIN arms AS a
@@ -92,8 +103,8 @@ def _build_bandit_experiment_assignments_json_select_query(experiment_id: str, e
             draw.participant_id AS participant_id,
             draw.arm_id AS arm_id,
             a.name AS arm_name,
-            to_char(draw.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
-            to_char(draw.observed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS observed_at,
+            draw.created_at AS created_at,
+            draw.observed_at AS observed_at,
             draw.outcome AS outcome
             {extra_columns:q}
         FROM draws AS draw
@@ -124,7 +135,10 @@ async def get_experiment_assignments_impl(
         case ExperimentsType.FREQ_ONLINE.value | ExperimentsType.FREQ_PREASSIGNED.value:
             strata_names = await _get_assignment_csv_strata_names_from_experiment(experiment)
             select_query = _build_experiment_assignments_select_query(
-                experiment.id, experiment.experiment_type, strata_names
+                experiment.id,
+                experiment.experiment_type,
+                strata_names,
+                with_microseconds=True,
             )
             async for assignment in stream(xngin_session, select_query, JSON_STREAM_FETCH_SIZE_ROWS):
                 participant_id, arm_id, arm_name, created_at, *strata_values = assignment
@@ -152,7 +166,7 @@ async def get_experiment_assignments_impl(
                     "arm_id": arm_id,
                     "arm_name": arm_name,
                     "created_at": created_at,
-                    "strata": None,
+                    "strata": [],
                     "observed_at": observed_at,
                     "outcome": outcome,
                     "context_values": context_values,
