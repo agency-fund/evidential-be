@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
+from xngin.apiserver.routers.admin.admin_api_types import SnapshotStatus
 from xngin.apiserver.routers.common_api_types import (
     Arm,
     BaseFrequentistDesignSpec,
@@ -15,7 +16,12 @@ from xngin.apiserver.routers.common_api_types import (
 )
 from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers.experiments.experiments_common import fetch_fields_or_raise
-from xngin.apiserver.snapshots.snapshotter import create_pending_snapshots, make_first_snapshot
+from xngin.apiserver.snapshots.snapshotter import (
+    SNAPSHOT_TIMEOUT_SECS,
+    create_pending_snapshots,
+    make_first_snapshot,
+    process_pending_snapshots,
+)
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
@@ -350,3 +356,62 @@ async def test_create_pending_snapshots_inserts_for_new_stale_and_failed_experim
     assert pending_snapshot_experiment_ids.count(failed_experiment_id) == 1
     assert pending_snapshot_experiment_ids.count(fresh_experiment_id) == 0
     assert pending_snapshot_experiment_ids.count(inactive_experiment_id) == 0
+
+
+async def test_process_pending_snapshots_processes_until_empty(
+    xngin_session,
+    testing_datasource,
+    aclient: AdminAPIClient,
+):
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="process pending snapshots test",
+        description="process pending snapshots test",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="C", arm_description="C"),
+            Arm(arm_name="T", arm_description="T"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+    )
+
+    experiment_ids = []
+    for i in range(2):
+        experiment_id = aclient.create_experiment(
+            datasource_id=testing_datasource.ds.id,
+            body=CreateExperimentRequest(
+                design_spec=design_spec.model_copy(update={"experiment_name": f"process pending snapshot test {i}"}),
+                table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+                primary_key="id",
+            ),
+            desired_n=8,
+        ).data.experiment_id
+        aclient.commit_experiment(datasource_id=testing_datasource.ds.id, experiment_id=experiment_id)
+        experiment_ids.append(experiment_id)
+
+    await create_pending_snapshots(0)
+
+    for experiment_id in experiment_ids:
+        snapshots = aclient.list_snapshots(
+            organization_id=testing_datasource.org.id,
+            datasource_id=testing_datasource.ds.id,
+            experiment_id=experiment_id,
+        ).data.items
+        assert len(snapshots) == 1
+        assert snapshots[0].status == SnapshotStatus.RUNNING
+
+    await process_pending_snapshots(SNAPSHOT_TIMEOUT_SECS, max_jitter_secs=0)
+
+    for experiment_id in experiment_ids:
+        snapshots = aclient.list_snapshots(
+            organization_id=testing_datasource.org.id,
+            datasource_id=testing_datasource.ds.id,
+            experiment_id=experiment_id,
+        ).data.items
+        assert len(snapshots) == 1
+        assert snapshots[0].status == SnapshotStatus.SUCCESS
+        analysis = FreqExperimentAnalysisResponse.model_validate(snapshots[0].data)
+        assert isinstance(analysis, FreqExperimentAnalysisResponse)
