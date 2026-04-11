@@ -46,7 +46,6 @@ from xngin.apiserver.routers.experiments.dependencies import (
     experiment_and_datasource_dependency,
     experiment_dependency,
     experiment_response_dependency,
-    experiment_with_assignments_dependency,
     experiment_with_contexts_dependency,
 )
 from xngin.apiserver.routers.experiments.experiments_common import (
@@ -161,7 +160,7 @@ async def get_experiment(
 )
 async def get_experiment_assignments(
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    experiment: Annotated[tables.Experiment, Depends(experiment_with_assignments_dependency)],
+    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
 ) -> GetExperimentAssignmentsResponse:
     assignments = get_experiment_assignments_impl(xngin_session, experiment)
     return cast(

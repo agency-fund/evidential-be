@@ -185,6 +185,3 @@ experiment_response_dependency = ExperimentDependency(
         ],
     ],
 )
-
-# This version is used with processing assignments, e.g. exporting them.
-experiment_with_assignments_dependency = ExperimentDependency(preload=[tables.Experiment.draws])
