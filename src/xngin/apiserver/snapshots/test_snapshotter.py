@@ -343,19 +343,28 @@ async def test_create_pending_snapshots_inserts_for_new_stale_and_failed_experim
 
     await create_pending_snapshots(3600)
 
-    pending_snapshot_experiment_ids = list(
-        (
-            await xngin_session.execute(
-                select(tables.Snapshot.experiment_id).where(tables.Snapshot.status == "pending")
-            )
-        ).scalars()
-    )
+    def list_snapshots(experiment_id: str):
+        return aclient.list_snapshots(
+            organization_id=testing_datasource.org.id,
+            datasource_id=testing_datasource.ds.id,
+            experiment_id=experiment_id,
+        ).data.items
 
-    assert pending_snapshot_experiment_ids.count(new_experiment_id) == 1
-    assert pending_snapshot_experiment_ids.count(stale_experiment_id) == 1
-    assert pending_snapshot_experiment_ids.count(failed_experiment_id) == 1
-    assert pending_snapshot_experiment_ids.count(fresh_experiment_id) == 0
-    assert pending_snapshot_experiment_ids.count(inactive_experiment_id) == 0
+    assert [snapshot.status for snapshot in list_snapshots(new_experiment_id)] == [SnapshotStatus.RUNNING]
+
+    assert [snapshot.status for snapshot in list_snapshots(stale_experiment_id)] == [
+        SnapshotStatus.RUNNING,
+        SnapshotStatus.SUCCESS,
+    ]
+
+    assert [snapshot.status for snapshot in list_snapshots(failed_experiment_id)] == [
+        SnapshotStatus.RUNNING,
+        SnapshotStatus.FAILED,
+    ]
+
+    assert [snapshot.status for snapshot in list_snapshots(fresh_experiment_id)] == [SnapshotStatus.SUCCESS]
+
+    assert [snapshot.status for snapshot in list_snapshots(inactive_experiment_id)] == []
 
 
 async def test_process_pending_snapshots_processes_until_empty(
