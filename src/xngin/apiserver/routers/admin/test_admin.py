@@ -1638,6 +1638,9 @@ async def test_create_and_get_freq_preassigned_experiment(
     assert parsed_experiment_id is not None
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
     assert len(parsed_arm_ids) == 2
+    assert isinstance(created_experiment.design_spec, PreassignedFrequentistExperimentSpec)
+    assert len(created_experiment.design_spec.strata) == 1, created_experiment.design_spec.strata
+    assert created_experiment.design_spec.strata[0].field_name == "gender"
 
     # Verify basic response
     assert created_experiment.stopped_assignments_at is not None
@@ -1683,6 +1686,21 @@ async def test_create_and_get_freq_preassigned_experiment(
         ignore_type_in_groups=[(CreateExperimentResponse, GetExperimentResponse)],
     )
     assert not diff, f"Objects differ:\n{diff.pretty()}"
+    # Verify that participant field metadata was stored correctly.
+    experiment_fields = admin_experiment.participant_type.fields
+    assert len(experiment_fields) == 3
+    unique_id_field = next((f for f in experiment_fields if f.is_unique_id), None)
+    assert unique_id_field is not None
+    assert unique_id_field.data_type == "bigint"
+    gender_field = next((f for f in experiment_fields if f.field_name == "gender"), None)
+    assert gender_field is not None
+    assert gender_field.is_strata
+    assert gender_field.data_type == "character varying"
+    is_onboarded_field = next((f for f in experiment_fields if f.field_name == "is_onboarded"), None)
+    assert is_onboarded_field is not None
+    assert is_onboarded_field.is_metric
+    assert is_onboarded_field.is_strata is False
+    assert is_onboarded_field.data_type == "boolean"
 
     # Verify assignments were created
     actual_assignments = eclient.get_experiment_assignments(
@@ -1693,9 +1711,9 @@ async def test_create_and_get_freq_preassigned_experiment(
     # Check one assignment to see if it looks roughly right
     sample_assignment = actual_assignments.assignments[0]
     assert sample_assignment.arm_id in {arm1_id, arm2_id}
-    assert sample_assignment.strata is not None and len(sample_assignment.strata) == 2
-    for stratum in sample_assignment.strata:
-        assert stratum.field_name in {"is_onboarded", "gender"}
+    assert sample_assignment.strata is not None
+    assert len(sample_assignment.strata) == 1
+    assert sample_assignment.strata[0].field_name == "gender"
 
     # Check for approximate balance in arm assignment
     num_control = sum(1 for a in actual_assignments.assignments if a.arm_id == arm1_id)
