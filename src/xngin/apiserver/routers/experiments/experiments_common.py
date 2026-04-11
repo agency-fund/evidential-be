@@ -38,7 +38,6 @@ from xngin.apiserver.routers.common_api_types import (
     CreateExperimentResponse,
     DesignSpecMetricRequest,
     FreqExperimentAnalysisResponse,
-    GetExperimentAssignmentsResponse,
     GetExperimentResponse,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
@@ -54,7 +53,6 @@ from xngin.apiserver.routers.common_enums import (
     UpdateTypeBeta,
     UpdateTypeNormal,
 )
-from xngin.apiserver.routers.experiments.experiments_common_csv import get_experiment_assignments_fast
 from xngin.apiserver.routers.experiments.property_filters import passes_filters, validate_filter_value
 from xngin.apiserver.settings import DatasourceConfig, ParticipantsDef
 from xngin.apiserver.sql.queries import select_as_csv
@@ -62,7 +60,6 @@ from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent
-from xngin.ops import performance
 from xngin.stats.analysis import analyze_experiment as analyze_freq_experiment
 from xngin.stats.assignment import AssignmentResult
 from xngin.stats.bandit_analysis import analyze_experiment as analyze_bandit_experiment
@@ -566,41 +563,6 @@ async def list_organization_or_datasource_experiments_impl(
         webhook_ids = [webhook.id for webhook in e.webhooks]
         items.append(await converter.get_experiment_config(assign_summary, webhook_ids))
     return ListExperimentsResponse(items=items)
-
-
-async def get_experiment_assignments_impl(
-    xngin_session: AsyncSession,
-    experiment: tables.Experiment,
-) -> GetExperimentAssignmentsResponse:
-    assignments: list[Assignment] = []
-
-    match experiment.experiment_type:
-        case ExperimentsType.FREQ_ONLINE | ExperimentsType.FREQ_PREASSIGNED:
-            with performance.timing("async for"):
-                async for assignment in get_experiment_assignments_fast(xngin_session, experiment):
-                    assignments.append(assignment)
-        case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
-            arm_id_to_name = {arm.id: arm.name for arm in experiment.arms}
-            assignments = [
-                Assignment(
-                    participant_id=draw.participant_id,
-                    arm_id=draw.arm_id,
-                    arm_name=arm_id_to_name[draw.arm_id],
-                    created_at=draw.created_at,
-                    observed_at=draw.observed_at,
-                    outcome=draw.outcome,
-                    context_values=draw.context_vals,
-                )
-                for draw in experiment.draws
-            ]
-        case _:
-            raise LateValidationError(f"Invalid experiment type: {experiment.experiment_type}")
-    return GetExperimentAssignmentsResponse(
-        balance_check=ExperimentStorageConverter(experiment).get_balance_check(),
-        experiment_id=experiment.id,
-        sample_size=len(assignments),
-        assignments=assignments,
-    )
 
 
 async def get_existing_assignment_for_participant(

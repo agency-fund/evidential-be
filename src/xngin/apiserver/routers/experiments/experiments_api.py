@@ -3,10 +3,12 @@ This module defines the public API for clients to integrate with experiments.
 (See admin_api.py for Evidential UI-facing endpoints.)
 """
 
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
+import orjson
 from annotated_types import Ge, Le
 from fastapi import (
     APIRouter,
@@ -16,6 +18,7 @@ from fastapi import (
     Query,
     Response,
 )
+from fastapi.responses import StreamingResponse
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -49,15 +52,20 @@ from xngin.apiserver.routers.experiments.dependencies import (
 from xngin.apiserver.routers.experiments.experiments_common import (
     create_assignment_for_participant,
     get_existing_assignment_for_participant,
-    get_experiment_assignments_impl,
     get_experiment_impl,
     get_or_create_assignment_for_participant,
     list_organization_or_datasource_experiments_impl,
     update_bandit_arm_with_outcome_impl,
 )
-from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
+from xngin.apiserver.routers.experiments.experiments_common_csv import (
+    CsvStreamingResponse,
+    get_experiment_assignments_impl,
+)
 from xngin.apiserver.settings import Datasource
 from xngin.apiserver.sqla import tables
+from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
+
+JSON_STREAM_ROWS_PER_YIELD = 1024
 
 
 @asynccontextmanager
@@ -104,6 +112,38 @@ async def list_experiments(
     )
 
 
+async def _stream_experiment_assignments_response(
+    experiment: tables.Experiment, assignments: AsyncGenerator[dict[str, object]]
+) -> AsyncIterator[bytes]:
+    """Efficiently streams assignments/draws to the client."""
+    balance_check = ExperimentStorageConverter(experiment).get_balance_check()
+    yield (
+        b'{"balance_check":'
+        + orjson.dumps(None if balance_check is None else balance_check.model_dump(mode="json"))
+        + b',"experiment_id":'
+        + orjson.dumps(experiment.id)
+        + b',"assignments":['
+    )
+
+    sample_size = 0
+    buffered = 0
+    needs_comma = False
+    batch: list[bytes] = []
+    async for assignment in assignments:
+        if needs_comma:
+            batch.append(b",")
+        batch.append(orjson.dumps(assignment))
+        needs_comma = True
+        sample_size += 1
+        buffered += 1
+        if buffered == JSON_STREAM_ROWS_PER_YIELD:
+            yield b"".join(batch)
+            batch.clear()
+            buffered = 0
+
+    yield b"".join(batch) + b'],"sample_size":' + str(sample_size).encode() + b"}"
+
+
 @router.get(
     "/experiments/{experiment_id}",
     summary="Get experiment metadata (design & assignment specs) for a single experiment.",
@@ -118,14 +158,22 @@ async def get_experiment(
 @router.get(
     "/experiments/{experiment_id}/assignments",
     summary="Fetch list of participant=>arm assignments for the given experiment id.",
-    description="This endpoint is inefficient for large experiments. Large experiments should use "
-    "`/experiments/{experiment_id}/assignments/csv`.",
 )
 async def get_experiment_assignments(
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
     experiment: Annotated[tables.Experiment, Depends(experiment_with_assignments_dependency)],
 ) -> GetExperimentAssignmentsResponse:
-    return await get_experiment_assignments_impl(xngin_session, experiment)
+    assignments = get_experiment_assignments_impl(xngin_session, experiment)
+    return cast(
+        GetExperimentAssignmentsResponse,
+        cast(
+            object,
+            StreamingResponse(
+                _stream_experiment_assignments_response(experiment, assignments),
+                media_type="application/json",
+            ),
+        ),
+    )
 
 
 @router.get(

@@ -6,12 +6,12 @@ from psycopg import sql
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.routers.common_api_types import Assignment, Strata
 from xngin.apiserver.routers.common_enums import ExperimentsType
-from xngin.apiserver.sql.queries import select_as_csv, with_driver_connection
+from xngin.apiserver.sql.queries import select_as_csv, stream
 from xngin.apiserver.sqla import tables
 
 CSV_STREAM_CHUNK_SIZE_BYTES = 1 << 20
+JSON_STREAM_FETCH_SIZE_ROWS = 16_384
 
 
 class CsvStreamingResponse(StreamingResponse):
@@ -83,6 +83,27 @@ def _build_experiment_assignments_select_query(experiment_id: str, experiment_ty
             raise LateValidationError(f"unsupported experiment type for CSV export: {experiment_type}")
 
 
+def _build_bandit_experiment_assignments_json_select_query(experiment_id: str, experiment_type: str):
+    extra_columns = sql.SQL(", NULL::float8[] AS context_vals")
+    if experiment_type == ExperimentsType.CMAB_ONLINE.value:
+        extra_columns = sql.SQL(", draw.context_vals AS context_vals")
+    return t"""
+        SELECT
+            draw.participant_id AS participant_id,
+            draw.arm_id AS arm_id,
+            a.name AS arm_name,
+            to_char(draw.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
+            to_char(draw.observed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS observed_at,
+            draw.outcome AS outcome
+            {extra_columns:q}
+        FROM draws AS draw
+        JOIN arms AS a
+            ON a.id = draw.arm_id
+            AND a.experiment_id = draw.experiment_id
+        WHERE draw.experiment_id = {experiment_id}
+    """
+
+
 async def get_experiment_assignments_as_csv_impl(
     xngin_session: AsyncSession,
     experiment: tables.Experiment,
@@ -96,22 +117,45 @@ async def get_experiment_assignments_as_csv_impl(
     )
 
 
-async def get_experiment_assignments_fast(
+async def get_experiment_assignments_impl(
     xngin_session: AsyncSession, experiment: tables.Experiment
-) -> AsyncGenerator[Assignment]:
-    strata_names = await _get_assignment_csv_strata_names_from_experiment(experiment)
-    select_query = _build_experiment_assignments_select_query(experiment.id, experiment.experiment_type, strata_names)
-
-    async with with_driver_connection(xngin_session) as driver_conn, driver_conn.cursor() as cursor:
-        async for assignment in cursor.stream(select_query, size=10000):
-            participant_id, arm_id, arm_name, created_at, *strata_values = assignment
-            yield Assignment(
-                participant_id=participant_id,
-                arm_id=arm_id,
-                arm_name=arm_name,
-                created_at=created_at,
-                strata=[
-                    Strata(field_name=strata_names[i], strata_value=strata_values[i])
-                    for i, _ in enumerate(strata_names)
-                ],
+) -> AsyncGenerator[dict[str, object]]:
+    match experiment.experiment_type:
+        case ExperimentsType.FREQ_ONLINE.value | ExperimentsType.FREQ_PREASSIGNED.value:
+            strata_names = await _get_assignment_csv_strata_names_from_experiment(experiment)
+            select_query = _build_experiment_assignments_select_query(
+                experiment.id, experiment.experiment_type, strata_names
             )
+            async for assignment in stream(xngin_session, select_query, JSON_STREAM_FETCH_SIZE_ROWS):
+                participant_id, arm_id, arm_name, created_at, *strata_values = assignment
+                yield {
+                    "participant_id": participant_id,
+                    "arm_id": arm_id,
+                    "arm_name": arm_name,
+                    "created_at": created_at,
+                    "strata": [
+                        {"field_name": strata_names[i], "strata_value": strata_values[i]}
+                        for i, _ in enumerate(strata_names)
+                    ],
+                    "observed_at": None,
+                    "outcome": None,
+                    "context_values": None,
+                }
+        case ExperimentsType.MAB_ONLINE.value | ExperimentsType.CMAB_ONLINE.value:
+            select_query = _build_bandit_experiment_assignments_json_select_query(
+                experiment.id, experiment.experiment_type
+            )
+            async for assignment in stream(xngin_session, select_query, JSON_STREAM_FETCH_SIZE_ROWS):
+                participant_id, arm_id, arm_name, created_at, observed_at, outcome, context_values = assignment
+                yield {
+                    "participant_id": participant_id,
+                    "arm_id": arm_id,
+                    "arm_name": arm_name,
+                    "created_at": created_at,
+                    "strata": None,
+                    "observed_at": observed_at,
+                    "outcome": outcome,
+                    "context_values": context_values,
+                }
+        case _:
+            raise LateValidationError(f"unsupported experiment type for JSON export: {experiment.experiment_type}")
