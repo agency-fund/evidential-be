@@ -431,27 +431,39 @@ async def test_get_experiment_assignments_streams_cmab_context_values(
         experiment_type=ExperimentsType.CMAB_ONLINE,
     )
 
-    context_inputs_p1 = [
-        ContextInput(context_id=context.context_id, context_value=1.0)
-        for context in sorted(experiment.design_spec.contexts, key=lambda c: c.context_id)
-    ]
-    context_inputs_p2 = [
-        ContextInput(context_id=context.context_id, context_value=2.0)
-        for context in sorted(experiment.design_spec.contexts, key=lambda c: c.context_id)
-    ]
-
+    # Create two draws
     _ = eclient.get_assignment_cmab(
         api_key=testing_datasource.key,
-        body=CMABContextInputRequest(context_inputs=context_inputs_p1),
+        body=CMABContextInputRequest(
+            context_inputs=[
+                ContextInput(context_id=context.context_id, context_value=1.0)
+                for context in sorted(experiment.design_spec.contexts, key=lambda c: c.context_id)
+            ]
+        ),
         experiment_id=experiment.experiment_id,
         participant_id="p1",
     ).data.assignment
     _ = eclient.get_assignment_cmab(
         api_key=testing_datasource.key,
-        body=CMABContextInputRequest(context_inputs=context_inputs_p2),
+        body=CMABContextInputRequest(
+            context_inputs=[
+                ContextInput(context_id=context.context_id, context_value=2.0)
+                for context in sorted(experiment.design_spec.contexts, key=lambda c: c.context_id)
+            ]
+        ),
         experiment_id=experiment.experiment_id,
         participant_id="p2",
     ).data.assignment
+
+    # One participant has an outcome
+    eclient.update_bandit_arm_with_participant_outcome(
+        api_key=testing_datasource.key,
+        body=UpdateBanditArmOutcomeRequest(outcome=1.5),
+        experiment_id=experiment.experiment_id,
+        participant_id="p1",
+    )
+
+    # Fetch assignments from single-assignment endpoint for later comparison.
     first_assignment = eclient.get_assignment_cmab(
         api_key=testing_datasource.key,
         body=CMABContextInputRequest(context_inputs=None),
@@ -469,6 +481,7 @@ async def test_get_experiment_assignments_streams_cmab_context_values(
     assert first_assignment is not None
     assert second_assignment is not None
 
+    # Get all assignments
     data = eclient.get_experiment_assignments(
         api_key=testing_datasource.key,
         experiment_id=experiment.experiment_id,
@@ -482,8 +495,8 @@ async def test_get_experiment_assignments_streams_cmab_context_values(
 
     p1 = assignments_by_participant_id["p1"]
     assert p1.created_at is not None
-    assert p1.observed_at is None
-    assert p1.outcome is None
+    assert p1.observed_at is not None
+    assert p1.outcome == 1.5
     assert p1.strata == []
     assert p1.context_values == [1.0, 1.0]
     assert first_assignment == p1
