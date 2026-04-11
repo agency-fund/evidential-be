@@ -6,6 +6,7 @@ from sqlalchemy import select
 from xngin.apiserver.routers.common_api_types import (
     Arm,
     BaseFrequentistDesignSpec,
+    CreateExperimentRequest,
     DesignSpec,
     DesignSpecMetricRequest,
     ExperimentsType,
@@ -17,6 +18,7 @@ from xngin.apiserver.routers.experiments.experiments_common import fetch_fields_
 from xngin.apiserver.snapshots.snapshotter import create_pending_snapshots, make_first_snapshot
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
+from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 
 
@@ -202,6 +204,62 @@ async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_da
     non_baseline_arm = next(a for a in arm_analyses if not a.is_baseline)
     assert baseline_arm.arm_id == experiment.arms[0].id
     assert non_baseline_arm.arm_id == experiment.arms[1].id
+
+
+async def test_make_first_snapshot_is_noop_when_missing_or_not_pending(
+    xngin_session,
+    testing_datasource,
+    aclient: AdminAPIClient,
+):
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="missing snapshot test",
+        description="missing snapshot test",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="C", arm_description="C"),
+            Arm(arm_name="T", arm_description="T"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+    )
+    experiment_id = aclient.create_experiment(
+        datasource_id=testing_datasource.ds.id,
+        body=CreateExperimentRequest(
+            design_spec=design_spec,
+            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+            primary_key="id",
+        ),
+        desired_n=2,
+    ).data.experiment_id
+    aclient.commit_experiment(datasource_id=testing_datasource.ds.id, experiment_id=experiment_id)
+    completed_snapshot = tables.Snapshot(
+        experiment_id=experiment_id,
+        status="failed",
+        message="already failed",
+    )
+    xngin_session.add(completed_snapshot)
+    await xngin_session.commit()
+
+    def list_snapshots():
+        return aclient.list_snapshots(
+            organization_id=testing_datasource.org.id,
+            datasource_id=testing_datasource.ds.id,
+            experiment_id=experiment_id,
+        ).data.items
+
+    snapshots_before = list_snapshots()
+    assert [snapshot.status for snapshot in snapshots_before] == [SnapshotStatus.FAILED]
+
+    await make_first_snapshot(experiment_id, "sn_missing")
+    await make_first_snapshot(experiment_id, completed_snapshot.id)
+
+    snapshots_after = list_snapshots()
+    assert [snapshot.status for snapshot in snapshots_after] == [SnapshotStatus.FAILED]
+    assert snapshots_after[0].data is None
+    assert snapshots_after[0].details == {"message": "already failed"}
 
 
 async def test_create_pending_snapshots_inserts_for_new_stale_and_failed_experiments(
