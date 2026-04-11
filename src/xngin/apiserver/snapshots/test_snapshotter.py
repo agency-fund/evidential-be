@@ -1,3 +1,4 @@
+import asyncio
 import warnings
 from datetime import UTC, datetime, timedelta
 
@@ -315,6 +316,58 @@ async def test_handle_one_snapshot_safely_marks_failed_on_exception(
     assert [snapshot.status for snapshot in snapshots] == [SnapshotStatus.FAILED]
     assert snapshots[0].data is None
     assert snapshots[0].details == {"message": "RuntimeError: boom"}
+
+
+async def test_handle_one_snapshot_safely_marks_failed_on_timeout(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    mocker,
+):
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="handle snapshot timeout test",
+        description="handle snapshot timeout test",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="C", arm_description="C"),
+            Arm(arm_name="T", arm_description="T"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+    )
+    experiment_id = aclient.create_experiment(
+        datasource_id=testing_datasource.ds.id,
+        body=CreateExperimentRequest(
+            design_spec=design_spec,
+            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+            primary_key="id",
+        ),
+        desired_n=2,
+    ).data.experiment_id
+    aclient.commit_experiment(datasource_id=testing_datasource.ds.id, experiment_id=experiment_id)
+
+    async def slow_query(*args, **kwargs):
+        await asyncio.sleep(0.01)
+
+    mocker.patch("xngin.apiserver.snapshots.snapshotter._query_dwh_for_snapshot_data", side_effect=slow_query)
+    mocker.patch("xngin.apiserver.snapshots.snapshotter.SNAPSHOT_TIMEOUT_SECS", 0)
+    aclient.create_snapshot(
+        organization_id=testing_datasource.org.id,
+        datasource_id=testing_datasource.ds.id,
+        experiment_id=experiment_id,
+    )
+
+    snapshots = aclient.list_snapshots(
+        organization_id=testing_datasource.org.id,
+        datasource_id=testing_datasource.ds.id,
+        experiment_id=experiment_id,
+    ).data.items
+    assert [snapshot.status for snapshot in snapshots] == [SnapshotStatus.FAILED]
+    assert snapshots[0].data is None
+    assert snapshots[0].details is not None
+    assert "TimeoutError" in snapshots[0].details["message"]
 
 
 async def test_create_pending_snapshots_inserts_for_new_stale_and_failed_experiments(
