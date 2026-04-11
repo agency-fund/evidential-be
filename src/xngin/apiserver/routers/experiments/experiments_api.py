@@ -31,6 +31,7 @@ from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.admin.admin_api import sort_contexts_by_id_or_raise
 from xngin.apiserver.routers.common_api_types import (
     ArmBandit,
+    AssignmentTypedDict,
     CMABContextInputRequest,
     ExperimentsType,
     GetExperimentAssignmentsResponse,
@@ -112,9 +113,9 @@ async def list_experiments(
 
 
 async def _stream_experiment_assignments_response(
-    experiment: tables.Experiment, assignments: AsyncGenerator[dict[str, object]]
+    experiment: tables.Experiment, assignments: AsyncGenerator[AssignmentTypedDict]
 ) -> AsyncIterator[bytes]:
-    """Efficiently streams assignments/draws to the client."""
+    """Efficiently streams Assignments to the client."""
     balance_check = ExperimentStorageConverter(experiment).get_balance_check()
     yield (
         b'{"balance_check":'

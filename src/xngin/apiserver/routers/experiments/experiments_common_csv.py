@@ -1,11 +1,13 @@
 # mypy: disable-error-code="misc"
 from collections.abc import AsyncGenerator
+from typing import cast
 
 from fastapi.responses import StreamingResponse
 from psycopg import sql
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver.exceptions_common import LateValidationError
+from xngin.apiserver.routers.common_api_types import AssignmentTypedDict, StrataTypedDict
 from xngin.apiserver.routers.common_enums import ExperimentsType
 from xngin.apiserver.sql.queries import select_as_csv, stream
 from xngin.apiserver.sqla import tables
@@ -150,7 +152,7 @@ async def get_experiment_assignments_as_csv_impl(
 
 async def get_experiment_assignments_impl(
     xngin_session: AsyncSession, experiment: tables.Experiment
-) -> AsyncGenerator[dict[str, object]]:
+) -> AsyncGenerator[AssignmentTypedDict]:
     match experiment.experiment_type:
         case ExperimentsType.FREQ_ONLINE.value | ExperimentsType.FREQ_PREASSIGNED.value:
             strata_names = await _get_assignment_csv_strata_names_from_experiment(experiment)
@@ -168,7 +170,7 @@ async def get_experiment_assignments_impl(
                     "arm_name": arm_name,
                     "created_at": created_at,
                     "strata": [
-                        {"field_name": strata_names[i], "strata_value": strata_values[i]}
+                        cast(StrataTypedDict, {"field_name": strata_names[i], "strata_value": strata_values[i]})
                         for i, _ in enumerate(strata_names)
                     ],
                     "observed_at": None,
