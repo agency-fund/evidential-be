@@ -202,3 +202,93 @@ async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_da
     non_baseline_arm = next(a for a in arm_analyses if not a.is_baseline)
     assert baseline_arm.arm_id == experiment.arms[0].id
     assert non_baseline_arm.arm_id == experiment.arms[1].id
+
+
+async def test_create_pending_snapshots_inserts_for_new_stale_and_failed_experiments(
+    xngin_session,
+    testing_datasource,
+    aclient: AdminAPIClient,
+):
+    now = datetime.now(UTC)
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="snapshot scheduling test",
+        description="snapshot scheduling test",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=now + timedelta(days=1),
+        arms=[
+            Arm(arm_name="C", arm_description="C"),
+            Arm(arm_name="T", arm_description="T"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+    )
+
+    def create_and_commit_experiment(design_spec: PreassignedFrequentistExperimentSpec) -> str:
+        experiment_id = aclient.create_experiment(
+            datasource_id=testing_datasource.ds.id,
+            body=CreateExperimentRequest(
+                design_spec=design_spec,
+                table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+                primary_key="id",
+            ),
+            desired_n=2,
+        ).data.experiment_id
+        aclient.commit_experiment(datasource_id=testing_datasource.ds.id, experiment_id=experiment_id)
+        return experiment_id
+
+    new_experiment_id = create_and_commit_experiment(design_spec)
+    stale_experiment_id = create_and_commit_experiment(
+        design_spec.model_copy(update={"experiment_name": "stale snapshot test"})
+    )
+    failed_experiment_id = create_and_commit_experiment(
+        design_spec.model_copy(update={"experiment_name": "failed snapshot test"})
+    )
+    fresh_experiment_id = create_and_commit_experiment(
+        design_spec.model_copy(update={"experiment_name": "fresh snapshot test"})
+    )
+    inactive_experiment_id = create_and_commit_experiment(
+        design_spec.model_copy(
+            update={
+                "experiment_name": "inactive snapshot test",
+                "end_date": now - timedelta(days=2),
+            }
+        )
+    )
+
+    xngin_session.add_all([
+        tables.Snapshot(
+            experiment_id=stale_experiment_id,
+            status="success",
+            updated_at=now - timedelta(hours=2),
+        ),
+        tables.Snapshot(
+            experiment_id=failed_experiment_id,
+            status="failed",
+            updated_at=now,
+            message="boom",
+        ),
+        tables.Snapshot(
+            experiment_id=fresh_experiment_id,
+            status="success",
+            updated_at=now - timedelta(minutes=5),
+        ),
+    ])
+    await xngin_session.commit()
+
+    await create_pending_snapshots(3600)
+
+    pending_snapshot_experiment_ids = list(
+        (
+            await xngin_session.execute(
+                select(tables.Snapshot.experiment_id).where(tables.Snapshot.status == "pending")
+            )
+        ).scalars()
+    )
+
+    assert pending_snapshot_experiment_ids.count(new_experiment_id) == 1
+    assert pending_snapshot_experiment_ids.count(stale_experiment_id) == 1
+    assert pending_snapshot_experiment_ids.count(failed_experiment_id) == 1
+    assert pending_snapshot_experiment_ids.count(fresh_experiment_id) == 0
+    assert pending_snapshot_experiment_ids.count(inactive_experiment_id) == 0
