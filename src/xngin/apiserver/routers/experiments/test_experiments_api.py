@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 from pydantic import TypeAdapter
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver.routers.common_api_types import (
     Arm,
@@ -18,6 +19,7 @@ from xngin.apiserver.routers.common_api_types import (
     ExperimentConfig,
     ExperimentsType,
     Filter,
+    GetExperimentAssignmentsResponse,
     GetParticipantAssignmentResponse,
     LikelihoodTypes,
     MABExperimentSpec,
@@ -30,6 +32,7 @@ from xngin.apiserver.routers.common_api_types import (
     UpdateBanditArmOutcomeRequest,
 )
 from xngin.apiserver.routers.common_enums import ContextType, ExperimentState, Relation, StopAssignmentReason
+from xngin.apiserver.routers.experiments.test_experiments_common import insert_experiment_and_arms
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.admin_api_client import AdminAPIClientHTTPValidationError
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClientNotDefaultStatusError
@@ -318,6 +321,139 @@ async def test_get_experiment_assignments_success(
     assert parsed.balance_check is None
     assert {assignment.participant_id for assignment in parsed.assignments} == {"participant_1", "participant_2"}
     assert {assignment.arm_name for assignment in parsed.assignments}.issubset({"control", "treatment"})
+
+
+async def test_get_experiment_assignments_streams_preassigned_assignments(
+    xngin_session: AsyncSession,
+    testing_datasource,
+    eclient: ExperimentsAPIClient,
+):
+    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
+    await xngin_session.commit()
+
+    arm1_id = experiment.arms[0].id
+    arm2_id = experiment.arms[1].id
+    xngin_session.add_all([
+        tables.ArmAssignment(
+            experiment_id=experiment.id,
+            participant_type="",
+            participant_id="p1",
+            arm_id=arm1_id,
+            strata=[{"field_name": "gender", "strata_value": "F"}],
+        ),
+        tables.ArmAssignment(
+            experiment_id=experiment.id,
+            participant_type="",
+            participant_id="p2",
+            arm_id=arm2_id,
+            strata=[{"field_name": "gender", "strata_value": "M"}],
+        ),
+        tables.ArmStats(arm_id=arm1_id, population=1),
+        tables.ArmStats(arm_id=arm2_id, population=1),
+    ])
+    await xngin_session.commit()
+
+    response = eclient.client.get(
+        f"/v1/experiments/{experiment.id}/assignments",
+        headers={"X-API-Key": testing_datasource.key},
+    )
+    assert response.status_code == HTTPStatus.OK, response.content
+    assert response.headers["content-type"].startswith("application/json")
+
+    data = TypeAdapter(GetExperimentAssignmentsResponse).validate_python(response.json())
+    assert data.experiment_id == experiment.id
+    assert data.sample_size == 2
+    assert data.balance_check is None
+
+    assignments_by_participant_id = {assignment.participant_id: assignment for assignment in data.assignments}
+    assert set(assignments_by_participant_id) == {"p1", "p2"}
+
+    p1 = assignments_by_participant_id["p1"]
+    assert str(p1.arm_id) == arm1_id
+    assert p1.arm_name == "control"
+    assert p1.strata is not None and len(p1.strata) == 1
+    assert p1.strata[0].field_name == "gender"
+    assert p1.strata[0].strata_value == "F"
+    assert p1.created_at is not None
+    assert p1.observed_at is None
+    assert p1.outcome is None
+    assert p1.context_values is None
+
+    p2 = assignments_by_participant_id["p2"]
+    assert str(p2.arm_id) == arm2_id
+    assert p2.arm_name == "treatment"
+    assert p2.strata is not None and len(p2.strata) == 1
+    assert p2.strata[0].field_name == "gender"
+    assert p2.strata[0].strata_value == "M"
+    assert p2.created_at is not None
+    assert p2.observed_at is None
+    assert p2.outcome is None
+    assert p2.context_values is None
+
+
+async def test_get_experiment_assignments_streams_bandit_assignments(
+    xngin_session: AsyncSession,
+    testing_datasource,
+    eclient: ExperimentsAPIClient,
+):
+    experiment = await insert_experiment_and_arms(
+        xngin_session, testing_datasource.ds, experiment_type=ExperimentsType.MAB_ONLINE
+    )
+    await xngin_session.commit()
+
+    observed_at = datetime.now(UTC)
+    arm1_id = experiment.arms[0].id
+    arm2_id = experiment.arms[1].id
+    xngin_session.add_all([
+        tables.Draw(
+            experiment_id=experiment.id,
+            participant_type="",
+            participant_id="p1",
+            arm_id=arm1_id,
+            current_mu=experiment.arms[0].mu,
+            current_covariance=experiment.arms[0].covariance,
+            outcome=1.5,
+            observed_at=observed_at,
+        ),
+        tables.Draw(
+            experiment_id=experiment.id,
+            participant_type="",
+            participant_id="p2",
+            arm_id=arm2_id,
+            current_mu=experiment.arms[1].mu,
+            current_covariance=experiment.arms[1].covariance,
+        ),
+    ])
+    await xngin_session.commit()
+
+    data = eclient.get_experiment_assignments(
+        api_key=testing_datasource.key,
+        experiment_id=experiment.id,
+    ).data
+    assert data.experiment_id == experiment.id
+    assert data.sample_size == 2
+    assert data.balance_check is None
+
+    assignments_by_participant_id = {assignment.participant_id: assignment for assignment in data.assignments}
+    assert set(assignments_by_participant_id) == {"p1", "p2"}
+
+    p1 = assignments_by_participant_id["p1"]
+    assert str(p1.arm_id) == arm1_id
+    assert p1.arm_name == experiment.arms[0].name
+    assert p1.created_at is not None
+    assert p1.observed_at == observed_at.replace(microsecond=0)
+    assert p1.outcome == 1.5
+    assert p1.context_values is None
+    assert p1.strata is None
+
+    p2 = assignments_by_participant_id["p2"]
+    assert str(p2.arm_id) == arm2_id
+    assert p2.arm_name == experiment.arms[1].name
+    assert p2.created_at is not None
+    assert p2.observed_at is None
+    assert p2.outcome is None
+    assert p2.context_values is None
+    assert p2.strata is None
 
 
 async def test_get_experiment_assignments_as_csv_success(

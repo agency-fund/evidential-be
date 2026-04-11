@@ -54,7 +54,6 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     fetch_fields_or_raise,
     get_assign_summary,
     get_existing_assignment_for_participant,
-    get_experiment_assignments_impl,
     get_experiment_impl,
     get_or_create_assignment_for_participant,
     make_participants_def_from_experiment,
@@ -1508,129 +1507,6 @@ async def test_get_experiment_impl_of_legacy_experiment(xngin_session, testing_d
     assert result.webhooks == ["wh1"]
     diff = DeepDiff(result.design_spec, expected_design_spec, exclude_regex_paths=[r"arms\[\d+\].arm_id"])
     assert not diff, f"Objects differ:\n{diff.pretty()}"
-
-
-async def test_get_experiment_assignments_impl(xngin_session, testing_datasource):
-    # First insert an experiment with assignments
-    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
-    await xngin_session.commit()
-
-    experiment_id = experiment.id
-    arm1_id = experiment.arms[0].id
-    arm2_id = experiment.arms[1].id
-    arm_assignments = [
-        tables.ArmAssignment(
-            experiment_id=experiment_id,
-            participant_type="",
-            participant_id="p1",
-            arm_id=arm1_id,
-            strata=[{"field_name": "gender", "strata_value": "F"}],
-        ),
-        tables.ArmAssignment(
-            experiment_id=experiment_id,
-            participant_type="",
-            participant_id="p2",
-            arm_id=arm2_id,
-            strata=[{"field_name": "gender", "strata_value": "M"}],
-        ),
-    ]
-    xngin_session.add_all(arm_assignments)
-    xngin_session.add_all([
-        tables.ArmStats(arm_id=arm1_id, population=1),
-        tables.ArmStats(arm_id=arm2_id, population=1),
-    ])
-    await xngin_session.commit()
-    await xngin_session.refresh(experiment, ["arms", "arm_assignments"])
-
-    data = await get_experiment_assignments_impl(xngin_session, experiment)
-
-    # Check the response structure
-    assert data.experiment_id == experiment.id
-    actual_assign_summary = await get_assign_summary(
-        xngin_session, experiment.id, None, ExperimentsType(experiment.experiment_type)
-    )
-    assert data.sample_size == actual_assign_summary.sample_size
-    assert data.balance_check == ExperimentStorageConverter(experiment).get_balance_check()
-
-    # Check assignments
-    assignments = data.assignments
-    assert len(assignments) == 2
-
-    # Verify first assignment
-    assert assignments[0].participant_id == "p1"
-    assert str(assignments[0].arm_id) == arm1_id
-    assert assignments[0].arm_name == "control"
-    assert assignments[0].strata is not None and len(assignments[0].strata) == 1
-    assert assignments[0].strata[0].field_name == "gender"
-    assert assignments[0].strata[0].strata_value == "F"
-    assert assignments[0].created_at is not None
-
-    # Verify second assignment
-    assert assignments[1].participant_id == "p2"
-    assert str(assignments[1].arm_id) == arm2_id
-    assert assignments[1].arm_name == "treatment"
-    assert assignments[1].strata is not None and len(assignments[1].strata) == 1
-    assert assignments[1].strata[0].field_name == "gender"
-    assert assignments[1].strata[0].strata_value == "M"
-    assert assignments[1].created_at is not None
-
-
-async def test_get_experiment_mab_assignments_impl(xngin_session, testing_datasource):
-    # First insert an experiment with assignments
-    experiment = await insert_experiment_and_arms(
-        xngin_session, testing_datasource.ds, experiment_type=ExperimentsType.MAB_ONLINE
-    )
-    await xngin_session.commit()
-
-    experiment_id = experiment.id
-    arm1_id = experiment.arms[0].id
-    arm2_id = experiment.arms[1].id
-    arm_assignments = [
-        tables.Draw(
-            experiment_id=experiment_id,
-            participant_type="",
-            participant_id="p1",
-            arm_id=arm1_id,
-            current_mu=experiment.arms[0].mu,
-            current_covariance=experiment.arms[0].covariance,
-        ),
-        tables.Draw(
-            experiment_id=experiment_id,
-            participant_type="",
-            participant_id="p2",
-            arm_id=arm2_id,
-            current_mu=experiment.arms[1].mu,
-            current_covariance=experiment.arms[1].covariance,
-        ),
-    ]
-    xngin_session.add_all(arm_assignments)
-    await xngin_session.commit()
-    await xngin_session.refresh(experiment, ["arms", "draws"])
-
-    data = await get_experiment_assignments_impl(xngin_session, experiment)
-
-    # Check the response structure
-    assert data.experiment_id == experiment.id
-
-    # Check assignments
-    assignments = data.assignments
-    assert len(assignments) == 2
-
-    # Verify first assignment
-    assert assignments[0].participant_id == "p1"
-    assert str(assignments[0].arm_id) == arm1_id
-    assert assignments[0].arm_name == "string"
-
-    # Verify second assignment
-    assert assignments[1].participant_id == "p2"
-    assert str(assignments[1].arm_id) == arm2_id
-    assert assignments[1].arm_name == "string"
-
-    for assignment in assignments:
-        assert assignment.outcome is None
-        assert assignment.context_values is None
-        assert assignment.observed_at is None
-        assert assignment.created_at is not None
 
 
 async def make_experiment_with_assignments(
