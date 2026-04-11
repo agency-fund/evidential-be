@@ -96,6 +96,48 @@ async def get_latest_snapshot_analysis(xngin_session, experiment_id):
     return FreqExperimentAnalysisResponse.model_validate(snapshot.data)
 
 
+def make_snapshot_design_spec(
+    name: str,
+    *,
+    end_date: datetime | None = None,
+) -> PreassignedFrequentistExperimentSpec:
+    return PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name=name,
+        description=name,
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=end_date or (datetime.now(UTC) + timedelta(days=1)),
+        arms=[
+            Arm(arm_name="C", arm_description="C"),
+            Arm(arm_name="T", arm_description="T"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+    )
+
+
+def create_snapshot_experiment(
+    aclient: AdminAPIClient,
+    testing_datasource,
+    *,
+    name: str,
+    desired_n: int = 2,
+    end_date: datetime | None = None,
+) -> str:
+    experiment_id = aclient.create_experiment(
+        datasource_id=testing_datasource.ds.id,
+        body=CreateExperimentRequest(
+            design_spec=make_snapshot_design_spec(name, end_date=end_date),
+            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+            primary_key="id",
+        ),
+        desired_n=desired_n,
+    ).data.experiment_id
+    aclient.commit_experiment(datasource_id=testing_datasource.ds.id, experiment_id=experiment_id)
+    return experiment_id
+
+
 async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_datasource):
     datasource = testing_datasource.ds
 
@@ -218,30 +260,7 @@ async def test_make_first_snapshot_is_noop_when_missing_or_not_pending(
     testing_datasource,
     aclient: AdminAPIClient,
 ):
-    design_spec = PreassignedFrequentistExperimentSpec(
-        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        experiment_name="missing snapshot test",
-        description="missing snapshot test",
-        start_date=datetime(2024, 1, 1, tzinfo=UTC),
-        end_date=datetime.now(UTC) + timedelta(days=1),
-        arms=[
-            Arm(arm_name="C", arm_description="C"),
-            Arm(arm_name="T", arm_description="T"),
-        ],
-        metrics=[DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1)],
-        strata=[],
-        filters=[],
-    )
-    experiment_id = aclient.create_experiment(
-        datasource_id=testing_datasource.ds.id,
-        body=CreateExperimentRequest(
-            design_spec=design_spec,
-            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
-            primary_key="id",
-        ),
-        desired_n=2,
-    ).data.experiment_id
-    aclient.commit_experiment(datasource_id=testing_datasource.ds.id, experiment_id=experiment_id)
+    experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="missing snapshot test")
     completed_snapshot = tables.Snapshot(
         experiment_id=experiment_id,
         status="failed",
@@ -272,30 +291,7 @@ async def test_make_first_snapshot_is_noop_when_missing_or_not_pending(
 async def test_handle_one_snapshot_safely_marks_failed_on_exception(
     testing_datasource, aclient: AdminAPIClient, mocker
 ):
-    design_spec = PreassignedFrequentistExperimentSpec(
-        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        experiment_name="handle snapshot failure test",
-        description="handle snapshot failure test",
-        start_date=datetime(2024, 1, 1, tzinfo=UTC),
-        end_date=datetime.now(UTC) + timedelta(days=1),
-        arms=[
-            Arm(arm_name="C", arm_description="C"),
-            Arm(arm_name="T", arm_description="T"),
-        ],
-        metrics=[DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1)],
-        strata=[],
-        filters=[],
-    )
-    experiment_id = aclient.create_experiment(
-        datasource_id=testing_datasource.ds.id,
-        body=CreateExperimentRequest(
-            design_spec=design_spec,
-            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
-            primary_key="id",
-        ),
-        desired_n=2,
-    ).data.experiment_id
-    aclient.commit_experiment(datasource_id=testing_datasource.ds.id, experiment_id=experiment_id)
+    experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="handle snapshot failure test")
 
     # Force the snapshot to fail.
     mocker.patch(
@@ -323,30 +319,7 @@ async def test_handle_one_snapshot_safely_marks_failed_on_timeout(
     aclient: AdminAPIClient,
     mocker,
 ):
-    design_spec = PreassignedFrequentistExperimentSpec(
-        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        experiment_name="handle snapshot timeout test",
-        description="handle snapshot timeout test",
-        start_date=datetime(2024, 1, 1, tzinfo=UTC),
-        end_date=datetime.now(UTC) + timedelta(days=1),
-        arms=[
-            Arm(arm_name="C", arm_description="C"),
-            Arm(arm_name="T", arm_description="T"),
-        ],
-        metrics=[DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1)],
-        strata=[],
-        filters=[],
-    )
-    experiment_id = aclient.create_experiment(
-        datasource_id=testing_datasource.ds.id,
-        body=CreateExperimentRequest(
-            design_spec=design_spec,
-            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
-            primary_key="id",
-        ),
-        desired_n=2,
-    ).data.experiment_id
-    aclient.commit_experiment(datasource_id=testing_datasource.ds.id, experiment_id=experiment_id)
+    experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="handle snapshot timeout test")
 
     async def slow_query(*args, **kwargs):
         await asyncio.sleep(0.01)
@@ -376,51 +349,15 @@ async def test_create_pending_snapshots_inserts_for_new_stale_and_failed_experim
     aclient: AdminAPIClient,
 ):
     now = datetime.now(UTC)
-    design_spec = PreassignedFrequentistExperimentSpec(
-        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        experiment_name="snapshot scheduling test",
-        description="snapshot scheduling test",
-        start_date=datetime(2024, 1, 1, tzinfo=UTC),
-        end_date=now + timedelta(days=1),
-        arms=[
-            Arm(arm_name="C", arm_description="C"),
-            Arm(arm_name="T", arm_description="T"),
-        ],
-        metrics=[DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1)],
-        strata=[],
-        filters=[],
-    )
-
-    def create_and_commit_experiment(design_spec: PreassignedFrequentistExperimentSpec) -> str:
-        experiment_id = aclient.create_experiment(
-            datasource_id=testing_datasource.ds.id,
-            body=CreateExperimentRequest(
-                design_spec=design_spec,
-                table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
-                primary_key="id",
-            ),
-            desired_n=2,
-        ).data.experiment_id
-        aclient.commit_experiment(datasource_id=testing_datasource.ds.id, experiment_id=experiment_id)
-        return experiment_id
-
-    new_experiment_id = create_and_commit_experiment(design_spec)
-    stale_experiment_id = create_and_commit_experiment(
-        design_spec.model_copy(update={"experiment_name": "stale snapshot test"})
-    )
-    failed_experiment_id = create_and_commit_experiment(
-        design_spec.model_copy(update={"experiment_name": "failed snapshot test"})
-    )
-    fresh_experiment_id = create_and_commit_experiment(
-        design_spec.model_copy(update={"experiment_name": "fresh snapshot test"})
-    )
-    inactive_experiment_id = create_and_commit_experiment(
-        design_spec.model_copy(
-            update={
-                "experiment_name": "inactive snapshot test",
-                "end_date": now - timedelta(days=2),
-            }
-        )
+    new_experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="snapshot scheduling test")
+    stale_experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="stale snapshot test")
+    failed_experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="failed snapshot test")
+    fresh_experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="fresh snapshot test")
+    inactive_experiment_id = create_snapshot_experiment(
+        aclient,
+        testing_datasource,
+        name="inactive snapshot test",
+        end_date=now - timedelta(days=2),
     )
 
     xngin_session.add_all([
@@ -474,34 +411,15 @@ async def test_process_pending_snapshots_processes_until_empty(
     testing_datasource,
     aclient: AdminAPIClient,
 ):
-    design_spec = PreassignedFrequentistExperimentSpec(
-        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        experiment_name="process pending snapshots test",
-        description="process pending snapshots test",
-        start_date=datetime(2024, 1, 1, tzinfo=UTC),
-        end_date=datetime.now(UTC) + timedelta(days=1),
-        arms=[
-            Arm(arm_name="C", arm_description="C"),
-            Arm(arm_name="T", arm_description="T"),
-        ],
-        metrics=[DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1)],
-        strata=[],
-        filters=[],
-    )
-
-    experiment_ids = []
-    for i in range(2):
-        experiment_id = aclient.create_experiment(
-            datasource_id=testing_datasource.ds.id,
-            body=CreateExperimentRequest(
-                design_spec=design_spec.model_copy(update={"experiment_name": f"process pending snapshot test {i}"}),
-                table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
-                primary_key="id",
-            ),
+    experiment_ids = [
+        create_snapshot_experiment(
+            aclient,
+            testing_datasource,
+            name=f"process pending snapshot test {i}",
             desired_n=8,
-        ).data.experiment_id
-        aclient.commit_experiment(datasource_id=testing_datasource.ds.id, experiment_id=experiment_id)
-        experiment_ids.append(experiment_id)
+        )
+        for i in range(2)
+    ]
 
     await create_pending_snapshots(0)
 
