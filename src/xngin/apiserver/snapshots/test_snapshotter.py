@@ -2,18 +2,30 @@ import asyncio
 import warnings
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy import select
 
 from xngin.apiserver.routers.admin.admin_api_types import SnapshotStatus
 from xngin.apiserver.routers.common_api_types import (
     Arm,
+    ArmBandit,
+    BanditExperimentAnalysisResponse,
     BaseFrequentistDesignSpec,
+    CMABContextInputRequest,
+    CMABExperimentSpec,
+    Context,
+    ContextInput,
+    ContextType,
     CreateExperimentRequest,
     DesignSpec,
     DesignSpecMetricRequest,
     ExperimentsType,
     FreqExperimentAnalysisResponse,
+    LikelihoodTypes,
+    MABExperimentSpec,
     PreassignedFrequentistExperimentSpec,
+    PriorTypes,
+    UpdateBanditArmOutcomeRequest,
 )
 from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers.experiments.experiments_common import fetch_fields_or_raise
@@ -26,6 +38,7 @@ from xngin.apiserver.snapshots.snapshotter import (
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
+from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 
 
@@ -444,3 +457,129 @@ async def test_process_pending_snapshots_processes_until_empty(
         assert snapshots[0].status == SnapshotStatus.SUCCESS
         analysis = FreqExperimentAnalysisResponse.model_validate(snapshots[0].data)
         assert isinstance(analysis, FreqExperimentAnalysisResponse)
+
+
+async def create_bandit_snapshot_experiment(
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+    testing_datasource,
+    *,
+    experiment_type: ExperimentsType,
+) -> str:
+    """Helper to create a bandit experiment for the test_create_snapshot_bandit_succeeds test."""
+    design_spec: MABExperimentSpec | CMABExperimentSpec
+    match experiment_type:
+        case ExperimentsType.MAB_ONLINE:
+            design_spec = MABExperimentSpec(
+                experiment_type=experiment_type,
+                experiment_name="snapshot mab test",
+                description="snapshot mab test",
+                start_date=datetime(2024, 1, 1, tzinfo=UTC),
+                end_date=datetime.now(UTC) + timedelta(days=1),
+                arms=[
+                    ArmBandit(arm_name="control", arm_description="", alpha_init=1, beta_init=1),
+                    ArmBandit(arm_name="treatment", arm_description="", alpha_init=1, beta_init=1),
+                ],
+                prior_type=PriorTypes.BETA,
+                reward_type=LikelihoodTypes.BERNOULLI,
+            )
+        case ExperimentsType.CMAB_ONLINE:
+            design_spec = CMABExperimentSpec(
+                experiment_type=experiment_type,
+                experiment_name="snapshot cmab test",
+                description="snapshot cmab test",
+                start_date=datetime(2024, 1, 1, tzinfo=UTC),
+                end_date=datetime.now(UTC) + timedelta(days=1),
+                arms=[
+                    ArmBandit(arm_name="control", arm_description="", mu_init=0, sigma_init=1),
+                    ArmBandit(arm_name="treatment", arm_description="", mu_init=0, sigma_init=1),
+                ],
+                contexts=[
+                    Context(context_name="context1", context_description="", value_type=ContextType.BINARY),
+                    Context(context_name="context2", context_description="", value_type=ContextType.REAL_VALUED),
+                ],
+                prior_type=PriorTypes.NORMAL,
+                reward_type=LikelihoodTypes.BERNOULLI,
+            )
+        case _:
+            raise ValueError(f"Unsupported experiment type: {experiment_type}")
+
+    experiment_id = aclient.create_experiment(
+        datasource_id=testing_datasource.ds.id,
+        body=CreateExperimentRequest(design_spec=design_spec),
+        desired_n=2,
+        random_state=42,
+    ).data.experiment_id
+    aclient.commit_experiment(datasource_id=testing_datasource.ds.id, experiment_id=experiment_id)
+    if experiment_type == ExperimentsType.CMAB_ONLINE:
+        config = aclient.get_experiment_for_ui(
+            datasource_id=testing_datasource.ds.id,
+            experiment_id=experiment_id,
+        ).data.config
+        assert isinstance(config.design_spec, CMABExperimentSpec)
+        assert config.design_spec.contexts is not None
+        assert all(context.context_id is not None for context in config.design_spec.contexts)
+        context_inputs = [
+            ContextInput(context_id=context.context_id or "", context_value=1.0)
+            for context in sorted(config.design_spec.contexts, key=lambda c: c.context_id or "")
+        ]
+        for participant_id, outcome in [("0", 0.0), ("1", 1.0)]:
+            _ = eclient.get_assignment_cmab(
+                api_key=testing_datasource.key,
+                body=CMABContextInputRequest(context_inputs=context_inputs),
+                experiment_id=experiment_id,
+                participant_id=participant_id,
+            )
+            _ = eclient.update_bandit_arm_with_participant_outcome(
+                api_key=testing_datasource.key,
+                body=UpdateBanditArmOutcomeRequest(outcome=outcome),
+                experiment_id=experiment_id,
+                participant_id=participant_id,
+            )
+    else:
+        for participant_id, outcome in [("0", 0.0), ("1", 1.0)]:
+            _ = eclient.get_assignment(
+                api_key=testing_datasource.key,
+                experiment_id=experiment_id,
+                participant_id=participant_id,
+            )
+            _ = eclient.update_bandit_arm_with_participant_outcome(
+                api_key=testing_datasource.key,
+                body=UpdateBanditArmOutcomeRequest(outcome=outcome),
+                experiment_id=experiment_id,
+                participant_id=participant_id,
+            )
+    return experiment_id
+
+
+@pytest.mark.parametrize("experiment_type", [ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE])
+async def test_create_snapshot_bandit_succeeds(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+    experiment_type: ExperimentsType,
+):
+    """Ensures snapshots work end-to-end for bandits."""
+    experiment_id = await create_bandit_snapshot_experiment(
+        aclient,
+        eclient,
+        testing_datasource,
+        experiment_type=experiment_type,
+    )
+
+    aclient.create_snapshot(
+        organization_id=testing_datasource.org.id,
+        datasource_id=testing_datasource.ds.id,
+        experiment_id=experiment_id,
+    )
+
+    snapshots = aclient.list_snapshots(
+        organization_id=testing_datasource.org.id,
+        datasource_id=testing_datasource.ds.id,
+        experiment_id=experiment_id,
+    ).data.items
+    assert len(snapshots) == 1
+    assert snapshots[0].status == SnapshotStatus.SUCCESS
+    data = snapshots[0].data
+    assert isinstance(data, BanditExperimentAnalysisResponse)
+    assert data.n_outcomes == 2
