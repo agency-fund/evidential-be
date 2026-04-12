@@ -87,7 +87,6 @@ async def make_first_snapshot(experiment_id: str, snapshot_id: str):
                 .options(
                     selectinload(tables.Snapshot.experiment),
                     selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.arms),
-                    selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.arm_assignments),
                     selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.draws),
                     selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.contexts),
                     selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.datasource),
@@ -119,7 +118,6 @@ async def process_pending_snapshots(snapshot_timeout: int, *, max_jitter_secs: f
         .options(
             selectinload(tables.Snapshot.experiment),
             selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.arms),
-            selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.arm_assignments),
             selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.draws),
             selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.contexts),
             selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.datasource),
