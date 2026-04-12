@@ -465,6 +465,7 @@ async def create_bandit_snapshot_experiment(
     testing_datasource,
     *,
     experiment_type: ExperimentsType,
+    with_draws: bool = True,
 ) -> str:
     """Helper to create a bandit experiment for the test_create_snapshot_bandit_succeeds test."""
     design_spec: MABExperimentSpec | CMABExperimentSpec
@@ -511,6 +512,8 @@ async def create_bandit_snapshot_experiment(
         random_state=42,
     ).data.experiment_id
     aclient.commit_experiment(datasource_id=testing_datasource.ds.id, experiment_id=experiment_id)
+    if not with_draws:
+        return experiment_id
     if experiment_type == ExperimentsType.CMAB_ONLINE:
         config = aclient.get_experiment_for_ui(
             datasource_id=testing_datasource.ds.id,
@@ -583,3 +586,34 @@ async def test_create_snapshot_bandit_succeeds(
     data = snapshots[0].data
     assert isinstance(data, BanditExperimentAnalysisResponse)
     assert data.n_outcomes == 2
+
+
+async def test_create_snapshot_cmab_with_zero_draws_succeeds(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+):
+    experiment_id = await create_bandit_snapshot_experiment(
+        aclient,
+        eclient,
+        testing_datasource,
+        experiment_type=ExperimentsType.CMAB_ONLINE,
+        with_draws=False,
+    )
+
+    aclient.create_snapshot(
+        organization_id=testing_datasource.org.id,
+        datasource_id=testing_datasource.ds.id,
+        experiment_id=experiment_id,
+    )
+
+    snapshots = aclient.list_snapshots(
+        organization_id=testing_datasource.org.id,
+        datasource_id=testing_datasource.ds.id,
+        experiment_id=experiment_id,
+    ).data.items
+    assert len(snapshots) == 1
+    assert snapshots[0].status == SnapshotStatus.SUCCESS
+    data = snapshots[0].data
+    assert isinstance(data, BanditExperimentAnalysisResponse)
+    assert data.n_outcomes == 0
