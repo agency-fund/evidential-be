@@ -1,5 +1,7 @@
+import csv
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
+from io import StringIO
 from typing import TYPE_CHECKING
 
 import pytest
@@ -365,6 +367,53 @@ async def test_get_experiment_assignments_streams_preassigned_assignments(
         assert assignment.observed_at is None
         assert assignment.outcome is None
         assert assignment.context_values is None
+
+
+async def test_both_get_experiment_assignments_endpoints_have_matching_strata_ordering(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+):
+    request = make_unvalidated_create_experiment_request(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        table_name="dwh",
+        primary_key="id",
+    )
+    request.design_spec = PreassignedFrequentistExperimentSpec(
+        **request.design_spec.model_dump(exclude={"strata"}),
+        strata=[Stratum(field_name="ethnicity"), Stratum(field_name="gender")],
+    )
+    created_experiment = aclient.create_experiment(
+        datasource_id=testing_datasource.ds.id,
+        body=request,
+        desired_n=2,
+    ).data
+    aclient.commit_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=created_experiment.experiment_id,
+    )
+
+    data = eclient.get_experiment_assignments(
+        api_key=testing_datasource.key,
+        experiment_id=created_experiment.experiment_id,
+    ).data
+    csv_response = eclient.client.get(
+        f"/v1/experiments/{created_experiment.experiment_id}/assignments/csv",
+        headers={"X-API-Key": testing_datasource.key},
+    )
+    assert csv_response.status_code == HTTPStatus.OK, csv_response.content
+
+    csv_rows = {row["participant_id"]: row for row in csv.DictReader(StringIO(csv_response.text))}
+    assert set(csv_rows) == {assignment.participant_id for assignment in data.assignments}
+
+    for assignment in data.assignments:
+        csv_row = csv_rows[assignment.participant_id]
+        assert assignment.strata is not None
+        assert [stratum.field_name for stratum in assignment.strata] == ["ethnicity", "gender"]
+        assert {stratum.field_name: stratum.strata_value for stratum in assignment.strata} == {
+            "ethnicity": csv_row["ethnicity"] or None,
+            "gender": csv_row["gender"] or None,
+        }
 
 
 async def test_get_experiment_assignments_streams_bandit_assignments(
