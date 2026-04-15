@@ -131,6 +131,8 @@ def test_arm_weights_validation():
         "experiment_type": "freq_preassigned",
         "experiment_name": "test",
         "description": "test",
+        "table_name": "dwh",
+        "primary_key": "id",
         "start_date": "2024-01-01T00:00:00+00:00",
         "end_date": "2024-12-31T00:00:00+00:00",
         "arms": [

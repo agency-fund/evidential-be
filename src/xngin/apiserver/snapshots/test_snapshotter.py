@@ -24,16 +24,15 @@ async def make_experiment(
     xngin_session,
     datasource: tables.Datasource,
     design_spec: DesignSpec,
-    *,
-    table_name: str | None = None,
-    primary_key: str | None = None,
 ) -> tables.Experiment:
+    table_name = None
+    primary_key = None
     field_type_map = None
     if design_spec.experiment_type in {ExperimentsType.FREQ_PREASSIGNED, ExperimentsType.FREQ_ONLINE}:
         assert isinstance(design_spec, BaseFrequentistDesignSpec)
-        assert table_name is not None
-        assert primary_key is not None
-        field_type_map = await fetch_fields_or_raise(datasource, design_spec, table_name, primary_key)
+        table_name = design_spec.table_name
+        primary_key = design_spec.primary_key
+        field_type_map = await fetch_fields_or_raise(datasource, design_spec)
 
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
@@ -44,8 +43,8 @@ async def make_experiment(
         stopped_assignments_at=datetime.now(UTC),
         stopped_assignments_reason=StopAssignmentReason.PREASSIGNED,
         table_name=table_name,
-        field_type_map=field_type_map,
         unique_id_name=primary_key,
+        field_type_map=field_type_map,
     )
     experiment = experiment_converter.get_experiment()
     xngin_session.add(experiment)
@@ -95,6 +94,8 @@ async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_da
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
         experiment_name="test experiment",
         description="test experiment",
+        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
         end_date=datetime.now(UTC) + timedelta(days=1),
         arms=[
@@ -106,13 +107,7 @@ async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_da
         filters=[],
     )
 
-    experiment = await make_experiment(
-        xngin_session,
-        datasource,
-        design_spec,
-        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
-        primary_key="id",
-    )
+    experiment = await make_experiment(xngin_session, datasource, design_spec)
     # Arms' intial position should reflect design spec ordering
     arm1 = experiment.arms[0]
     assert arm1.position == 1
