@@ -168,6 +168,16 @@ def _update_arm_laplace(
 
 # ------------- Import functions ----------------
 # --- Choose arm function ---
+# Top-Two TS configuration
+# With ≥5 arms, use Top-Two TS: draw two independent posterior samples, pick
+# between the leader (best in sample 1) and challenger (best in sample 2,
+# excluding leader) with probability β. This provides systematic exploration
+# of the most promising alternative without distorting the posterior.
+# β=0.9 means 90% of draws go to the likely best arm — low exploration cost.
+TOP_TWO_MIN_ARMS = 5  # NB can move these to config if cleaner
+TOP_TWO_BETA = 0.9
+
+
 def choose_arm(
     experiment: tables.Experiment,
     sorted_context_vals: list[float] | None = None,
@@ -176,43 +186,99 @@ def choose_arm(
     """
     Choose arm based on posterior using Thompson Sampling.
 
+    For experiments with ≥5 arms, uses Top-Two Thompson Sampling (β=0.9):
+    two independent posterior samples determine a leader and challenger,
+    then a coin flip decides which to play. This prevents premature lock-in
+    when many arms have similar rewards.
+
     Parameters
     ----------
     experiment: The experiment data containing priors and rewards for each arm.
-    context: Optional context vector for the experiment.
+    sorted_context_vals: Optional context vector for the experiment.
+    random_state: Seed for the random number generator. None for true randomness.
     """
     # TODO: Only supported for MAB and CMAB experiments
     if experiment.experiment_type == ExperimentsType.BAYESAB_ONLINE.value:
         raise ValueError(f"Invalid experiment type: {experiment.experiment_type}.")
 
     sorted_arms = sorted(experiment.arms, key=lambda a: a.id)
+    n_arms = len(sorted_arms)
+    use_top_two = n_arms >= TOP_TWO_MIN_ARMS
+
     if experiment.prior_type == PriorTypes.BETA.value:
         if experiment.reward_type != LikelihoodTypes.BERNOULLI.value:
             raise ValueError("Beta prior is only supported for Bernoulli rewards.")
         alphas = np.array([arm.alpha for arm in sorted_arms])
         betas = np.array([arm.beta for arm in sorted_arms])
 
-        arm_index = _sample_beta_binomial(alphas=alphas, betas=betas, random_state=random_state)
+        if use_top_two:
+            arm_index = _top_two_beta_binomial(alphas, betas, random_state=random_state)
+        else:
+            arm_index = _sample_beta_binomial(alphas=alphas, betas=betas, random_state=random_state)
 
     elif experiment.prior_type == PriorTypes.NORMAL.value:
         mus = [np.array(arm.mu) for arm in sorted_arms]
         covariances = [np.array(arm.covariance) for arm in sorted_arms]
 
         context_array = np.ones_like(mus[0]) if sorted_context_vals is None else np.array(sorted_context_vals)
-        arm_index = _sample_normal(
-            mus=mus,
-            covariances=covariances,
-            context=context_array,
-            link_function=(
-                ContextLinkFunctions.NONE
-                if experiment.reward_type == LikelihoodTypes.NORMAL.value
-                else ContextLinkFunctions.LOGISTIC
-            ),
-            random_state=random_state,
+        link_function = (
+            ContextLinkFunctions.NONE
+            if experiment.reward_type == LikelihoodTypes.NORMAL.value
+            else ContextLinkFunctions.LOGISTIC
         )
+
+        if use_top_two:
+            arm_index = _top_two_normal(mus, covariances, context_array, link_function, random_state=random_state)
+        else:
+            arm_index = _sample_normal(
+                mus=mus,
+                covariances=covariances,
+                context=context_array,
+                link_function=link_function,
+                random_state=random_state,
+            )
     else:
         raise ValueError(f"Unsupported prior type: {experiment.prior_type}")
     return sorted_arms[arm_index]
+
+
+def _top_two_beta_binomial(
+    alphas: np.ndarray,
+    betas: np.ndarray,
+    random_state: int | None = None,
+) -> int:
+    """Top-Two Thompson Sampling for Beta-Binomial arms."""
+    rng = np.random.default_rng(random_state)
+    sample1 = rng.beta(alphas, betas)
+    leader = int(sample1.argmax())
+    sample2 = rng.beta(alphas, betas)
+    sample2[leader] = -np.inf
+    challenger = int(sample2.argmax())
+    return leader if rng.random() < TOP_TWO_BETA else challenger
+
+
+def _top_two_normal(
+    mus: list[np.ndarray],
+    covariances: list[np.ndarray],
+    context: np.ndarray,
+    link_function: ContextLinkFunctions,
+    random_state: int | None = None,
+) -> int:
+    """Top-Two Thompson Sampling for Normal prior arms."""
+    rng = np.random.default_rng(random_state)
+
+    scores1 = []
+    scores2 = []
+    for mu, cov in zip(mus, covariances, strict=True):
+        theta1 = rng.multivariate_normal(mean=mu, cov=cov)
+        scores1.append(link_function(context @ theta1))
+        theta2 = rng.multivariate_normal(mean=mu, cov=cov)
+        scores2.append(link_function(context @ theta2))
+
+    leader = int(np.argmax(scores1))
+    scores2[leader] = np.array(-np.inf)
+    challenger = int(np.argmax(scores2))
+    return leader if rng.random() < TOP_TWO_BETA else challenger
 
 
 # --- Update arm parameters ---
