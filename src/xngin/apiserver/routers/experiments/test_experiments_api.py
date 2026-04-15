@@ -473,23 +473,25 @@ async def test_get_experiment_assignments_streams_bandit_assignments(
     assert set(assignments_by_participant_id) == {"p1", "p2"}
 
     p1 = assignments_by_participant_id["p1"]
-    assert updated_first_assignment == p1
+    assert updated_first_assignment is not None
+    assert updated_first_assignment.model_copy(update={"strata": None}) == p1
     assert p1.arm_name == arms_by_id[p1.arm_id]
     assert p1.created_at is not None
     assert p1.observed_at is not None
     assert p1.observed_at >= observed_at.replace(microsecond=0)
     assert p1.outcome == 1.5
     assert p1.context_values is None
-    assert p1.strata == []
+    assert p1.strata is None
 
     p2 = assignments_by_participant_id["p2"]
-    assert updated_second_assignment == p2
+    assert updated_second_assignment is not None
+    assert updated_second_assignment.model_copy(update={"strata": None}) == p2
     assert p2.arm_name == arms_by_id[p2.arm_id]
     assert p2.created_at is not None
     assert p2.observed_at is None
     assert p2.outcome is None
     assert p2.context_values is None
-    assert p2.strata == []
+    assert p2.strata is None
 
 
 async def test_get_experiment_assignments_streams_cmab_context_values(
@@ -569,17 +571,17 @@ async def test_get_experiment_assignments_streams_cmab_context_values(
     assert p1.created_at is not None
     assert p1.observed_at is not None
     assert p1.outcome == 1.5
-    assert p1.strata == []
+    assert p1.strata is None
     assert p1.context_values == [1.0, 1.0]
-    assert first_assignment == p1
+    assert first_assignment.model_copy(update={"strata": None}) == p1
 
     p2 = assignments_by_participant_id["p2"]
     assert p2.created_at is not None
     assert p2.observed_at is None
     assert p2.outcome is None
-    assert p2.strata == []
+    assert p2.strata is None
     assert p2.context_values == [2.0, 2.0]
-    assert second_assignment == p2
+    assert second_assignment.model_copy(update={"strata": None}) == p2
 
 
 async def test_get_experiment_assignments_as_csv_success(
@@ -727,6 +729,7 @@ async def test_get_assignment_mab_online(testing_datasource, aclient: AdminAPICl
     assert len(assignments.assignments) == 1
     assert assignments.assignments[0].participant_id == "1"
     assert str(assignments.assignments[0].arm_id) == str(parsed.assignment.arm_id)
+    assert assignments.assignments[0].strata is None
     assert assignments.assignments[0].observed_at is None
     assert assignments.assignments[0].outcome is None
     assert assignments.assignments[0].context_values is None
@@ -830,6 +833,7 @@ async def test_get_cmab_experiment_assignment_for_online_participant(
     assert len(assignments.assignments) == 1
     assert assignments.assignments[0].participant_id == "1"
     assert str(assignments.assignments[0].arm_id) == str(parsed.assignment.arm_id)
+    assert assignments.assignments[0].strata is None
     assert assignments.assignments[0].context_values == [1.0, 1.0]
 
     experiment = eclient.get_experiment(

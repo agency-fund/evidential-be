@@ -192,7 +192,7 @@ async def get_experiment_assignments_impl(
                     "arm_id": arm_id,
                     "arm_name": arm_name,
                     "created_at": created_at,
-                    "strata": [],
+                    "strata": None,
                     "observed_at": observed_at,
                     "outcome": outcome,
                     "context_values": context_values,
