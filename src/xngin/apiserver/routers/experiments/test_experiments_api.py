@@ -348,11 +348,20 @@ async def test_get_experiment_assignments_streams_preassigned_assignments(
 
     assert len(data.assignments) == 2
     for assignment in data.assignments:
+        participant_assignment = eclient.get_assignment(
+            api_key=testing_datasource.key,
+            experiment_id=experiment.experiment_id,
+            participant_id=assignment.participant_id,
+            create_if_none=False,
+        ).data.assignment
+        assert participant_assignment is not None
         assert assignment.arm_name == arms_by_id[assignment.arm_id]
+        assert assignment.arm_id == participant_assignment.arm_id
+        assert assignment.arm_name == participant_assignment.arm_name
+        assert assignment.created_at == participant_assignment.created_at
         assert assignment.strata is not None and len(assignment.strata) == 1
         assert assignment.strata[0].field_name == "gender"
         assert assignment.strata[0].strata_value is not None
-        assert assignment.created_at is not None
         assert assignment.observed_at is None
         assert assignment.outcome is None
         assert assignment.context_values is None
@@ -390,6 +399,18 @@ async def test_get_experiment_assignments_streams_bandit_assignments(
         experiment_id=experiment.experiment_id,
         participant_id="p1",
     )
+    updated_first_assignment = eclient.get_assignment(
+        api_key=testing_datasource.key,
+        experiment_id=experiment.experiment_id,
+        participant_id="p1",
+        create_if_none=False,
+    ).data.assignment
+    updated_second_assignment = eclient.get_assignment(
+        api_key=testing_datasource.key,
+        experiment_id=experiment.experiment_id,
+        participant_id="p2",
+        create_if_none=False,
+    ).data.assignment
 
     data = eclient.get_experiment_assignments(
         api_key=testing_datasource.key,
@@ -403,6 +424,7 @@ async def test_get_experiment_assignments_streams_bandit_assignments(
     assert set(assignments_by_participant_id) == {"p1", "p2"}
 
     p1 = assignments_by_participant_id["p1"]
+    assert updated_first_assignment == p1
     assert p1.arm_name == arms_by_id[p1.arm_id]
     assert p1.created_at is not None
     assert p1.observed_at is not None
@@ -412,6 +434,7 @@ async def test_get_experiment_assignments_streams_bandit_assignments(
     assert p1.strata == []
 
     p2 = assignments_by_participant_id["p2"]
+    assert updated_second_assignment == p2
     assert p2.arm_name == arms_by_id[p2.arm_id]
     assert p2.created_at is not None
     assert p2.observed_at is None
