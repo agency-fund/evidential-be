@@ -55,8 +55,8 @@
         </aside>
         <h2>
             <span class="text">629 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">575<span class="text"> run</span></button>
-            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">54<span class="text"> missing</span></button>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">574<span class="text"> run</span></button>
+            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">55<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
         <p class="text">
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_272f90c4dc99306b_admin_api_converters_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.5">coverage.py v7.13.5</a>,
-            created at 2026-04-14 23:23 +0000
+            created at 2026-04-15 13:51 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -1748,9 +1748,9 @@
     <p class="mis mis2 show_mis"><span class="n"><a id="t1666" href="#t1666">1666</a></span><span class="t">            <span class="fst">f"</span><span class="fst">retrieve an experiment analysis.</span><span class="fst">"</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t1667" href="#t1667">1667</a></span><span class="t">        <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1668" href="#t1668">1668</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t1669" href="#t1669">1669</a></span><span class="t">    <span class="nam">context_inputs</span> <span class="op">=</span> <span class="nam">body</span><span class="op">.</span><span class="nam">context_inputs</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t1670" href="#t1670">1670</a></span><span class="t">    <span class="nam">context_defns</span> <span class="op">=</span> <span class="nam">experiment</span><span class="op">.</span><span class="nam">contexts</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t1671" href="#t1671">1671</a></span><span class="t">    <span class="nam">sorted_context_inputs</span> <span class="op">=</span> <span class="nam">sort_contexts_by_id_or_raise</span><span class="op">(</span><span class="nam">context_defns</span><span class="op">,</span> <span class="nam">context_inputs</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t1669" href="#t1669">1669</a></span><span class="t">    <span class="key">if</span> <span class="nam">body</span><span class="op">.</span><span class="nam">context_inputs</span> <span class="key">is</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t1670" href="#t1670">1670</a></span><span class="t">        <span class="key">raise</span> <span class="nam">LateValidationError</span><span class="op">(</span><span class="str">"context_inputs must be provided when analyzing a CMAB experiment."</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t1671" href="#t1671">1671</a></span><span class="t">    <span class="nam">sorted_context_inputs</span> <span class="op">=</span> <span class="nam">sort_contexts_by_id_or_raise</span><span class="op">(</span><span class="nam">experiment</span><span class="op">.</span><span class="nam">contexts</span><span class="op">,</span> <span class="nam">body</span><span class="op">.</span><span class="nam">context_inputs</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1672" href="#t1672">1672</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t1673" href="#t1673">1673</a></span><span class="t">    <span class="key">return</span> <span class="nam">experiments_common</span><span class="op">.</span><span class="nam">analyze_experiment_bandit_impl</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t1674" href="#t1674">1674</a></span><span class="t">        <span class="nam">experiment</span><span class="op">,</span> <span class="nam">context_vals</span><span class="op">=</span><span class="op">[</span><span class="nam">ci</span><span class="op">.</span><span class="nam">context_value</span> <span class="key">for</span> <span class="nam">ci</span> <span class="key">in</span> <span class="nam">sorted_context_inputs</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
@@ -2079,7 +2079,7 @@
             <a class="nav" href="z_272f90c4dc99306b_admin_api_converters_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.5">coverage.py v7.13.5</a>,
-            created at 2026-04-14 23:23 +0000
+            created at 2026-04-15 13:51 +0000
         </p>
     </div>
 </footer>
