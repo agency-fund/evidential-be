@@ -210,8 +210,8 @@ def choose_arm(
     sorted_context_vals: Optional context vector for the experiment.
     random_state: Seed for the random number generator. None for true randomness.
     """
-    # TODO: Only supported for MAB and CMAB experiments
-    if experiment.experiment_type == ExperimentsType.BAYESAB_ONLINE.value:
+    supported_types = {ExperimentsType.MAB_ONLINE.value, ExperimentsType.CMAB_ONLINE.value}
+    if experiment.experiment_type not in supported_types:
         raise ValueError(f"Invalid experiment type: {experiment.experiment_type}.")
 
     sorted_arms = sorted(experiment.arms, key=lambda a: a.id)
@@ -269,8 +269,8 @@ def update_arm(
     context: The context vector for the arm.
     treatments: The treatments applied to the arm, for a Bayesian A/B test.
     """
-    # TODO: Does not support Bayes A/B experiments
-    if experiment.experiment_type == ExperimentsType.BAYESAB_ONLINE.value:
+    supported_types = {ExperimentsType.MAB_ONLINE.value, ExperimentsType.CMAB_ONLINE.value}
+    if experiment.experiment_type not in supported_types:
         raise ValueError(f"Invalid experiment type: {experiment.experiment_type}.")
     if not experiment.prior_type or not experiment.reward_type:
         raise ValueError("Experiment must have prior and reward types defined.")
