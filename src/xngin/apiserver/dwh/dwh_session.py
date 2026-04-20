@@ -8,6 +8,7 @@ import google.api_core.exceptions
 import sqlalchemy
 from loguru import logger
 from sqlalchemy import Engine, Inspector, event, text
+from sqlalchemy.engine.interfaces import DBAPIConnection
 from sqlalchemy.exc import NoSuchTableError, OperationalError
 from sqlalchemy.orm import Session
 
@@ -433,12 +434,15 @@ class DwhSession:
             assert search_path_sql_arg is not None  # type-narrowing for mypy
 
             @event.listens_for(engine, "connect", insert=True)
-            def set_search_path(dbapi_connection, _connection_record):
+            def set_search_path(dbapi_connection: DBAPIConnection, _connection_record):
                 existing_autocommit = dbapi_connection.autocommit
                 dbapi_connection.autocommit = True
                 cursor = dbapi_connection.cursor()
+                # Postgres-specific SQL via DBAPI parameterized query to set the search path with a
+                # user-specified, possibly comma-separated string.
                 cursor.execute(
-                    query_constructors.build_search_path_sql(engine.dialect.identifier_preparer, search_path_sql_arg)
+                    "SELECT set_config('search_path', %(schemas)s, false)",
+                    {"schemas": search_path_sql_arg},
                 )
                 cursor.close()
                 dbapi_connection.autocommit = existing_autocommit
