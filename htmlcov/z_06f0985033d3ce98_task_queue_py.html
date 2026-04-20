@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Coverage for src/xngin/tq/task_queue.py: 98%</title>
+    <title>Coverage for src/xngin/tq/task_queue.py: 91%</title>
     <link rel="icon" sizes="32x32" href="favicon_32_cb_c827f16f.png">
     <link rel="stylesheet" href="style_cb_9ff733b0.css" type="text/css">
     <script src="coverage_html_cb_dd2e7eb5.js" defer></script>
@@ -12,7 +12,7 @@
     <div class="content">
         <h1>
             <span class="text">Coverage for </span><b>src&#8201;/&#8201;xngin&#8201;/&#8201;tq&#8201;/&#8201;task_queue.py</b>:
-            <span class="pc_cov">98%</span>
+            <span class="pc_cov">91%</span>
         </h1>
         <aside id="help_panel_wrapper">
             <input id="help_panel_state" type="checkbox">
@@ -55,8 +55,8 @@
         </aside>
         <h2>
             <span class="text">96 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">94<span class="text"> run</span></button>
-            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">2<span class="text"> missing</span></button>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">87<span class="text"> run</span></button>
+            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">9<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">3<span class="text"> excluded</span></button>
         </h2>
         <p class="text">
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_06f0985033d3ce98_test_tq_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.5">coverage.py v7.13.5</a>,
-            created at 2026-04-15 13:51 +0000
+            created at 2026-04-20 15:05 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -313,17 +313,17 @@
     <p class="run"><span class="n"><a id="t231" href="#t231">231</a></span><span class="t">                    <span class="key">if</span> <span class="nam">cancel</span> <span class="key">is</span> <span class="key">not</span> <span class="key">None</span> <span class="key">and</span> <span class="nam">cancel</span><span class="op">.</span><span class="nam">is_set</span><span class="op">(</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t232" href="#t232">232</a></span><span class="t">                        <span class="key">break</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t233" href="#t233">233</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t234" href="#t234">234</a></span><span class="t">                    <span class="key">try</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t235" href="#t235">235</a></span><span class="t">                        <span class="nam">gen</span> <span class="op">=</span> <span class="nam">conn</span><span class="op">.</span><span class="nam">notifies</span><span class="op">(</span><span class="nam">timeout</span><span class="op">=</span><span class="nam">self</span><span class="op">.</span><span class="nam">poll_interval</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t236" href="#t236">236</a></span><span class="t">                        <span class="nam">next</span><span class="op">(</span><span class="nam">gen</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t234" href="#t234">234</a></span><span class="t">                    <span class="key">try</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t235" href="#t235">235</a></span><span class="t">                        <span class="nam">gen</span> <span class="op">=</span> <span class="nam">conn</span><span class="op">.</span><span class="nam">notifies</span><span class="op">(</span><span class="nam">timeout</span><span class="op">=</span><span class="nam">self</span><span class="op">.</span><span class="nam">poll_interval</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t236" href="#t236">236</a></span><span class="t">                        <span class="nam">next</span><span class="op">(</span><span class="nam">gen</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t237" href="#t237">237</a></span><span class="t">                        <span class="nam">logger</span><span class="op">.</span><span class="nam">debug</span><span class="op">(</span><span class="str">"Received notification about new tasks"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis show_mis"><span class="n"><a id="t238" href="#t238">238</a></span><span class="t">                        <span class="key">continue</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t239" href="#t239">239</a></span><span class="t">                    <span class="key">except</span> <span class="nam">StopIteration</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t239" href="#t239">239</a></span><span class="t">                    <span class="key">except</span> <span class="nam">StopIteration</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t240" href="#t240">240</a></span><span class="t">                        <span class="com"># StopIteration is raised when poll_interval expires</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t241" href="#t241">241</a></span><span class="t">                        <span class="nam">logger</span><span class="op">.</span><span class="nam">debug</span><span class="op">(</span><span class="fst">f"</span><span class="fst">Waited </span><span class="op">{</span><span class="nam">self</span><span class="op">.</span><span class="nam">poll_interval</span><span class="op">}</span><span class="fst"> for notification. Polling again.</span><span class="fst">"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t242" href="#t242">242</a></span><span class="t">                        <span class="key">continue</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t241" href="#t241">241</a></span><span class="t">                        <span class="nam">logger</span><span class="op">.</span><span class="nam">debug</span><span class="op">(</span><span class="fst">f"</span><span class="fst">Waited </span><span class="op">{</span><span class="nam">self</span><span class="op">.</span><span class="nam">poll_interval</span><span class="op">}</span><span class="fst"> for notification. Polling again.</span><span class="fst">"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t242" href="#t242">242</a></span><span class="t">                        <span class="key">continue</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t243" href="#t243">243</a></span><span class="t">                    <span class="key">finally</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t244" href="#t244">244</a></span><span class="t">                        <span class="nam">gen</span><span class="op">.</span><span class="nam">close</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t244" href="#t244">244</a></span><span class="t">                        <span class="nam">gen</span><span class="op">.</span><span class="nam">close</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t245" href="#t245">245</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t246" href="#t246">246</a></span><span class="t">            <span class="key">except</span> <span class="nam">psycopg</span><span class="op">.</span><span class="nam">OperationalError</span> <span class="key">as</span> <span class="nam">e</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t247" href="#t247">247</a></span><span class="t">                <span class="nam">logger</span><span class="op">.</span><span class="nam">error</span><span class="op">(</span><span class="fst">f"</span><span class="fst">Database connection error: </span><span class="op">{</span><span class="nam">e</span><span class="op">}</span><span class="fst">"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
@@ -338,7 +338,7 @@
             <a class="nav" href="z_06f0985033d3ce98_test_tq_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.5">coverage.py v7.13.5</a>,
-            created at 2026-04-15 13:51 +0000
+            created at 2026-04-20 15:05 +0000
         </p>
     </div>
 </footer>
