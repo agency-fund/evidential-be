@@ -273,7 +273,6 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
     dbname: str
     sslmode: Literal["disable", "require", "verify-ca", "verify-full"]
     # Specify the order in which schemas are searched if your dwh supports it.
-    # Validated to only allow safe identifier characters (prevents SQL injection).
     search_path: str | None = None
 
     def encrypt(self, datasource_id):
