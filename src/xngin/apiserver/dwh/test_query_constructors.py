@@ -647,23 +647,46 @@ REGEX_TESTS = [
 
 
 @pytest.mark.parametrize(
-    "table_name",
+    "table_name,schema_name",
     [
-        pytest.param("my_table; DROP TABLE users", id="semicolon_injection"),
-        pytest.param("my_table' OR '1'='1", id="quote_injection"),
-        pytest.param("my_table\x00attack", id="null_byte_injection"),
+        pytest.param("my_table; DROP TABLE users", None, id="table_semicolon"),
+        pytest.param("my_table' OR '1'='1", None, id="table_quote"),
+        pytest.param("my_table\x00attack", None, id="table_null_byte"),
+        pytest.param("my_table", "my_schema; DROP TABLE users", id="schema_semicolon"),
+        pytest.param("my_table", "my_schema' OR '1'='1", id="schema_quote"),
+        pytest.param("my_table", "my_schema\x00attack", id="schema_null_byte"),
+        pytest.param("tbl;inject", "sch;inject", id="table_and_schema_injection"),
+        # Embedded double-quotes must be escaped as "" so they cannot close the identifier early.
+        pytest.param('tbl"name', None, id="table_embedded_dquote"),
+        pytest.param("innocent_table", 'sch"name', id="schema_embedded_dquote"),
+        pytest.param('tbl"x', 'sch"y', id="table_and_schema_embedded_dquote"),
     ],
 )
-def test_create_inspect_table_from_cursor_query_quotes_table_name(table_name):
-    """Verifies that injection payloads cannot escape the identifier context."""
+def test_create_inspect_table_from_cursor_query_quotes_table_name(table_name, schema_name):
+    """Verifies that injection payloads cannot escape the identifier context for table and/or schema."""
     dialect = sqlalchemy.dialects.postgresql.psycopg2.dialect()
-    query = create_inspect_table_from_cursor_query(table_name)
+    query = create_inspect_table_from_cursor_query(table_name, schema_name)
     sql = str(query.compile(dialect=dialect))
-    # The raw payload should never appear unquoted in the output.
-    # Specifically, statement-terminating characters must not appear outside quotes.
-    assert ";" not in sql.replace(f'"{table_name}"', ""), f"Bad quoting of {table_name}: {sql}"
-    # The full table name must appear as a quoted identifier.
-    assert f'"{table_name}"' in sql, f"Expected quoted identifier in: {sql}"
+
+    def as_quoted_identifier(name: str) -> str:
+        return '"' + name.replace('"', '""') + '"'
+
+    # Both identifiers must appear in the output. Names with embedded double-quotes are
+    # always quoted (escaped as ""), so check the escaped form in that case.
+    assert table_name in sql or as_quoted_identifier(table_name) in sql, f"Table name missing from: {sql}"
+    if schema_name is not None:
+        assert schema_name in sql or as_quoted_identifier(schema_name) in sql, f"Schema name missing from: {sql}"
+
+    # Embedded double-quotes must be escaped as "" inside the identifier, not left bare.
+    if '"' in table_name:
+        assert as_quoted_identifier(table_name) in sql, f"Expected escaped table identifier in: {sql}"
+    if schema_name and '"' in schema_name:
+        assert as_quoted_identifier(schema_name) in sql, f"Expected escaped schema identifier in: {sql}"
+
+    # After erasing every double-quoted identifier span (including embedded "" escapes),
+    # no statement-terminating character should remain.
+    sql_outside_quotes = re.sub(r'"(?:[^"]|"")*"', "", sql)
+    assert ";" not in sql_outside_quotes, f"Unquoted ';' in: {sql}"
 
 
 @pytest.mark.parametrize(

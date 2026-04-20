@@ -3,8 +3,7 @@ from collections.abc import Sequence
 from datetime import date, datetime
 
 import sqlalchemy
-from sqlalchemy import ColumnElement, Table, and_, func, literal_column, not_, or_, select
-from sqlalchemy import table as sa_table
+from sqlalchemy import ColumnElement, Table, and_, func, not_, or_, select
 
 from xngin.apiserver.routers.common_api_types import EXPERIMENT_IDS_SUFFIX, Filter, FilterValueTypes
 from xngin.apiserver.routers.common_enums import DataType, Relation
@@ -126,13 +125,14 @@ def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:
             raise RuntimeError("Bug: invalid Filter.")
 
 
-def create_inspect_table_from_cursor_query(table_name: str) -> sqlalchemy.Select:
-    """Returns a zero-row SELECT used to read column metadata via cursor.description.
+def create_inspect_table_from_cursor_query(table_name: str, schema_name: str | None = None) -> sqlalchemy.Select:
+    """Returns a zero-row SELECT used to read column metadata via cursor.description (driver-dependent).
 
     We use SQLAlchemy's identifier quoting to prevent table-name-based SQL injection
     (e.g. "foo; DROP TABLE bar" becomes a quoted identifier rather than executable SQL).
     """
-    return select(literal_column("*")).select_from(sa_table(table_name)).limit(0)
+    table = Table(table_name, sqlalchemy.MetaData(), schema=schema_name)
+    return select(table).limit(0)
 
 
 def build_search_path_sql(preparer: sqlalchemy.sql.compiler.IdentifierPreparer, raw_search_path: str) -> str:
