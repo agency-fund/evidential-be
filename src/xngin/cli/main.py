@@ -47,7 +47,7 @@ app.add_typer(snapshots_app, name="snapshots")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
 
-secretservice.setup()
+secretservice.setup(allow_noop=True)
 
 async_command = lambda f: functools.wraps(f)(lambda *args, **kwargs: asyncio.run(f(*args, **kwargs)))  # noqa: E731
 
@@ -655,7 +655,6 @@ def decrypt(
     aad: Annotated[str, typer.Option(help="The AAD specified when the ciphertext was encrypted.")] = "cli",
 ):
     """Decrypts a string using the same encryption configuration that the API server does."""
-    secretservice.setup()
     ciphertext = sys.stdin.read()
     print(secretservice.get_symmetric().decrypt(ciphertext, aad))
 

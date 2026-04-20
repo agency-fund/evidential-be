@@ -3,7 +3,7 @@ import json
 import math
 import uuid
 from collections.abc import Sequence
-from typing import Annotated, Literal, Self, TypedDict
+from typing import Annotated, Literal, NotRequired, Self, TypedDict
 
 import sqlalchemy.sql
 from annotated_types import MaxLen, MinLen
@@ -240,7 +240,7 @@ class CMABContextInputRequest(ApiBaseModel):
         "cmab_assignment"  # Adding type field to allow for type-discriminated unions in future
     )
     context_inputs: Annotated[
-        list[ContextInput],
+        list[ContextInput] | None,
         Field(
             description="""
             List of context values for the assignment.
@@ -699,9 +699,6 @@ class GetMetricsResponseElement(ApiBaseModel):
     description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
 
 
-EXPERIMENT_IDS_SUFFIX = "experiment_ids"
-
-
 class Filter(ApiBaseModel):
     """Defines criteria for filtering rows by value.
 
@@ -729,21 +726,6 @@ class Filter(ApiBaseModel):
     When the relation is BETWEEN, we allow for up to 3 values to support the special case of
     including null in addition to the values in the between range via an OR IS NULL clause, as
     indicated by a 3rd value of None. Any other 3rd value is invalid.
-
-    ## Special Handling for Comma-Separated Fields
-
-    When the filter name ends in "experiment_ids", the filter is interpreted as follows:
-
-    | Value | Filter         | Result   |
-    |-------|----------------|----------|
-    | "a,b" | INCLUDES ["a"] | Match    |
-    | "a,b" | INCLUDES ["d"] | No match |
-    | "a,b" | EXCLUDES ["d"] | Match    |
-    | "a,b" | EXCLUDES ["b"] | No match |
-
-    Note: The BETWEEN relation is not supported for comma-separated values.
-
-    Note: CSV field comparisons are case-insensitive.
 
     ## Handling of DATE, DATETIME and TIMESTAMP values
 
@@ -773,25 +755,6 @@ class Filter(ApiBaseModel):
         if isinstance(column_type, sqlalchemy.sql.sqltypes.UUID | sqlalchemy.sql.sqltypes.String):
             return pid
         raise LateValidationError(f"Unsupported participant ID type: {column_type}")
-
-    @model_validator(mode="after")
-    def ensure_experiment_ids_hack_compatible(self) -> Filter:
-        """Ensures that the filter is compatible with the "experiment_ids" hack."""
-        if not self.field_name.endswith(EXPERIMENT_IDS_SUFFIX):
-            return self
-        allowed_relations = (Relation.INCLUDES, Relation.EXCLUDES)
-        if self.relation not in allowed_relations:
-            raise ValueError(
-                f"filters on experiment_id fields must have relations of type {', '.join(sorted(allowed_relations))}"
-            )
-        for v in self.value:
-            if not isinstance(v, str):
-                continue
-            if "," in v:
-                raise ValueError("values in an experiment_id filter may not contain commas")
-            if v.strip() != v:
-                raise ValueError("values in an experiment_id filter may not contain leading or trailing whitespace")
-        return self
 
     @model_validator(mode="after")
     def ensure_value(self) -> Filter:
@@ -1147,7 +1110,10 @@ class PowerResponse(ApiBaseModel):
 
 
 class StrataTypedDict(TypedDict):
-    """Strata as a TypedDict to avoid Pydantic model work on hot paths."""
+    """Strata as a TypedDict to avoid Pydantic model work on hot paths.
+
+    TypedDict provides some type safety without a runtime cost.
+    """
 
     field_name: str
     strata_value: str | None
@@ -1161,6 +1127,22 @@ class Strata(ApiBaseModel):
     # from data warehouse.
     # strata_type: Optional[StrataType]
     strata_value: str | None = None
+
+
+class AssignmentTypedDict(TypedDict):
+    """Assignment as a TypedDict to avoid Pydantic model work on hot paths.
+
+    TypedDict provides some type safety without a runtime cost.
+    """
+
+    arm_id: str
+    participant_id: str
+    arm_name: str
+    created_at: NotRequired[str | None]
+    strata: NotRequired[list[StrataTypedDict] | None]
+    observed_at: NotRequired[str | None]
+    outcome: NotRequired[float | None]
+    context_values: NotRequired[list[float] | None]
 
 
 class Assignment(ApiBaseModel):

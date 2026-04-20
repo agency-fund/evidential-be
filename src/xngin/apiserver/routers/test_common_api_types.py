@@ -124,31 +124,6 @@ def test_empty_value_list():
             Filter(field_name="col", relation=relation, value=[])
 
 
-EXPERIMENT_IDS_FILTER_BAD = [
-    (Relation.BETWEEN, ["a", "b"], "must have relations of type excludes, includes"),
-    (Relation.INCLUDES, ["a,b", "b"], "commas"),
-    (Relation.INCLUDES, [" a", "b"], "whitespace"),
-]
-
-
-@pytest.mark.parametrize("relation,value,descr", EXPERIMENT_IDS_FILTER_BAD)
-def test_experiment_ids_hack_validators_invalid(relation, value, descr):
-    with pytest.raises(ValidationError, match=descr):
-        print(Filter(field_name="_experiment_ids", relation=relation, value=value))
-
-
-EXPERIMENT_IDS_FILTER_GOOD = [
-    (Relation.INCLUDES, ["ab", "b"], "strings"),
-    (Relation.INCLUDES, ["ab", None], "None"),
-    (Relation.EXCLUDES, ["a"], "mixed"),
-]
-
-
-@pytest.mark.parametrize("relation,value,descr", EXPERIMENT_IDS_FILTER_GOOD)
-def test_experiment_ids_hack_validators_valid(relation, value, descr):
-    Filter(field_name="_experiment_ids", relation=relation, value=value)
-
-
 def test_arm_weights_validation():
     """Test validation of arm_weights in BaseFrequentistDesignSpec"""
     # Test: weights sum to 100 and match number of arms

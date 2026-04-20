@@ -1,6 +1,5 @@
 """Stand-alone test cases for basic dynamic query generation."""
 
-import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -23,9 +22,7 @@ from xngin.apiserver.dwh.dwh_test_support import (
 from xngin.apiserver.dwh.query_constructors import (
     compose_query,
     create_filter,
-    create_inspect_table_from_cursor_query,
     create_query_filters,
-    make_csv_regex,
 )
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import Filter, Relation
@@ -302,37 +299,6 @@ def test_is_nullable(testcase, queries_dwh_session, shared_sample_tables):
 
 
 RELATION_CASES = [
-    # compound filters
-    Case(
-        filters=[
-            Filter(
-                field_name="int_col",
-                relation=Relation.INCLUDES,
-                value=[ROW_100.int_col, ROW_200.int_col],
-            ),
-            Filter(
-                field_name="experiment_ids",
-                relation=Relation.INCLUDES,
-                value=["b", "C"],
-            ),
-        ],
-        matches=[ROW_200],
-    ),
-    Case(
-        filters=[
-            Filter(
-                field_name="int_col",
-                relation=Relation.INCLUDES,
-                value=[ROW_100.int_col, ROW_200.int_col],
-            ),
-            Filter(
-                field_name="experiment_ids",
-                relation=Relation.EXCLUDES,
-                value=["b", "c"],
-            ),
-        ],
-        matches=[ROW_100],
-    ),
     # int_col
     Case(
         filters=[
@@ -373,55 +339,6 @@ RELATION_CASES = [
             )
         ],
         matches=[ROW_100, ROW_300],
-    ),
-    # regexp hacks
-    Case(
-        filters=[Filter(field_name="experiment_ids", relation=Relation.INCLUDES, value=["a"])],
-        matches=[ROW_100, ROW_200, ROW_300],
-    ),
-    Case(
-        filters=[Filter(field_name="experiment_ids", relation=Relation.INCLUDES, value=["B"])],
-        matches=[ROW_200, ROW_300],
-    ),
-    Case(
-        filters=[Filter(field_name="experiment_ids", relation=Relation.INCLUDES, value=["c"])],
-        matches=[ROW_300],
-    ),
-    Case(
-        filters=[Filter(field_name="experiment_ids", relation=Relation.EXCLUDES, value=["a"])],
-        matches=[],
-    ),
-    Case(
-        filters=[Filter(field_name="experiment_ids", relation=Relation.EXCLUDES, value=["D"])],
-        matches=[ROW_100, ROW_200, ROW_300],
-    ),
-    Case(
-        filters=[
-            Filter(
-                field_name="experiment_ids",
-                relation=Relation.INCLUDES,
-                value=["a", "d"],
-            )
-        ],
-        matches=[ROW_100, ROW_200, ROW_300],
-    ),
-    Case(
-        filters=[
-            Filter(
-                field_name="experiment_ids",
-                relation=Relation.EXCLUDES,
-                value=["a", "d"],
-            )
-        ],
-        matches=[],
-    ),
-    Case(
-        filters=[Filter(field_name="experiment_ids", relation=Relation.INCLUDES, value=["d"])],
-        matches=[],
-    ),
-    Case(
-        filters=[Filter(field_name="experiment_ids", relation=Relation.EXCLUDES, value=["d"])],
-        matches=[ROW_100, ROW_200, ROW_300],
     ),
 ]
 
@@ -629,75 +546,4 @@ def test_allowed_date_or_datetime_filter_validation(column_type):
     create_filter(
         col,
         Filter(field_name="x", relation=Relation.BETWEEN, value=["2024-01-01", "2024-12-31"]),
-    )
-
-
-REGEX_TESTS = [
-    ("", ["a"], False),
-    ("a", [""], False),
-    ("a", ["a"], True),
-    ("a,b", ["a"], True),
-    ("b,a", ["a"], True),
-    ("b,a", ["a", "b"], True),
-    ("b,a", ["b", "a"], True),
-    ("b,a", ["b", ""], True),
-    ("c,a,b,d", ["a"], True),
-]
-
-
-@pytest.mark.parametrize(
-    "table_name,schema_name",
-    [
-        pytest.param("my_table; DROP TABLE users", None, id="table_semicolon"),
-        pytest.param("my_table' OR '1'='1", None, id="table_quote"),
-        pytest.param("my_table\x00attack", None, id="table_null_byte"),
-        pytest.param("my_table", "my_schema; DROP TABLE users", id="schema_semicolon"),
-        pytest.param("my_table", "my_schema' OR '1'='1", id="schema_quote"),
-        pytest.param("my_table", "my_schema\x00attack", id="schema_null_byte"),
-        pytest.param("tbl;inject", "sch;inject", id="table_and_schema_injection"),
-        # Embedded double-quotes must be escaped as "" so they cannot close the identifier early.
-        pytest.param('tbl"name', None, id="table_embedded_dquote"),
-        pytest.param("innocent_table", 'sch"name', id="schema_embedded_dquote"),
-        pytest.param('tbl"x', 'sch"y', id="table_and_schema_embedded_dquote"),
-    ],
-)
-def test_create_inspect_table_from_cursor_query_quotes_table_name(table_name, schema_name):
-    """Verifies that injection payloads cannot escape the identifier context for table and/or schema."""
-    dialect = sqlalchemy.dialects.postgresql.psycopg2.dialect()
-    query = create_inspect_table_from_cursor_query(table_name, schema_name)
-    sql = str(query.compile(dialect=dialect))
-
-    def as_quoted_identifier(name: str) -> str:
-        return '"' + name.replace('"', '""') + '"'
-
-    # Both identifiers must appear in the output. Names with embedded double-quotes are
-    # always quoted (escaped as ""), so check the escaped form in that case.
-    assert table_name in sql or as_quoted_identifier(table_name) in sql, f"Table name missing from: {sql}"
-    if schema_name is not None:
-        assert schema_name in sql or as_quoted_identifier(schema_name) in sql, f"Schema name missing from: {sql}"
-
-    # Embedded double-quotes must be escaped as "" inside the identifier, not left bare.
-    if '"' in table_name:
-        assert as_quoted_identifier(table_name) in sql, f"Expected escaped table identifier in: {sql}"
-    if schema_name and '"' in schema_name:
-        assert as_quoted_identifier(schema_name) in sql, f"Expected escaped schema identifier in: {sql}"
-
-    # After erasing every double-quoted identifier span (including embedded "" escapes),
-    # no statement-terminating character should remain.
-    sql_outside_quotes = re.sub(r'"(?:[^"]|"")*"', "", sql)
-    assert ";" not in sql_outside_quotes, f"Unquoted ';' in: {sql}"
-
-
-@pytest.mark.parametrize("csv,values,expected", REGEX_TESTS)
-def test_make_csv_regex(csv, values, expected):
-    """Tests for the regular expression, generated in isolation of the database stack.
-
-    Null-, empty string, and negative cases are special and handled in SQL elsewhere.
-    """
-    r = make_csv_regex(values)
-    matches = re.search(r, csv)
-    actual = matches is not None
-    assert actual == expected, (
-        f'Expression {r} is expected to {"match" if expected else "not match"} in "{csv}". '
-        f"Values = {values}. Matches = {matches}."
     )

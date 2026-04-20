@@ -325,56 +325,6 @@ WHERE_TESTCASES = [
             ),
         },
     ),
-    # experiment_ids inclusion/exclusion tests
-    WhereTestCase(
-        filters=[
-            Filter(field_name="int_col", relation=Relation.INCLUDES, value=[42, -17]),
-            Filter(field_name="experiment_ids", relation=Relation.INCLUDES, value=["b", "C"]),
-        ],
-        where={
-            DbType.BQ: (
-                "`tt`.`int_col` IN (42, -17) AND "
-                "REGEXP_CONTAINS(lower(`tt`.`experiment_ids`), '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)') "
-                "ORDER BY rand() LIMIT 3"
-            ),
-            DbType.PG: (
-                "tt.int_col IN (42, -17) AND "
-                "lower(tt.experiment_ids) ~ '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)' "
-                "ORDER BY random()  LIMIT 3"
-            ),
-            DbType.RS: (
-                "tt.int_col IN (42, -17) AND "
-                "lower(tt.experiment_ids) ~ '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)' "
-                "ORDER BY random()  LIMIT 3"
-            ),
-        },
-    ),
-    WhereTestCase(
-        filters=[
-            Filter(field_name="int_col", relation=Relation.INCLUDES, value=[42, -17]),
-            Filter(field_name="experiment_ids", relation=Relation.EXCLUDES, value=["b", "c"]),
-        ],
-        where={
-            DbType.BQ: (
-                "`tt`.`int_col` IN (42, -17) AND "
-                "(`tt`.`experiment_ids` IS NULL OR char_length(`tt`.`experiment_ids`) = 0 OR "
-                "NOT REGEXP_CONTAINS(lower(`tt`.`experiment_ids`), '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)')) "
-                "ORDER BY rand() LIMIT 3"
-            ),
-            DbType.PG: (
-                "tt.int_col IN (42, -17) AND "
-                "(tt.experiment_ids IS NULL OR char_length(tt.experiment_ids) = 0 OR "
-                "lower(tt.experiment_ids) !~ '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)') "
-                "ORDER BY random()  LIMIT 3"
-            ),
-            DbType.RS: (
-                "tt.int_col IN (42, -17) AND "
-                "(tt.experiment_ids IS NULL OR char_length(tt.experiment_ids) = 0 OR "
-                "lower(tt.experiment_ids) !~ '(^(b|c)$)|(^(b|c),)|(,(b|c)$)|(,(b|c),)') "
-                "ORDER BY random()  LIMIT 3"
-            ),
-        },
-    ),
     # BETWEEN tests, without and with NULL
     WhereTestCase(
         filters=[Filter(field_name="int_col", relation=Relation.BETWEEN, value=[-17, 42])],

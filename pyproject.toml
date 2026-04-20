@@ -59,7 +59,7 @@ dev = [
 ]
 
 [build-system]
-requires = ["uv_build>=0.9.4,<0.11.0"]
+requires = ["uv_build>=0.9.4"]
 build-backend = "uv_build"
 
 [project.scripts]
@@ -168,7 +168,7 @@ banned-from = [
 "xngin.apiserver.routers.common_api_types" = "capi"
 
 [tool.uv]
-required-version = ">=0.9.4,<0.11.0"
+required-version = ">=0.9.4"
 environments = [
     "sys_platform == 'darwin'",
     "sys_platform == 'linux'",
