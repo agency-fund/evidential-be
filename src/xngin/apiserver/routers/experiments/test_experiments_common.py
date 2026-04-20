@@ -71,6 +71,7 @@ def make_createexperimentrequest_json(
     experiment_type: str = "freq_preassigned",
     prior_type: PriorTypes = PriorTypes.NORMAL,
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
+    num_arms: int = 2,
 ):
     """Make a basic CreateExperimentRequest JSON object.
 
@@ -113,36 +114,38 @@ def make_createexperimentrequest_json(
                 }
             }
         case ExperimentsType.MAB_ONLINE:
+            arm_spec = {
+                "arm_name": "string",
+                "arm_description": "string",
+                "alpha_init": 50.0 if prior_type == PriorTypes.BETA else None,
+                "beta_init": 1.0 if prior_type == PriorTypes.BETA else None,
+                "mu_init": 10.0 if prior_type == PriorTypes.NORMAL else None,
+                "sigma_init": 1.0 if prior_type == PriorTypes.NORMAL else None,
+            }
+            arm_spec_2 = {
+                "arm_name": "string",
+                "arm_description": "string",
+                "alpha_init": 1.0 if prior_type == PriorTypes.BETA else None,
+                "beta_init": 50.0 if prior_type == PriorTypes.BETA else None,
+                "mu_init": -10.0 if prior_type == PriorTypes.NORMAL else None,
+                "sigma_init": 1.0 if prior_type == PriorTypes.NORMAL else None,
+            }
+            arms = (
+                [arm_spec, arm_spec_2] + [arm_spec for _ in range(num_arms - 2)]
+                if num_arms > 2
+                else [arm_spec, arm_spec_2]
+            )
             return {
                 "design_spec": {
                     "participant_type": participant_type,
                     "experiment_name": "test",
                     "description": "test",
-                    # Attach UTC tz, but use dates_equal() to compare to respect db storage support
                     "start_date": "2024-01-01T00:00:00+00:00",
-                    # default our experiment to end in the future
                     "end_date": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
                     "experiment_type": "mab_online",
                     "prior_type": prior_type,
                     "reward_type": reward_type,
-                    "arms": [
-                        {
-                            "arm_name": "string",
-                            "arm_description": "string",
-                            "alpha_init": 50.0 if prior_type == PriorTypes.BETA else None,
-                            "beta_init": 1.0 if prior_type == PriorTypes.BETA else None,
-                            "mu_init": 10.0 if prior_type == PriorTypes.NORMAL else None,
-                            "sigma_init": 1.0 if prior_type == PriorTypes.NORMAL else None,
-                        },
-                        {
-                            "arm_name": "string",
-                            "arm_description": "string",
-                            "alpha_init": 1.0 if prior_type == PriorTypes.BETA else None,
-                            "beta_init": 50.0 if prior_type == PriorTypes.BETA else None,
-                            "mu_init": -10.0 if prior_type == PriorTypes.NORMAL else None,
-                            "sigma_init": 1.0 if prior_type == PriorTypes.NORMAL else None,
-                        },
-                    ],
+                    "arms": arms,
                 }
             }
         case ExperimentsType.CMAB_ONLINE:

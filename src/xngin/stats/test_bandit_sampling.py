@@ -1,20 +1,26 @@
+import pytest
 from pydantic import TypeAdapter
 
+from xngin.apiserver.limits import TOP_TWO_BETA, TOP_TWO_MIN_ARMS
 from xngin.apiserver.routers.common_api_types import DesignSpec
 from xngin.apiserver.routers.common_enums import ExperimentState, ExperimentsType, LikelihoodTypes, PriorTypes
 from xngin.apiserver.routers.experiments.test_experiments_common import make_createexperimentrequest_json
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
-from xngin.stats.bandit_sampling import TOP_TWO_MIN_ARMS, choose_arm, update_arm
+from xngin.stats.bandit_sampling import choose_arm, update_arm
 
 
 def make_experiment_table(
-    experiment_type: ExperimentsType, prior_type: PriorTypes, reward_type: LikelihoodTypes
+    experiment_type: ExperimentsType,
+    prior_type: PriorTypes,
+    reward_type: LikelihoodTypes,
+    num_arms: int = 2,
 ) -> tables.Experiment:
     request = make_createexperimentrequest_json(
         experiment_type=experiment_type,
         prior_type=prior_type,
         reward_type=reward_type,
+        num_arms=num_arms,
     )
     design_spec: DesignSpec = TypeAdapter(DesignSpec).validate_python(request["design_spec"])
     experiment_converter = ExperimentStorageConverter.init_from_components(
@@ -107,45 +113,18 @@ def test_update_arm():
 
 # --- Top-Two Thompson Sampling tests ---
 
+N_DRAWS = 200
+EXPECTED_CHALLENGER_RATE = 1 - TOP_TWO_BETA
+
 
 def _make_many_arm_experiment(n_arms: int, prior_type: PriorTypes, reward_type: LikelihoodTypes) -> tables.Experiment:
-    """Create an experiment with N arms for testing Top-Two TS.
-
-    Builds a design spec with N identical arms using the existing helper
-    for schema-compatible fields, then overrides the arms list.
-    """
-    is_beta = prior_type == PriorTypes.BETA
-    arm_spec = {
-        "arm_name": "arm",
-        "arm_description": "arm",
-        "alpha_init": 1.0 if is_beta else None,
-        "beta_init": 1.0 if is_beta else None,
-        "mu_init": 0.0 if not is_beta else None,
-        "sigma_init": 1.0 if not is_beta else None,
-    }
-    # Start from the standard 2-arm request to get all required fields,
-    # then swap in our N-arm list.
-    request = make_createexperimentrequest_json(
+    """Create an experiment with N arms, reusing make_experiment_table."""
+    return make_experiment_table(
         experiment_type=ExperimentsType.MAB_ONLINE,
         prior_type=prior_type,
         reward_type=reward_type,
+        num_arms=n_arms,
     )
-    request["design_spec"]["arms"] = [arm_spec for _ in range(n_arms)]
-
-    design_spec: DesignSpec = TypeAdapter(DesignSpec).validate_python(request["design_spec"])
-    converter = ExperimentStorageConverter.init_from_components(
-        datasource_id="ds_id",
-        organization_id="org_id",
-        experiment_type=ExperimentsType.MAB_ONLINE,
-        design_spec=design_spec,
-        state=ExperimentState.COMMITTED,
-        stopped_assignments_at=None,
-        stopped_assignments_reason=None,
-    )
-    experiment = converter.get_experiment()
-    for i, arm in enumerate(experiment.arms):
-        arm.id = f"arm_{i}"
-    return experiment
 
 
 def test_top_two_returns_valid_arm_for_all_prior_types():
@@ -164,17 +143,17 @@ def test_top_two_sometimes_picks_challenger():
     """Top-Two TS should explore challengers even when one arm dominates.
 
     With 6 arms (≥5, so Top-Two is active) and arm_0 having alpha=1000,
-    Top-Two with β=0.9 should still pick a challenger ~10% of the time.
-    Regular TS with alpha=1000 vs Beta(1,1) would pick the dominant arm
-    nearly every time. We check that at least 10/200 selections are
-    non-dominant — this would fail under regular TS.
+    Top-Two should pick a challenger at roughly (1 - TOP_TWO_BETA) rate.
     """
     experiment = _make_many_arm_experiment(6, PriorTypes.BETA, LikelihoodTypes.BERNOULLI)
+    # Reset all arms to uniform, then make arm_0 dominant
+    for arm in experiment.arms:
+        arm.alpha, arm.beta = 1.0, 1.0
     experiment.arms[0].alpha = 1000.0
 
-    selections = [choose_arm(experiment=experiment, random_state=s).id for s in range(200)]
-    non_dominant = sum(1 for s in selections if s != "arm_0")
-    assert non_dominant >= 10, f"Expected Top-Two to explore challengers, but got {non_dominant}/200"
+    selections = [choose_arm(experiment=experiment, random_state=s).id for s in range(N_DRAWS)]
+    challenger_rate = sum(1 for s in selections if s != "arm_0") / N_DRAWS
+    assert challenger_rate == pytest.approx(EXPECTED_CHALLENGER_RATE, abs=0.05)
 
 
 def test_below_threshold_barely_explores_with_dominant_arm():
@@ -182,12 +161,13 @@ def test_below_threshold_barely_explores_with_dominant_arm():
 
     Same dominant prior as above, but with 4 arms (below Top-Two threshold).
     Regular TS with alpha=1000 vs Beta(1,1) picks the dominant arm nearly
-    every time. We check that non-dominant selections are ≤8/200 — this
-    would fail under Top-Two (which gets ~20+/200 empirically).
+    every time — challenger rate should be close to 0, not TOP_TWO_BETA.
     """
     experiment = _make_many_arm_experiment(TOP_TWO_MIN_ARMS - 1, PriorTypes.BETA, LikelihoodTypes.BERNOULLI)
+    for arm in experiment.arms:
+        arm.alpha, arm.beta = 1.0, 1.0
     experiment.arms[0].alpha = 1000.0
 
-    selections = [choose_arm(experiment=experiment, random_state=s).id for s in range(200)]
-    non_dominant = sum(1 for s in selections if s != "arm_0")
-    assert non_dominant <= 8, f"Expected regular TS to exploit dominant arm, but got {non_dominant}/200 non-dominant"
+    selections = [choose_arm(experiment=experiment, random_state=s).id for s in range(N_DRAWS)]
+    challenger_rate = sum(1 for s in selections if s != "arm_0") / N_DRAWS
+    assert challenger_rate < EXPECTED_CHALLENGER_RATE / 2
