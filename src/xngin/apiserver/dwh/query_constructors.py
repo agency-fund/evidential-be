@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from datetime import date, datetime
 
 import sqlalchemy
-from sqlalchemy import ColumnElement, Table, and_, or_, select
+from sqlalchemy import ColumnElement, Table, and_, or_, select, text
 
 from xngin.apiserver.routers.common_api_types import Filter, FilterValueTypes
 from xngin.apiserver.routers.common_enums import DataType, Relation
@@ -99,11 +99,10 @@ def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:
 def create_inspect_table_from_cursor_query(table_name: str, schema_name: str | None = None) -> sqlalchemy.Select:
     """Returns a zero-row SELECT used to read column metadata via cursor.description (driver-dependent).
 
-    We use SQLAlchemy's identifier quoting to prevent table-name-based SQL injection
-    (e.g. "foo; DROP TABLE bar" becomes a quoted identifier rather than executable SQL).
+    SQLAlchemy's identifier quoting is used to prevent SQL injection attacks.
     """
     table = Table(table_name, sqlalchemy.MetaData(), schema=schema_name)
-    return select(table).limit(0)
+    return select(text("*")).select_from(table).limit(0)
 
 
 def compose_query(sa_table: Table, select_columns: set[str], filters: list[ColumnElement], desired_n: int):

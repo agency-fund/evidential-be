@@ -22,6 +22,7 @@ from xngin.apiserver.dwh.dwh_test_support import (
 from xngin.apiserver.dwh.query_constructors import (
     compose_query,
     create_filter,
+    create_inspect_table_from_cursor_query,
     create_query_filters,
 )
 from xngin.apiserver.exceptions_common import LateValidationError
@@ -547,3 +548,25 @@ def test_allowed_date_or_datetime_filter_validation(column_type):
         col,
         Filter(field_name="x", relation=Relation.BETWEEN, value=["2024-01-01", "2024-12-31"]),
     )
+
+
+@pytest.mark.parametrize(
+    "table_name,schema_name,expected_sql",
+    [
+        ("foo", None, "SELECT * FROM foo LIMIT 0"),
+        ("--bar", "my;schema", 'SELECT * FROM "my;schema"."--bar" LIMIT 0'),
+    ],
+)
+def test_create_inspect_table_from_cursor_query(table_name, schema_name, expected_sql):
+    query = create_inspect_table_from_cursor_query(table_name, schema_name=schema_name)
+    actual = (
+        str(
+            query.compile(
+                dialect=sqlalchemy.dialects.postgresql.psycopg.dialect(),
+                compile_kwargs={"literal_binds": True},
+            )
+        )
+        .replace("\n", "")
+        .replace("  ", " ")
+    )
+    assert actual == expected_sql

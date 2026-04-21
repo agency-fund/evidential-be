@@ -152,7 +152,6 @@ class DwhSession:
         self,
         table_name: str,
         *,
-        schema_name: str | None = None,
         use_sa_autoload: bool | None = None,
     ) -> sqlalchemy.Table:
         if use_sa_autoload is None:
@@ -163,12 +162,11 @@ class DwhSession:
                 return sqlalchemy.Table(
                     table_name,
                     metadata,
-                    schema=schema_name,
                     autoload_with=self._safe_engine(),
                     quote=False,
                 )
             # This method of introspection should only be used if the db dialect doesn't support Sqlalchemy2 reflection.
-            return self._inspect_table_from_cursor_blocking(self._safe_engine(), table_name, schema_name)
+            return self._inspect_table_from_cursor_blocking(self._safe_engine(), table_name)
         except sqlalchemy.exc.ProgrammingError:
             logger.exception("Failed to create a Table! use_sa_autoload: {}", use_sa_autoload)
             raise
@@ -178,7 +176,7 @@ class DwhSession:
             raise CannotFindTableError(table_name, existing_tables) from nste
 
     def _inspect_table_from_cursor_blocking(
-        self, engine: sqlalchemy.engine.Engine, table_name: str, schema_name: str | None = None
+        self, engine: sqlalchemy.engine.Engine, table_name: str
     ) -> sqlalchemy.Table:
         """Creates a SQLAlchemy Table instance from cursor description metadata."""
 
@@ -186,7 +184,7 @@ class DwhSession:
         metadata = sqlalchemy.MetaData()
         try:
             with engine.begin() as connection:
-                query = query_constructors.create_inspect_table_from_cursor_query(table_name, schema_name)
+                query = query_constructors.create_inspect_table_from_cursor_query(table_name)
                 result = connection.execute(query)
                 description = result.cursor.description
                 for col in description:
@@ -255,14 +253,13 @@ class DwhSession:
         return await asyncio.to_thread(
             self._inspect_table_blocking,
             table_name,
-            schema_name=None,
             use_sa_autoload=use_sa_autoload,
         )
 
     def _inspect_table_with_descriptors_blocking(
         self, table_name: str, unique_id_field: str, use_sa_autoload: bool | None = None
     ) -> InspectTableWithDescriptorsResult:
-        sa_table = self._inspect_table_blocking(table_name, schema_name=None, use_sa_autoload=use_sa_autoload)
+        sa_table = self._inspect_table_blocking(table_name, use_sa_autoload=use_sa_autoload)
         db_schema = generate_field_descriptors(sa_table, unique_id_field)
         return InspectTableWithDescriptorsResult(sa_table=sa_table, db_schema=db_schema)
 
@@ -306,7 +303,7 @@ class DwhSession:
         n: int,
         use_sa_autoload: bool | None = None,
     ) -> GetParticipantsResult:
-        sa_table = self._inspect_table_blocking(table_name, schema_name=None, use_sa_autoload=use_sa_autoload)
+        sa_table = self._inspect_table_blocking(table_name, use_sa_autoload=use_sa_autoload)
         participants = self._query_for_participants_blocking(sa_table, select_columns, filters, n)
         return GetParticipantsResult(sa_table=sa_table, participants=participants)
 
@@ -431,7 +428,6 @@ class DwhSession:
         # Handle search_path for PostgreSQL
         if isinstance(self.dwh_config, Dsn) and self.dwh_config.search_path:
             search_path_sql_arg = self.dwh_config.search_path
-            assert search_path_sql_arg is not None  # type-narrowing for mypy
 
             @event.listens_for(engine, "connect", insert=True)
             def set_search_path(dbapi_connection: DBAPIConnection, _connection_record):
