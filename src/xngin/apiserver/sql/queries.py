@@ -1,8 +1,9 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 from loguru import logger
+from psycopg.rows import TupleRow
 
 from xngin.ops import performance
 
@@ -71,3 +72,10 @@ async def select_as_csv(
                 yield_count += 1
                 yield bytes(buffer)
     logger.info("select_as_csv streamed {} chunks in {}s", yield_count, timings.elapsed)
+
+
+async def stream(session: AsyncSession, select_query: Template, size: int) -> AsyncGenerator[TupleRow]:
+    """Streams the results of a query, asking libpq to buffer up to size rows at a time."""
+    async with with_driver_connection(session) as driver_conn, driver_conn.cursor() as cursor:
+        async for row in cursor.stream(select_query, size=size):
+            yield row

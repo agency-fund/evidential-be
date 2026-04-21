@@ -1,5 +1,7 @@
+import pytest
 from pydantic import TypeAdapter
 
+from xngin.apiserver.limits import TOP_TWO_BETA, TOP_TWO_MIN_ARMS
 from xngin.apiserver.routers.common_api_types import DesignSpec
 from xngin.apiserver.routers.common_enums import ExperimentState, ExperimentsType, LikelihoodTypes, PriorTypes
 from xngin.apiserver.routers.experiments.test_experiments_common import make_createexperimentrequest_json
@@ -9,12 +11,16 @@ from xngin.stats.bandit_sampling import choose_arm, update_arm
 
 
 def make_experiment_table(
-    experiment_type: ExperimentsType, prior_type: PriorTypes, reward_type: LikelihoodTypes
+    experiment_type: ExperimentsType,
+    prior_type: PriorTypes,
+    reward_type: LikelihoodTypes,
+    num_arms: int = 2,
 ) -> tables.Experiment:
     request = make_createexperimentrequest_json(
         experiment_type=experiment_type,
         prior_type=prior_type,
         reward_type=reward_type,
+        num_arms=num_arms,
     )
     design_spec: DesignSpec = TypeAdapter(DesignSpec).validate_python(request["design_spec"])
     experiment_converter = ExperimentStorageConverter.init_from_components(
@@ -103,3 +109,135 @@ def test_update_arm():
     mu, covariance = update_arm(experiment=normal_experiment, arm_to_update=arm, outcomes=[0.0])
     assert arm.mu != mu
     assert arm.covariance != covariance
+
+
+# --- Top-Two Thompson Sampling tests ---
+
+N_DRAWS = 200
+EXPECTED_CHALLENGER_RATE = 1 - TOP_TWO_BETA
+
+
+def _make_many_arm_experiment(
+    n_arms: int,
+    prior_type: PriorTypes,
+    reward_type: LikelihoodTypes,
+    experiment_type: ExperimentsType = ExperimentsType.MAB_ONLINE,
+) -> tables.Experiment:
+    """Create an experiment with N arms, reusing make_experiment_table."""
+    return make_experiment_table(
+        experiment_type=experiment_type,
+        prior_type=prior_type,
+        reward_type=reward_type,
+        num_arms=n_arms,
+    )
+
+
+def test_top_two_returns_valid_arm_for_all_prior_types():
+    """With ≥5 arms, Top-Two TS returns an arm that belongs to the experiment."""
+    for prior, reward in [
+        (PriorTypes.BETA, LikelihoodTypes.BERNOULLI),
+        (PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
+        (PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
+    ]:
+        experiment = _make_many_arm_experiment(TOP_TWO_MIN_ARMS, prior, reward)
+        arm = choose_arm(experiment=experiment, random_state=42)
+        assert arm.id in {a.id for a in experiment.arms}
+
+
+def test_top_two_sometimes_picks_challenger():
+    """Top-Two TS should explore challengers even when one arm dominates.
+
+    With 6 arms (≥5, so Top-Two is active) and arm_0 having alpha=1000,
+    Top-Two should pick a challenger at roughly (1 - TOP_TWO_BETA) rate.
+    """
+    experiment = _make_many_arm_experiment(6, PriorTypes.BETA, LikelihoodTypes.BERNOULLI)
+    # Reset all arms to uniform, then make arm_0 dominant
+    for arm in experiment.arms:
+        arm.alpha, arm.beta = 1.0, 1.0
+    experiment.arms[0].alpha = 1000.0
+
+    selections = [choose_arm(experiment=experiment, random_state=s).id for s in range(N_DRAWS)]
+    challenger_rate = sum(1 for s in selections if s != "arm_0") / N_DRAWS
+    assert challenger_rate == pytest.approx(EXPECTED_CHALLENGER_RATE, abs=0.05)
+
+
+def test_below_threshold_barely_explores_with_dominant_arm():
+    """With <5 arms, regular TS is used — a dominant arm should win almost always.
+
+    Same dominant prior as above, but with 4 arms (below Top-Two threshold).
+    Regular TS with alpha=1000 vs Beta(1,1) picks the dominant arm nearly
+    every time — challenger rate should be close to 0, not TOP_TWO_BETA.
+    """
+    experiment = _make_many_arm_experiment(TOP_TWO_MIN_ARMS - 1, PriorTypes.BETA, LikelihoodTypes.BERNOULLI)
+    for arm in experiment.arms:
+        arm.alpha, arm.beta = 1.0, 1.0
+    experiment.arms[0].alpha = 1000.0
+
+    selections = [choose_arm(experiment=experiment, random_state=s).id for s in range(N_DRAWS)]
+    challenger_rate = sum(1 for s in selections if s != "arm_0") / N_DRAWS
+    assert challenger_rate < EXPECTED_CHALLENGER_RATE / 2
+
+
+def test_top_two_sometimes_picks_challenger_normal_mab():
+    """Top-Two TS for Normal-Normal MAB should explore challengers when one arm dominates."""
+    experiment = _make_many_arm_experiment(6, PriorTypes.NORMAL, LikelihoodTypes.NORMAL)
+    for arm in experiment.arms:
+        arm.mu, arm.covariance = [0.0], [[1.0]]
+    experiment.arms[0].mu = [1000.0]
+
+    selections = [choose_arm(experiment=experiment, random_state=s).id for s in range(N_DRAWS)]
+    challenger_rate = sum(1 for s in selections if s != "arm_0") / N_DRAWS
+    assert challenger_rate == pytest.approx(EXPECTED_CHALLENGER_RATE, abs=0.05)
+
+
+def test_below_threshold_barely_explores_with_dominant_arm_normal_mab():
+    """With <5 arms and Normal-Normal MAB, regular TS picks the dominant arm nearly every time."""
+    experiment = _make_many_arm_experiment(TOP_TWO_MIN_ARMS - 1, PriorTypes.NORMAL, LikelihoodTypes.NORMAL)
+    for arm in experiment.arms:
+        arm.mu, arm.covariance = [0.0], [[1.0]]
+    experiment.arms[0].mu = [1000.0]
+
+    selections = [choose_arm(experiment=experiment, random_state=s).id for s in range(N_DRAWS)]
+    challenger_rate = sum(1 for s in selections if s != "arm_0") / N_DRAWS
+    assert challenger_rate < EXPECTED_CHALLENGER_RATE / 2
+
+
+def test_top_two_sometimes_picks_challenger_cmab():
+    """Top-Two TS for Normal-Normal CMAB should explore challengers when one arm dominates."""
+    experiment = _make_many_arm_experiment(
+        6, PriorTypes.NORMAL, LikelihoodTypes.NORMAL, experiment_type=ExperimentsType.CMAB_ONLINE
+    )
+    context_len = len(experiment.contexts)
+    for arm in experiment.arms:
+        arm.mu = [0.0] * context_len
+        arm.covariance = [[1.0 if i == j else 0.0 for j in range(context_len)] for i in range(context_len)]
+    experiment.arms[0].mu = [1000.0] * context_len
+
+    context_vals = [1.0] * context_len
+    selections = [
+        choose_arm(experiment=experiment, sorted_context_vals=context_vals, random_state=s).id for s in range(N_DRAWS)
+    ]
+    challenger_rate = sum(1 for s in selections if s != "arm_0") / N_DRAWS
+    assert challenger_rate == pytest.approx(EXPECTED_CHALLENGER_RATE, abs=0.05)
+
+
+def test_below_threshold_barely_explores_with_dominant_arm_cmab():
+    """With <5 arms and Normal-Normal CMAB, regular TS picks the dominant arm nearly every time."""
+    experiment = _make_many_arm_experiment(
+        TOP_TWO_MIN_ARMS - 1,
+        PriorTypes.NORMAL,
+        LikelihoodTypes.NORMAL,
+        experiment_type=ExperimentsType.CMAB_ONLINE,
+    )
+    context_len = len(experiment.contexts)
+    for arm in experiment.arms:
+        arm.mu = [0.0] * context_len
+        arm.covariance = [[1.0 if i == j else 0.0 for j in range(context_len)] for i in range(context_len)]
+    experiment.arms[0].mu = [1000.0] * context_len
+
+    context_vals = [1.0] * context_len
+    selections = [
+        choose_arm(experiment=experiment, sorted_context_vals=context_vals, random_state=s).id for s in range(N_DRAWS)
+    ]
+    challenger_rate = sum(1 for s in selections if s != "arm_0") / N_DRAWS
+    assert challenger_rate < EXPECTED_CHALLENGER_RATE / 2

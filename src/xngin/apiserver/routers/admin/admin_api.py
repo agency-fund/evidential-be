@@ -1666,9 +1666,9 @@ async def analyze_cmab_experiment(
             f"retrieve an experiment analysis."
         )
 
-    context_inputs = body.context_inputs
-    context_defns = experiment.contexts
-    sorted_context_inputs = sort_contexts_by_id_or_raise(context_defns, context_inputs)
+    if body.context_inputs is None:
+        raise LateValidationError("context_inputs must be provided when analyzing a CMAB experiment.")
+    sorted_context_inputs = sort_contexts_by_id_or_raise(experiment.contexts, body.context_inputs)
 
     return experiments_common.analyze_experiment_bandit_impl(
         experiment, context_vals=[ci.context_value for ci in sorted_context_inputs]

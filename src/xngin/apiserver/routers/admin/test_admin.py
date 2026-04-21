@@ -1674,6 +1674,9 @@ async def test_create_and_get_freq_preassigned_experiment(
     assert parsed_experiment_id is not None
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
     assert len(parsed_arm_ids) == 2
+    assert isinstance(created_experiment.design_spec, PreassignedFrequentistExperimentSpec)
+    assert len(created_experiment.design_spec.strata) == 1, created_experiment.design_spec.strata
+    assert created_experiment.design_spec.strata[0].field_name == "gender"
 
     # Verify basic response
     assert created_experiment.stopped_assignments_at is not None
@@ -1719,6 +1722,21 @@ async def test_create_and_get_freq_preassigned_experiment(
         ignore_type_in_groups=[(CreateExperimentResponse, GetExperimentResponse)],
     )
     assert not diff, f"Objects differ:\n{diff.pretty()}"
+    # Verify that participant field metadata was stored correctly.
+    experiment_fields = admin_experiment.participant_type.fields
+    assert len(experiment_fields) == 3
+    unique_id_field = next((f for f in experiment_fields if f.is_unique_id), None)
+    assert unique_id_field is not None
+    assert unique_id_field.data_type == "bigint"
+    gender_field = next((f for f in experiment_fields if f.field_name == "gender"), None)
+    assert gender_field is not None
+    assert gender_field.is_strata
+    assert gender_field.data_type == "character varying"
+    is_onboarded_field = next((f for f in experiment_fields if f.field_name == "is_onboarded"), None)
+    assert is_onboarded_field is not None
+    assert is_onboarded_field.is_metric
+    assert is_onboarded_field.is_strata is False
+    assert is_onboarded_field.data_type == "boolean"
 
     # Verify assignments were created
     actual_assignments = eclient.get_experiment_assignments(
@@ -1729,9 +1747,9 @@ async def test_create_and_get_freq_preassigned_experiment(
     # Check one assignment to see if it looks roughly right
     sample_assignment = actual_assignments.assignments[0]
     assert sample_assignment.arm_id in {arm1_id, arm2_id}
-    assert sample_assignment.strata is not None and len(sample_assignment.strata) == 2
-    for stratum in sample_assignment.strata:
-        assert stratum.field_name in {"is_onboarded", "gender"}
+    assert sample_assignment.strata is not None
+    assert len(sample_assignment.strata) == 1
+    assert sample_assignment.strata[0].field_name == "gender"
 
     # Check for approximate balance in arm assignment
     num_control = sum(1 for a in actual_assignments.assignments if a.arm_id == arm1_id)
@@ -3662,3 +3680,75 @@ async def test_list_organization_events_pagination_with_same_timestamp_is_id_des
     assert page2.items[0].id == expected_tied_order[1]
     assert page2.items[0].id != page1.items[0].id
     assert page2.items[0].created_at == tied_created_at
+
+
+async def test_list_experiments(
+    testing_datasource,
+    testing_datasource_other,
+    aclient: AdminAPIClient,
+):
+    """Test that listing experiments returns only non-abandoned/aborted experiments, in reverse chronological order,
+    and scoped to the correct organization."""
+    ds_id = testing_datasource.ds.id
+    org_id = testing_datasource.org.id
+
+    # Create three experiments: one will be committed, one left as assigned, one abandoned.
+    exp1 = aclient.create_experiment(
+        datasource_id=ds_id,
+        body=make_create_freq_online_experiment_request(),
+        random_state=42,
+    ).data
+    exp2 = aclient.create_experiment(
+        datasource_id=ds_id,
+        body=make_create_freq_online_experiment_request(),
+        random_state=42,
+    ).data
+    exp3 = aclient.create_experiment(
+        datasource_id=ds_id,
+        body=make_create_freq_online_experiment_request(),
+        random_state=42,
+    ).data
+    aclient.commit_experiment(datasource_id=ds_id, experiment_id=exp1.experiment_id)
+    aclient.abandon_experiment(datasource_id=ds_id, experiment_id=exp3.experiment_id)
+
+    # Create an experiment on a *different* organization's datasource to verify isolation.
+    other_ds_id = testing_datasource_other.ds.id
+    aclient.add_member_to_organization(
+        organization_id=testing_datasource_other.org.id,
+        body=AddMemberToOrganizationRequest(email=PRIVILEGED_EMAIL),
+    )
+    aclient.create_experiment(
+        datasource_id=other_ds_id,
+        body=make_create_freq_online_experiment_request(),
+        random_state=42,
+    )
+
+    experiments = aclient.list_organization_experiments(organization_id=org_id).data
+    experiment_ids = [item.experiment_id for item in experiments.items]
+
+    # exp3 (abandoned) should be excluded; the other-org experiment should be excluded.
+    assert len(experiments.items) == 2
+    assert exp3.experiment_id not in experiment_ids
+
+    # Verify ordering: most recently created first (exp2 before exp1).
+    assert experiment_ids == [exp2.experiment_id, exp1.experiment_id]
+
+    # Verify states.
+    states = {item.experiment_id: item.state for item in experiments.items}
+    assert states[exp1.experiment_id] == ExperimentState.COMMITTED
+    assert states[exp2.experiment_id] == ExperimentState.ASSIGNED
+
+    # Verify design_spec round-trips correctly.
+    for item in experiments.items:
+        assert item.design_spec is not None
+        assert isinstance(item.design_spec, OnlineFrequentistExperimentSpec)
+
+
+async def test_list_experiments_empty(
+    testing_datasource,
+    aclient: AdminAPIClient,
+):
+    """Test that listing experiments for an organization with no experiments returns an empty list."""
+    org_id = testing_datasource.org.id
+    experiments = aclient.list_organization_experiments(organization_id=org_id).data
+    assert experiments.items == []

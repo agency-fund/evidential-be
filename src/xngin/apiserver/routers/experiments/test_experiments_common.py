@@ -1,4 +1,3 @@
-import inspect
 from contextlib import AbstractContextManager
 from contextlib import nullcontext as does_not_raise
 from dataclasses import dataclass
@@ -8,7 +7,6 @@ from typing import cast
 import numpy as np
 import pytest
 from deepdiff import DeepDiff
-from fastapi import HTTPException
 from pydantic import HttpUrl, TypeAdapter
 from sqlalchemy import Boolean, Column, MetaData, String, Table, select
 from sqlalchemy.dialects import postgresql
@@ -45,10 +43,7 @@ from xngin.apiserver.routers.common_api_types import (
 )
 from xngin.apiserver.routers.common_enums import DataType, ExperimentState, Relation, StopAssignmentReason
 from xngin.apiserver.routers.experiments.experiments_common import (
-    AbandonExperimentResult,
-    CommitExperimentResult,
     ExperimentsAssignmentError,
-    abandon_experiment_impl,
     analyze_experiment_freq_impl,
     commit_experiment_impl,
     create_assignment_for_participant,
@@ -59,10 +54,8 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     fetch_fields_or_raise,
     get_assign_summary,
     get_existing_assignment_for_participant,
-    get_experiment_assignments_impl,
     get_experiment_impl,
     get_or_create_assignment_for_participant,
-    list_organization_or_datasource_experiments_impl,
     make_participants_def_from_experiment,
     update_bandit_arm_with_outcome_impl,
 )
@@ -77,6 +70,7 @@ def make_createexperimentrequest_json(
     experiment_type: str = "freq_preassigned",
     prior_type: PriorTypes = PriorTypes.NORMAL,
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
+    num_arms: int = 2,
 ):
     """Make a basic CreateExperimentRequest JSON object.
 
@@ -120,38 +114,57 @@ def make_createexperimentrequest_json(
                 },
             }
         case ExperimentsType.MAB_ONLINE:
+            arm_spec = {
+                "arm_name": "string",
+                "arm_description": "string",
+                "alpha_init": 50.0 if prior_type == PriorTypes.BETA else None,
+                "beta_init": 1.0 if prior_type == PriorTypes.BETA else None,
+                "mu_init": 10.0 if prior_type == PriorTypes.NORMAL else None,
+                "sigma_init": 1.0 if prior_type == PriorTypes.NORMAL else None,
+            }
+            arm_spec_2 = {
+                "arm_name": "string",
+                "arm_description": "string",
+                "alpha_init": 1.0 if prior_type == PriorTypes.BETA else None,
+                "beta_init": 50.0 if prior_type == PriorTypes.BETA else None,
+                "mu_init": -10.0 if prior_type == PriorTypes.NORMAL else None,
+                "sigma_init": 1.0 if prior_type == PriorTypes.NORMAL else None,
+            }
+            arms = (
+                [arm_spec, arm_spec_2] + [arm_spec for _ in range(num_arms - 2)]
+                if num_arms > 2
+                else [arm_spec, arm_spec_2]
+            )
             return {
                 "design_spec": {
                     "experiment_name": "test",
                     "description": "test",
-                    # Attach UTC tz, but use dates_equal() to compare to respect db storage support
                     "start_date": "2024-01-01T00:00:00+00:00",
-                    # default our experiment to end in the future
                     "end_date": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
                     "experiment_type": "mab_online",
                     "prior_type": prior_type,
                     "reward_type": reward_type,
-                    "arms": [
-                        {
-                            "arm_name": "string",
-                            "arm_description": "string",
-                            "alpha_init": 50.0 if prior_type == PriorTypes.BETA else None,
-                            "beta_init": 1.0 if prior_type == PriorTypes.BETA else None,
-                            "mu_init": 10.0 if prior_type == PriorTypes.NORMAL else None,
-                            "sigma_init": 1.0 if prior_type == PriorTypes.NORMAL else None,
-                        },
-                        {
-                            "arm_name": "string",
-                            "arm_description": "string",
-                            "alpha_init": 1.0 if prior_type == PriorTypes.BETA else None,
-                            "beta_init": 50.0 if prior_type == PriorTypes.BETA else None,
-                            "mu_init": -10.0 if prior_type == PriorTypes.NORMAL else None,
-                            "sigma_init": 1.0 if prior_type == PriorTypes.NORMAL else None,
-                        },
-                    ],
+                    "arms": arms,
                 }
             }
         case ExperimentsType.CMAB_ONLINE:
+            arm_spec = {
+                "arm_name": "Arm 1",
+                "arm_description": "Arm 1",
+                "mu_init": 10.0,
+                "sigma_init": 1.0,
+            }
+            arm_spec_2 = {
+                "arm_name": "Arm 2",
+                "arm_description": "Arm 2",
+                "mu_init": -10.0,
+                "sigma_init": 1.0,
+            }
+            cmab_arms = (
+                [arm_spec, arm_spec_2] + [arm_spec for _ in range(num_arms - 2)]
+                if num_arms > 2
+                else [arm_spec, arm_spec_2]
+            )
             return {
                 "design_spec": {
                     "experiment_name": "test",
@@ -163,20 +176,7 @@ def make_createexperimentrequest_json(
                     "experiment_type": "cmab_online",
                     "prior_type": prior_type,
                     "reward_type": reward_type,
-                    "arms": [
-                        {
-                            "arm_name": "Arm 1",
-                            "arm_description": "Arm 1",
-                            "mu_init": 10.0,
-                            "sigma_init": 1.0,
-                        },
-                        {
-                            "arm_name": "Arm 2",
-                            "arm_description": "Arm 2",
-                            "mu_init": -10.0,
-                            "sigma_init": 1.0,
-                        },
-                    ],
+                    "arms": cmab_arms,
                     "contexts": [
                         {
                             "context_name": "Context 1",
@@ -1483,99 +1483,6 @@ async def test_create_experiment_impl_no_metric_stratification(
     assert abs(num_control - num_treat) <= 1
 
 
-@pytest.mark.parametrize(
-    "method_under_test,initial_state,expected_state,expected_status,expected_detail",
-    [
-        # Success case
-        (
-            commit_experiment_impl,
-            ExperimentState.ASSIGNED,
-            ExperimentState.COMMITTED,
-            CommitExperimentResult.COMMITTED,
-            None,
-        ),
-        # No-op
-        (
-            commit_experiment_impl,
-            ExperimentState.COMMITTED,
-            ExperimentState.COMMITTED,
-            CommitExperimentResult.COMMITTED,
-            None,
-        ),
-        # Failure cases
-        (
-            commit_experiment_impl,
-            ExperimentState.DESIGNING,
-            ExperimentState.DESIGNING,
-            CommitExperimentResult.INVALID_STATE,
-            "Invalid state: designing",
-        ),
-        (
-            commit_experiment_impl,
-            ExperimentState.ABORTED,
-            ExperimentState.ABORTED,
-            CommitExperimentResult.INVALID_STATE,
-            "Invalid state: aborted",
-        ),
-        # Success cases
-        (
-            abandon_experiment_impl,
-            ExperimentState.DESIGNING,
-            ExperimentState.ABANDONED,
-            AbandonExperimentResult.ABANDONED,
-            None,
-        ),
-        (
-            abandon_experiment_impl,
-            ExperimentState.ASSIGNED,
-            ExperimentState.ABANDONED,
-            AbandonExperimentResult.ABANDONED,
-            None,
-        ),
-        # No-op
-        (
-            abandon_experiment_impl,
-            ExperimentState.ABANDONED,
-            ExperimentState.ABANDONED,
-            AbandonExperimentResult.ABANDONED,
-            None,
-        ),
-        # Failure case
-        (
-            abandon_experiment_impl,
-            ExperimentState.COMMITTED,
-            ExperimentState.COMMITTED,
-            AbandonExperimentResult.INVALID_STATE,
-            "Invalid state: committed",
-        ),
-    ],
-)
-async def test_state_setting_experiment_impl(
-    xngin_session,
-    testing_datasource,
-    method_under_test,
-    initial_state,
-    expected_state,
-    expected_status,
-    expected_detail,
-):
-    # Initialize our state with an existing experiment who's state we want to modify.
-    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds, state=initial_state)
-
-    try:
-        sig = inspect.signature(method_under_test)
-        if len(sig.parameters) == 2:
-            response = await method_under_test(xngin_session, experiment)
-        else:
-            response = await method_under_test(experiment)
-    except HTTPException as e:
-        assert e.status_code == expected_status  # noqa: PT017
-        assert e.detail == expected_detail  # noqa: PT017
-    else:
-        assert response == expected_status
-        assert experiment.state == expected_state
-
-
 async def test_get_experiment_impl_of_legacy_experiment(xngin_session, testing_datasource):
     """Basic test for get_experiment_impl returning expected properties."""
     # Insert a committed experiment and get its ID.
@@ -1607,222 +1514,6 @@ async def test_get_experiment_impl_of_legacy_experiment(xngin_session, testing_d
     assert result.webhooks == ["wh1"]
     diff = DeepDiff(result.design_spec, expected_design_spec, exclude_regex_paths=[r"arms\[\d+\].arm_id"])
     assert not diff, f"Objects differ:\n{diff.pretty()}"
-
-
-async def test_list_experiments_impl(
-    xngin_session,
-    testing_datasource,
-    testing_datasource_other,
-):
-    """Test that we only get experiments in a valid state for the specified datasource."""
-    ds = testing_datasource.ds
-    table = TESTING_DWH_PARTICIPANT_DEF.table_name
-    pk = "id"
-    experiment1_data = await make_insertable_experiment(ds, ExperimentState.ASSIGNED, table_name=table, primary_key=pk)
-    experiment2_data = await make_insertable_experiment(ds, ExperimentState.COMMITTED, table_name=table, primary_key=pk)
-    experiment3_data = await make_insertable_experiment(ds, ExperimentState.DESIGNING, table_name=table, primary_key=pk)
-    experiment4_data = await make_insertable_experiment(ds, ExperimentState.ABORTED, table_name=table, primary_key=pk)
-    # One more experiment associated with a *different* datasource.
-    experiment5_data = await make_insertable_experiment(
-        testing_datasource_other.ds, ExperimentState.ASSIGNED, table_name=table, primary_key=pk
-    )
-    # Set the created_at time to test ordering
-    experiment1_data[0].created_at = datetime.now(UTC) - timedelta(days=1)
-    experiment2_data[0].created_at = datetime.now(UTC)
-    experiment3_data[0].created_at = datetime.now(UTC) + timedelta(days=1)
-    experiment_data = [experiment1_data, experiment2_data, experiment3_data, experiment4_data, experiment5_data]
-
-    xngin_session.add_all([data[0] for data in experiment_data])
-    await xngin_session.commit()
-
-    experiments = await list_organization_or_datasource_experiments_impl(
-        xngin_session=xngin_session, datasource_id=testing_datasource.ds.id
-    )
-    # experiment5 excluded due to datasource mismatch
-    assert len(experiments.items) == 3
-
-    # Verify that the experiments are in the correct order
-    actual1_config = experiments.items[2]  # experiment1 is last as it's oldest
-    actual2_config = experiments.items[1]
-    actual3_config = experiments.items[0]
-    assert actual1_config.state == ExperimentState.ASSIGNED
-    diff = DeepDiff(
-        actual1_config.design_spec, experiment1_data[1], exclude_regex_paths=["experiment_id", r"arms\[\d+\].arm_id"]
-    )
-    assert not diff, f"Objects differ:\n{diff.pretty()}"
-    assert actual2_config.state == ExperimentState.COMMITTED
-    diff = DeepDiff(
-        actual2_config.design_spec, experiment2_data[1], exclude_regex_paths=["experiment_id", r"arms\[\d+\].arm_id"]
-    )
-    assert not diff, f"Objects differ:\n{diff.pretty()}"
-    assert actual3_config.state == ExperimentState.DESIGNING
-    diff = DeepDiff(
-        actual3_config.design_spec, experiment3_data[1], exclude_regex_paths=["experiment_id", r"arms\[\d+\].arm_id"]
-    )
-    assert not diff, f"Objects differ:\n{diff.pretty()}"
-
-
-async def test_list_experiments_impl_alt_scenarios(
-    xngin_session,
-    testing_datasource,
-):
-    with pytest.raises(ValueError, match="Either datasource_id or organization_id must be provided"):
-        await list_organization_or_datasource_experiments_impl(xngin_session=xngin_session)
-
-    experiment1_data = await make_insertable_experiment(
-        testing_datasource.ds,
-        ExperimentState.ASSIGNED,
-        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
-        primary_key="id",
-    )
-    xngin_session.add(experiment1_data[0])
-    org_list = await list_organization_or_datasource_experiments_impl(
-        xngin_session=xngin_session, organization_id=testing_datasource.org.id
-    )
-    ds_list = await list_organization_or_datasource_experiments_impl(
-        xngin_session=xngin_session,
-        datasource_id=testing_datasource.ds.id,
-    )
-    both_list = await list_organization_or_datasource_experiments_impl(
-        xngin_session=xngin_session,
-        datasource_id=testing_datasource.ds.id,
-        organization_id=testing_datasource.org.id,
-    )
-    assert len(org_list.items) == 1
-    assert len(ds_list.items) == 1
-    assert len(both_list.items) == 1
-    assert org_list == ds_list
-    assert ds_list == both_list
-
-    bad_list = await list_organization_or_datasource_experiments_impl(
-        xngin_session=xngin_session,
-        datasource_id="bad_id",
-        organization_id=testing_datasource.org.id,
-    )
-    assert bad_list.items == []
-
-
-async def test_get_experiment_assignments_impl(xngin_session, testing_datasource):
-    # First insert an experiment with assignments
-    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
-    await xngin_session.commit()
-
-    experiment_id = experiment.id
-    arm1_id = experiment.arms[0].id
-    arm2_id = experiment.arms[1].id
-    arm_assignments = [
-        tables.ArmAssignment(
-            experiment_id=experiment_id,
-            participant_type="",
-            participant_id="p1",
-            arm_id=arm1_id,
-            strata=[{"field_name": "gender", "strata_value": "F"}],
-        ),
-        tables.ArmAssignment(
-            experiment_id=experiment_id,
-            participant_type="",
-            participant_id="p2",
-            arm_id=arm2_id,
-            strata=[{"field_name": "gender", "strata_value": "M"}],
-        ),
-    ]
-    xngin_session.add_all(arm_assignments)
-    xngin_session.add_all([
-        tables.ArmStats(arm_id=arm1_id, population=1),
-        tables.ArmStats(arm_id=arm2_id, population=1),
-    ])
-    await xngin_session.commit()
-    await xngin_session.refresh(experiment, ["arms", "arm_assignments"])
-
-    data = get_experiment_assignments_impl(experiment)
-
-    # Check the response structure
-    assert data.experiment_id == experiment.id
-    actual_assign_summary = await get_assign_summary(
-        xngin_session, experiment.id, None, ExperimentsType(experiment.experiment_type)
-    )
-    assert data.sample_size == actual_assign_summary.sample_size
-    assert data.balance_check == ExperimentStorageConverter(experiment).get_balance_check()
-
-    # Check assignments
-    assignments = data.assignments
-    assert len(assignments) == 2
-
-    # Verify first assignment
-    assert assignments[0].participant_id == "p1"
-    assert str(assignments[0].arm_id) == arm1_id
-    assert assignments[0].arm_name == "control"
-    assert assignments[0].strata is not None and len(assignments[0].strata) == 1
-    assert assignments[0].strata[0].field_name == "gender"
-    assert assignments[0].strata[0].strata_value == "F"
-    assert assignments[0].created_at is not None
-
-    # Verify second assignment
-    assert assignments[1].participant_id == "p2"
-    assert str(assignments[1].arm_id) == arm2_id
-    assert assignments[1].arm_name == "treatment"
-    assert assignments[1].strata is not None and len(assignments[1].strata) == 1
-    assert assignments[1].strata[0].field_name == "gender"
-    assert assignments[1].strata[0].strata_value == "M"
-    assert assignments[1].created_at is not None
-
-
-async def test_get_experiment_mab_assignments_impl(xngin_session, testing_datasource):
-    # First insert an experiment with assignments
-    experiment = await insert_experiment_and_arms(
-        xngin_session, testing_datasource.ds, experiment_type=ExperimentsType.MAB_ONLINE
-    )
-    await xngin_session.commit()
-
-    experiment_id = experiment.id
-    arm1_id = experiment.arms[0].id
-    arm2_id = experiment.arms[1].id
-    arm_assignments = [
-        tables.Draw(
-            experiment_id=experiment_id,
-            participant_type="",
-            participant_id="p1",
-            arm_id=arm1_id,
-            current_mu=experiment.arms[0].mu,
-            current_covariance=experiment.arms[0].covariance,
-        ),
-        tables.Draw(
-            experiment_id=experiment_id,
-            participant_type="",
-            participant_id="p2",
-            arm_id=arm2_id,
-            current_mu=experiment.arms[1].mu,
-            current_covariance=experiment.arms[1].covariance,
-        ),
-    ]
-    xngin_session.add_all(arm_assignments)
-    await xngin_session.commit()
-    await xngin_session.refresh(experiment, ["arms", "draws"])
-
-    data = get_experiment_assignments_impl(experiment)
-
-    # Check the response structure
-    assert data.experiment_id == experiment.id
-
-    # Check assignments
-    assignments = data.assignments
-    assert len(assignments) == 2
-
-    # Verify first assignment
-    assert assignments[0].participant_id == "p1"
-    assert str(assignments[0].arm_id) == arm1_id
-    assert assignments[0].arm_name == "string"
-
-    # Verify second assignment
-    assert assignments[1].participant_id == "p2"
-    assert str(assignments[1].arm_id) == arm2_id
-    assert assignments[1].arm_name == "string"
-
-    for assignment in assignments:
-        assert assignment.outcome is None
-        assert assignment.context_values is None
-        assert assignment.observed_at is None
-        assert assignment.created_at is not None
 
 
 async def make_experiment_with_assignments(
