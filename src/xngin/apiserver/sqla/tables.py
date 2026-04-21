@@ -17,6 +17,7 @@ from sqlalchemy.types import TypeEngine
 
 from xngin.apiserver.settings import DatasourceConfig, EncryptedDsn
 from xngin.events import EventDataTypes
+from xngin.xsecrets import secretservice
 
 ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -133,15 +134,19 @@ class Webhook(Base):
 class TurnConnection(Base):
     """Stores an organization's connection to a Turn.io workspace.
 
-    One connection per organization. The API token lets the Evidential backend call the
-    Turn.io API (e.g. to list journeys) on behalf of the organization.
+    One connection per organization. The API token is encrypted at rest; call
+    get_turn_api_token() to retrieve the plaintext when making outbound requests
+    to Turn, and set_turn_api_token() to configure or rotate it.
     """
 
     __tablename__ = "turn_connections"
 
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True)
-    # The Turn.io API token used to authenticate against the Turn API on behalf of the org.
-    turn_api_token: Mapped[str] = mapped_column()
+    # Encrypted form of the Turn.io API token. Use set_turn_api_token / get_turn_api_token.
+    encrypted_turn_api_token: Mapped[str] = mapped_column()
+    # Last 4 characters of the plaintext token. Shown in the UI so admins can identify the
+    # currently-configured token without exposing the full secret.
+    turn_api_token_preview: Mapped[str] = mapped_column(String(4))
 
     created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -150,6 +155,16 @@ class TurnConnection(Base):
     )
 
     organization: Mapped[Organization] = relationship(back_populates="turn_connection")
+
+    def set_turn_api_token(self, token: str) -> Self:
+        """Encrypts and stores the Turn.io API token, and records its last-4-char preview."""
+        self.encrypted_turn_api_token = secretservice.get_symmetric().encrypt(token, f"turn.{self.organization_id}")
+        self.turn_api_token_preview = token[-4:]
+        return self
+
+    def get_turn_api_token(self) -> str:
+        """Decrypts and returns the plaintext Turn.io API token."""
+        return secretservice.get_symmetric().decrypt(self.encrypted_turn_api_token, f"turn.{self.organization_id}")
 
 
 class ExperimentTurnConfig(Base):

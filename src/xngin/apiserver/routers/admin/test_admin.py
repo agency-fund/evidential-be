@@ -26,6 +26,7 @@ from xngin.apiserver.dwh.inspections import ColumnDeleted, Drift, FieldChangedTy
 from xngin.apiserver.routers.admin.admin_api_converters import CREDENTIALS_UNAVAILABLE_MESSAGE
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddMemberToOrganizationRequest,
+    AddOrUpdateConnectionToTurnRequest,
     AddWebhookToOrganizationRequest,
     ApiOnlyDsn,
     BqDsn,
@@ -1023,6 +1024,75 @@ async def test_webhook_lifecycle(aclient: AdminAPIClient):
     # Try to delete a non-existent webhook
     with expect_status_code(404):
         aclient.delete_webhook_from_organization(organization_id=org_id, webhook_id=webhook_id)
+
+
+async def test_turn_connection_lifecycle(aclient: AdminAPIClient):
+    """Test creating, rotating, previewing, and deleting an organization's Turn.io connection."""
+    org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="test_turn_connection_lifecycle")).data.id
+
+    # GET before a connection exists -> 404.
+    with expect_status_code(404):
+        aclient.get_organization_turn_connection(organization_id=org_id)
+
+    # Create the connection.
+    initial_token = "abcde" * 67  # 335 chars
+    aclient.set_organization_turn_connection(
+        organization_id=org_id,
+        body=AddOrUpdateConnectionToTurnRequest(turn_api_token=initial_token),
+    )
+
+    # GET returns a preview of the last 4 chars of the token.
+    preview = aclient.get_organization_turn_connection(organization_id=org_id).data.token_preview
+    assert preview == initial_token[-4:]
+
+    # Rotate: PUT with a new token.
+    rotated_token = "fghij" * 67  # 335 chars
+    aclient.set_organization_turn_connection(
+        organization_id=org_id,
+        body=AddOrUpdateConnectionToTurnRequest(turn_api_token=rotated_token),
+    )
+
+    # Preview now reflects the new token.
+    preview = aclient.get_organization_turn_connection(organization_id=org_id).data.token_preview
+    assert preview == rotated_token[-4:]
+
+    # Delete.
+    aclient.delete_turn_connection_from_organization(organization_id=org_id)
+
+    # GET after delete -> 404.
+    with expect_status_code(404):
+        aclient.get_organization_turn_connection(organization_id=org_id)
+
+    # Delete again without allow_missing -> 404.
+    with expect_status_code(404):
+        aclient.delete_turn_connection_from_organization(organization_id=org_id)
+
+    # Delete again with allow_missing -> 204.
+    aclient.delete_turn_connection_from_organization(organization_id=org_id, allow_missing=True)
+
+
+async def test_turn_connection_encrypted_at_rest(xngin_session: AsyncSession, aclient: AdminAPIClient):
+    """The Turn.io API token must be encrypted at rest and recoverable via get_turn_api_token()."""
+    org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="test_turn_connection_encrypted")).data.id
+
+    token = "abcde" * 67  # 335 chars
+    aclient.set_organization_turn_connection(
+        organization_id=org_id,
+        body=AddOrUpdateConnectionToTurnRequest(turn_api_token=token),
+    )
+
+    row = (
+        await xngin_session.execute(
+            select(tables.TurnConnection).where(tables.TurnConnection.organization_id == org_id)
+        )
+    ).scalar_one()
+
+    # The raw column must not contain the plaintext token.
+    assert token not in row.encrypted_turn_api_token
+    # The preview stores the last 4 chars of the plaintext.
+    assert row.turn_api_token_preview == token[-4:]
+    # Decrypting via the helper recovers the plaintext.
+    assert row.get_turn_api_token() == token
 
 
 def test_participants_lifecycle(testing_datasource, aclient: AdminAPIClient):

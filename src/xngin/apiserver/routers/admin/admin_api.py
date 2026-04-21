@@ -66,6 +66,7 @@ from xngin.apiserver.routers.admin.admin_api_converters import (
 )
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddMemberToOrganizationRequest,
+    AddOrUpdateConnectionToTurnRequest,
     AddWebhookToOrganizationRequest,
     AddWebhookToOrganizationResponse,
     ApiKeySummary,
@@ -86,6 +87,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     GetOrganizationResponse,
     GetParticipantsTypeResponse,
     GetSnapshotResponse,
+    GetTurnConnectionResponse,
     InspectDatasourceResponse,
     InspectDatasourceTableResponse,
     InspectParticipantTypesResponse,
@@ -787,6 +789,82 @@ async def delete_webhook_from_organization(
 ):
     """Removes a Webhook from an organization."""
     resource_query = select(tables.Webhook).where(tables.Webhook.id == webhook_id)
+    response = await handle_delete(
+        session,
+        allow_missing,
+        authz.is_user_authorized_on_organization(user, organization_id),
+        resource_query,
+    )
+    await session.commit()
+    return response
+
+
+@router.put(
+    "/organizations/{organization_id}/turn-connection",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def set_organization_turn_connection(
+    organization_id: str,
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
+    body: Annotated[AddOrUpdateConnectionToTurnRequest, Body(...)],
+):
+    """Sets (or rotates) the Turn.io API token for an organization.
+
+    Creates a Turn connection for the organization if one does not yet exist, otherwise
+    overwrites the existing token. An organization has at most one Turn connection.
+    """
+    org = await get_organization_or_raise(session, user, organization_id)
+
+    turn_connection = (
+        await session.execute(select(tables.TurnConnection).where(tables.TurnConnection.organization_id == org.id))
+    ).scalar_one_or_none()
+    if turn_connection is None:
+        turn_connection = tables.TurnConnection(organization_id=org.id)
+        session.add(turn_connection)
+    turn_connection.set_turn_api_token(body.turn_api_token)
+
+    await session.commit()
+    return GENERIC_SUCCESS
+
+
+@router.get("/organizations/{organization_id}/turn-connection")
+async def get_organization_turn_connection(
+    organization_id: str,
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
+) -> GetTurnConnectionResponse:
+    """Returns a preview of the organization's configured Turn.io API token.
+
+    Raises 404 if no Turn connection has been configured for the organization (or if the
+    organization does not exist / the user does not have access to it).
+    """
+    org = await get_organization_or_raise(session, user, organization_id)
+
+    turn_connection = (
+        await session.execute(select(tables.TurnConnection).where(tables.TurnConnection.organization_id == org.id))
+    ).scalar_one_or_none()
+    if turn_connection is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Turn connection not found")
+
+    return GetTurnConnectionResponse(token_preview=turn_connection.turn_api_token_preview)
+
+
+@router.delete(
+    "/organizations/{organization_id}/turn-connection",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_turn_connection_from_organization(
+    organization_id: str,
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
+    allow_missing: Annotated[
+        bool,
+        Query(description="If true, return a 204 even if the resource does not exist."),
+    ] = False,
+):
+    """Removes an organization's Turn.io connection."""
+    resource_query = select(tables.TurnConnection).where(tables.TurnConnection.organization_id == organization_id)
     response = await handle_delete(
         session,
         allow_missing,
