@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.optimize import minimize
 
+from xngin.apiserver.limits import TOP_TWO_BETA, TOP_TWO_MIN_ARMS
 from xngin.apiserver.routers.common_enums import (
     ContextLinkFunctions,
     ExperimentsType,
@@ -15,18 +16,29 @@ from xngin.apiserver.sqla import tables
 
 # ------------- Utilities for sampling and updating arms ----------------
 # --- Sampling functions for Thompson Sampling ---
-def _sample_beta_binomial(alphas: np.ndarray, betas: np.ndarray, random_state: int | None = None) -> int:
+def _sample_beta_binomial(
+    alphas: np.ndarray, betas: np.ndarray, random_state: int | None = None, use_top_two: bool = False
+) -> int:
     """
     Thompson Sampling with Beta-Binomial distribution.
+
+    When use_top_two is True, takes the top two arms from a single posterior
+    sample and flips a coin (probability TOP_TWO_BETA) to pick between the
+    leader and challenger.
 
     Parameters
     ----------
     alphas: alpha parameter of Beta distribution for each arm
     betas: beta parameter of Beta distribution for each arm
-    random_state: use a fixed int for deterministic behavior in tests
+    random_state: Seed for the random number generator. None for true randomness.
+    use_top_two: Whether to use Top-Two selection.
     """
     rng = np.random.default_rng(random_state)
     samples = rng.beta(alphas, betas)
+    if use_top_two:
+        sorted_idx = np.argsort(-samples)
+        leader, challenger = int(sorted_idx[0]), int(sorted_idx[1])
+        return leader if rng.random() < TOP_TWO_BETA else challenger
     return int(samples.argmax())
 
 
@@ -36,9 +48,14 @@ def _sample_normal(
     context: np.ndarray,
     link_function: ContextLinkFunctions,
     random_state: int | None = None,
+    use_top_two: bool = False,
 ) -> int:
     """
     Thompson Sampling with normal prior.
+
+    When use_top_two is True, takes the top two arms from a single posterior
+    sample and flips a coin (probability TOP_TWO_BETA) to pick between the
+    leader and challenger.
 
     Parameters
     ----------
@@ -46,7 +63,8 @@ def _sample_normal(
     covariances: covariance matrix of Normal distribution for each arm
     context: context vector
     link_function: link function for the context
-    random_state: use a fixed int for deterministic behavior in tests
+    random_state: Seed for the random number generator. None for true randomness.
+    use_top_two: Whether to use Top-Two selection.
     """
 
     rng = np.random.default_rng(random_state)
@@ -57,6 +75,10 @@ def _sample_normal(
     ]).reshape(-1, len(context))
 
     scores = link_function(samples @ context)
+    if use_top_two:
+        sorted_idx = np.argsort(-scores)
+        leader, challenger = int(sorted_idx[0]), int(sorted_idx[1])
+        return leader if rng.random() < TOP_TWO_BETA else challenger
     return int(scores.argmax())
 
 
@@ -176,39 +198,53 @@ def choose_arm(
     """
     Choose arm based on posterior using Thompson Sampling.
 
+    For experiments with ≥TOP_TWO_MIN_ARMS arms, uses Top-Two Thompson
+    Sampling: takes the top two arms from a single posterior sample and
+    flips a coin (probability TOP_TWO_BETA) to pick between the leader
+    and challenger. This prevents premature lock-in when many arms have
+    similar rewards.
+
     Parameters
     ----------
     experiment: The experiment data containing priors and rewards for each arm.
-    context: Optional context vector for the experiment.
+    sorted_context_vals: Optional context vector for the experiment.
+    random_state: Seed for the random number generator. None for true randomness.
     """
-    # TODO: Only supported for MAB and CMAB experiments
-    if experiment.experiment_type == ExperimentsType.BAYESAB_ONLINE.value:
+    supported_types = {ExperimentsType.MAB_ONLINE.value, ExperimentsType.CMAB_ONLINE.value}
+    if experiment.experiment_type not in supported_types:
         raise ValueError(f"Invalid experiment type: {experiment.experiment_type}.")
 
     sorted_arms = sorted(experiment.arms, key=lambda a: a.id)
+    use_top_two = len(sorted_arms) >= TOP_TWO_MIN_ARMS
+
     if experiment.prior_type == PriorTypes.BETA.value:
         if experiment.reward_type != LikelihoodTypes.BERNOULLI.value:
             raise ValueError("Beta prior is only supported for Bernoulli rewards.")
         alphas = np.array([arm.alpha for arm in sorted_arms])
         betas = np.array([arm.beta for arm in sorted_arms])
-
-        arm_index = _sample_beta_binomial(alphas=alphas, betas=betas, random_state=random_state)
+        arm_index = _sample_beta_binomial(
+            alphas=alphas,
+            betas=betas,
+            random_state=random_state,
+            use_top_two=use_top_two,
+        )
 
     elif experiment.prior_type == PriorTypes.NORMAL.value:
         mus = [np.array(arm.mu) for arm in sorted_arms]
         covariances = [np.array(arm.covariance) for arm in sorted_arms]
-
         context_array = np.ones_like(mus[0]) if sorted_context_vals is None else np.array(sorted_context_vals)
+        link_function = (
+            ContextLinkFunctions.NONE
+            if experiment.reward_type == LikelihoodTypes.NORMAL.value
+            else ContextLinkFunctions.LOGISTIC
+        )
         arm_index = _sample_normal(
             mus=mus,
             covariances=covariances,
             context=context_array,
-            link_function=(
-                ContextLinkFunctions.NONE
-                if experiment.reward_type == LikelihoodTypes.NORMAL.value
-                else ContextLinkFunctions.LOGISTIC
-            ),
+            link_function=link_function,
             random_state=random_state,
+            use_top_two=use_top_two,
         )
     else:
         raise ValueError(f"Unsupported prior type: {experiment.prior_type}")
@@ -233,8 +269,8 @@ def update_arm(
     context: The context vector for the arm.
     treatments: The treatments applied to the arm, for a Bayesian A/B test.
     """
-    # TODO: Does not support Bayes A/B experiments
-    if experiment.experiment_type == ExperimentsType.BAYESAB_ONLINE.value:
+    supported_types = {ExperimentsType.MAB_ONLINE.value, ExperimentsType.CMAB_ONLINE.value}
+    if experiment.experiment_type not in supported_types:
         raise ValueError(f"Invalid experiment type: {experiment.experiment_type}.")
     if not experiment.prior_type or not experiment.reward_type:
         raise ValueError("Experiment must have prior and reward types defined.")

@@ -453,11 +453,11 @@ class BanditArmAnalysis(ArmBandit):
 
     post_pred_mean: Annotated[
         float,
-        Field(description="Prior predictive mean for this arm."),
+        Field(description="Posterior predictive mean for this arm."),
     ]
     post_pred_stdev: Annotated[
         float,
-        Field(description="Prior predictive standard deviation for this arm."),
+        Field(description="Posterior predictive standard deviation for this arm."),
     ]
     post_pred_ci_upper: Annotated[
         float,
