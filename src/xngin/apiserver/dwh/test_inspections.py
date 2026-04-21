@@ -1,6 +1,4 @@
-import pytest
 from deepdiff import DeepDiff
-from pydantic import ValidationError
 from sqlalchemy import BigInteger, Column, Double, Integer, MetaData, String, Table
 
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor
@@ -47,7 +45,7 @@ def test_create_schema_from_table_success():
     assert worksheet.get_unique_id_field() == "id"
 
 
-def test_create_schema_from_table_fails_if_no_unique_id():
+def test_create_schema_from_table_does_not_fail_if_no_unique_id():
     my_table = Table(
         "table_name",
         MetaData(),
@@ -56,12 +54,14 @@ def test_create_schema_from_table_fails_if_no_unique_id():
     )
 
     # Doesn't find the specified id:
-    with pytest.raises(ValidationError):
-        create_schema_from_table(my_table, "id")
+    schema = create_schema_from_table(my_table, "id")
+    assert schema.get_unique_id_field() is None
+    assert len(schema.fields) == 2
 
     # Has no primary key or generic "id"
-    with pytest.raises(ValidationError):
-        create_schema_from_table(my_table, None)
+    schema = create_schema_from_table(my_table, None)
+    assert schema.get_unique_id_field() is None
+    assert len(schema.fields) == 2
 
 
 def test_create_schema_from_table_does_not_raise_if_no_unique_id_and_set_unique_id_is_false():

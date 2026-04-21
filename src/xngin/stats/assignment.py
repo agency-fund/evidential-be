@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 from stochatreat import stochatreat
 
@@ -20,7 +21,12 @@ STOCHATREAT_TREAT_NAME = "treat"
 class AssignmentResult:
     """Result of treatment assignment and balance checking."""
 
+    # Arm index assigned to each participant, indexed by participant.
     treatment_ids: list[int]
+
+    # arm_pop[i] is the count of participants assigned to arm i.
+    arm_pop: npt.NDArray[np.intp]
+
     stratum_ids: list[int] | None
     balance_result: BalanceResult | None
     orig_stratum_cols: list[str]
@@ -68,6 +74,7 @@ def assign_treatment_and_check_balance(
             stratum_ids=None,
             balance_result=None,
             orig_stratum_cols=[],
+            arm_pop=np.bincount(treatment_ids, minlength=n_arms),
         )
 
     # Dedupe the strata names and then sort them for a stable output ordering
@@ -93,6 +100,7 @@ def assign_treatment_and_check_balance(
             stratum_ids=None,
             balance_result=None,
             orig_stratum_cols=orig_stratum_cols,
+            arm_pop=np.bincount(treatment_ids, minlength=n_arms),
         )
 
     # Do stratified random assignment
@@ -146,6 +154,7 @@ def assign_treatment_and_check_balance(
         stratum_ids=list(stratum_ids),
         balance_result=balance_result,
         orig_stratum_cols=orig_stratum_cols,
+        arm_pop=np.bincount(treatment_ids, minlength=n_arms),
     )
 
 

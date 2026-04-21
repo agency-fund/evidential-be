@@ -5,6 +5,7 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,14 +15,17 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Relax hostname checks.
-  ALLOW_CONNECTING_TO_PRIVATE_IPS: "1"
-
+  ATLAS_NO_ANON_TELEMETRY: "true"
   DEBIAN_FRONTEND: noninteractive
   FORCE_COLOR: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PIP_PROGRESS_BAR: "off"
   PYTHONUNBUFFERED: "1"
 
-  # Tests should never connect to this DSN but it must be set.
+  # Relax hostname checks in safe_resolve.
+  ALLOW_CONNECTING_TO_PRIVATE_IPS: "1"
+
+  # Tests should never connect to this DSN, but it must be set.
   DATABASE_URL: "postgresql://fail:fail@127.0.0.2:5499/fail"
 
   # Server startup will fail without these values being set.
@@ -29,9 +33,122 @@ env:
   GOOGLE_OIDC_CLIENT_SECRET: "unset-google-oidc-client-secret"
 jobs:
 
-  changes:
-    runs-on: ubuntu-22.04
+  ruff-annotations:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@e06108dd0aef18192324c70427afc47652e63a82 # v7.5.0
+      - name: Run ruff
+        run: uv run ruff check --output-format=github .
+
+  pre-commit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@e06108dd0aef18192324c70427afc47652e63a82 # v7.5.0
+      - run: echo PYTHON_DIR="$(uv python dir)" | tee -a "$GITHUB_ENV"
+      - name: Configure cache for pre-commit
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-5|${{ env.PYTHON_DIR }}|${{ hashFiles('.pre-commit-config.yaml') }}|${{ hashFiles('pyproject.toml') }}
+      - run: uv run pre-commit run --show-diff-on-failure --color=always --all-files
+
+  check-migrations:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: ariga/setup-atlas@2f3c785c89a15e1c0d07bcae3900fb5feb969eea # v0.3
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@e06108dd0aef18192324c70427afc47652e63a82 # v7.5.0
+      - name: check that migrations are valid
+        run: uv run atlas migrate validate --env sa_postgres
+      - name: lint migrations
+        if: github.event_name == 'pull_request'
+        run: |
+          uv run atlas migrate lint --env sa_postgres --git-base origin/main | tee -a lint-output
+
+          {
+            echo '## Migration Lint'
+            echo
+            if [[ -s lint-output ]]; then
+              echo '```'
+              cat lint-output
+              echo '```'
+            else
+              echo Lint output was empty.
+            fi
+            echo
+          } | tee -a migration-lint.md
+
+          if [[ -s lint-output ]]; then
+            cat migration-lint.md >> comment.md
+          fi
+      - name: ensure migrations have been created for the latest code changes
+        run: |
+          before=$(sha256sum migrations/sa_postgres/atlas.sum)
+          uv run atlas migrate diff --env sa_postgres
+          after=$(sha256sum migrations/sa_postgres/atlas.sum)
+
+          if [[ "${before}" == "${after}" ]]; then
+            exit 0
+          fi
+
+          {
+            echo '## Missing Migration Files'
+            echo
+            echo "The committed migration files do not match the table definitions."
+            echo
+
+            echo '### git status'
+            echo
+            echo '```'
+            git status migrations
+            echo '```'
+            echo
+
+            untracked=$(git ls-files --other --directory --exclude-standard migrations)
+            for migf in ${untracked}; do
+              echo
+              echo '###' "${migf}"
+              echo
+              echo '```sql'
+              cat "${migf}"
+              echo '```'
+              echo
+            done
+          } | tee -a comment.md "${GITHUB_STEP_SUMMARY}"
+          exit 1
+      - name: post comment
+        if: always() && github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ -s comment.md ]]; then
+            gh pr comment "${PR_NUMBER}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --body-file comment.md
+          fi
+
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
       pull-requests: read
     outputs:
       pydependencies: ${{ steps.filter.outputs.pydependencies }}
@@ -41,7 +158,7 @@ jobs:
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           persist-credentials: false
-      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d  # v4.0.1
         id: filter
         with:
           filters: |
@@ -55,7 +172,7 @@ jobs:
 
   osx-setup:
     needs: changes
-    if: ${{ needs.changes.outputs.pydependencies == 'true' }}
+    if: needs.changes.outputs.pydependencies == 'true'
     timeout-minutes: 15
     runs-on: macos-14
     steps:
@@ -69,7 +186,7 @@ jobs:
 
   unittests:
     timeout-minutes: 15
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       pull-requests: write
       contents: write
@@ -79,10 +196,9 @@ jobs:
           lfs: true
           persist-credentials: true
       - uses: astral-sh/setup-uv@e06108dd0aef18192324c70427afc47652e63a82 # v7.5.0
-      - uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+      - uses: go-task/setup-task@3be4020d41929789a01026e0e427a4321ce0ad44 # v2.0.0
         with:
           version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: write secrets
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         run: |
@@ -113,7 +229,7 @@ jobs:
 
   smoke-cli:
     timeout-minutes: 15
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:17
@@ -134,10 +250,9 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@e06108dd0aef18192324c70427afc47652e63a82 # v7.5.0
       - name: Install Task
-        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+        uses: go-task/setup-task@3be4020d41929789a01026e0e427a4321ce0ad44 # v2.0.0
         with:
           version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: xngin-cli export-openapi-spec
         run: |
           XNGIN_PUBLISH_ALL_DOCS=true uv run xngin-cli export-openapi-spec
@@ -165,9 +280,10 @@ jobs:
 
   bq-integration:
     timeout-minutes: 10
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs: changes
-    if: needs.changes.outputs.queries == 'true'
+    if: needs.changes.outputs.queries == 'true' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     env:
       DWH_DATASET_NAME: bqintegration_${{ github.run_id }}_${{ github.run_attempt }}_dwh
       QUERIES_DATASET_NAME: bqintegration_${{ github.run_id }}_${{ github.run_attempt }}_q
@@ -222,7 +338,7 @@ jobs:
           export DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
           uv run pytest -v -rA src/xngin/apiserver/dwh/test_queries.py
       - name: bq cleanup
-        if: failure() || success()
+        if: always()
         run: |
           for ds in "${DWH_DATASET_NAME}" "${QUERIES_DATASET_NAME}"; do
             uv run xngin-cli bigquery-dataset-delete \
@@ -233,7 +349,7 @@ jobs:
 
   docker-builds:
     timeout-minutes: 15
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:

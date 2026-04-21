@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 import httpx
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query
+from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from jose import JWTError, jwt
 from loguru import logger
 from starlette import status
@@ -12,7 +12,7 @@ from starlette import status
 from xngin.apiserver import constants, flags
 from xngin.apiserver.dependencies import retrying_httpx_dependency
 from xngin.apiserver.routers.auth import auth_dependencies
-from xngin.apiserver.routers.auth.auth_api_types import CallbackResponse
+from xngin.apiserver.routers.auth.auth_api_types import CallbackRequest, CallbackResponse
 from xngin.apiserver.routers.auth.auth_dependencies import (
     GoogleOidcConfig,
     SessionTokenCryptor,
@@ -49,10 +49,9 @@ router = APIRouter(
 )
 
 
-@router.get("/callback")
+@router.post("/callback")
 async def auth_callback(
-    code: Annotated[str, Query(...)],
-    code_verifier: Annotated[str, Query(min_length=43, max_length=128, pattern=r"^[A-Za-z0-9._~-]+$")],
+    body: CallbackRequest,
     oidc_config: Annotated[GoogleOidcConfig, Depends(get_google_configuration)],
     httpx_client: Annotated[httpx.AsyncClient, Depends(retrying_httpx_dependency)],
     session_cryptor: Annotated[SessionTokenCryptor, Depends()],
@@ -63,8 +62,8 @@ async def auth_callback(
     verifying the identity token from Google, we return a signed application-specific token that the frontend can
     use to authenticate the user for the remainder of their session.
     """
-    id_token = await _exchange_code_for_idtoken(oidc_config, httpx_client, code, code_verifier)
-    decoded = _validate_idtoken(oidc_config, id_token)
+    id_token = await _exchange_code_for_idtoken(oidc_config, httpx_client, body.code, body.code_verifier)
+    decoded = _validate_idtoken(oidc_config, id_token=id_token, nonce=body.nonce)
     session_token = session_cryptor.encode(
         Principal(
             email=decoded["email"],
@@ -107,14 +106,14 @@ async def _exchange_code_for_idtoken(
     return id_token
 
 
-def _validate_idtoken(oidc_config: GoogleOidcConfig, id_token: str) -> dict:
+def _validate_idtoken(oidc_config: GoogleOidcConfig, *, id_token: str, nonce: str) -> dict:
     """Validates a Google ID token (JWT) and returns the claims as a Python dictionary."""
     try:
         header = jwt.get_unverified_header(id_token)
     except JWTError as e:
+        logger.warning(f"JWT header parsing failed: {e}")
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid authentication credentials: {e}",
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials"
         ) from e
     key = next((jwk for jwk in oidc_config.jwks["keys"] if jwk["kid"] == header["kid"]), None)
     if not key:
@@ -141,9 +140,11 @@ def _validate_idtoken(oidc_config: GoogleOidcConfig, id_token: str) -> dict:
         # issues a token where azp an aud don't match then we would like to know about it.
         if decoded["azp"] != decoded["aud"]:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid azp/aud")
+        if decoded.get("nonce") != nonce:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid nonce")
     except JWTError as e:
+        logger.warning(f"JWT validation failed: {e}")
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid authentication credentials: {e}",
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials"
         ) from e
     return decoded

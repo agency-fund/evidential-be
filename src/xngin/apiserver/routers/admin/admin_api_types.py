@@ -522,7 +522,11 @@ class GetExperimentForUiResponse(AdminApiBaseModel):
 
     config: Annotated[ExperimentConfig, Field()]
     participant_type: Annotated[
-        ParticipantsDef | None, Field(description="If available, the Participant Type information for this experiment.")
+        ParticipantsDef | None,
+        Field(
+            description="If available, the Participant Type information for this experiment. "
+            "This field is null for experiments that only use an 'API Only' datasource."
+        ),
     ]
 
 
@@ -558,6 +562,5 @@ class UpdateArmRequest(AdminApiBaseModel):
 class DeleteExperimentDataRequest(AdminApiBaseModel):
     """Request to delete specific data associated with an experiment."""
 
-    assignments: Annotated[bool | None, Field(description="Delete related arm assignments.")] = None
-    draws: Annotated[bool | None, Field(description="Delete related draws.")] = None
+    assignments: Annotated[bool | None, Field(description="Delete related participant assignments.")] = None
     snapshots: Annotated[bool | None, Field(description="Delete related snapshots.")] = None

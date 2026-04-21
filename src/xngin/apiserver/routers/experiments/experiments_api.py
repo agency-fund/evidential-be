@@ -3,10 +3,12 @@ This module defines the public API for clients to integrate with experiments.
 (See admin_api.py for Evidential UI-facing endpoints.)
 """
 
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
+import orjson
 from annotated_types import Ge, Le
 from fastapi import (
     APIRouter,
@@ -16,6 +18,7 @@ from fastapi import (
     Query,
     Response,
 )
+from fastapi.responses import StreamingResponse
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +31,7 @@ from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.admin.admin_api import sort_contexts_by_id_or_raise
 from xngin.apiserver.routers.common_api_types import (
     ArmBandit,
+    AssignmentTypedDict,
     CMABContextInputRequest,
     ExperimentsType,
     GetExperimentAssignmentsResponse,
@@ -43,21 +47,25 @@ from xngin.apiserver.routers.experiments.dependencies import (
     experiment_and_datasource_dependency,
     experiment_dependency,
     experiment_response_dependency,
-    experiment_with_assignments_dependency,
     experiment_with_contexts_dependency,
 )
 from xngin.apiserver.routers.experiments.experiments_common import (
     create_assignment_for_participant,
     get_existing_assignment_for_participant,
-    get_experiment_assignments_impl,
     get_experiment_impl,
     get_or_create_assignment_for_participant,
     list_organization_or_datasource_experiments_impl,
     update_bandit_arm_with_outcome_impl,
 )
-from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
+from xngin.apiserver.routers.experiments.experiments_common_csv import (
+    CsvStreamingResponse,
+    get_experiment_assignments_impl,
+)
 from xngin.apiserver.settings import Datasource
 from xngin.apiserver.sqla import tables
+from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
+
+JSON_STREAM_ROWS_PER_YIELD = 1_000
 
 
 @asynccontextmanager
@@ -104,6 +112,38 @@ async def list_experiments(
     )
 
 
+async def _stream_experiment_assignments_response(
+    experiment: tables.Experiment, assignments: AsyncGenerator[AssignmentTypedDict]
+) -> AsyncIterator[bytes]:
+    """Efficiently streams Assignments to the client."""
+    balance_check = ExperimentStorageConverter(experiment).get_balance_check()
+    yield (
+        b'{"balance_check":'
+        + orjson.dumps(None if balance_check is None else balance_check.model_dump(mode="json"))
+        + b',"experiment_id":'
+        + orjson.dumps(experiment.id)
+        + b',"assignments":['
+    )
+
+    sample_size = 0
+    buffered = 0
+    needs_comma = False
+    batch: list[bytes] = []
+    async for assignment in assignments:
+        if needs_comma:
+            batch.append(b",")
+        batch.append(orjson.dumps(assignment))
+        needs_comma = True
+        sample_size += 1
+        buffered += 1
+        if buffered == JSON_STREAM_ROWS_PER_YIELD:
+            yield b"".join(batch)
+            batch.clear()
+            buffered = 0
+
+    yield b"".join(batch) + b'],"sample_size":' + str(sample_size).encode() + b"}"
+
+
 @router.get(
     "/experiments/{experiment_id}",
     summary="Get experiment metadata (design & assignment specs) for a single experiment.",
@@ -115,15 +155,25 @@ async def get_experiment(
     return await get_experiment_impl(xngin_session, experiment)
 
 
-# TODO: add a query param to include strata; default to false
 @router.get(
     "/experiments/{experiment_id}/assignments",
     summary="Fetch list of participant=>arm assignments for the given experiment id.",
 )
 async def get_experiment_assignments(
-    experiment: Annotated[tables.Experiment, Depends(experiment_with_assignments_dependency)],
+    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
 ) -> GetExperimentAssignmentsResponse:
-    return get_experiment_assignments_impl(experiment)
+    assignments = get_experiment_assignments_impl(xngin_session, experiment)
+    return cast(
+        GetExperimentAssignmentsResponse,
+        cast(
+            object,
+            StreamingResponse(
+                _stream_experiment_assignments_response(experiment, assignments),
+                media_type="application/json",
+            ),
+        ),
+    )
 
 
 @router.get(
@@ -254,7 +304,7 @@ async def get_assignment_filtered(
     description="""
     Get or create a CMAB arm assignment for a specific participant. This endpoint is used only for CMAB assignments.
     If there is a pre-existing assignment for a given participant ID, the context inputs in the
-    CreateCMABAssignmentRequest can be None, and will be disregarded if they are not None.
+    CMABContextInputRequest can be None, and will be disregarded if they are not None.
     """,
 )
 async def get_assignment_cmab(
@@ -292,6 +342,8 @@ async def get_assignment_cmab(
 
     if not assignment and create_if_none and experiment.stopped_assignments_at is None:
         context_inputs = body.context_inputs
+        if context_inputs is None:
+            raise LateValidationError("context_inputs must be provided when creating a new CMAB assignment.")
         context_defns = experiment.contexts
         sorted_context_inputs = sort_contexts_by_id_or_raise(context_defns, context_inputs)
         sorted_context_vals = [ctx.context_value for ctx in sorted_context_inputs]
@@ -313,8 +365,25 @@ async def get_assignment_cmab(
 
 @router.post(
     "/experiments/{experiment_id}/assignments/{participant_id}/outcome",
-    description="""Update the bandit arm with corresponding outcome for a specific participant.
-    Used only for bandit experiments.""",
+    description="""
+    Update the bandit arm with corresponding outcome for a specific participant.
+    Used only for bandit experiments.
+
+    On the first call for a given participant, this endpoint will update the assigned arm with the provided outcome,
+    and return the updated arm parameters.
+    For a participant without an existing assignment, this endpoint will return a 422 error,
+    as there is no arm to update.
+    Please use the GET assignment endpoint to first create an assignment for the participant.
+    For a participant with an existing assignment and previously recorded outcome, this endpoint
+    will return a 422 error.
+    Please use the GET assignment endpoint to check if an assignment with an outcome already exists
+    for the participant.
+    """,
+    summary="""
+    "Update the assigned arm with the provided outcome, and return the updated arm parameters.
+    Only participants with an existing assignment and no previously recorded outcome can be updated with this endpoint.
+    All other cases will return a 422 error, in which case, please use the GET assignment endpoint.
+    """,
 )
 async def update_bandit_arm_with_participant_outcome(
     participant_id: str,

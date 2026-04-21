@@ -22,6 +22,9 @@ from xngin.apiserver.routers.common_enums import (
     StopAssignmentReason,
 )
 from xngin.apiserver.sqla import tables
+from xngin.stats.bandit_weights_to_prior import (
+    convert_arm_weights_to_prior_params,
+)
 
 
 class ExperimentStorageConverter:
@@ -225,10 +228,13 @@ class ExperimentStorageConverter:
                 strata.append(api_stratum)
         return strata
 
+    def get_field_type_map(self) -> dict[str, DataType]:
+        """Return a map of all the field names used in the experiment to their respective data types."""
+        return {ef.field_name: DataType(ef.data_type) for ef in self.experiment.experiment_fields}
+
     async def get_design_spec(self) -> capi.DesignSpec:
         """Converts stored experiment metadata to a DesignSpec object."""
         base_experiment_dict = {
-            "participant_type": self.experiment.participant_type,
             "experiment_type": self.experiment.experiment_type,
             "experiment_name": self.experiment.name,
             "description": self.experiment.description,
@@ -285,6 +291,7 @@ class ExperimentStorageConverter:
                         "arm_id": arm.id,
                         "arm_name": arm.name,
                         "arm_description": arm.description,
+                        "arm_weight": arm.arm_weight,
                         "mu_init": arm.mu_init,
                         "sigma_init": arm.sigma_init,
                         "alpha_init": arm.alpha_init,
@@ -339,6 +346,7 @@ class ExperimentStorageConverter:
         return capi.GetExperimentResponse(
             experiment_id=(await self.experiment.awaitable_attrs.id),
             datasource_id=self.experiment.datasource_id,
+            participant_type_deprecated=self.experiment.participant_type,
             state=ExperimentState(self.experiment.state),
             stopped_assignments_at=self.experiment.stopped_assignments_at,
             stopped_assignments_reason=StopAssignmentReason.from_str(self.experiment.stopped_assignments_reason),
@@ -389,6 +397,7 @@ class ExperimentStorageConverter:
         table_name: str | None = None,
         field_type_map: dict[str, DataType] | None = None,
         unique_id_name: str | None = None,
+        participant_type: str = "",
     ) -> Self:
         """Init experiment with arms from components. Get the final object with get_experiment().
 
@@ -399,7 +408,7 @@ class ExperimentStorageConverter:
         experiment = tables.Experiment(
             datasource_id=datasource_id,
             experiment_type=experiment_type,
-            participant_type=design_spec.participant_type,
+            participant_type=participant_type,
             datasource_table=table_name,
             name=design_spec.experiment_name,
             description=design_spec.description,
@@ -443,9 +452,8 @@ class ExperimentStorageConverter:
                     raise ValueError("Contexts are required for CMAB experiments.")
 
                 # Set bandit fields
-                context_len = 1
+                context_len = len(design_spec.contexts) if design_spec.contexts else 1
                 if design_spec.contexts:
-                    context_len = len(design_spec.contexts)
                     experiment.contexts = [
                         tables.Context(
                             name=context.context_name,
@@ -459,10 +467,29 @@ class ExperimentStorageConverter:
                 experiment.prior_type = design_spec.prior_type.value
                 experiment.n_trials = n_trials
 
+                arm_weights = design_spec.get_validated_arm_weights()
+                if arm_weights:
+                    # TODO: this method can be expensive and should be on a thread.
+                    param1, param2 = convert_arm_weights_to_prior_params(
+                        arm_weights=arm_weights,
+                        prior_type=design_spec.prior_type,
+                        num_contexts=context_len,
+                    )
+                    match design_spec.prior_type:
+                        case capi.PriorTypes.BETA:
+                            for arm, alpha, beta in zip(design_spec.arms, param1, param2, strict=True):
+                                arm.alpha_init = alpha
+                                arm.beta_init = beta
+                        case capi.PriorTypes.NORMAL:
+                            for arm, mu, sigma in zip(design_spec.arms, param1, param2, strict=True):
+                                arm.mu_init = mu
+                                arm.sigma_init = sigma
+
                 experiment.arms = [
                     tables.Arm(
                         name=arm.arm_name,
                         description=arm.arm_description,
+                        arm_weight=arm.arm_weight,
                         position=i,
                         experiment_id=experiment.id,
                         organization_id=organization_id,

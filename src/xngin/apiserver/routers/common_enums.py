@@ -125,6 +125,21 @@ class DataType(enum.StrEnum):
             DataType.UNKNOWN,
         }
 
+    @classmethod
+    def is_supported_metric_type(cls, data_type: Self) -> bool:
+        """Returns True if the type may be used as a metric."""
+        return data_type in {
+            DataType.BOOLEAN,
+            DataType.BIGINT,
+            DataType.INTEGER,
+            DataType.DOUBLE_PRECISION,
+            DataType.NUMERIC,
+        }
+
+    def is_supported_as_metric(self) -> bool:
+        """Returns True if the type may be used as a metric."""
+        return DataType.is_supported_metric_type(self)
+
     def is_supported(self):
         """Returns True if the type is supported as a strata, filter, and/or metric."""
         return DataType.is_supported_type(self)
@@ -204,15 +219,12 @@ class Relation(enum.StrEnum):
     """Defines operators for filtering values.
 
     INCLUDES matches when the value matches any of the provided values, including null if explicitly
-    specified. For CSV fields (i.e. experiment_ids), any value in the CSV that matches the provided
-    values will match, but nulls are unsupported. This is equivalent to NOT(EXCLUDES(values)).
+    specified. This is equivalent to NOT(EXCLUDES(values)).
 
     EXCLUDES matches when the value does not match any of the provided values, including null if
-    explicitly specified. If null is not explicitly excluded, we include nulls in the result.  CSV
-    fields (i.e. experiment_ids), the match will fail if any of the provided values are present
-    in the value, but nulls are unsupported.
+    explicitly specified. If null is not explicitly excluded, we include nulls in the result.
 
-    BETWEEN matches when the value is between the two provided values (inclusive). Not allowed for CSV fields.
+    BETWEEN matches when the value is between the two provided values (inclusive).
     """
 
     INCLUDES = "includes"

@@ -12,6 +12,7 @@ dependencies = [
     "httpx>=0.28.1,<0.29.0",
     "loguru>=0.7.3,<0.8.0",
     "numpy>=2.3,<2.4",
+    "orjson>=3.11.7,<4",
     "pandas-gbq>=0.33.0,<0.34",
     "pandas>=2.3.3,<3",
     "psycopg2-binary>=2.9.11,<3; sys_platform == 'darwin'",
@@ -58,7 +59,7 @@ dev = [
 ]
 
 [build-system]
-requires = ["uv_build>=0.9.4,<0.11.0"]
+requires = ["uv_build>=0.9.4"]
 build-backend = "uv_build"
 
 [project.scripts]
@@ -167,7 +168,7 @@ banned-from = [
 "xngin.apiserver.routers.common_api_types" = "capi"
 
 [tool.uv]
-required-version = ">=0.9.4,<0.11.0"
+required-version = ">=0.9.4"
 environments = [
     "sys_platform == 'darwin'",
     "sys_platform == 'linux'",

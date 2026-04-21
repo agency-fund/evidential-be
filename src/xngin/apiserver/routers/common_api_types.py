@@ -3,7 +3,7 @@ import json
 import math
 import uuid
 from collections.abc import Sequence
-from typing import Annotated, Literal, Self
+from typing import Annotated, Literal, NotRequired, Self, TypedDict
 
 import sqlalchemy.sql
 from annotated_types import MaxLen, MinLen
@@ -167,7 +167,7 @@ class OnlineAssignmentWithFiltersRequest(ApiBaseModel):
     1. Currently only used for FREQ_ONLINE experiments.
     2. If the experiment defines no filters, use the corresponding GET endpoint instead.
     3. If an assignment already exists for a given participant, the property list is ignored and assignment returned.
-    4. Property names must reference a valid field_name from the participant_type defined in the experiment.
+    4. Property names must reference a valid field_name from the experiment's fields.
     5. Property list may be empty.
     6. If a filter is specified but no value is found, it is treated as NULL.
     7. Other differences from the SQL-based filtering logic:
@@ -240,7 +240,7 @@ class CMABContextInputRequest(ApiBaseModel):
         "cmab_assignment"  # Adding type field to allow for type-discriminated unions in future
     )
     context_inputs: Annotated[
-        list[ContextInput],
+        list[ContextInput] | None,
         Field(
             description="""
             List of context values for the assignment.
@@ -699,9 +699,6 @@ class GetMetricsResponseElement(ApiBaseModel):
     description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
 
 
-EXPERIMENT_IDS_SUFFIX = "experiment_ids"
-
-
 class Filter(ApiBaseModel):
     """Defines criteria for filtering rows by value.
 
@@ -729,21 +726,6 @@ class Filter(ApiBaseModel):
     When the relation is BETWEEN, we allow for up to 3 values to support the special case of
     including null in addition to the values in the between range via an OR IS NULL clause, as
     indicated by a 3rd value of None. Any other 3rd value is invalid.
-
-    ## Special Handling for Comma-Separated Fields
-
-    When the filter name ends in "experiment_ids", the filter is interpreted as follows:
-
-    | Value | Filter         | Result   |
-    |-------|----------------|----------|
-    | "a,b" | INCLUDES ["a"] | Match    |
-    | "a,b" | INCLUDES ["d"] | No match |
-    | "a,b" | EXCLUDES ["d"] | Match    |
-    | "a,b" | EXCLUDES ["b"] | No match |
-
-    Note: The BETWEEN relation is not supported for comma-separated values.
-
-    Note: CSV field comparisons are case-insensitive.
 
     ## Handling of DATE, DATETIME and TIMESTAMP values
 
@@ -773,25 +755,6 @@ class Filter(ApiBaseModel):
         if isinstance(column_type, sqlalchemy.sql.sqltypes.UUID | sqlalchemy.sql.sqltypes.String):
             return pid
         raise LateValidationError(f"Unsupported participant ID type: {column_type}")
-
-    @model_validator(mode="after")
-    def ensure_experiment_ids_hack_compatible(self) -> Filter:
-        """Ensures that the filter is compatible with the "experiment_ids" hack."""
-        if not self.field_name.endswith(EXPERIMENT_IDS_SUFFIX):
-            return self
-        allowed_relations = (Relation.INCLUDES, Relation.EXCLUDES)
-        if self.relation not in allowed_relations:
-            raise ValueError(
-                f"filters on experiment_id fields must have relations of type {', '.join(sorted(allowed_relations))}"
-            )
-        for v in self.value:
-            if not isinstance(v, str):
-                continue
-            if "," in v:
-                raise ValueError("values in an experiment_id filter may not contain commas")
-            if v.strip() != v:
-                raise ValueError("values in an experiment_id filter may not contain leading or trailing whitespace")
-        return self
 
     @model_validator(mode="after")
     def ensure_value(self) -> Filter:
@@ -851,9 +814,6 @@ ConstrainedUrl = Annotated[HttpUrl, UrlConstraints(max_length=MAX_LENGTH_OF_URL_
 class BaseDesignSpec(ApiBaseModel):
     """Experiment design metadata and target metrics common to all experiment types."""
 
-    # The name of the participant type. This may be "user" for some MAB and CMAB experiments.
-    participant_type: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
-
     experiment_type: Annotated[
         ExperimentsType,
         Field(
@@ -878,49 +838,6 @@ class BaseDesignSpec(ApiBaseModel):
         """True if any IDs are present."""
         return any(arm.arm_id is not None for arm in self.arms)
 
-
-class BaseFrequentistDesignSpec(BaseDesignSpec):
-    """Experiment design parameters for frequentist experiments."""
-
-    # Frequentist config params
-    strata: Annotated[
-        list[Stratum],
-        Field(
-            description="Optional participant_type fields to use for stratified assignment.",
-            max_length=MAX_NUMBER_OF_FIELDS,
-        ),
-    ]
-
-    metrics: Annotated[
-        list[DesignSpecMetricRequest],
-        Field(
-            ...,
-            description="Primary and optional secondary metrics to target.",
-            min_length=1,
-            max_length=MAX_NUMBER_OF_FIELDS,
-        ),
-    ]
-
-    filters: Annotated[
-        list[Filter],
-        Field(
-            description=(
-                "Optional filters that constrain a general participant_type to a specific subset "
-                "who can participate in an experiment."
-            ),
-            max_length=MAX_NUMBER_OF_FILTERS,
-        ),
-    ]
-
-    desired_n: Annotated[
-        int | None,
-        Field(
-            default=None,
-            description="Optional desired sample size for MDE calculation. "
-            "If provided, calculates minimum detectable effect instead of required sample size.",
-        ),
-    ] = None
-
     def get_validated_arm_weights(self) -> list[float] | None:
         """If weights exist, validate they match the number of arms and sum to 100 before returning."""
         arm_weights = [arm.arm_weight for arm in self.arms if arm.arm_weight is not None]
@@ -942,6 +859,49 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
     def validate_arm_weights(self) -> Self:
         _ = self.get_validated_arm_weights()
         return self
+
+
+class BaseFrequentistDesignSpec(BaseDesignSpec):
+    """Experiment design parameters for frequentist experiments."""
+
+    # Frequentist config params
+    strata: Annotated[
+        list[Stratum],
+        Field(
+            description="Optional fields to use for stratified assignment.",
+            max_length=MAX_NUMBER_OF_FIELDS,
+        ),
+    ]
+
+    metrics: Annotated[
+        list[DesignSpecMetricRequest],
+        Field(
+            ...,
+            description="Primary and optional secondary metrics to target.",
+            min_length=1,
+            max_length=MAX_NUMBER_OF_FIELDS,
+        ),
+    ]
+
+    filters: Annotated[
+        list[Filter],
+        Field(
+            description=(
+                "Optional filters that constrain a general eligible audience to a specific subset "
+                "who can participate in an experiment."
+            ),
+            max_length=MAX_NUMBER_OF_FILTERS,
+        ),
+    ]
+
+    desired_n: Annotated[
+        int | None,
+        Field(
+            default=None,
+            description="Optional desired sample size for MDE calculation. "
+            "If provided, calculates minimum detectable effect instead of required sample size.",
+        ),
+    ] = None
 
     # stat parameters
     power: Annotated[
@@ -1018,29 +978,32 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
         """
         Check if the arm reward type is same as the experiment reward type.
         """
+
         prior_type = self.prior_type
         arms = self.arms
+        arm_weights = self.get_validated_arm_weights()
 
-        prior_params = {
-            PriorTypes.BETA: ("alpha_init", "beta_init"),
-            PriorTypes.NORMAL: ("mu_init", "sigma_init"),
-        }
+        if not arm_weights:
+            prior_params = {
+                PriorTypes.BETA: ("alpha_init", "beta_init"),
+                PriorTypes.NORMAL: ("mu_init", "sigma_init"),
+            }
 
-        if prior_type not in prior_params:
-            raise ValueError(
-                f"Unsupported prior type: {prior_type}. Supported types are: {', '.join(prior_params.keys())}."
-            )
+            if prior_type not in prior_params:
+                raise ValueError(
+                    f"Unsupported prior type: {prior_type}. Supported types are: {', '.join(prior_params.keys())}."
+                )
 
-        for arm in arms:
-            arm_dict = arm.model_dump()
-            missing_params = []
-            for param in prior_params[prior_type]:
-                if param not in arm_dict or arm_dict[param] is None:
-                    missing_params.append(param)
+            for arm in arms:
+                arm_dict = arm.model_dump()
+                missing_params = []
+                for param in prior_params[prior_type]:
+                    if param not in arm_dict or arm_dict[param] is None:
+                        missing_params.append(param)
 
-            if missing_params:
-                val = prior_type.value
-                raise ValueError(f"{val} prior needs {','.join(missing_params)}.")
+                if missing_params:
+                    val = prior_type.value
+                    raise ValueError(f"{val} prior needs {','.join(missing_params)}.")
         return self
 
     @model_validator(mode="after")
@@ -1130,22 +1093,10 @@ type DesignSpec = Annotated[
 class PowerRequest(ApiBaseModel):
     design_spec: DesignSpec
     table_name: Annotated[
-        str | None,
-        Field(
-            default=None,
-            description="Optional table name for ad-hoc power calculations. When provided with primary_key, "
-            "synthesizes a participant schema instead of looking up from datasource configuration. When set, the "
-            "participant_type value is ignored.",
-        ),
-    ] = None
-    primary_key: Annotated[
-        str | None,
-        Field(
-            default=None,
-            description="Optional primary key field name. Must be provided together with table_name. When set, the "
-            "participant_type value is ignored.",
-        ),
-    ] = None
+        str,
+        Field(description="Table name for ad-hoc power calculations. Fields are verified against the inspected table."),
+    ]
+    primary_key: Annotated[str, Field(description="Primary key field name.")]
 
     @model_validator(mode="after")
     def check_table_name_and_primary_key_together(self) -> Self:
@@ -1158,6 +1109,16 @@ class PowerResponse(ApiBaseModel):
     analyses: Annotated[list[MetricPowerAnalysis], Field(max_length=MAX_NUMBER_OF_FIELDS)]
 
 
+class StrataTypedDict(TypedDict):
+    """Strata as a TypedDict to avoid Pydantic model work on hot paths.
+
+    TypedDict provides some type safety without a runtime cost.
+    """
+
+    field_name: str
+    strata_value: str | None
+
+
 class Strata(ApiBaseModel):
     """Describes stratification for an experiment participant."""
 
@@ -1166,6 +1127,22 @@ class Strata(ApiBaseModel):
     # from data warehouse.
     # strata_type: Optional[StrataType]
     strata_value: str | None = None
+
+
+class AssignmentTypedDict(TypedDict):
+    """Assignment as a TypedDict to avoid Pydantic model work on hot paths.
+
+    TypedDict provides some type safety without a runtime cost.
+    """
+
+    arm_id: str
+    participant_id: str
+    arm_name: str
+    created_at: NotRequired[str | None]
+    strata: NotRequired[list[StrataTypedDict] | None]
+    observed_at: NotRequired[str | None]
+    outcome: NotRequired[float | None]
+    context_values: NotRequired[list[float] | None]
 
 
 class Assignment(ApiBaseModel):
@@ -1288,8 +1265,7 @@ class CreateExperimentRequest(ApiBaseModel):
         Field(
             default=None,
             description="Optional table name for creating experiments without a pre-registered participant type. "
-            "When provided with primary_key, synthesizes a participant schema and persists it. "
-            "The design_spec.participant_type field is ignored when this is set.",
+            "When provided with primary_key, inspects the datasource table to derive experiment field metadata.",
         ),
     ] = None
     primary_key: Annotated[
@@ -1309,9 +1285,12 @@ class CreateExperimentRequest(ApiBaseModel):
         return v
 
     @model_validator(mode="after")
-    def check_table_name_and_primary_key_together(self) -> Self:
-        if (self.table_name is None) != (self.primary_key is None):
-            raise ValueError("table_name and primary_key must be provided together or both omitted")
+    def check_table_name_and_primary_key_exist_for_frequentist_only(self) -> Self:
+        if self.design_spec.experiment_type in {ExperimentsType.FREQ_ONLINE, ExperimentsType.FREQ_PREASSIGNED}:
+            if self.table_name is None or self.primary_key is None:
+                raise ValueError("table_name and primary_key must be provided together for frequentist experiments.")
+        elif self.table_name is not None or self.primary_key is not None:
+            raise ValueError("table_name and primary_key are not supported for non-frequentist experiments.")
         return self
 
 
@@ -1341,6 +1320,14 @@ class ExperimentConfig(ApiBaseModel):
 
     experiment_id: Annotated[str, Field(description="Server-generated ID of the experiment.")]
     datasource_id: str
+    participant_type_deprecated: Annotated[
+        str,
+        Field(
+            max_length=MAX_LENGTH_OF_NAME_VALUE,
+            description="(legacy experiments) Persisted participant-type name for backwards compatibility. "
+            "New experiments will have this set to the empty string.",
+        ),
+    ]
     state: Annotated[ExperimentState, Field(description="Current state of this experiment.")]
     stopped_assignments_at: Annotated[
         datetime.datetime | None,

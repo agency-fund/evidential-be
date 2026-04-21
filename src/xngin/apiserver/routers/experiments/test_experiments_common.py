@@ -1,4 +1,5 @@
-import inspect
+from contextlib import AbstractContextManager
+from contextlib import nullcontext as does_not_raise
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import cast
@@ -6,7 +7,6 @@ from typing import cast
 import numpy as np
 import pytest
 from deepdiff import DeepDiff
-from fastapi import HTTPException
 from pydantic import HttpUrl, TypeAdapter
 from sqlalchemy import Boolean, Column, MetaData, String, Table, select
 from sqlalchemy.dialects import postgresql
@@ -29,11 +29,13 @@ from xngin.apiserver.routers.common_api_types import (
     DesignSpecMetricRequest,
     ExperimentsType,
     Filter,
+    GetExperimentResponse,
     LikelihoodTypes,
     MABExperimentSpec,
     MetricPowerAnalysis,
     MetricType,
     OnlineFrequentistExperimentSpec,
+    ParticipantProperty,
     PowerResponse,
     PreassignedFrequentistExperimentSpec,
     PriorTypes,
@@ -41,10 +43,7 @@ from xngin.apiserver.routers.common_api_types import (
 )
 from xngin.apiserver.routers.common_enums import DataType, ExperimentState, Relation, StopAssignmentReason
 from xngin.apiserver.routers.experiments.experiments_common import (
-    AbandonExperimentResult,
-    CommitExperimentResult,
     ExperimentsAssignmentError,
-    abandon_experiment_impl,
     analyze_experiment_freq_impl,
     commit_experiment_impl,
     create_assignment_for_participant,
@@ -52,11 +51,12 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     create_experiment_impl,
     create_freq_online_experiment_impl,
     create_preassigned_experiment_impl,
-    extract_participant_field_info,
+    fetch_fields_or_raise,
     get_assign_summary,
     get_existing_assignment_for_participant,
-    get_experiment_assignments_impl,
-    list_organization_or_datasource_experiments_impl,
+    get_experiment_impl,
+    get_or_create_assignment_for_participant,
+    make_participants_def_from_experiment,
     update_bandit_arm_with_outcome_impl,
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import get_experiment_assignments_as_csv_impl
@@ -67,7 +67,6 @@ from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 
 
 def make_createexperimentrequest_json(
-    participant_type: str = "test_participant_type",
     experiment_type: str = "freq_preassigned",
     prior_type: PriorTypes = PriorTypes.NORMAL,
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
@@ -81,8 +80,9 @@ def make_createexperimentrequest_json(
     match experiment_type:
         case ExperimentsType.FREQ_PREASSIGNED | ExperimentsType.FREQ_ONLINE:
             return {
+                "table_name": TESTING_DWH_PARTICIPANT_DEF.table_name,
+                "primary_key": "id",
                 "design_spec": {
-                    "participant_type": participant_type,
                     "experiment_name": "test",
                     "description": "test",
                     "experiment_type": experiment_type,
@@ -111,7 +111,7 @@ def make_createexperimentrequest_json(
                     "power": 0.8,
                     "alpha": 0.05,
                     "fstat_thresh": 0.2,
-                }
+                },
             }
         case ExperimentsType.MAB_ONLINE:
             arm_spec = {
@@ -137,7 +137,6 @@ def make_createexperimentrequest_json(
             )
             return {
                 "design_spec": {
-                    "participant_type": participant_type,
                     "experiment_name": "test",
                     "description": "test",
                     "start_date": "2024-01-01T00:00:00+00:00",
@@ -168,7 +167,6 @@ def make_createexperimentrequest_json(
             )
             return {
                 "design_spec": {
-                    "participant_type": participant_type,
                     "experiment_name": "test",
                     "description": "test",
                     # Attach UTC tz, but use dates_equal() to compare to respect db storage support
@@ -226,11 +224,14 @@ async def make_insertable_experiment(
     prior_type: PriorTypes = PriorTypes.NORMAL,
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
     design_spec: DesignSpec | None = None,
+    table_name: str | None = None,
+    primary_key: str | None = None,
 ) -> tuple[tables.Experiment, DesignSpec]:
     """Make a minimal experiment with arms ready for insertion into the database for tests.
 
-    If a design_spec is provided, it is used to create the experiment. Otherwise, a new design_spec
-    is created using the provided experiment_type, prior_type, and reward_type.
+    If a design_spec is not provided, a new design_spec is created using the provided
+    experiment_type, prior_type, and reward_type. An experiment is then created using the spec and
+    any table_name and primary_key if provided.
     This does not add any power analyses or balance checks.
     """
     if design_spec is None:
@@ -248,14 +249,12 @@ async def make_insertable_experiment(
         stopped_assignments_reason = StopAssignmentReason.PREASSIGNED
 
     # Get participants schema from datasource for frequentist experiments
-    participants_schema = None
     field_type_map = None
-    unique_id_name = None
-    table_name = None
     if experiment_type in {ExperimentsType.FREQ_PREASSIGNED, ExperimentsType.FREQ_ONLINE}:
-        ds_config = datasource.get_config()
-        participants_schema = ds_config.find_participants(design_spec.participant_type)
-        field_type_map, unique_id_name, table_name = extract_participant_field_info(participants_schema)
+        assert isinstance(design_spec, PreassignedFrequentistExperimentSpec | OnlineFrequentistExperimentSpec)
+        table_name = TESTING_DWH_PARTICIPANT_DEF.table_name if table_name is None else table_name
+        primary_key = "id" if primary_key is None else primary_key
+        field_type_map = await fetch_fields_or_raise(datasource, design_spec, table_name, primary_key)
 
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
@@ -267,7 +266,7 @@ async def make_insertable_experiment(
         stopped_assignments_reason=stopped_assignments_reason,
         table_name=table_name,
         field_type_map=field_type_map,
-        unique_id_name=unique_id_name,
+        unique_id_name=primary_key,
     )
     experiment = experiment_converter.get_experiment()
     return experiment, await experiment_converter.get_design_spec()
@@ -306,6 +305,7 @@ async def get_experiment_preloaded(session: AsyncSession, experiment_id: str) ->
         selectinload(tables.Experiment.arms),
         selectinload(tables.Experiment.experiment_fields).selectinload(tables.ExperimentField.experiment_filters),
         selectinload(tables.Experiment.experiment_filters),
+        selectinload(tables.Experiment.webhooks),
     ]
     stmt = select(tables.Experiment).where(tables.Experiment.id == experiment_id).options(*preload)
     return (await session.scalars(stmt)).one()
@@ -315,7 +315,7 @@ async def get_experiment_preloaded(session: AsyncSession, experiment_id: str) ->
 class MockRow(RowProtocolMixin):
     """Simulate the bits of a sqlalchemy Row that we need here."""
 
-    participant_id: str
+    id: str
     gender: str = "M"
     is_onboarded: bool = True
 
@@ -338,7 +338,7 @@ def make_sample_data(n=100):
     rs = np.random.default_rng(42)
     return [
         MockRow(
-            participant_id=f"p{i}",
+            id=f"p{i}",
             gender=rs.choice(["M", "F"]),
             is_onboarded=bool(rs.choice([True, False], p=[0.5, 0.5])),
         )
@@ -346,19 +346,135 @@ def make_sample_data(n=100):
     ]
 
 
+def _make_experiment_field(
+    field_name: str,
+    data_type: DataType,
+    *,
+    is_unique_id: bool = False,
+    is_strata: bool = False,
+    metric_pct_change: float | None = None,
+    filters: list[tables.ExperimentFilter] | None = None,
+) -> tables.ExperimentField:
+    """Build a detached ExperimentField suitable for unit-testing without a DB session.
+
+    Don't pass experiment_filters in the constructor for non-filter fields — on a
+    detached (sessionless) instance the attribute stays None, so is_filter returns False.
+    Only pass an explicit list when the field should act as a filter.
+    """
+    field = tables.ExperimentField(
+        field_name=field_name,
+        data_type=data_type.value,
+        is_unique_id=is_unique_id,
+        is_strata=is_strata,
+        metric_pct_change=metric_pct_change,
+    )
+    if filters is not None:
+        field.experiment_filters = filters
+    return field
+
+
+def _make_experiment(
+    experiment_type: ExperimentsType,
+    *,
+    participant_type: str = "",
+    datasource_table: str | None = "my_table",
+    fields: list[tables.ExperimentField] | None = None,
+) -> tables.Experiment:
+    """Build a detached Experiment suitable for unit-testing without a DB session."""
+    exp = tables.Experiment(
+        datasource_id="ds-test",
+        experiment_type=experiment_type.value,
+        participant_type=participant_type,
+        datasource_table=datasource_table,
+        name="test",
+        description="test",
+        state="assigned",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime(2025, 1, 1, tzinfo=UTC),
+    )
+    exp.experiment_fields = fields or []
+    return exp
+
+
+def test_make_participants_def_from_experiment_non_frequentist_returns_none():
+    exp = _make_experiment(ExperimentsType.MAB_ONLINE)
+    assert make_participants_def_from_experiment(exp) is None
+
+
+def test_make_participants_def_from_experiment_missing_uid_returns_none():
+    # No field has is_unique_id=True, so unique_id_field() returns None.
+    exp = _make_experiment(
+        ExperimentsType.FREQ_ONLINE,
+        fields=[_make_experiment_field("revenue", DataType.DOUBLE_PRECISION, metric_pct_change=0.1)],
+    )
+    assert make_participants_def_from_experiment(exp) is None
+
+
+def test_make_participants_def_from_experiment_missing_table_returns_none():
+    exp = _make_experiment(
+        ExperimentsType.FREQ_PREASSIGNED,
+        datasource_table=None,
+        fields=[_make_experiment_field("id", DataType.INTEGER, is_unique_id=True)],
+    )
+    assert make_participants_def_from_experiment(exp) is None
+
+
+@pytest.mark.parametrize("participant_type", ["", "experiment_1.0"])
+def test_make_participants_def_from_experiment_builds_participants_def(participant_type: str):
+    fields = [
+        _make_experiment_field("id", DataType.INTEGER, is_unique_id=True),
+        _make_experiment_field("revenue", DataType.DOUBLE_PRECISION, metric_pct_change=0.05),
+        _make_experiment_field(
+            "country",
+            DataType.CHARACTER_VARYING,
+            is_strata=True,
+            filters=[
+                tables.ExperimentFilter(
+                    position=1,
+                    field_name="country",
+                    relation=Relation.INCLUDES,
+                    string_values=["US"],
+                ),
+            ],
+        ),
+    ]
+    exp = _make_experiment(
+        ExperimentsType.FREQ_PREASSIGNED,
+        participant_type=participant_type,
+        datasource_table="my_table",
+        fields=fields,
+    )
+
+    result = make_participants_def_from_experiment(exp)
+
+    assert result is not None
+    assert result.table_name == "my_table"
+    assert result.participant_type == participant_type
+    assert result.hidden is (participant_type == "")
+    field_names = [f.field_name for f in result.fields]
+    assert field_names == ["country", "id", "revenue"]  # sorted by name
+    id_fd = next(f for f in result.fields if f.field_name == "id")
+    assert id_fd.is_unique_id is True
+    revenue_fd = next(f for f in result.fields if f.field_name == "revenue")
+    assert revenue_fd.is_metric is True
+    country_fd = next(f for f in result.fields if f.field_name == "country")
+    assert country_fd.is_strata is True
+    assert country_fd.is_filter is True
+
+
 @pytest.mark.parametrize("reorder_arms", [True, False])
 async def test_create_preassigned_experiment_impl(
     xngin_session: AsyncSession,
     testing_datasource,
     sample_table,
-    use_deterministic_random,
     reorder_arms: bool,
 ):
     """Test implementation of creating a preassigned experiment."""
     participants = make_sample_data(n=100)
     request = make_create_preassigned_experiment_request()
+    spec = cast(PreassignedFrequentistExperimentSpec, request.design_spec)
     expected_design_url = "https://example.com/"
-    request.design_spec.design_url = HttpUrl(expected_design_url)
+    spec.design_url = HttpUrl(expected_design_url)
     # Add a partial mock PowerResponse just to verify storage
     request.power_analyses = PowerResponse(
         analyses=[
@@ -366,31 +482,29 @@ async def test_create_preassigned_experiment_impl(
         ]
     )
 
-    # Get participants schema from datasource
-    ds_config = testing_datasource.ds.get_config()
-    participants_schema = ds_config.find_participants(request.design_spec.participant_type)
-    field_type_map, unique_id_name, table_name = extract_participant_field_info(participants_schema)
+    assert request.table_name is not None and request.primary_key is not None
+    field_type_map = await fetch_fields_or_raise(testing_datasource.ds, spec, request.table_name, request.primary_key)
 
     response = await create_preassigned_experiment_impl(
         request=request.model_copy(deep=True),  # we'll use the original request for assertions
         datasource_id=testing_datasource.ds.id,
         organization_id=testing_datasource.ds.organization_id,
-        participant_unique_id_field="participant_id",
         dwh_sa_table=sample_table,
         dwh_participants=participants,
         random_state=42,
         xngin_session=xngin_session,
         stratify_on_metrics=True,
         validated_webhooks=[],
-        table_name=table_name,
         field_type_map=field_type_map,
-        unique_id_name=unique_id_name,
     )
 
     # Verify response
     experiment_id = response.experiment_id
     assert response.datasource_id == testing_datasource.ds.id
     assert response.state == ExperimentState.ASSIGNED
+    assert response.participant_type_deprecated == ""
+    assert response.power_analyses is not None
+    assert response.power_analyses == request.power_analyses
     # Verify design_spec
     assert response.design_spec.arms[0].arm_id is not None
     assert response.design_spec.arms[1].arm_id is not None
@@ -404,8 +518,6 @@ async def test_create_preassigned_experiment_impl(
     assert response.design_spec.experiment_type == ExperimentsType.FREQ_PREASSIGNED
     assert isinstance(response.design_spec, PreassignedFrequentistExperimentSpec)
     assert response.design_spec.strata == [Stratum(field_name="gender")]
-    assert response.power_analyses is not None
-    assert response.power_analyses == request.power_analyses
     # Verify assign_summary
     assert response.assign_summary is not None
     assert response.assign_summary.sample_size == len(participants)
@@ -429,8 +541,8 @@ async def test_create_preassigned_experiment_impl(
     assert experiment.arms[1].position == 2
 
     assert experiment.experiment_type == ExperimentsType.FREQ_PREASSIGNED
-    assert experiment.participant_type == request.design_spec.participant_type
-    assert experiment.datasource_table == participants_schema.table_name
+    assert experiment.participant_type == ""
+    assert experiment.datasource_table == request.table_name
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
     assert experiment.design_url == expected_design_url
@@ -475,7 +587,7 @@ async def test_create_preassigned_experiment_impl(
     assert len(assignments) == len(participants)
     # Verify all participant IDs in the db are the participants in the request
     assignment_participant_ids = {a.participant_id for a in assignments}
-    assert assignment_participant_ids == {p.participant_id for p in participants}
+    assert assignment_participant_ids == {p.id for p in participants}
     assert len(assignment_participant_ids) == len(participants)
 
     # Verify arms were created in database
@@ -496,7 +608,7 @@ async def test_create_preassigned_experiment_impl(
 
     # Check one assignment to see if it looks roughly right
     sample_assignment = assignments[0]
-    assert sample_assignment.participant_type == "test_participant_type"
+    assert sample_assignment.participant_type == ""
     assert sample_assignment.experiment_id == experiment.id
     assert sample_assignment.arm_id in (arm.arm_id for arm in response.design_spec.arms)
     # Verify strata information
@@ -517,38 +629,34 @@ async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
     xngin_session: AsyncSession,
     testing_datasource,
     sample_table,
-    use_deterministic_random,
 ):
     """Test that create_preassigned_experiment_impl raises LateValidationError for duplicate participant IDs."""
     request = make_create_preassigned_experiment_request()
 
     # Create mock participants with a duplicate ID
     participants_with_duplicate = [
-        MockRow(participant_id="id_1", gender="M", is_onboarded=True),
-        MockRow(participant_id="id_2", gender="F", is_onboarded=False),
-        MockRow(participant_id="id_1", gender="F", is_onboarded=True),  # Duplicate ID
+        MockRow(id="id_1", gender="M", is_onboarded=True),
+        MockRow(id="id_2", gender="F", is_onboarded=False),
+        MockRow(id="id_1", gender="F", is_onboarded=True),  # Duplicate ID
     ]
 
-    # Get participants schema from datasource
-    ds_config = testing_datasource.ds.get_config()
-    participants_schema = ds_config.find_participants(request.design_spec.participant_type)
-    field_type_map, unique_id_name, table_name = extract_participant_field_info(participants_schema)
+    spec = cast(PreassignedFrequentistExperimentSpec, request.design_spec)
+    assert request.table_name is not None
+    assert request.primary_key is not None
+    field_type_map = await fetch_fields_or_raise(testing_datasource.ds, spec, request.table_name, request.primary_key)
 
     with pytest.raises(LateValidationError, match="Duplicate participant ID found after filtering:"):
         await create_preassigned_experiment_impl(
             request=request,
             datasource_id=testing_datasource.ds.id,
             organization_id=testing_datasource.ds.organization_id,
-            participant_unique_id_field="participant_id",
             dwh_sa_table=sample_table,
             dwh_participants=participants_with_duplicate,
             random_state=42,
             xngin_session=xngin_session,
             stratify_on_metrics=False,
             validated_webhooks=[],
-            table_name=table_name,
             field_type_map=field_type_map,
-            unique_id_name=unique_id_name,
         )
 
 
@@ -556,34 +664,29 @@ async def test_create_preassigned_experiment_impl_with_unbalanced_arms(
     xngin_session: AsyncSession,
     testing_datasource,
     sample_table,
-    use_deterministic_random,
 ):
     participants = make_sample_data(n=100)
     request = make_create_preassigned_experiment_request()
-    spec = cast(BaseFrequentistDesignSpec, request.design_spec)
+    spec = cast(PreassignedFrequentistExperimentSpec, request.design_spec)
     expected_weights = [20.0, 80.0]
     spec.arms[0].arm_weight = expected_weights[0]
     spec.arms[1].arm_weight = expected_weights[1]
 
-    # Get participants schema from datasource
-    ds_config = testing_datasource.ds.get_config()
-    participants_schema = ds_config.find_participants(request.design_spec.participant_type)
-    field_type_map, unique_id_name, table_name = extract_participant_field_info(participants_schema)
+    assert request.table_name is not None
+    assert request.primary_key is not None
+    field_type_map = await fetch_fields_or_raise(testing_datasource.ds, spec, request.table_name, request.primary_key)
 
     response = await create_preassigned_experiment_impl(
         request=request,
         datasource_id=testing_datasource.ds.id,
         organization_id=testing_datasource.ds.organization_id,
-        participant_unique_id_field="participant_id",
         dwh_sa_table=sample_table,
         dwh_participants=participants,
         random_state=42,
         xngin_session=xngin_session,
         stratify_on_metrics=True,
         validated_webhooks=[],
-        table_name=table_name,
         field_type_map=field_type_map,
-        unique_id_name=unique_id_name,
     )
 
     experiment_id = response.experiment_id
@@ -623,36 +726,32 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
     xngin_session: AsyncSession,
     testing_datasource,
     sample_table,
-    use_deterministic_random,
 ):
     participants = make_sample_data(n=150)
-    request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_PREASSIGNED)
-    request["design_spec"]["arms"].append({"arm_name": "T2", "arm_description": "T2"})
+    request = make_create_preassigned_experiment_request()
+    spec = cast(PreassignedFrequentistExperimentSpec, request.design_spec)
+    # Add a 3rd arm and then override weights
+    spec.arms = [*spec.arms, Arm(arm_name="T2", arm_description="T2")]
     expected_weights = [20.0, 20.0, 60.0]
-    request["design_spec"]["arms"][0]["arm_weight"] = expected_weights[0]
-    request["design_spec"]["arms"][1]["arm_weight"] = expected_weights[1]
-    request["design_spec"]["arms"][2]["arm_weight"] = expected_weights[2]
-    request = TypeAdapter(CreateExperimentRequest).validate_python(request)
+    spec.arms[0].arm_weight = expected_weights[0]
+    spec.arms[1].arm_weight = expected_weights[1]
+    spec.arms[2].arm_weight = expected_weights[2]
 
-    # Get participants schema from datasource
-    ds_config = testing_datasource.ds.get_config()
-    participants_schema = ds_config.find_participants(request.design_spec.participant_type)
-    field_type_map, unique_id_name, table_name = extract_participant_field_info(participants_schema)
+    assert request.table_name is not None
+    assert request.primary_key is not None
+    field_type_map = await fetch_fields_or_raise(testing_datasource.ds, spec, request.table_name, request.primary_key)
 
     response = await create_preassigned_experiment_impl(
         request=request,
         datasource_id=testing_datasource.ds.id,
         organization_id=testing_datasource.ds.organization_id,
-        participant_unique_id_field="participant_id",
         dwh_sa_table=sample_table,
         dwh_participants=participants,
         random_state=42,
         xngin_session=xngin_session,
         stratify_on_metrics=False,
         validated_webhooks=[],
-        table_name=table_name,
         field_type_map=field_type_map,
-        unique_id_name=unique_id_name,
     )
 
     experiment_id = response.experiment_id
@@ -695,14 +794,12 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
 async def test_create_freq_online_experiment_impl_experiments_fields_are_correctly_stored(
     xngin_session: AsyncSession,
     testing_datasource,
-    use_deterministic_random,
 ):
     """Test creating a freq online experiment with filters, metrics, and strata are correctly stored."""
     experiment_request = CreateExperimentRequest(
         table_name="dwh",
         primary_key="id",
         design_spec=OnlineFrequentistExperimentSpec(
-            participant_type="",
             experiment_type="freq_online",
             experiment_name="Test Experiment with Filters",
             description="Testing field storage",
@@ -730,6 +827,7 @@ async def test_create_freq_online_experiment_impl_experiments_fields_are_correct
         ),
         webhooks=[],
     )
+    assert experiment_request.table_name is not None and experiment_request.primary_key is not None
 
     # Fake our field type map. Normally extracted from datasource schema.
     field_type_map: dict[str, DataType] = {
@@ -750,15 +848,15 @@ async def test_create_freq_online_experiment_impl_experiments_fields_are_correct
         organization_id=testing_datasource.ds.organization_id,
         xngin_session=xngin_session,
         validated_webhooks=[],
-        table_name=experiment_request.table_name,
         field_type_map=field_type_map,
-        unique_id_name=experiment_request.primary_key,
     )
 
     # Verify API response
     assert response.experiment_id is not None
     assert response.datasource_id == testing_datasource.ds.id
     assert response.state == ExperimentState.ASSIGNED
+    assert response.power_analyses is None
+    assert response.participant_type_deprecated == ""
 
     assert isinstance(response.design_spec, OnlineFrequentistExperimentSpec)
     assert response.design_spec.experiment_name == experiment_request.design_spec.experiment_name
@@ -950,7 +1048,7 @@ async def test_create_experiment_impl_for_freq_online_with_unbalanced_arms(
         (
             ExperimentsType.FREQ_PREASSIGNED,
             [Filter(field_name="missing_field", relation=Relation.INCLUDES, value=["value"])],
-            "Field missing_field not found in participants schema",
+            r"The .design_spec field refers to columns that do not exist in the table: missing_field",
         ),
     ],
 )
@@ -980,9 +1078,7 @@ async def test_create_experiment_impl_for_freq_raises_on_bad_filters(
         )
 
 
-async def test_create_experiment_impl_for_freq_online(
-    xngin_session, testing_datasource, sample_table, use_deterministic_random
-):
+async def test_create_experiment_impl_for_freq_online(xngin_session, testing_datasource):
     """Test implementation of creating an online experiment."""
     request = make_create_freq_online_experiment_request()
 
@@ -1023,7 +1119,8 @@ async def test_create_experiment_impl_for_freq_online(
     # Verify database state
     experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
     assert experiment.experiment_type == ExperimentsType.FREQ_ONLINE
-    assert experiment.participant_type == request.design_spec.participant_type
+    assert experiment.participant_type == ""
+    assert response.participant_type_deprecated == ""
     assert experiment.datasource_table == TESTING_DWH_PARTICIPANT_DEF.table_name
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
@@ -1107,7 +1204,8 @@ async def test_create_experiment_impl_for_mab_online(xngin_session, testing_data
         await xngin_session.refresh(experiment)
 
     assert experiment.experiment_type == ExperimentsType.MAB_ONLINE
-    assert experiment.participant_type == request.design_spec.participant_type
+    assert experiment.participant_type == ""
+    assert response.participant_type_deprecated == ""
     assert experiment.datasource_table is None
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
@@ -1189,7 +1287,8 @@ async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_dat
     # Verify database state
     experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
     assert experiment.experiment_type == ExperimentsType.CMAB_ONLINE
-    assert experiment.participant_type == request.design_spec.participant_type
+    assert experiment.participant_type == ""
+    assert response.participant_type_deprecated == ""
     assert experiment.datasource_table is None
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
@@ -1214,21 +1313,21 @@ async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_dat
         assert context.context_id is not None
 
     # Verify arms were created in database
-    arms = (await xngin_session.scalars(select(tables.Arm).where(tables.Arm.experiment_id == experiment.id))).all()
-    assert len(arms) == 2
-    arm_ids = {arm.id for arm in arms}
+    db_experiment = await get_experiment_preloaded(xngin_session, response.experiment_id)
+
+    db_arms = db_experiment.arms
+    assert len(db_arms) == 2
+    arm_ids = {arm.id for arm in db_arms}
     expected_arm_ids = {arm.arm_id for arm in response.design_spec.arms}
     assert arm_ids == expected_arm_ids
     # Verify arm positions were stored correctly
-    for i, (req_arm, db_arm) in enumerate(zip(request.design_spec.arms, arms, strict=True), start=1):
+    for i, (req_arm, db_arm) in enumerate(zip(request.design_spec.arms, db_arms, strict=True), start=1):
         assert db_arm.position == i
         assert req_arm.arm_name == db_arm.name
         assert req_arm.arm_weight is None
 
     # Verify contexts were created in database
-    contexts = (
-        await xngin_session.scalars(select(tables.Context).where(tables.Context.experiment_id == experiment.id))
-    ).all()
+    contexts = db_experiment.contexts
     assert len(contexts) == 2
     context_ids = {context.id for context in contexts}
     expected_context_ids = {context.context_id for context in response.design_spec.contexts}
@@ -1241,8 +1340,100 @@ async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_dat
     assert len(assignments) == 0
 
 
+@pytest.mark.parametrize(
+    "experiment_type,reward_type,prior_type",
+    [
+        (ExperimentsType.MAB_ONLINE, LikelihoodTypes.NORMAL, PriorTypes.NORMAL),
+        (ExperimentsType.MAB_ONLINE, LikelihoodTypes.BERNOULLI, PriorTypes.BETA),
+        (ExperimentsType.CMAB_ONLINE, LikelihoodTypes.NORMAL, PriorTypes.NORMAL),
+    ],
+)
+async def test_create_experiment_impl_for_bandit_with_arm_weights(
+    xngin_session, testing_datasource, experiment_type, reward_type, prior_type
+):
+    """Test implementation of creating an online experiment."""
+    request = make_create_online_bandit_experiment_request(
+        experiment_type=experiment_type, reward_type=reward_type, prior_type=prior_type
+    )
+    for i, arm in enumerate(request.design_spec.arms):
+        assert isinstance(arm, ArmBandit)
+        arm.arm_weight = 100 * (i + 1) / (len(request.design_spec.arms) + 1)
+        arm.mu_init = None
+        arm.sigma_init = None
+        arm.alpha_init = None
+        arm.beta_init = None
+
+    response = await create_bandit_online_experiment_impl(
+        request=request.model_copy(deep=True),
+        desired_n=None,
+        xngin_session=xngin_session,
+        organization_id=testing_datasource.org.id,
+        datasource_id=testing_datasource.ds.id,
+        validated_webhooks=[],
+    )
+    # Verify response
+    assert response.datasource_id == testing_datasource.ds.id
+    assert response.state == ExperimentState.ASSIGNED
+
+    # Verify design_spec
+    if experiment_type == ExperimentsType.MAB_ONLINE:
+        assert isinstance(response.design_spec, MABExperimentSpec)
+    else:
+        assert isinstance(response.design_spec, CMABExperimentSpec)
+    if experiment_type == ExperimentsType.CMAB_ONLINE:
+        assert (
+            response.design_spec.arms[0].mu_init is not None
+            and response.design_spec.arms[0].mu is not None
+            and len(response.design_spec.arms[0].mu) == 2
+        )
+        assert response.design_spec.arms[0].sigma_init is not None
+        assert (
+            response.design_spec.arms[0].covariance is not None
+            and np.array(response.design_spec.arms[0].covariance).size == 4
+        )
+        assert (
+            response.design_spec.arms[1].mu_init is not None
+            and response.design_spec.arms[1].mu is not None
+            and len(response.design_spec.arms[1].mu) == 2
+        )
+        assert response.design_spec.arms[1].sigma_init is not None
+        assert (
+            response.design_spec.arms[1].covariance is not None
+            and np.array(response.design_spec.arms[1].covariance).size == 4
+        )
+    elif prior_type == PriorTypes.NORMAL:
+        assert response.design_spec.arms[0].mu_init is not None and response.design_spec.arms[0].mu is not None
+        assert (
+            response.design_spec.arms[0].sigma_init is not None and response.design_spec.arms[0].covariance is not None
+        )
+        assert response.design_spec.arms[1].mu_init is not None and response.design_spec.arms[1].mu is not None
+        assert (
+            response.design_spec.arms[1].sigma_init is not None and response.design_spec.arms[1].covariance is not None
+        )
+    elif prior_type == PriorTypes.BETA:
+        assert response.design_spec.arms[0].alpha_init is not None and response.design_spec.arms[0].alpha is not None
+        assert response.design_spec.arms[0].beta_init is not None and response.design_spec.arms[0].beta is not None
+        assert response.design_spec.arms[1].alpha_init is not None and response.design_spec.arms[1].alpha is not None
+        assert response.design_spec.arms[1].beta_init is not None and response.design_spec.arms[1].beta is not None
+
+    # Verify updated experiment state
+
+    experiment = await get_experiment_preloaded(xngin_session, response.experiment_id)
+    # Verify arm parameters were stored correctly
+    for req_arm, db_arm in zip(response.design_spec.arms, experiment.arms, strict=True):
+        assert req_arm.arm_weight == db_arm.arm_weight
+        assert req_arm.mu_init == db_arm.mu_init
+        assert req_arm.sigma_init == db_arm.sigma_init
+        assert req_arm.alpha_init == db_arm.alpha_init
+        assert req_arm.beta_init == db_arm.beta_init
+        assert req_arm.mu == db_arm.mu
+        assert req_arm.covariance == db_arm.covariance
+        assert req_arm.alpha == db_arm.alpha
+        assert req_arm.beta == db_arm.beta
+
+
 async def test_create_experiment_impl_no_metric_stratification(
-    xngin_session, testing_datasource, sample_table, use_deterministic_random
+    xngin_session, testing_datasource, use_deterministic_random
 ):
     """Test implementation of creating an experiment without stratifying on metrics."""
     participants = make_sample_data(n=100)
@@ -1270,9 +1461,7 @@ async def test_create_experiment_impl_no_metric_stratification(
     assert response.design_spec.strata == [Stratum(field_name="gender")]
 
     # Verify database state
-    experiment = (
-        await xngin_session.scalars(select(tables.Experiment).where(tables.Experiment.id == response.experiment_id))
-    ).one()
+    experiment = await get_experiment_preloaded(xngin_session, response.experiment_id)
     # Verify assignments were created
     assignments = (
         await xngin_session.scalars(
@@ -1294,299 +1483,37 @@ async def test_create_experiment_impl_no_metric_stratification(
     assert abs(num_control - num_treat) <= 1
 
 
-@pytest.mark.parametrize(
-    "method_under_test,initial_state,expected_state,expected_status,expected_detail",
-    [
-        # Success case
-        (
-            commit_experiment_impl,
-            ExperimentState.ASSIGNED,
-            ExperimentState.COMMITTED,
-            CommitExperimentResult.COMMITTED,
-            None,
-        ),
-        # No-op
-        (
-            commit_experiment_impl,
-            ExperimentState.COMMITTED,
-            ExperimentState.COMMITTED,
-            CommitExperimentResult.COMMITTED,
-            None,
-        ),
-        # Failure cases
-        (
-            commit_experiment_impl,
-            ExperimentState.DESIGNING,
-            ExperimentState.DESIGNING,
-            CommitExperimentResult.INVALID_STATE,
-            "Invalid state: designing",
-        ),
-        (
-            commit_experiment_impl,
-            ExperimentState.ABORTED,
-            ExperimentState.ABORTED,
-            CommitExperimentResult.INVALID_STATE,
-            "Invalid state: aborted",
-        ),
-        # Success cases
-        (
-            abandon_experiment_impl,
-            ExperimentState.DESIGNING,
-            ExperimentState.ABANDONED,
-            AbandonExperimentResult.ABANDONED,
-            None,
-        ),
-        (
-            abandon_experiment_impl,
-            ExperimentState.ASSIGNED,
-            ExperimentState.ABANDONED,
-            AbandonExperimentResult.ABANDONED,
-            None,
-        ),
-        # No-op
-        (
-            abandon_experiment_impl,
-            ExperimentState.ABANDONED,
-            ExperimentState.ABANDONED,
-            AbandonExperimentResult.ABANDONED,
-            None,
-        ),
-        # Failure case
-        (
-            abandon_experiment_impl,
-            ExperimentState.COMMITTED,
-            ExperimentState.COMMITTED,
-            AbandonExperimentResult.INVALID_STATE,
-            "Invalid state: committed",
-        ),
-    ],
-)
-async def test_state_setting_experiment_impl(
-    xngin_session,
-    testing_datasource,
-    method_under_test,
-    initial_state,
-    expected_state,
-    expected_status,
-    expected_detail,
-):
-    # Initialize our state with an existing experiment who's state we want to modify.
-    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds, state=initial_state)
-
-    try:
-        sig = inspect.signature(method_under_test)
-        if len(sig.parameters) == 2:
-            response = await method_under_test(xngin_session, experiment)
-        else:
-            response = await method_under_test(experiment)
-    except HTTPException as e:
-        assert e.status_code == expected_status  # noqa: PT017
-        assert e.detail == expected_detail  # noqa: PT017
-    else:
-        assert response == expected_status
-        assert experiment.state == expected_state
-
-
-async def test_list_experiments_impl(
-    xngin_session,
-    testing_datasource,
-    testing_datasource_with_user,
-):
-    """Test that we only get experiments in a valid state for the specified datasource."""
-    experiment1_data = await make_insertable_experiment(testing_datasource.ds, ExperimentState.ASSIGNED)
-    experiment2_data = await make_insertable_experiment(testing_datasource.ds, ExperimentState.COMMITTED)
-    experiment3_data = await make_insertable_experiment(testing_datasource.ds, ExperimentState.DESIGNING)
-    experiment4_data = await make_insertable_experiment(testing_datasource.ds, ExperimentState.ABORTED)
-    # One more experiment associated with a *different* datasource.
-    experiment5_data = await make_insertable_experiment(testing_datasource_with_user.ds, ExperimentState.ASSIGNED)
-    # Set the created_at time to test ordering
-    experiment1_data[0].created_at = datetime.now(UTC) - timedelta(days=1)
-    experiment2_data[0].created_at = datetime.now(UTC)
-    experiment3_data[0].created_at = datetime.now(UTC) + timedelta(days=1)
-    experiment_data = [experiment1_data, experiment2_data, experiment3_data, experiment4_data, experiment5_data]
-
-    xngin_session.add_all([data[0] for data in experiment_data])
-    await xngin_session.commit()
-
-    experiments = await list_organization_or_datasource_experiments_impl(
-        xngin_session=xngin_session, datasource_id=testing_datasource.ds.id
+async def test_get_experiment_impl_of_legacy_experiment(xngin_session, testing_datasource):
+    """Basic test for get_experiment_impl returning expected properties."""
+    # Insert a committed experiment and get its ID.
+    experiment_db, expected_design_spec = await make_insertable_experiment(
+        testing_datasource.ds,
+        ExperimentState.COMMITTED,
+        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
     )
-    # experiment5 excluded due to datasource mismatch
-    assert len(experiments.items) == 3
-
-    # Verify that the experiments are in the correct order
-    actual1_config = experiments.items[2]  # experiment1 is last as it's oldest
-    actual2_config = experiments.items[1]
-    actual3_config = experiments.items[0]
-    assert actual1_config.state == ExperimentState.ASSIGNED
-    diff = DeepDiff(
-        actual1_config.design_spec, experiment1_data[1], exclude_regex_paths=["experiment_id", r"arms\[\d+\].arm_id"]
-    )
-    assert not diff, f"Objects differ:\n{diff.pretty()}"
-    assert actual2_config.state == ExperimentState.COMMITTED
-    diff = DeepDiff(
-        actual2_config.design_spec, experiment2_data[1], exclude_regex_paths=["experiment_id", r"arms\[\d+\].arm_id"]
-    )
-    assert not diff, f"Objects differ:\n{diff.pretty()}"
-    assert actual3_config.state == ExperimentState.DESIGNING
-    diff = DeepDiff(
-        actual3_config.design_spec, experiment3_data[1], exclude_regex_paths=["experiment_id", r"arms\[\d+\].arm_id"]
-    )
-    assert not diff, f"Objects differ:\n{diff.pretty()}"
-
-
-async def test_list_experiments_impl_alt_scenarios(
-    xngin_session,
-    testing_datasource,
-):
-    with pytest.raises(ValueError, match="Either datasource_id or organization_id must be provided"):
-        await list_organization_or_datasource_experiments_impl(xngin_session=xngin_session)
-
-    experiment1_data = await make_insertable_experiment(testing_datasource.ds, ExperimentState.ASSIGNED)
-    xngin_session.add(experiment1_data[0])
-    org_list = await list_organization_or_datasource_experiments_impl(
-        xngin_session=xngin_session, organization_id=testing_datasource.org.id
-    )
-    ds_list = await list_organization_or_datasource_experiments_impl(
-        xngin_session=xngin_session,
-        datasource_id=testing_datasource.ds.id,
-    )
-    both_list = await list_organization_or_datasource_experiments_impl(
-        xngin_session=xngin_session,
-        datasource_id=testing_datasource.ds.id,
-        organization_id=testing_datasource.org.id,
-    )
-    assert len(org_list.items) == 1
-    assert len(ds_list.items) == 1
-    assert len(both_list.items) == 1
-    assert org_list == ds_list
-    assert ds_list == both_list
-
-    bad_list = await list_organization_or_datasource_experiments_impl(
-        xngin_session=xngin_session,
-        datasource_id="bad_id",
-        organization_id=testing_datasource.org.id,
-    )
-    assert bad_list.items == []
-
-
-async def test_get_experiment_assignments_impl(xngin_session, testing_datasource):
-    # First insert an experiment with assignments
-    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
-    await xngin_session.commit()
-
-    experiment_id = experiment.id
-    arm1_id = experiment.arms[0].id
-    arm2_id = experiment.arms[1].id
-    arm_assignments = [
-        tables.ArmAssignment(
-            experiment_id=experiment_id,
-            participant_type="test_participant_type",
-            participant_id="p1",
-            arm_id=arm1_id,
-            strata=[{"field_name": "gender", "strata_value": "F"}],
-        ),
-        tables.ArmAssignment(
-            experiment_id=experiment_id,
-            participant_type="test_participant_type",
-            participant_id="p2",
-            arm_id=arm2_id,
-            strata=[{"field_name": "gender", "strata_value": "M"}],
-        ),
+    experiment_db.webhooks = [
+        tables.Webhook(
+            id="wh1", name="wh", type="experiment.created", url="https://url", organization_id=testing_datasource.org.id
+        )
     ]
-    xngin_session.add_all(arm_assignments)
-    await xngin_session.commit()
-    await xngin_session.refresh(experiment, ["arms", "arm_assignments"])
-
-    data = get_experiment_assignments_impl(experiment)
-
-    # Check the response structure
-    assert data.experiment_id == experiment.id
-    actual_assign_summary = await get_assign_summary(
-        xngin_session, experiment.id, None, ExperimentsType(experiment.experiment_type)
-    )
-    assert data.sample_size == actual_assign_summary.sample_size
-    assert data.balance_check == ExperimentStorageConverter(experiment).get_balance_check()
-
-    # Check assignments
-    assignments = data.assignments
-    assert len(assignments) == 2
-
-    # Verify first assignment
-    assert assignments[0].participant_id == "p1"
-    assert str(assignments[0].arm_id) == arm1_id
-    assert assignments[0].arm_name == "control"
-    assert assignments[0].strata is not None and len(assignments[0].strata) == 1
-    assert assignments[0].strata[0].field_name == "gender"
-    assert assignments[0].strata[0].strata_value == "F"
-    assert assignments[0].created_at is not None
-
-    # Verify second assignment
-    assert assignments[1].participant_id == "p2"
-    assert str(assignments[1].arm_id) == arm2_id
-    assert assignments[1].arm_name == "treatment"
-    assert assignments[1].strata is not None and len(assignments[1].strata) == 1
-    assert assignments[1].strata[0].field_name == "gender"
-    assert assignments[1].strata[0].strata_value == "M"
-    assert assignments[1].created_at is not None
-
-
-async def test_get_experiment_mab_assignments_impl(xngin_session, testing_datasource):
-    # First insert an experiment with assignments
-    experiment = await insert_experiment_and_arms(
-        xngin_session, testing_datasource.ds, experiment_type=ExperimentsType.MAB_ONLINE
-    )
+    experiment_db.participant_type = "experiment_1.0_type"
+    xngin_session.add(experiment_db)
     await xngin_session.commit()
 
-    experiment_id = experiment.id
-    arm1_id = experiment.arms[0].id
-    arm2_id = experiment.arms[1].id
-    arm_assignments = [
-        tables.Draw(
-            experiment_id=experiment_id,
-            participant_type="test_participant_type",
-            participant_id="p1",
-            arm_id=arm1_id,
-            current_mu=experiment.arms[0].mu,
-            current_covariance=experiment.arms[0].covariance,
-        ),
-        tables.Draw(
-            experiment_id=experiment_id,
-            participant_type="test_participant_type",
-            participant_id="p2",
-            arm_id=arm2_id,
-            current_mu=experiment.arms[1].mu,
-            current_covariance=experiment.arms[1].covariance,
-        ),
-    ]
-    xngin_session.add_all(arm_assignments)
-    await xngin_session.commit()
-    await xngin_session.refresh(experiment, ["arms", "draws"])
+    experiment_db = await get_experiment_preloaded(xngin_session, experiment_db.id)
+    result: GetExperimentResponse = await get_experiment_impl(xngin_session=xngin_session, experiment=experiment_db)
 
-    data = get_experiment_assignments_impl(experiment)
-
-    # Check the response structure
-    assert data.experiment_id == experiment.id
-
-    # Check assignments
-    assignments = data.assignments
-    assert len(assignments) == 2
-
-    # Verify first assignment
-    assert assignments[0].participant_id == "p1"
-    assert str(assignments[0].arm_id) == arm1_id
-    assert assignments[0].arm_name == "string"
-
-    # Verify second assignment
-    assert assignments[1].participant_id == "p2"
-    assert str(assignments[1].arm_id) == arm2_id
-    assert assignments[1].arm_name == "string"
-
-    for assignment in assignments:
-        assert assignment.outcome is None
-        assert assignment.context_values is None
-        assert assignment.observed_at is None
-        assert assignment.created_at is not None
+    # Simple field presence checks
+    assert result.experiment_id == experiment_db.id
+    assert result.datasource_id == testing_datasource.ds.id
+    assert result.state == ExperimentState.COMMITTED
+    assert result.participant_type_deprecated == "experiment_1.0_type"
+    assert result.power_analyses is None
+    assert result.assign_summary is not None
+    assert result.webhooks == ["wh1"]
+    diff = DeepDiff(result.design_spec, expected_design_spec, exclude_regex_paths=[r"arms\[\d+\].arm_id"])
+    assert not diff, f"Objects differ:\n{diff.pretty()}"
 
 
 async def make_experiment_with_assignments(
@@ -1614,7 +1541,7 @@ async def make_experiment_with_assignments(
             assignments = [
                 tables.ArmAssignment(
                     experiment_id=experiment.id,
-                    participant_type="test_participant_type",
+                    participant_type="",
                     participant_id="p1",
                     arm_id=arm1_id,
                     created_at=datetime(2025, 1, 1, tzinfo=UTC),
@@ -1625,7 +1552,7 @@ async def make_experiment_with_assignments(
                 ),
                 tables.ArmAssignment(
                     experiment_id=experiment.id,
-                    participant_type="test_participant_type",
+                    participant_type="",
                     participant_id="p2",
                     arm_id=arm2_id,
                     created_at=datetime(2025, 1, 2, tzinfo=UTC),
@@ -1639,7 +1566,7 @@ async def make_experiment_with_assignments(
             assignments = [
                 tables.Draw(
                     experiment_id=experiment.id,
-                    participant_type="test_participant_type",
+                    participant_type="",
                     participant_id="p1",
                     arm_id=arm1_id,
                     created_at=datetime(2025, 1, 1, tzinfo=UTC),
@@ -1647,7 +1574,7 @@ async def make_experiment_with_assignments(
                 ),
                 tables.Draw(
                     experiment_id=experiment.id,
-                    participant_type="test_participant_type",
+                    participant_type="",
                     participant_id="p2",
                     arm_id=arm2_id,
                     created_at=datetime(2025, 1, 2, tzinfo=UTC),
@@ -1658,7 +1585,7 @@ async def make_experiment_with_assignments(
             assignments = [
                 tables.Draw(
                     experiment_id=experiment.id,
-                    participant_type="test_participant_type",
+                    participant_type="",
                     participant_id="p1",
                     arm_id=arm1_id,
                     created_at=datetime(2025, 1, 1, tzinfo=UTC),
@@ -1668,7 +1595,7 @@ async def make_experiment_with_assignments(
                 ),
                 tables.Draw(
                     experiment_id=experiment.id,
-                    participant_type="test_participant_type",
+                    participant_type="",
                     participant_id="p2",
                     arm_id=arm2_id,
                     created_at=datetime(2025, 1, 2, tzinfo=UTC),
@@ -1681,6 +1608,10 @@ async def make_experiment_with_assignments(
             raise ValueError(f"Unsupported experiment type: {experiment.experiment_type}")
 
     xngin_session.add_all(assignments)
+    xngin_session.add_all([
+        tables.ArmStats(arm_id=arm1_id, population=1),
+        tables.ArmStats(arm_id=arm2_id, population=1),
+    ])
     await xngin_session.commit()
 
     return experiment
@@ -1693,14 +1624,15 @@ async def collect_streaming_response_body(response) -> bytes:
 async def test_get_experiment_assignments_as_csv_impl(xngin_session, testing_datasource):
     experiment, _ = await make_insertable_experiment(
         testing_datasource.ds,
+        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
         design_spec=PreassignedFrequentistExperimentSpec(
-            participant_type="test_participant_type",
             experiment_name="test experiment",
             description="test experiment",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
             end_date=datetime.now(UTC) + timedelta(days=1),
             arms=[Arm(arm_name="control", arm_description=""), Arm(arm_name="treatment", arm_description="")],
-            strata=[Stratum(field_name="gender"), Stratum(field_name="ethnicity")],
+            strata=[Stratum(field_name="ethnicity"), Stratum(field_name="gender")],
             metrics=[DesignSpecMetricRequest(field_name="is_onboarded", metric_pct_change=0.1)],
             filters=[],
         ),
@@ -1726,8 +1658,9 @@ async def test_get_experiment_assignments_as_csv_impl_emits_null_for_missing_met
 ):
     experiment, _ = await make_insertable_experiment(
         testing_datasource.ds,
+        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
         design_spec=PreassignedFrequentistExperimentSpec(
-            participant_type="test_participant_type",
             experiment_name="test experiment",
             description="test experiment",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -1773,8 +1706,9 @@ async def test_get_experiment_assignments_as_csv_impl_uses_sorted_strata_header_
 ):
     experiment, _ = await make_insertable_experiment(
         testing_datasource.ds,
+        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
         design_spec=PreassignedFrequentistExperimentSpec(
-            participant_type="test_participant_type",
             experiment_name="test experiment",
             description="test experiment",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -1798,8 +1732,9 @@ async def test_get_experiment_assignments_as_csv_impl_omits_strata_columns_when_
 ):
     experiment, _ = await make_insertable_experiment(
         testing_datasource.ds,
+        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
         design_spec=PreassignedFrequentistExperimentSpec(
-            participant_type="test_participant_type",
             experiment_name="test experiment",
             description="test experiment",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -1831,7 +1766,6 @@ async def test_get_experiment_assignments_as_csv_impl_omits_context_vals_for_mab
     experiment, _ = await make_insertable_experiment(
         testing_datasource.ds,
         design_spec=MABExperimentSpec(
-            participant_type="test_participant_type",
             experiment_name="test experiment",
             description="test experiment",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -1863,7 +1797,6 @@ async def test_get_experiment_assignments_as_csv_impl_includes_context_vals_for_
     experiment, _ = await make_insertable_experiment(
         testing_datasource.ds,
         design_spec=CMABExperimentSpec(
-            participant_type="test_participant_type",
             experiment_name="test experiment",
             description="test experiment",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -1921,6 +1854,8 @@ async def test_create_assignment_for_participant_errors(xngin_session, testing_d
         testing_datasource.ds,
         ExperimentState.ASSIGNED,
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
     )
     experiment.arms = []
     response = await create_assignment_for_participant(xngin_session, experiment, "p1", None, random_state=66)
@@ -1931,6 +1866,8 @@ async def test_create_assignment_for_participant_errors(xngin_session, testing_d
         testing_datasource.ds,
         ExperimentState.ASSIGNED,
         experiment_type=ExperimentsType.FREQ_ONLINE,
+        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
     )
     with pytest.raises(ExperimentsAssignmentError, match="Invalid experiment state: assigned"):
         await create_assignment_for_participant(xngin_session, experiment, "p1", None, random_state=66)
@@ -1940,6 +1877,8 @@ async def test_create_assignment_for_participant_errors(xngin_session, testing_d
         testing_datasource.ds,
         ExperimentState.COMMITTED,
         experiment_type=ExperimentsType.FREQ_ONLINE,
+        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
     )
     experiment.arms = []
     with pytest.raises(ExperimentsAssignmentError, match="Experiment has no arms"):
@@ -2131,6 +2070,106 @@ async def test_create_assignment_for_participant_stopped_reason(
 
 
 @pytest.mark.parametrize(
+    "has_assignment, participant_id, sample_timestamp, income",
+    [
+        # These 2 will already exist in the database due to make_experiment_with_assignments
+        (True, "p1", "2023", 0),
+        (True, "p2", None, None),
+        # These meet all the filters
+        (True, 1, "2024-01-01", 0),
+        (True, "2", "2026-02-01", 100000),
+        # These don't meet all the filters
+        (False, (1 << 63) - 1, "2024-01-01", 0),
+        (False, 1, "2023-01-01T00:00:00Z", 0),
+        (False, 1, "2026-01-01", 100001),
+    ],
+)
+async def test_get_or_create_assignment_for_participant_with_filters_in_online_freq_exp(
+    xngin_session, testing_datasource, has_assignment, participant_id, sample_timestamp, income
+):
+    experiment, _ = await make_insertable_experiment(
+        testing_datasource.ds,
+        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
+        design_spec=OnlineFrequentistExperimentSpec(
+            experiment_name="test experiment",
+            description="test experiment",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime.now(UTC) + timedelta(days=1),
+            arms=[Arm(arm_name="control", arm_description=""), Arm(arm_name="treatment", arm_description="")],
+            strata=[],
+            metrics=[DesignSpecMetricRequest(field_name="is_onboarded", metric_pct_change=0.1)],
+            filters=[
+                Filter(field_name="id", relation=Relation.EXCLUDES, value=[(1 << 63) - 1, None]),
+                Filter(field_name="sample_timestamp", relation=Relation.BETWEEN, value=["2024-01-01T00:00:00Z", None]),
+                Filter(field_name="income", relation=Relation.BETWEEN, value=[0, 100000]),
+                Filter(field_name="gender", relation=Relation.INCLUDES, value=["M", None]),
+            ],
+        ),
+    )
+    experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds, experiment=experiment)
+    await xngin_session.refresh(experiment, ["arms"])
+
+    participant_props = [
+        ParticipantProperty(field_name="id", value=participant_id),
+        ParticipantProperty(field_name="sample_timestamp", value=sample_timestamp),
+        ParticipantProperty(field_name="income", value=income),
+        # All our tests will infer a default gender=None
+    ]
+    response = await get_or_create_assignment_for_participant(
+        xngin_session, experiment, str(participant_id), create_if_none=True, properties=participant_props
+    )
+
+    assert response.experiment_id == experiment.id
+    assert response.participant_id == str(participant_id)
+    if has_assignment:
+        assert response.assignment is not None
+        assert response.assignment.arm_id in {arm.id for arm in experiment.arms}
+    else:
+        assert response.assignment is None
+
+
+@pytest.mark.parametrize(
+    "has_assignment, experiment_type, create_if_none, expected_exception",
+    [
+        # Preassigned experiments can't add new assignments
+        (False, ExperimentsType.FREQ_PREASSIGNED, False, does_not_raise()),
+        (False, ExperimentsType.FREQ_PREASSIGNED, True, does_not_raise()),
+        # if create_if_none is False, we should not create a new assignment
+        (False, ExperimentsType.FREQ_ONLINE, False, does_not_raise()),
+        (False, ExperimentsType.MAB_ONLINE, False, does_not_raise()),
+        # but if create_if_none is True, we should create a new assignment
+        (True, ExperimentsType.FREQ_ONLINE, True, does_not_raise()),
+        (True, ExperimentsType.MAB_ONLINE, True, does_not_raise()),
+        # CMAB experiments can query for assignments but NOT create at this endpoint
+        (False, ExperimentsType.CMAB_ONLINE, False, does_not_raise()),
+        (False, ExperimentsType.CMAB_ONLINE, True, pytest.raises(LateValidationError, match=r"use.+POST endpoint")),
+    ],
+)
+async def test_get_or_create_assignment_for_participant_without_filters(
+    xngin_session,
+    testing_datasource,
+    has_assignment: bool,
+    experiment_type: ExperimentsType,
+    create_if_none: bool,
+    expected_exception: AbstractContextManager,
+):
+    experiment = await insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=experiment_type,
+        end_date=datetime.now(UTC) + timedelta(days=1),
+    )
+    with expected_exception:
+        response = await get_or_create_assignment_for_participant(
+            xngin_session, experiment, "user_id", create_if_none, properties=None
+        )
+        assert response.experiment_id == experiment.id
+        assert response.participant_id == "user_id"
+        assert (response.assignment is not None) == has_assignment
+
+
+@pytest.mark.parametrize(
     "experiment_type,prior_type,reward_type",
     [
         (ExperimentsType.MAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
@@ -2204,6 +2243,8 @@ async def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_
         testing_datasource.ds,
         ExperimentState.ASSIGNED,
         experiment_type=ExperimentsType.FREQ_ONLINE,
+        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
     )
     xngin_session.add(experiment)
     await xngin_session.commit()
@@ -2218,20 +2259,24 @@ async def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_
     arm_assignments = [
         tables.ArmAssignment(
             experiment_id=experiment_id,
-            participant_type="test_participant_type",
+            participant_type="",
             participant_id="1",
             arm_id=arm1_id,
             strata=[],
         ),
         tables.ArmAssignment(
             experiment_id=experiment_id,
-            participant_type="test_participant_type",
+            participant_type="",
             participant_id="2",
             arm_id=arm2_id,
             strata=[],
         ),
     ]
     xngin_session.add_all(arm_assignments)
+    xngin_session.add_all([
+        tables.ArmStats(arm_id=arm1_id, population=1),
+        tables.ArmStats(arm_id=arm2_id, population=1),
+    ])
     await xngin_session.commit()
     await xngin_session.refresh(experiment, ["arms", "arm_assignments"])
 
@@ -2256,6 +2301,36 @@ async def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_
         assert arm_analysis.mean_ci_lower is not None and np.isnan(arm_analysis.mean_ci_lower)
         assert arm_analysis.mean_ci_upper is not None and np.isnan(arm_analysis.mean_ci_upper)
         assert arm_analysis.num_missing_values == -1
+
+
+async def test_arm_population_counter(xngin_session, testing_datasource):
+    """Verify population is incremented on single insert and readable via get_assign_summary."""
+    experiment = await insert_experiment_and_arms(
+        xngin_session, testing_datasource.ds, experiment_type=ExperimentsType.FREQ_ONLINE
+    )
+
+    # Initially no arm_stats rows exist, so get_assign_summary returns zeros
+    summary = await get_assign_summary(xngin_session, experiment.id, None, ExperimentsType.FREQ_ONLINE)
+    assert summary.sample_size == 0
+    assert summary.arm_sizes is not None
+    assert all(a.size == 0 for a in summary.arm_sizes)
+
+    # Single assignment upserts arm_stats and increments population
+    result = await create_assignment_for_participant(
+        xngin_session=xngin_session,
+        experiment=experiment,
+        participant_id="p1",
+    )
+    assert result is not None
+
+    # Verify arm_stats row was created
+    arm_stat = await xngin_session.get(tables.ArmStats, result.arm_id)
+    assert arm_stat is not None
+    assert arm_stat.population == 1
+
+    # get_assign_summary reflects the new count
+    summary = await get_assign_summary(xngin_session, experiment.id, None, ExperimentsType.FREQ_ONLINE)
+    assert summary.sample_size == 1
 
 
 def test_experiment_sql():

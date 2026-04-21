@@ -17,7 +17,7 @@ MAX_LENGTH_OF_NAME_VALUE = 100
 MAX_LENGTH_OF_PARTICIPANT_ID_VALUE = 64
 
 # Maximum number of arms allowed in an experiment.
-MAX_NUMBER_OF_ARMS = 10
+MAX_NUMBER_OF_ARMS = 20
 
 # Top-Two Thompson Sampling: minimum number of arms to activate Top-Two selection.
 # With fewer arms, regular Thompson Sampling is used.

@@ -1,5 +1,9 @@
-"""Tests for cluster randomization power analysis - MDE calculation."""
+"""Tests for cluster randomization power analysis, including using wide_dwh test data."""
 
+import math
+from pathlib import Path
+
+import pandas as pd
 import pytest
 
 from xngin.apiserver.routers.common_api_types import DesignSpecMetric
@@ -14,39 +18,147 @@ from xngin.stats.cluster_power import (
 from xngin.stats.power import calculate_mde_with_desired_n
 
 
-@pytest.mark.parametrize(
-    "_test_name, icc, avg_cluster_size, cv, expected",
-    [
-        ("______no_clustering", 0.0, 30, 0.0, 1.0),
-        ("_perfect_clustering", 1.0, 30, 0.0, 30.0),
-        # DEFF = 1 + (30-1)*0.15 = 5.35
-        ("_fake_school_no_cv", 0.15, 30, 0.0, pytest.approx(5.35)),
-        # DEFF = 1 + 0.15 * [(30-1) + 30*(1.5²)] = 15.475
-        ("fake_school_cv_1.5", 0.15, 30, 1.5, pytest.approx(15.475)),
-    ],
-)
-def test_calculate_design_effect_parametrized(_test_name, icc, avg_cluster_size, cv, expected):
-    if cv == 0.0:
-        deff = calculate_design_effect(icc=icc, avg_cluster_size=avg_cluster_size)
-    else:
-        deff = calculate_design_effect(icc=icc, avg_cluster_size=avg_cluster_size, cv=cv)
-    assert deff == expected
+@pytest.fixture(scope="module")
+def wide_dwh_data():
+    """Load the wide_dwh test dataset."""
+    data_path = Path(__file__).parent.parent / "apiserver" / "testdata" / "wide_dwh.csv.zst"
+    return pd.read_csv(data_path)
 
 
-@pytest.mark.parametrize(
-    "_test_name, icc, avg_cluster_size, cv, expected_error",
-    [
-        ("invalid_icc", 1.5, 30, 0.0, "ICC must be between 0 and 1, got 1.5"),
-        ("invalid_cluster_size", 0.15, 0, 0.0, "Cluster size must be >= 1, got 0"),
-        ("invalid_cv", 0.15, 30, -1.0, "CV must be >= 0, got -1.0"),
-    ],
-)
-def test_calculate_design_effect_invalid_params(_test_name, icc, avg_cluster_size, cv, expected_error):
-    with pytest.raises(ValueError, match=expected_error):
-        calculate_design_effect(icc=icc, avg_cluster_size=avg_cluster_size, cv=cv)
+class TestDataExploration:
+    """Explore and verify the wide_dwh test data structure."""
+
+    def test_cluster_structure(self, wide_dwh_data):
+        """Verify cluster structure."""
+        assert len(wide_dwh_data) == 1000
+        assert "cluster_id" in wide_dwh_data.columns
+
+        n_clusters = wide_dwh_data["cluster_id"].nunique()
+        cluster_sizes = wide_dwh_data.groupby("cluster_id").size()
+
+        assert n_clusters == 20
+        assert cluster_sizes.min() > 0  # No empty clusters
+
+
+class TestCalculateDesignEffect:
+    def test_calculate_design_effect(self):
+        """Test design effect calculation."""
+        # ICC=0 → DEFF=1 (no clustering effect)
+        assert calculate_design_effect(icc=0.0, avg_cluster_size=50) == 1.0
+
+        # ICC=0.05, m=50 → DEFF = 1 + (50-1)*0.05 = 3.45
+        deff = calculate_design_effect(icc=0.05, avg_cluster_size=50)
+        assert deff == pytest.approx(3.45)
+
+    def test_deff_world_bank_example(self):
+        """
+        Verify DEFF formula against World Bank blog example.
+
+        Example values:
+        - ICC = 0.39
+        - Average cluster size = 6.0
+        - CV = 5.16
+
+        World Bank reports:
+        - Standard design effect (DEFT) = 1.72 → DEFF = 2.95
+        - With CV adjustment (DEFT) = 8.08 → DEFF = 65.25
+        """
+        icc = 0.39
+        avg_cluster_size = 6.0
+        cv = 5.16
+
+        # Test standard DEFF (without CV)
+        deff_standard = calculate_design_effect(icc, avg_cluster_size, cv=0.0)
+        expected_deff_standard = 1 + (avg_cluster_size - 1) * icc  # 2.95
+        assert deff_standard == pytest.approx(expected_deff_standard, abs=0.01)
+
+        # World Bank reports DEFT = 1.72, which means DEFF = 1.72² = 2.9584
+        deft_standard = math.sqrt(deff_standard)
+        assert deft_standard == pytest.approx(1.72, abs=0.01)
+
+        # Test DEFF with CV adjustment
+        # World Bank reports DEFT = 8.08, which means DEFF = 8.08² = 65.2864
+        deff_with_cv = calculate_design_effect(icc, avg_cluster_size, cv)
+        assert deff_with_cv == pytest.approx(65.2864, abs=0.04)
+
+        # Verify DEFT matches what World Bank reports
+        deft_with_cv = math.sqrt(deff_with_cv)
+        assert deft_with_cv == pytest.approx(8.08, abs=0.01)
+
+    def test_world_bank_mde_calculation(self):
+        """
+        Replicate World Bank MDE calculation to verify DEFF formula.
+
+        Their parameters:
+        - N = 31,068 workers
+        - 5,172 firms (clusters)
+        - Average cluster size = 6.0
+        - ICC = 0.39
+        - CV = 5.16
+
+        They report:
+        - Standard MDE = 0.055 s.d. (with basic DEFF)
+        - MDE with CV = 0.26 s.d. (from simulations)
+        - Ratio = 4.73
+        """
+        # World Bank parameters
+        icc = 0.39
+        avg_cluster_size = 6.0
+        cv = 5.16
+
+        # Calculate DEFFs
+        deff_standard = calculate_design_effect(icc, avg_cluster_size, cv=0.0)
+        deff_with_cv = calculate_design_effect(icc, avg_cluster_size, cv)
+
+        # Calculate DEFTs
+        deft_standard = math.sqrt(deff_standard)
+        deft_with_cv = math.sqrt(deff_with_cv)
+
+        # MDE scales with DEFT (square root of DEFF)
+        # So the ratio of MDEs should equal the ratio of DEFTs
+        mde_ratio = 0.26 / 0.055  # From World Bank
+        deft_ratio = deft_with_cv / deft_standard
+
+        # The ratios should match
+        assert deft_ratio == pytest.approx(mde_ratio, abs=0.05)
+
+    @pytest.mark.parametrize(
+        "_test_name, icc, avg_cluster_size, cv, expected",
+        [
+            ("______no_clustering", 0.0, 30, 0.0, 1.0),
+            ("_perfect_clustering", 1.0, 30, 0.0, 30.0),
+            # DEFF = 1 + (30-1)*0.15 = 5.35
+            ("_fake_school_no_cv", 0.15, 30, 0.0, pytest.approx(5.35)),
+            # DEFF = 1 + 0.15 * [(30-1) + 30*(1.5²)] = 15.475
+            ("fake_school_cv_1.5", 0.15, 30, 1.5, pytest.approx(15.475)),
+        ],
+    )
+    def test_calculate_design_effect_parametrized(self, _test_name, icc, avg_cluster_size, cv, expected):
+        if cv == 0.0:
+            deff = calculate_design_effect(icc=icc, avg_cluster_size=avg_cluster_size)
+        else:
+            deff = calculate_design_effect(icc=icc, avg_cluster_size=avg_cluster_size, cv=cv)
+        assert deff == expected
+
+    @pytest.mark.parametrize(
+        "_test_name, icc, avg_cluster_size, cv, expected_error",
+        [
+            ("invalid_icc", 1.5, 30, 0.0, "ICC must be between 0 and 1, got 1.5"),
+            ("invalid_cluster_size", 0.15, 0, 0.0, "Cluster size must be >= 1, got 0"),
+            ("invalid_cv", 0.15, 30, -1.0, "CV must be >= 0, got -1.0"),
+        ],
+    )
+    def test_calculate_design_effect_invalid_params(self, _test_name, icc, avg_cluster_size, cv, expected_error):
+        with pytest.raises(ValueError, match=expected_error):
+            calculate_design_effect(icc=icc, avg_cluster_size=avg_cluster_size, cv=cv)
 
 
 def test_calculate_effective_sample_size():
+    """Test effective sample size calculation."""
+    # 1000 participants / DEFF of 2 = 500 effective
+    effective_n = calculate_effective_sample_size(total_n=1000, deff=2.0)
+    assert effective_n == 500
+
     effective_n = calculate_effective_sample_size(total_n=720, deff=5.35)
     assert effective_n == 134
 

@@ -8,12 +8,13 @@ from decimal import Decimal
 import numpy as np
 import pandas as pd
 import pytest
-from pydantic import TypeAdapter
-from sqlalchemy import DECIMAL, Boolean, Column, Float, Integer, MetaData, String, Table, delete, select
+from sqlalchemy import DECIMAL, Boolean, Column, Float, Integer, MetaData, String, Table, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from xngin.apiserver.conftest import RowProtocolMixin
+from xngin.apiserver.conftest import DatasourceMetadata, RowProtocolMixin
+from xngin.apiserver.routers.admin.admin_api_types import DeleteExperimentDataRequest
 from xngin.apiserver.routers.assignment_adapters import (
+    _is_present_scalar,  # noqa: PLC2701
     assign_treatments_with_balance,
     bulk_insert_arm_assignments,
     make_balance_check,
@@ -24,8 +25,8 @@ from xngin.apiserver.routers.common_api_types import (
     Strata,
 )
 from xngin.apiserver.routers.experiments.test_experiments_common import insert_experiment_and_arms
-from xngin.apiserver.settings import RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
+from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.stats.assignment import AssignmentResult
 from xngin.stats.balance import BalanceResult
 
@@ -160,6 +161,27 @@ def test_make_balance_check_with_different_thresholds():
     assert thresh4 and thresh4.balance_ok
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, False),
+        (pd.NA, False),
+        (pd.NaT, False),
+        (np.nan, False),
+        (np.float64(np.nan), False),
+        (float("NaN"), False),
+        (Decimal("NaN"), False),
+        (0, True),
+        (False, True),
+        ("", True),
+        (Decimal(1), True),
+        (pd.Timestamp("2024-01-01"), True),
+    ],
+)
+def test_is_present_scalar(value, expected):
+    assert _is_present_scalar(value) is expected
+
+
 def test_assign_treatments_with_balance_basic(sample_table, sample_rows):
     """Test that assign_treatments_with_balance returns proper AssignmentResult."""
     result = assign_treatments_with_balance(
@@ -191,16 +213,17 @@ def test_assign_treatments_with_balance_basic(sample_table, sample_rows):
 @pytest.mark.parametrize("stratum_id_name", [None, "stratum_id"])
 async def test_bulk_insert_arm_assignments_basic(
     xngin_session: AsyncSession,
-    testing_datasource,
+    testing_datasource: DatasourceMetadata,
     sample_rows,
     stratum_id_name: str | None,
 ):
     """Test bulk inserts of arm assignments, with and without strata group ids."""
     # First create an experiment and arms in db
-    ds: tables.Datasource = testing_datasource.ds
-    pt = testing_datasource.pt
-    experiment = await insert_experiment_and_arms(xngin_session, ds)
-    arms = [Arm(arm_id=arm.id, arm_name=arm.name) for arm in experiment.arms]
+    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
+    arm_ids = [arm.id for arm in experiment.arms]
+    unique_id_field = experiment.unique_id_field()
+    assert unique_id_field is not None
+    participant_type_name = "participant_type_is_deprecated"
 
     # Simulate 2 arms with stratification
     fake_assignment_results = AssignmentResult(
@@ -208,18 +231,25 @@ async def test_bulk_insert_arm_assignments_basic(
         stratum_ids=[int(s.is_male) for s in sample_rows],
         balance_result=None,
         orig_stratum_cols=["gender"],
+        arm_pop=np.bincount([0, 1] * (len(sample_rows) // 2), minlength=len(arm_ids)),
     )
 
     await bulk_insert_arm_assignments(
         xngin_session=xngin_session,
         experiment_id=experiment.id,
-        arms=arms,
-        participant_type=pt.participant_type,
-        participant_id_col=pt.get_unique_id_field(),
+        arm_ids=arm_ids,
+        participant_type=participant_type_name,
+        participant_id_col=unique_id_field.field_name,
         data=sample_rows,
         assignment_result=fake_assignment_results,
         stratum_id_name=stratum_id_name,
     )
+
+    # Verify arm_stats populations were upserted
+    for i, arm_id in enumerate(arm_ids):
+        arm_stat = await xngin_session.get(tables.ArmStats, arm_id)
+        assert arm_stat is not None
+        assert arm_stat.population == int(fake_assignment_results.arm_pop[i])
 
     # Get assignments for verification
     result = await xngin_session.scalars(select(tables.ArmAssignment))
@@ -231,10 +261,9 @@ async def test_bulk_insert_arm_assignments_basic(
     assert participant_ids == expected_ids
 
     # Verify arm assignments
-    arm_ids = {arm.arm_id for arm in arms}
     for assignment in assignments:
         assert assignment.experiment_id == experiment.id
-        assert assignment.participant_type == pt.participant_type
+        assert assignment.participant_type == participant_type_name
         assert assignment.arm_id in arm_ids
 
         # Verify strata are properly stored
@@ -251,15 +280,19 @@ MAX_SAFE_INTEGER = (1 << 53) - 1  # 9007199254740991
 
 
 async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
-    xngin_session: AsyncSession, testing_datasource, sample_table, sample_data
+    xngin_session: AsyncSession,
+    testing_datasource: DatasourceMetadata,
+    sample_table,
+    sample_data,
+    aclient: AdminAPIClient,
 ):
     """Test assignment with large integer participant IDs (underlying type as Decimal and int64)."""
     # First create an experiment and arms in db
-    ds: tables.Datasource = testing_datasource.ds
-    ds_config = TypeAdapter(RemoteDatabaseConfig).validate_python(ds.config)
-    pt = ds_config.participants[0]
-    experiment = await insert_experiment_and_arms(xngin_session, ds)
-    arms = [Arm(arm_id=arm.id, arm_name=arm.name) for arm in experiment.arms]
+    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
+    arm_ids = [arm.id for arm in experiment.arms]
+    unique_id_field = experiment.unique_id_field()
+    assert unique_id_field is not None
+    participant_type_name = "participant_type_is_deprecated"
 
     async def _assign_test(data):
         rows = [Row(**row) for row in data.to_dict("records")]
@@ -276,9 +309,9 @@ async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
         await bulk_insert_arm_assignments(
             xngin_session=xngin_session,
             experiment_id=experiment.id,
-            arms=arms,
-            participant_type=pt.participant_type,
-            participant_id_col="id",
+            arm_ids=arm_ids,
+            participant_type=participant_type_name,
+            participant_id_col=unique_id_field.field_name,
             data=rows,
             assignment_result=assignment_result,
         )
@@ -306,8 +339,12 @@ async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
         # Assert that the inserted id was derived from the original id
         assert orig_id in orig_ids, f"id {orig_id} not found"
 
-    # Reset the assignments
-    await xngin_session.execute(delete(tables.ArmAssignment))
+    await xngin_session.commit()
+    aclient.delete_experiment_data(
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=experiment.id,
+        body=DeleteExperimentDataRequest(assignments=True),
+    )
 
     # Test: handle very big negatives as well
     sample_data["id"] = orig_ids.apply(lambda x: Decimal(-MAX_SAFE_INTEGER - x))
@@ -321,8 +358,12 @@ async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
         # Assert that the inserted id was derived from the original id
         assert orig_id in orig_ids, f"id {orig_id} not found"
 
-    # Reset the assignments
-    await xngin_session.execute(delete(tables.ArmAssignment))
+    await xngin_session.commit()
+    aclient.delete_experiment_data(
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=experiment.id,
+        body=DeleteExperimentDataRequest(assignments=True),
+    )
 
     # Test: check that stochatreat isn't upcasting int64 to float64:
     sample_data["id"] = orig_ids.astype("int64")
@@ -344,24 +385,26 @@ async def test_bulk_insert_renders_decimal_and_bool_strata_correctly(
 ):
     """Test that the adapter correctly renders decimal and bool strata as strings."""
     # First create an experiment and arms in db
-    ds: tables.Datasource = testing_datasource.ds
-    pt = testing_datasource.pt
-    experiment = await insert_experiment_and_arms(xngin_session, ds)
-    arms = [Arm(arm_id=arm.id, arm_name=arm.name) for arm in experiment.arms]
+    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
+    arm_ids = [arm.id for arm in experiment.arms]
+    unique_id_field = experiment.unique_id_field()
+    assert unique_id_field is not None
+    participant_type_name = "participant_type_is_deprecated"
 
     fake_assignment_results = AssignmentResult(
         treatment_ids=[0, 1] * (len(sample_rows) // 2),
         stratum_ids=[0, 1] * (len(sample_rows) // 2),
         balance_result=None,
         orig_stratum_cols=["income_dec", "is_male"],
+        arm_pop=np.bincount([0, 1] * (len(sample_rows) // 2), minlength=len(arm_ids)),
     )
 
     await bulk_insert_arm_assignments(
         xngin_session=xngin_session,
         experiment_id=experiment.id,
-        arms=arms,
-        participant_type=pt.participant_type,
-        participant_id_col=pt.get_unique_id_field(),
+        arm_ids=arm_ids,
+        participant_type=participant_type_name,
+        participant_id_col=unique_id_field.field_name,
         data=sample_rows,
         assignment_result=fake_assignment_results,
     )
@@ -383,24 +426,26 @@ async def test_bulk_insert_renders_decimal_and_bool_strata_correctly(
 async def test_bulk_insert_with_no_stratification(xngin_session: AsyncSession, testing_datasource, sample_rows):
     """Test assignment with no stratification columns."""
     # First create an experiment and arms in db
-    ds: tables.Datasource = testing_datasource.ds
-    pt = testing_datasource.pt
-    experiment = await insert_experiment_and_arms(xngin_session, ds)
-    arms = [Arm(arm_id=arm.id, arm_name=arm.name) for arm in experiment.arms]
+    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
+    arm_ids = [arm.id for arm in experiment.arms]
+    unique_id_field = experiment.unique_id_field()
+    assert unique_id_field is not None
+    participant_type_name = "participant_type_is_deprecated"
 
     fake_assignment_results = AssignmentResult(
         treatment_ids=[0, 1] * (len(sample_rows) // 2),
         stratum_ids=None,
         balance_result=None,
         orig_stratum_cols=[],
+        arm_pop=np.bincount([0, 1] * (len(sample_rows) // 2), minlength=len(arm_ids)),
     )
 
     await bulk_insert_arm_assignments(
         xngin_session=xngin_session,
         experiment_id=experiment.id,
-        arms=arms,
-        participant_type=pt.participant_type,
-        participant_id_col=pt.get_unique_id_field(),
+        arm_ids=arm_ids,
+        participant_type=participant_type_name,
+        participant_id_col=unique_id_field.field_name,
         data=sample_rows,
         assignment_result=fake_assignment_results,
     )
@@ -415,20 +460,18 @@ async def test_bulk_insert_with_no_stratification(xngin_session: AsyncSession, t
         arm_counts[p.arm_id] += 1
         assert p.strata == []
     # The number of assignments per arm should be equal
-    arm0 = arms[0].arm_id
-    arm1 = arms[1].arm_id
-    assert arm0 is not None and arm1 is not None
-    assert arm_counts[arm0] == arm_counts[arm1]
-    assert arm_counts[arm0] == len(assignments) // 2
+    assert arm_counts[arm_ids[0]] == arm_counts[arm_ids[1]]
+    assert arm_counts[arm_ids[0]] == len(assignments) // 2
 
 
 async def test_bulk_insert_with_no_valid_strata(xngin_session: AsyncSession, testing_datasource, sample_rows):
     """Test assignment when a strata column has only a single value."""
     # First create an experiment and arms in db
-    ds: tables.Datasource = testing_datasource.ds
-    pt = testing_datasource.pt
-    experiment = await insert_experiment_and_arms(xngin_session, ds)
-    arms = [Arm(arm_id=arm.id, arm_name=arm.name) for arm in experiment.arms]
+    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
+    arm_ids = [arm.id for arm in experiment.arms]
+    unique_id_field = experiment.unique_id_field()
+    assert unique_id_field is not None
+    participant_type_name = "participant_type_is_deprecated"
 
     # Simulate no stratification case: the strata column only has a single value.
     fake_assignment_results = AssignmentResult(
@@ -436,14 +479,15 @@ async def test_bulk_insert_with_no_valid_strata(xngin_session: AsyncSession, tes
         stratum_ids=None,
         balance_result=None,
         orig_stratum_cols=["single_value"],
+        arm_pop=np.bincount([0, 1] * (len(sample_rows) // 2), minlength=len(arm_ids)),
     )
 
     await bulk_insert_arm_assignments(
         xngin_session=xngin_session,
         experiment_id=experiment.id,
-        arms=arms,
-        participant_type=pt.participant_type,
-        participant_id_col=pt.get_unique_id_field(),
+        arm_ids=arm_ids,
+        participant_type=participant_type_name,
+        participant_id_col=unique_id_field.field_name,
         data=sample_rows,
         assignment_result=fake_assignment_results,
     )
@@ -462,10 +506,11 @@ async def test_bulk_insert_renders_missing_strata_values_as_na(
     xngin_session: AsyncSession, testing_datasource, sample_rows, missing_value
 ):
     """Test that missing strata values are rendered as "NA" regardless of sentinel."""
-    ds: tables.Datasource = testing_datasource.ds
-    pt = testing_datasource.pt
-    experiment = await insert_experiment_and_arms(xngin_session, ds)
-    arms = [Arm(arm_id=arm.id, arm_name=arm.name) for arm in experiment.arms]
+    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
+    arm_ids = [arm.id for arm in experiment.arms]
+    unique_id_field = experiment.unique_id_field()
+    assert unique_id_field is not None
+    participant_type_name = "participant_type_is_deprecated"
 
     rows = [dataclasses.replace(row, nullable_value=missing_value) for row in sample_rows]
     fake_assignment_results = AssignmentResult(
@@ -473,14 +518,15 @@ async def test_bulk_insert_renders_missing_strata_values_as_na(
         stratum_ids=None,
         balance_result=None,
         orig_stratum_cols=["nullable_value"],
+        arm_pop=np.bincount([0, 1] * (len(rows) // 2), minlength=len(arm_ids)),
     )
 
     await bulk_insert_arm_assignments(
         xngin_session=xngin_session,
         experiment_id=experiment.id,
-        arms=arms,
-        participant_type=pt.participant_type,
-        participant_id_col=pt.get_unique_id_field(),
+        arm_ids=arm_ids,
+        participant_type=participant_type_name,
+        participant_id_col=unique_id_field.field_name,
         data=rows,
         assignment_result=fake_assignment_results,
     )

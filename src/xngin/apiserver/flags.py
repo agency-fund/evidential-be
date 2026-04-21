@@ -61,6 +61,15 @@ XNGIN_SUPPORT_EMAIL = os.environ.get("XNGIN_SUPPORT_EMAIL", "support@example.com
 LOG_SQL_APP_DB = truthy_env("LOG_SQL_APP_DB")
 LOG_SQL_DWH = truthy_env("LOG_SQL_DWH")
 
+# CORS_ALLOWED_ORIGINS: comma-separated list of frontends permitted by the CORS policy.
+# In dev mode (ENVIRONMENT unset or "dev"), defaults to ["*"] for convenience.
+# In all other environments this must be set explicitly; the server will refuse to start without it.
+# Example: CORS_ALLOWED_ORIGINS=https://app.example.com,https://staging.example.com
+_cors_env = os.environ.get("CORS_ALLOWED_ORIGINS", "")
+CORS_ALLOWED_ORIGINS: list[str] = (
+    [o.strip() for o in _cors_env.split(",") if o.strip()] if _cors_env else (["*"] if is_dev_environment() else [])
+)
+
 
 def get_public_api_base_url():
     if serving_domain := os.environ.get("RAILWAY_PUBLIC_DOMAIN"):

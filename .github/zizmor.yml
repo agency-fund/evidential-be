@@ -1,4 +1,11 @@
 rules:
+  secrets-outside-env:
+    ignore:
+      - "test.yaml"
+  # When Zizmor 1.24.1 is released, use this instead:
+  #   config:
+  #     allow:
+  #       - GOOGLE_APPLICATION_CREDENTIALS_CONTENT
   dangerous-triggers:
     ignore:
       - "coverage.yaml:3:1"
