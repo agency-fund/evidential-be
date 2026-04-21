@@ -1,107 +1,16 @@
-import asyncio
 import queue
 import threading
-import time
-from collections.abc import Callable, Generator
-from contextlib import contextmanager
 from datetime import timedelta
 
-import httpx
 import psycopg
 import pytest
-from sqlalchemy import make_url, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from xngin.apiserver import database
-from xngin.apiserver.dns import safe_resolve
-from xngin.apiserver.sqla import tables
-from xngin.events.webhook_sent import WebhookSentEvent
 from xngin.tq import task_queue as task_queue_module
-from xngin.tq.handlers import make_webhook_outbound_handler
-from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE
 from xngin.tq.task_queue import Task, TaskQueue
+from xngin.tq.tq_test_support import insert_task, tq_runner, wait_for_task_status
 
 pytest_plugins = ("xngin.apiserver.conftest",)
-
-STATUS_TIMEOUT_SECS = 5.0
-
-
-def start_task_queue_in_thread(
-    task_queue: TaskQueue, cancel: threading.Event
-) -> tuple[threading.Thread, queue.SimpleQueue[BaseException]]:
-    """Starts a TaskQueue in a new thread."""
-    error_collector: queue.SimpleQueue[BaseException] = queue.SimpleQueue()
-
-    def run_task_queue() -> None:
-        try:
-            task_queue.run(cancel=cancel)
-        except BaseException as exc:
-            error_collector.put(exc)
-
-    thread = threading.Thread(target=run_task_queue, name="test-task-queue")
-    thread.start()
-    return thread, error_collector
-
-
-async def wait_for_task_status(
-    task_id: str,
-    expected_status: str,
-    *,
-    predicate: Callable[[tables.Task], bool] | None = None,
-) -> tables.Task:
-    """Polls for a specific task reaching a certain status within STATUS_TIMEOUT_SECS."""
-    deadline = time.monotonic() + STATUS_TIMEOUT_SECS
-    latest_task: tables.Task | None = None
-    while time.monotonic() < deadline:
-        async with database.async_session() as session:
-            latest_task = await session.get(tables.Task, task_id)
-        if (
-            latest_task is not None
-            and latest_task.status == expected_status
-            and (predicate is None or predicate(latest_task))
-        ):
-            return latest_task
-        await asyncio.sleep(0.10)
-    raise AssertionError(
-        f"Task {task_id} did not reach status {expected_status!r} before timeout. Last observed task: {latest_task!r}"
-    )
-
-
-async def insert_task(
-    xngin_session: AsyncSession,
-    *,
-    task_type: str,
-    payload: dict | None = None,
-) -> tables.Task:
-    """Inserts a task using SQLAlchemy."""
-    task = tables.Task(task_type=task_type, payload=payload)
-    xngin_session.add(task)
-    await xngin_session.commit()
-    await xngin_session.refresh(task)
-    return task
-
-
-@pytest.fixture
-def tq_dsn() -> str:
-    """Converts a SQLAlchemy DSN to a Psycopg-compatible DSN."""
-    url = make_url(database.get_sqlalchemy_database_url()).set(drivername="postgresql")
-    return url.render_as_string(hide_password=False)
-
-
-@contextmanager
-def tq_runner(queue_instance: TaskQueue) -> Generator[None]:
-    """Context manager for running a TaskQueue in a thread with graceful shutdown."""
-    cancel = threading.Event()
-    thread, error_collector = start_task_queue_in_thread(queue_instance, cancel)
-    try:
-        yield
-    finally:
-        cancel.set()
-        thread.join(timeout=3)
-        if thread.is_alive():
-            raise AssertionError("TaskQueue thread did not stop within timeout")
-        if not error_collector.empty():
-            raise AssertionError(f"TaskQueue thread raised an exception: {error_collector.get()!r}")
 
 
 async def test_task_queue_processes_pending_task_successfully(xngin_session: AsyncSession, tq_dsn: str):
@@ -196,87 +105,3 @@ def test_task_queue_retries_after_operational_error(monkeypatch: pytest.MonkeyPa
     task_queue.run(cancel=cancel)
 
     assert sleep_calls == [5]
-
-
-async def test_webhook_outbound_handler_records_dns_failure_event(
-    xngin_session: AsyncSession,
-    tq_dsn: str,
-):
-    # First add a valid organization to later associate with the db Event record
-    org = tables.Organization(name="test-org")
-    xngin_session.add(org)
-    await xngin_session.commit()
-    await xngin_session.refresh(org)
-
-    # Then insert a task that should fail due to the unsafe IP
-    task_queue = TaskQueue(dsn=tq_dsn, max_retries=0, poll_interval_secs=1)
-    task_queue.register_handler(WEBHOOK_OUTBOUND_TASK_TYPE, make_webhook_outbound_handler(tq_dsn))
-    with tq_runner(task_queue):
-        task = await insert_task(
-            xngin_session,
-            task_type=WEBHOOK_OUTBOUND_TASK_TYPE,
-            payload={
-                "url": f"http://{safe_resolve.UNSAFE_IP_FOR_TESTING}/hook",
-                "organization_id": org.id,
-            },
-        )
-        dead_task = await wait_for_task_status(task.id, "dead")
-
-    assert dead_task.message == "DNS issue with host: Detected sentinel value of invalid IP used for testing purposes."
-
-    # Lastly assert that the db has the correct event record
-    events = (
-        (await xngin_session.execute(select(tables.Event).where(tables.Event.organization_id == org.id)))
-        .scalars()
-        .all()
-    )
-
-    assert len(events) == 1
-    event_data = events[0].get_data()
-    assert isinstance(event_data, WebhookSentEvent)
-    assert event_data.success is False
-    assert "Failed to resolve hostname" in event_data.response
-
-
-async def test_webhook_outbound_handler_records_success_event(
-    xngin_session: AsyncSession,
-    tq_dsn: str,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    org = tables.Organization(name="test-org")
-    xngin_session.add(org)
-    await xngin_session.commit()
-    await xngin_session.refresh(org)
-
-    fake_response = httpx.Response(
-        200,
-        request=httpx.Request("POST", "http://localhost/hook"),
-    )
-    monkeypatch.setattr(httpx.Client, "request", lambda *_args, **_kwargs: fake_response)
-
-    task_queue = TaskQueue(dsn=tq_dsn, max_retries=0, poll_interval_secs=1)
-    task_queue.register_handler(WEBHOOK_OUTBOUND_TASK_TYPE, make_webhook_outbound_handler(tq_dsn))
-    with tq_runner(task_queue):
-        task = await insert_task(
-            xngin_session,
-            task_type=WEBHOOK_OUTBOUND_TASK_TYPE,
-            payload={
-                "url": "http://localhost/hook",
-                "organization_id": org.id,
-            },
-        )
-        success_task = await wait_for_task_status(task.id, "success")
-
-    assert success_task.message is None
-
-    events = (
-        (await xngin_session.execute(select(tables.Event).where(tables.Event.organization_id == org.id)))
-        .scalars()
-        .all()
-    )
-
-    assert len(events) == 1
-    event_data = events[0].get_data()
-    assert isinstance(event_data, WebhookSentEvent)
-    assert event_data.success is True
-    assert event_data.response == "200"
