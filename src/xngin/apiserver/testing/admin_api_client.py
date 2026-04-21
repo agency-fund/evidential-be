@@ -57,6 +57,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     GetParticipantsTypeResponse,
     GetSnapshotResponse,
     GetTurnConnectionResponse,
+    GetTurnJourneysResponse,
     InspectDatasourceResponse,
     InspectDatasourceTableResponse,
     InspectParticipantTypesResponse,
@@ -1574,6 +1575,84 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                 },
                 query_params={
                     "allow_missing": allow_missing,
+                },
+                raise_if_not_default_status=raise_if_not_default_status,
+                client_exts=client_exts,
+            ),
+        )
+
+    @overload
+    def get_organization_turn_journeys(
+        self,
+        *,
+        organization_id: str,
+        raise_if_not_default_status: Literal[True] = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], GetTurnJourneysResponse, type[GetTurnJourneysResponse]]: ...
+    @overload
+    def get_organization_turn_journeys(
+        self,
+        *,
+        organization_id: str,
+        raise_if_not_default_status: Literal[False],
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.OK], GetTurnJourneysResponse, type[GetTurnJourneysResponse]]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+            AdminAPIClientHTTPValidationError,
+            type[AdminAPIClientHTTPValidationError],
+        ]
+    ): ...
+    def get_organization_turn_journeys(
+        self,
+        *,
+        organization_id: str,
+        raise_if_not_default_status: bool = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.OK], GetTurnJourneysResponse, type[GetTurnJourneysResponse]]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+            AdminAPIClientHTTPValidationError,
+            type[AdminAPIClientHTTPValidationError],
+        ]
+    ):
+        return cast(
+            (
+                AdminAPIClientResult[Literal[HTTPStatus.OK], GetTurnJourneysResponse, type[GetTurnJourneysResponse]]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+                | AdminAPIClientResult[
+                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+                    AdminAPIClientHTTPValidationError,
+                    type[AdminAPIClientHTTPValidationError],
+                ]
+            ),
+            self._route_handler(
+                path="/v1/m/organizations/{organization_id}/turn-connection/journeys",  # noqa: RUF100,RUF027
+                method=HTTPMethod.GET,
+                default_status=HTTPStatus.OK,
+                models={
+                    HTTPStatus.OK: GetTurnJourneysResponse,
+                    HTTPStatus.BAD_REQUEST: HTTPExceptionError,
+                    HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
+                    HTTPStatus.FORBIDDEN: HTTPExceptionError,
+                    HTTPStatus.NOT_FOUND: HTTPExceptionError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
+                },
+                path_params={
+                    "organization_id": organization_id,
                 },
                 raise_if_not_default_status=raise_if_not_default_status,
                 client_exts=client_exts,

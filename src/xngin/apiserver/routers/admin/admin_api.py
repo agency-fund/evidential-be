@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, assert_never
 
+import httpx
 import pandas as pd
 from fastapi import (
     APIRouter,
@@ -51,6 +52,7 @@ from xngin.apiserver.dwh.queries import (
 )
 from xngin.apiserver.exceptionhandlers import XHTTPValidationError
 from xngin.apiserver.exceptions_common import LateValidationError
+from xngin.apiserver.limits import TURN_JOURNEYS_CACHE_TTL_SECONDS, TURN_REQUEST_TIMEOUT_SECONDS
 from xngin.apiserver.pagination import (
     PaginationQuery,
     SortField,
@@ -88,6 +90,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     GetParticipantsTypeResponse,
     GetSnapshotResponse,
     GetTurnConnectionResponse,
+    GetTurnJourneysResponse,
     InspectDatasourceResponse,
     InspectDatasourceTableResponse,
     InspectParticipantTypesResponse,
@@ -154,6 +157,7 @@ from xngin.stats.cluster_icc import calculate_icc_from_dataframe
 
 GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
 RESPONSE_CACHE_MAX_AGE_SECONDS = timedelta(minutes=15).seconds
+TURN_JOURNEYS_URL = "https://whatsapp.turn.io/v1/stacks"
 
 
 # Describes the structure of an error raised via `raise HTTPException`.
@@ -873,6 +877,55 @@ async def delete_turn_connection_from_organization(
     )
     await session.commit()
     return response
+
+
+@router.get("/organizations/{organization_id}/turn-connection/journeys")
+async def get_organization_turn_journeys(
+    organization_id: str,
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
+) -> GetTurnJourneysResponse:
+    """Returns a {name: uuid} map of Turn.io journeys available to the organization.
+
+    The result is cached on the TurnConnection row and refreshed when older than
+    TURN_JOURNEYS_CACHE_TTL_SECONDS, or when the API token is rotated.
+    """
+    org = await get_organization_or_raise(session, user, organization_id)
+
+    turn_connection = (
+        await session.execute(select(tables.TurnConnection).where(tables.TurnConnection.organization_id == org.id))
+    ).scalar_one_or_none()
+    if turn_connection is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Turn connection not found")
+
+    now = datetime.now(UTC)
+    if (
+        turn_connection.cached_journeys is not None
+        and turn_connection.cached_journeys_updated_at is not None
+        and now - turn_connection.cached_journeys_updated_at < timedelta(seconds=TURN_JOURNEYS_CACHE_TTL_SECONDS)
+    ):
+        return GetTurnJourneysResponse(journeys=turn_connection.cached_journeys)
+
+    async with httpx.AsyncClient(timeout=TURN_REQUEST_TIMEOUT_SECONDS) as client:
+        response = await client.get(
+            "https://whatsapp.turn.io/v1/stacks",
+            headers={"Authorization": f"Bearer {turn_connection.get_turn_api_token()}"},
+        )
+
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        logger.error(f"Error fetching Turn.io journeys: {exc.response.status_code} - {exc.response.text}")
+        raise HTTPException(
+            status_code=exc.response.status_code,
+            detail=f"Error fetching Turn.io journeys: {exc.response.text}",
+        ) from exc
+
+    journey_dict = {journey["name"]: journey["uuid"] for journey in response.json()}
+    turn_connection.cached_journeys = journey_dict
+    turn_connection.cached_journeys_updated_at = now
+    await session.commit()
+    return GetTurnJourneysResponse(journeys=journey_dict)
 
 
 @router.get("/organizations/{organization_id}/events")

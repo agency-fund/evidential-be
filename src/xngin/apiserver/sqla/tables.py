@@ -142,11 +142,11 @@ class TurnConnection(Base):
     __tablename__ = "turn_connections"
 
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True)
-    # Encrypted form of the Turn.io API token. Use set_turn_api_token / get_turn_api_token.
     encrypted_turn_api_token: Mapped[str] = mapped_column()
-    # Last 4 characters of the plaintext token. Shown in the UI so admins can identify the
-    # currently-configured token without exposing the full secret.
     turn_api_token_preview: Mapped[str] = mapped_column(String(4))
+
+    cached_journeys: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+    cached_journeys_updated_at: Mapped[datetime | None] = mapped_column()
 
     created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -157,9 +157,12 @@ class TurnConnection(Base):
     organization: Mapped[Organization] = relationship(back_populates="turn_connection")
 
     def set_turn_api_token(self, token: str) -> Self:
-        """Encrypts and stores the Turn.io API token, and records its last-4-char preview."""
+        """Encrypts and stores the Turn.io API token, records its preview, and invalidates
+        the cached journey list so the next read refetches from Turn."""
         self.encrypted_turn_api_token = secretservice.get_symmetric().encrypt(token, f"turn.{self.organization_id}")
         self.turn_api_token_preview = token[-4:]
+        self.cached_journeys = None
+        self.cached_journeys_updated_at = None
         return self
 
     def get_turn_api_token(self) -> str:

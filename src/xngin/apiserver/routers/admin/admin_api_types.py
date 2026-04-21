@@ -271,6 +271,20 @@ class AddOrUpdateConnectionToTurnRequest(AdminApiBaseModel):
     ]
 
 
+class GetTurnJourneysResponse(AdminApiBaseModel):
+    """Response describing an organization's Turn.io journeys."""
+
+    journeys: Annotated[
+        dict[str, str],
+        Field(
+            description=(
+                "Mapping of journey names to their corresponding IDs, retrieved from the Turn API. This allows "
+                "admins to reference specific journeys when configuring experiments that integrate with Turn.io."
+            )
+        ),
+    ]
+
+
 class GetTurnConnectionResponse(AdminApiBaseModel):
     """Response describing an organization's Turn.io connection."""
 

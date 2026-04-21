@@ -10,6 +10,7 @@ from http import HTTPStatus
 from typing import Protocol
 from urllib.parse import urlparse
 
+import httpx
 import numpy as np
 import pytest
 from deepdiff import DeepDiff
@@ -1087,12 +1088,63 @@ async def test_turn_connection_encrypted_at_rest(xngin_session: AsyncSession, ac
         )
     ).scalar_one()
 
-    # The raw column must not contain the plaintext token.
     assert token not in row.encrypted_turn_api_token
-    # The preview stores the last 4 chars of the plaintext.
     assert row.turn_api_token_preview == token[-4:]
-    # Decrypting via the helper recovers the plaintext.
     assert row.get_turn_api_token() == token
+
+
+async def test_turn_journeys_caching(monkeypatch: pytest.MonkeyPatch, aclient: AdminAPIClient):
+    """GET /turn-connection/journeys serves from cache until TTL expires or the token is rotated."""
+    org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="test_turn_journeys_caching")).data.id
+    aclient.set_organization_turn_connection(
+        organization_id=org_id,
+        body=AddOrUpdateConnectionToTurnRequest(turn_api_token="a" * 335),
+    )
+
+    call_log: int = 0
+    stacks: list[dict] = [{"name": "Arm A", "uuid": "arm-a-uuid"}]
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return None
+
+        async def get(self, url, headers=None):
+            nonlocal call_log
+            call_log += 1
+            return httpx.Response(
+                status_code=200,
+                json=list(stacks),
+                request=httpx.Request("GET", url),
+            )
+
+    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+
+    # First call: cache miss, one hit on the Turn API
+    journeys = aclient.get_organization_turn_journeys(organization_id=org_id).data.journeys
+    assert call_log == 1
+    assert journeys == {"Arm A": "arm-a-uuid"}
+
+    # Second call inside the TTL: served from the DB cache.
+    journeys = aclient.get_organization_turn_journeys(organization_id=org_id).data.journeys
+    assert call_log == 1
+    assert journeys == {"Arm A": "arm-a-uuid"}
+
+    # Rotating the token must invalidate the cache.
+    aclient.set_organization_turn_connection(
+        organization_id=org_id,
+        body=AddOrUpdateConnectionToTurnRequest(turn_api_token="b" * 335),
+    )
+    stacks[:] = [{"name": "Arm B", "uuid": "arm-b-uuid"}]
+
+    journeys = aclient.get_organization_turn_journeys(organization_id=org_id).data.journeys
+    assert call_log == 2
+    assert journeys == {"Arm B": "arm-b-uuid"}
 
 
 def test_participants_lifecycle(testing_datasource, aclient: AdminAPIClient):
