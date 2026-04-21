@@ -27,7 +27,6 @@ from xngin.apiserver.dwh.inspections import ColumnDeleted, Drift, FieldChangedTy
 from xngin.apiserver.routers.admin.admin_api_converters import CREDENTIALS_UNAVAILABLE_MESSAGE
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddMemberToOrganizationRequest,
-    AddOrUpdateConnectionToTurnRequest,
     AddWebhookToOrganizationRequest,
     ApiOnlyDsn,
     BqDsn,
@@ -43,6 +42,8 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     PostgresDsn,
     RedshiftDsn,
     RevealedStr,
+    SetConnectionToTurnRequest,
+    SetTurnArmJourneyMappingRequest,
     SnapshotStatus,
     TableDeleted,
     UpdateArmRequest,
@@ -1039,7 +1040,7 @@ async def test_turn_connection_lifecycle(aclient: AdminAPIClient):
     initial_token = "abcde" * 67  # 335 chars
     aclient.set_organization_turn_connection(
         organization_id=org_id,
-        body=AddOrUpdateConnectionToTurnRequest(turn_api_token=initial_token),
+        body=SetConnectionToTurnRequest(turn_api_token=initial_token),
     )
 
     # GET returns a preview of the last 4 chars of the token.
@@ -1050,7 +1051,7 @@ async def test_turn_connection_lifecycle(aclient: AdminAPIClient):
     rotated_token = "fghij" * 67  # 335 chars
     aclient.set_organization_turn_connection(
         organization_id=org_id,
-        body=AddOrUpdateConnectionToTurnRequest(turn_api_token=rotated_token),
+        body=SetConnectionToTurnRequest(turn_api_token=rotated_token),
     )
 
     # Preview now reflects the new token.
@@ -1079,7 +1080,7 @@ async def test_turn_connection_encrypted_at_rest(xngin_session: AsyncSession, ac
     token = "abcde" * 67  # 335 chars
     aclient.set_organization_turn_connection(
         organization_id=org_id,
-        body=AddOrUpdateConnectionToTurnRequest(turn_api_token=token),
+        body=SetConnectionToTurnRequest(turn_api_token=token),
     )
 
     row = (
@@ -1098,7 +1099,7 @@ async def test_turn_journeys_caching(monkeypatch: pytest.MonkeyPatch, aclient: A
     org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="test_turn_journeys_caching")).data.id
     aclient.set_organization_turn_connection(
         organization_id=org_id,
-        body=AddOrUpdateConnectionToTurnRequest(turn_api_token="a" * 335),
+        body=SetConnectionToTurnRequest(turn_api_token="a" * 335),
     )
 
     call_log: int = 0
@@ -1138,13 +1139,121 @@ async def test_turn_journeys_caching(monkeypatch: pytest.MonkeyPatch, aclient: A
     # Rotating the token must invalidate the cache.
     aclient.set_organization_turn_connection(
         organization_id=org_id,
-        body=AddOrUpdateConnectionToTurnRequest(turn_api_token="b" * 335),
+        body=SetConnectionToTurnRequest(turn_api_token="b" * 335),
     )
     stacks[:] = [{"name": "Arm B", "uuid": "arm-b-uuid"}]
 
     journeys = aclient.get_organization_turn_journeys(organization_id=org_id).data.journeys
     assert call_log == 2
     assert journeys == {"Arm B": "arm-b-uuid"}
+
+
+async def test_turn_journey_mapping_lifecycle(
+    testing_datasource, testing_experiment: tables.Experiment, aclient: AdminAPIClient
+):
+    """Full lifecycle of the per-experiment arm->journey mapping: PUT, GET, update, DELETE."""
+    ds_id = testing_datasource.ds.id
+    org_id = testing_datasource.org.id
+    experiment_id = testing_experiment.id
+    arm_ids = [arm.id for arm in testing_experiment.arms]
+
+    # PUT without a Turn connection configured for the org -> 400.
+    with expect_status_code(400, text="No Turn.io connection"):
+        aclient.set_turn_arm_journey_mapping(
+            datasource_id=ds_id,
+            experiment_id=experiment_id,
+            body=SetTurnArmJourneyMappingRequest(
+                arm_to_journeys={arm_ids[0]: "journey-0", arm_ids[1]: "journey-1"},
+            ),
+        )
+
+    # Configure a Turn connection so subsequent calls can proceed.
+    aclient.set_organization_turn_connection(
+        organization_id=org_id,
+        body=SetConnectionToTurnRequest(turn_api_token="a" * 335),
+    )
+
+    # GET before any mapping has been saved -> 404.
+    with expect_status_code(404):
+        aclient.get_turn_arm_journey_mapping(datasource_id=ds_id, experiment_id=experiment_id)
+
+    # PUT saves a valid mapping.
+    initial_mapping = {arm_ids[0]: "journey-0-uuid", arm_ids[1]: "journey-1-uuid"}
+    aclient.set_turn_arm_journey_mapping(
+        datasource_id=ds_id,
+        experiment_id=experiment_id,
+        body=SetTurnArmJourneyMappingRequest(arm_to_journeys=initial_mapping),
+    )
+
+    # GET returns the saved mapping.
+    got = aclient.get_turn_arm_journey_mapping(datasource_id=ds_id, experiment_id=experiment_id).data.arm_to_journeys
+    assert got == initial_mapping
+
+    # PUT again with new values.
+    rotated_mapping = {arm_ids[0]: "new-j0", arm_ids[1]: "new-j1"}
+    aclient.set_turn_arm_journey_mapping(
+        datasource_id=ds_id,
+        experiment_id=experiment_id,
+        body=SetTurnArmJourneyMappingRequest(arm_to_journeys=rotated_mapping),
+    )
+    got = aclient.get_turn_arm_journey_mapping(datasource_id=ds_id, experiment_id=experiment_id).data.arm_to_journeys
+    assert got == rotated_mapping
+
+    # DELETE.
+    aclient.delete_turn_arm_journey_mapping(datasource_id=ds_id, experiment_id=experiment_id)
+
+    # GET after delete -> 404.
+    with expect_status_code(404):
+        aclient.get_turn_arm_journey_mapping(datasource_id=ds_id, experiment_id=experiment_id)
+
+    # DELETE again without allow_missing -> 404.
+    with expect_status_code(404):
+        aclient.delete_turn_arm_journey_mapping(datasource_id=ds_id, experiment_id=experiment_id)
+
+    # DELETE with allow_missing -> 204.
+    aclient.delete_turn_arm_journey_mapping(datasource_id=ds_id, experiment_id=experiment_id, allow_missing=True)
+
+
+async def test_turn_journey_mapping_rejects_mismatched_arm_ids(
+    testing_datasource, testing_experiment: tables.Experiment, aclient: AdminAPIClient
+):
+    """PUT rejects a mapping whose keys do not exactly match the experiment's arm IDs."""
+    ds_id = testing_datasource.ds.id
+    org_id = testing_datasource.org.id
+    experiment_id = testing_experiment.id
+    arm_ids = [arm.id for arm in testing_experiment.arms]
+
+    aclient.set_organization_turn_connection(
+        organization_id=org_id,
+        body=SetConnectionToTurnRequest(turn_api_token="a" * 335),
+    )
+
+    # Missing one arm -> 400 mentioning the missing id.
+    with expect_status_code(400, text="Missing") as match:
+        aclient.set_turn_arm_journey_mapping(
+            datasource_id=ds_id,
+            experiment_id=experiment_id,
+            body=SetTurnArmJourneyMappingRequest(
+                arm_to_journeys={arm_ids[0]: "journey-0"},
+            ),
+        )
+    assert arm_ids[1] in match.http_response().text
+
+    # Extra arm id not belonging to the experiment -> 400 mentioning the extra id.
+    extra_id = "arm_not_in_experiment_1"
+    with expect_status_code(400, text="Extra") as match:
+        aclient.set_turn_arm_journey_mapping(
+            datasource_id=ds_id,
+            experiment_id=experiment_id,
+            body=SetTurnArmJourneyMappingRequest(
+                arm_to_journeys={
+                    arm_ids[0]: "journey-0",
+                    arm_ids[1]: "journey-1",
+                    extra_id: "journey-extra",
+                },
+            ),
+        )
+    assert extra_id in match.http_response().text
 
 
 def test_participants_lifecycle(testing_datasource, aclient: AdminAPIClient):

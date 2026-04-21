@@ -68,7 +68,6 @@ from xngin.apiserver.routers.admin.admin_api_converters import (
 )
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddMemberToOrganizationRequest,
-    AddOrUpdateConnectionToTurnRequest,
     AddWebhookToOrganizationRequest,
     AddWebhookToOrganizationResponse,
     ApiKeySummary,
@@ -89,6 +88,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     GetOrganizationResponse,
     GetParticipantsTypeResponse,
     GetSnapshotResponse,
+    GetTurnArmJourneyMappingResponse,
     GetTurnConnectionResponse,
     GetTurnJourneysResponse,
     InspectDatasourceResponse,
@@ -104,6 +104,8 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     OrganizationSummary,
     PostgresDsn,
     RedshiftDsn,
+    SetConnectionToTurnRequest,
+    SetTurnArmJourneyMappingRequest,
     SnapshotStatus,
     TableDeleted,
     UpdateArmRequest,
@@ -811,7 +813,7 @@ async def set_organization_turn_connection(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
-    body: Annotated[AddOrUpdateConnectionToTurnRequest, Body(...)],
+    body: Annotated[SetConnectionToTurnRequest, Body(...)],
 ):
     """Sets (or rotates) the Turn.io API token for an organization.
 
@@ -2105,6 +2107,124 @@ async def power_check(
             desired_n=design_spec.desired_n,
         )
     )
+
+
+@router.put(
+    "/datasources/{datasource_id}/experiments/{experiment_id}/turn-journey-mapping",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def set_turn_arm_journey_mapping(
+    datasource_id: str,
+    experiment_id: str,
+    body: SetTurnArmJourneyMappingRequest,
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
+):
+    """Adds or updates the mapping from each arm ID of the experiment to a Turn.io Journey ID."""
+    ds = await get_datasource_or_raise(session, user, datasource_id)
+    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    turn_connection = (
+        await session.execute(
+            select(tables.TurnConnection).where(tables.TurnConnection.organization_id == ds.organization_id)
+        )
+    ).scalar_one_or_none()
+    if not turn_connection:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "No Turn.io connection configured for organization. "
+                "Please set up a Turn.io connection before configuring turn/arm to journey mappings."
+            ),
+        )
+
+    # Validate Arm IDs in the request body are part of the experiment
+    arm_ids = {arm.id for arm in experiment.arms}
+    input_arm_ids = set(body.arm_to_journeys.keys())
+    missing_arm_ids = arm_ids - input_arm_ids
+    extra_arm_ids = input_arm_ids - arm_ids
+    if missing_arm_ids or extra_arm_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error in arm IDs config. Missing: {missing_arm_ids}, Extra: {extra_arm_ids}",
+        )
+
+    mapping = (
+        await session.execute(
+            select(tables.ExperimentTurnConfig).where(
+                tables.ExperimentTurnConfig.experiment_id == experiment_id,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if mapping is None:
+        mapping = tables.ExperimentTurnConfig(
+            experiment_id=experiment_id,
+            arm_journey_map=body.arm_to_journeys,
+        )
+        session.add(mapping)
+    else:
+        mapping.arm_journey_map = body.arm_to_journeys
+
+    await session.commit()
+    return GENERIC_SUCCESS
+
+
+@router.get("/datasources/{datasource_id}/experiments/{experiment_id}/turn-journey-mapping")
+async def get_turn_arm_journey_mapping(
+    datasource_id: str,
+    experiment_id: str,
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
+) -> GetTurnArmJourneyMappingResponse:
+    """Returns the current mapping from each arm ID of the experiment to a Turn.io Journey ID, if it exists."""
+    ds = await get_datasource_or_raise(session, user, datasource_id)
+    await get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    mapping = (
+        await session.execute(
+            select(tables.ExperimentTurnConfig).where(
+                tables.ExperimentTurnConfig.experiment_id == experiment_id,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if mapping is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No Turn.io journey mapping found for experiment.",
+        )
+
+    return GetTurnArmJourneyMappingResponse(arm_to_journeys=mapping.arm_journey_map)
+
+
+@router.delete(
+    "/datasources/{datasource_id}/experiments/{experiment_id}/turn-journey-mapping",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_turn_arm_journey_mapping(
+    datasource_id: str,
+    experiment_id: str,
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
+    allow_missing: Annotated[
+        bool,
+        Query(description="If true, return a 204 even if the resource does not exist."),
+    ] = False,
+):
+    """Deletes the mapping from each arm ID of the experiment to a Turn.io Journey ID, if it exists."""
+    ds = await get_datasource_or_raise(session, user, datasource_id)
+    await get_experiment_via_ds_or_raise(session, ds, experiment_id)
+    mapping_query = select(tables.ExperimentTurnConfig).where(
+        tables.ExperimentTurnConfig.experiment_id == experiment_id
+    )
+
+    response = await handle_delete(
+        session,
+        allow_missing,
+        authz.is_user_authorized_on_datasource(user, datasource_id),
+        mapping_query,
+    )
+    await session.commit()
+    return response
 
 
 def raise_unless_safe_hostname(dsn):

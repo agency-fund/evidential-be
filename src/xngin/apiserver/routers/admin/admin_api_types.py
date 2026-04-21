@@ -257,7 +257,7 @@ class ListWebhooksResponse(AdminApiBaseModel):
     items: list[WebhookSummary]
 
 
-class AddOrUpdateConnectionToTurnRequest(AdminApiBaseModel):
+class SetConnectionToTurnRequest(AdminApiBaseModel):
     """Request to create or update an organization's Turn.io connection."""
 
     turn_api_token: Annotated[
@@ -297,6 +297,24 @@ class GetTurnConnectionResponse(AdminApiBaseModel):
             )
         ),
     ]
+
+
+class SetTurnArmJourneyMappingRequest(AdminApiBaseModel):
+    """Request to create or update the mapping between experiment arms and Turn.io journeys."""
+
+    arm_to_journeys: Annotated[
+        dict[str, str],
+        Field(
+            description=(
+                "Mapping of experiment arm IDs to Turn.io journey IDs. This configures which Turn.io "
+                "journey each arm corresponds to for experiments that integrate with Turn.io."
+            )
+        ),
+    ]
+
+
+class GetTurnArmJourneyMappingResponse(SetTurnArmJourneyMappingRequest):
+    """Response describing the mapping between experiment arms and Turn.io journeys."""
 
 
 class Hidden(AdminApiBaseModel):
