@@ -1,5 +1,4 @@
 import httpx
-import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -54,21 +53,15 @@ async def test_webhook_outbound_handler_records_dns_failure_event(
 async def test_webhook_outbound_handler_records_success_event(
     xngin_session: AsyncSession,
     tq_dsn: str,
-    monkeypatch: pytest.MonkeyPatch,
 ):
     org = tables.Organization(name="test-org")
     xngin_session.add(org)
     await xngin_session.commit()
     await xngin_session.refresh(org)
 
-    fake_response = httpx.Response(
-        200,
-        request=httpx.Request("POST", "http://203.0.113.1/hook"),
-    )
-    monkeypatch.setattr(httpx.Client, "request", lambda *_args, **_kwargs: fake_response)
-
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, request=request))
     task_queue = TaskQueue(dsn=tq_dsn, max_retries=0, poll_interval_secs=1)
-    task_queue.register_handler(WEBHOOK_OUTBOUND_TASK_TYPE, make_webhook_outbound_handler(tq_dsn))
+    task_queue.register_handler(WEBHOOK_OUTBOUND_TASK_TYPE, make_webhook_outbound_handler(tq_dsn, transport=transport))
     with tq_runner(task_queue):
         task = await insert_task(
             xngin_session,
