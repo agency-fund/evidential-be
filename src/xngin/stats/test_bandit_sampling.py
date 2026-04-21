@@ -117,10 +117,15 @@ N_DRAWS = 200
 EXPECTED_CHALLENGER_RATE = 1 - TOP_TWO_BETA
 
 
-def _make_many_arm_experiment(n_arms: int, prior_type: PriorTypes, reward_type: LikelihoodTypes) -> tables.Experiment:
+def _make_many_arm_experiment(
+    n_arms: int,
+    prior_type: PriorTypes,
+    reward_type: LikelihoodTypes,
+    experiment_type: ExperimentsType = ExperimentsType.MAB_ONLINE,
+) -> tables.Experiment:
     """Create an experiment with N arms, reusing make_experiment_table."""
     return make_experiment_table(
-        experiment_type=ExperimentsType.MAB_ONLINE,
+        experiment_type=experiment_type,
         prior_type=prior_type,
         reward_type=reward_type,
         num_arms=n_arms,
@@ -169,5 +174,70 @@ def test_below_threshold_barely_explores_with_dominant_arm():
     experiment.arms[0].alpha = 1000.0
 
     selections = [choose_arm(experiment=experiment, random_state=s).id for s in range(N_DRAWS)]
+    challenger_rate = sum(1 for s in selections if s != "arm_0") / N_DRAWS
+    assert challenger_rate < EXPECTED_CHALLENGER_RATE / 2
+
+
+def test_top_two_sometimes_picks_challenger_normal_mab():
+    """Top-Two TS for Normal-Normal MAB should explore challengers when one arm dominates."""
+    experiment = _make_many_arm_experiment(6, PriorTypes.NORMAL, LikelihoodTypes.NORMAL)
+    for arm in experiment.arms:
+        arm.mu, arm.covariance = [0.0], [[1.0]]
+    experiment.arms[0].mu = [1000.0]
+
+    selections = [choose_arm(experiment=experiment, random_state=s).id for s in range(N_DRAWS)]
+    challenger_rate = sum(1 for s in selections if s != "arm_0") / N_DRAWS
+    assert challenger_rate == pytest.approx(EXPECTED_CHALLENGER_RATE, abs=0.05)
+
+
+def test_below_threshold_barely_explores_with_dominant_arm_normal_mab():
+    """With <5 arms and Normal-Normal MAB, regular TS picks the dominant arm nearly every time."""
+    experiment = _make_many_arm_experiment(TOP_TWO_MIN_ARMS - 1, PriorTypes.NORMAL, LikelihoodTypes.NORMAL)
+    for arm in experiment.arms:
+        arm.mu, arm.covariance = [0.0], [[1.0]]
+    experiment.arms[0].mu = [1000.0]
+
+    selections = [choose_arm(experiment=experiment, random_state=s).id for s in range(N_DRAWS)]
+    challenger_rate = sum(1 for s in selections if s != "arm_0") / N_DRAWS
+    assert challenger_rate < EXPECTED_CHALLENGER_RATE / 2
+
+
+def test_top_two_sometimes_picks_challenger_cmab():
+    """Top-Two TS for Normal-Normal CMAB should explore challengers when one arm dominates."""
+    experiment = _make_many_arm_experiment(
+        6, PriorTypes.NORMAL, LikelihoodTypes.NORMAL, experiment_type=ExperimentsType.CMAB_ONLINE
+    )
+    context_len = len(experiment.contexts)
+    for arm in experiment.arms:
+        arm.mu = [0.0] * context_len
+        arm.covariance = [[1.0 if i == j else 0.0 for j in range(context_len)] for i in range(context_len)]
+    experiment.arms[0].mu = [1000.0] * context_len
+
+    context_vals = [1.0] * context_len
+    selections = [
+        choose_arm(experiment=experiment, sorted_context_vals=context_vals, random_state=s).id for s in range(N_DRAWS)
+    ]
+    challenger_rate = sum(1 for s in selections if s != "arm_0") / N_DRAWS
+    assert challenger_rate == pytest.approx(EXPECTED_CHALLENGER_RATE, abs=0.05)
+
+
+def test_below_threshold_barely_explores_with_dominant_arm_cmab():
+    """With <5 arms and Normal-Normal CMAB, regular TS picks the dominant arm nearly every time."""
+    experiment = _make_many_arm_experiment(
+        TOP_TWO_MIN_ARMS - 1,
+        PriorTypes.NORMAL,
+        LikelihoodTypes.NORMAL,
+        experiment_type=ExperimentsType.CMAB_ONLINE,
+    )
+    context_len = len(experiment.contexts)
+    for arm in experiment.arms:
+        arm.mu = [0.0] * context_len
+        arm.covariance = [[1.0 if i == j else 0.0 for j in range(context_len)] for i in range(context_len)]
+    experiment.arms[0].mu = [1000.0] * context_len
+
+    context_vals = [1.0] * context_len
+    selections = [
+        choose_arm(experiment=experiment, sorted_context_vals=context_vals, random_state=s).id for s in range(N_DRAWS)
+    ]
     challenger_rate = sum(1 for s in selections if s != "arm_0") / N_DRAWS
     assert challenger_rate < EXPECTED_CHALLENGER_RATE / 2

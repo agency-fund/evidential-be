@@ -149,6 +149,23 @@ def make_createexperimentrequest_json(
                 }
             }
         case ExperimentsType.CMAB_ONLINE:
+            arm_spec = {
+                "arm_name": "Arm 1",
+                "arm_description": "Arm 1",
+                "mu_init": 10.0,
+                "sigma_init": 1.0,
+            }
+            arm_spec_2 = {
+                "arm_name": "Arm 2",
+                "arm_description": "Arm 2",
+                "mu_init": -10.0,
+                "sigma_init": 1.0,
+            }
+            cmab_arms = (
+                [arm_spec, arm_spec_2] + [arm_spec for _ in range(num_arms - 2)]
+                if num_arms > 2
+                else [arm_spec, arm_spec_2]
+            )
             return {
                 "design_spec": {
                     "participant_type": participant_type,
@@ -161,20 +178,7 @@ def make_createexperimentrequest_json(
                     "experiment_type": "cmab_online",
                     "prior_type": prior_type,
                     "reward_type": reward_type,
-                    "arms": [
-                        {
-                            "arm_name": "Arm 1",
-                            "arm_description": "Arm 1",
-                            "mu_init": 10.0,
-                            "sigma_init": 1.0,
-                        },
-                        {
-                            "arm_name": "Arm 2",
-                            "arm_description": "Arm 2",
-                            "mu_init": -10.0,
-                            "sigma_init": 1.0,
-                        },
-                    ],
+                    "arms": cmab_arms,
                     "contexts": [
                         {
                             "context_name": "Context 1",
