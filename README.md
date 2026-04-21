@@ -43,7 +43,7 @@
 | src/xngin/apiserver/routers/experiments/experiments\_common\_csv.py  |       75 |        4 |     95% |36, 90, 200-201 |
 | src/xngin/apiserver/routers/experiments/property\_filters.py         |       96 |        8 |     92% |25, 28, 32, 95-96, 148, 160-161 |
 | src/xngin/apiserver/routers/experiments/test\_experiments\_api.py    |      409 |        3 |     99% |63, 168-169 |
-| src/xngin/apiserver/routers/experiments/test\_experiments\_common.py |      990 |        8 |     99% |187-188, 1220-1222, 1600-1601, 2062 |
+| src/xngin/apiserver/routers/experiments/test\_experiments\_common.py |      996 |        8 |     99% |194-195, 1227-1229, 1607-1608, 2069 |
 | src/xngin/apiserver/routers/experiments/test\_property\_filters.py   |       41 |        1 |     98% |        24 |
 | src/xngin/apiserver/routers/healthchecks\_api.py                     |       16 |        2 |     88% |     26-27 |
 | src/xngin/apiserver/routers/test\_assignment\_adapters.py            |      208 |        1 |     99% |       103 |
@@ -67,19 +67,19 @@
 | src/xngin/stats/assignment.py                                        |       59 |        1 |     98% |       128 |
 | src/xngin/stats/balance.py                                           |       67 |        2 |     97% |  110, 138 |
 | src/xngin/stats/bandit\_analysis.py                                  |       75 |        5 |     93% |135, 137, 139, 202-203 |
-| src/xngin/stats/bandit\_sampling.py                                  |       73 |        7 |     90% |162, 186, 191, 214, 238, 240, 272 |
+| src/xngin/stats/bandit\_sampling.py                                  |       86 |        7 |     92% |184, 215, 222, 250, 274, 276, 308 |
 | src/xngin/stats/bandit\_weights\_to\_prior.py                        |       50 |        2 |     96% |   75, 138 |
 | src/xngin/stats/cluster\_icc.py                                      |       40 |        2 |     95% |    33, 57 |
 | src/xngin/stats/power.py                                             |      118 |        5 |     96% |71, 74, 118-119, 195 |
-| src/xngin/tq/task\_queue.py                                          |       96 |        9 |     91% |   234-244 |
-| src/xngin/tq/test\_tq.py                                             |      108 |        6 |     94% |33-34, 59-60, 97, 99 |
+| src/xngin/tq/task\_queue.py                                          |       96 |        2 |     98% |   237-238 |
+| src/xngin/tq/test\_tq.py                                             |      108 |        5 |     95% |33-34, 60, 97, 99 |
 | src/xngin/xsecrets/chafernet.py                                      |       52 |        1 |     98% |        92 |
 | src/xngin/xsecrets/gcp\_kms\_provider.py                             |       70 |       28 |     60% |64-79, 86-87, 104-108, 111, 115-123, 127-134 |
 | src/xngin/xsecrets/provider.py                                       |       19 |        1 |     95% |        46 |
 | src/xngin/xsecrets/secretservice.py                                  |       63 |        5 |     92% |37, 49-50, 108, 130 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                       |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                           |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                            | **12005** |  **777** | **94%** |           |
+| **TOTAL**                                                            | **12091** |  **769** | **94%** |           |
 
 65 files skipped due to complete coverage.
 
