@@ -1028,7 +1028,7 @@ async def test_webhook_lifecycle(aclient: AdminAPIClient):
 def test_create_webhook_rejects_ssrf_url(aclient: AdminAPIClient):
     """Creating a webhook with an internal/unsafe hostname is rejected."""
     org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="add_webhook_rejects_ssrf")).data.id
-    with expect_status_code(422, detail_contains="URL hostname failed safety validation"):
+    with expect_status_code(422, detail_contains="Failed to resolve hostname from webhook URL"):
         aclient.add_webhook_to_organization(
             organization_id=org_id,
             body=AddWebhookToOrganizationRequest.model_construct(
@@ -1050,7 +1050,7 @@ def test_update_webhook_rejects_ssrf_url(aclient: AdminAPIClient):
             name="safe webhook",
         ),
     ).data.id
-    with expect_status_code(422, detail_contains="URL hostname failed safety validation"):
+    with expect_status_code(422, detail_contains="Failed to resolve hostname from webhook URL"):
         aclient.update_organization_webhook(
             organization_id=org_id,
             webhook_id=webhook_id,
