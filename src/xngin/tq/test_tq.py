@@ -6,14 +6,19 @@ from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from datetime import timedelta
 
+import httpx
 import psycopg
 import pytest
-from sqlalchemy import make_url
+from sqlalchemy import make_url, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import database
+from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.sqla import tables
+from xngin.events.webhook_sent import WebhookSentEvent
 from xngin.tq import task_queue as task_queue_module
+from xngin.tq.handlers import make_webhook_outbound_handler
+from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE
 from xngin.tq.task_queue import Task, TaskQueue
 
 pytest_plugins = ("xngin.apiserver.conftest",)
@@ -191,3 +196,87 @@ def test_task_queue_retries_after_operational_error(monkeypatch: pytest.MonkeyPa
     task_queue.run(cancel=cancel)
 
     assert sleep_calls == [5]
+
+
+async def test_webhook_outbound_handler_records_dns_failure_event(
+    xngin_session: AsyncSession,
+    tq_dsn: str,
+):
+    # First add a valid organization to later associate with the db Event record
+    org = tables.Organization(name="test-org")
+    xngin_session.add(org)
+    await xngin_session.commit()
+    await xngin_session.refresh(org)
+
+    # Then insert a task that should fail due to the unsafe IP
+    task_queue = TaskQueue(dsn=tq_dsn, max_retries=0, poll_interval_secs=1)
+    task_queue.register_handler(WEBHOOK_OUTBOUND_TASK_TYPE, make_webhook_outbound_handler(tq_dsn))
+    with tq_runner(task_queue):
+        task = await insert_task(
+            xngin_session,
+            task_type=WEBHOOK_OUTBOUND_TASK_TYPE,
+            payload={
+                "url": f"http://{safe_resolve.UNSAFE_IP_FOR_TESTING}/hook",
+                "organization_id": org.id,
+            },
+        )
+        dead_task = await wait_for_task_status(task.id, "dead")
+
+    assert dead_task.message == "DNS issue with host: Detected sentinel value of invalid IP used for testing purposes."
+
+    # Lastly assert that the db has the correct event record
+    events = (
+        (await xngin_session.execute(select(tables.Event).where(tables.Event.organization_id == org.id)))
+        .scalars()
+        .all()
+    )
+
+    assert len(events) == 1
+    event_data = events[0].get_data()
+    assert isinstance(event_data, WebhookSentEvent)
+    assert event_data.success is False
+    assert "Failed to resolve hostname" in event_data.response
+
+
+async def test_webhook_outbound_handler_records_success_event(
+    xngin_session: AsyncSession,
+    tq_dsn: str,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    org = tables.Organization(name="test-org")
+    xngin_session.add(org)
+    await xngin_session.commit()
+    await xngin_session.refresh(org)
+
+    fake_response = httpx.Response(
+        200,
+        request=httpx.Request("POST", "http://localhost/hook"),
+    )
+    monkeypatch.setattr(httpx.Client, "request", lambda *_args, **_kwargs: fake_response)
+
+    task_queue = TaskQueue(dsn=tq_dsn, max_retries=0, poll_interval_secs=1)
+    task_queue.register_handler(WEBHOOK_OUTBOUND_TASK_TYPE, make_webhook_outbound_handler(tq_dsn))
+    with tq_runner(task_queue):
+        task = await insert_task(
+            xngin_session,
+            task_type=WEBHOOK_OUTBOUND_TASK_TYPE,
+            payload={
+                "url": "http://localhost/hook",
+                "organization_id": org.id,
+            },
+        )
+        success_task = await wait_for_task_status(task.id, "success")
+
+    assert success_task.message is None
+
+    events = (
+        (await xngin_session.execute(select(tables.Event).where(tables.Event.organization_id == org.id)))
+        .scalars()
+        .all()
+    )
+
+    assert len(events) == 1
+    event_data = events[0].get_data()
+    assert isinstance(event_data, WebhookSentEvent)
+    assert event_data.success is True
+    assert event_data.response == "200"
