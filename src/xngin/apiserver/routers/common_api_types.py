@@ -3,7 +3,7 @@ import json
 import math
 import uuid
 from collections.abc import Sequence
-from typing import Annotated, Literal, Self, TypedDict
+from typing import Annotated, Literal, NotRequired, Self, TypedDict
 
 import sqlalchemy.sql
 from annotated_types import MaxLen, MinLen
@@ -240,7 +240,7 @@ class CMABContextInputRequest(ApiBaseModel):
         "cmab_assignment"  # Adding type field to allow for type-discriminated unions in future
     )
     context_inputs: Annotated[
-        list[ContextInput],
+        list[ContextInput] | None,
         Field(
             description="""
             List of context values for the assignment.
@@ -1110,7 +1110,10 @@ class PowerResponse(ApiBaseModel):
 
 
 class StrataTypedDict(TypedDict):
-    """Strata as a TypedDict to avoid Pydantic model work on hot paths."""
+    """Strata as a TypedDict to avoid Pydantic model work on hot paths.
+
+    TypedDict provides some type safety without a runtime cost.
+    """
 
     field_name: str
     strata_value: str | None
@@ -1124,6 +1127,22 @@ class Strata(ApiBaseModel):
     # from data warehouse.
     # strata_type: Optional[StrataType]
     strata_value: str | None = None
+
+
+class AssignmentTypedDict(TypedDict):
+    """Assignment as a TypedDict to avoid Pydantic model work on hot paths.
+
+    TypedDict provides some type safety without a runtime cost.
+    """
+
+    arm_id: str
+    participant_id: str
+    arm_name: str
+    created_at: NotRequired[str | None]
+    strata: NotRequired[list[StrataTypedDict] | None]
+    observed_at: NotRequired[str | None]
+    outcome: NotRequired[float | None]
+    context_values: NotRequired[list[float] | None]
 
 
 class Assignment(ApiBaseModel):
