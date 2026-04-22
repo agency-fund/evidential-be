@@ -298,3 +298,37 @@ async def test_turn_journey_mapping_rejects_mismatched_arm_ids(
             ),
         )
     assert extra_id in match.http_response().text
+
+
+async def test_rotating_token_wipes_arm_journey_mapping(
+    testing_datasource,
+    testing_experiment: tables.Experiment,
+    iaclient: AdminIntegrationsAPIClient,
+):
+    """Rotating an org's Turn token deletes the org's arm->journey mappings."""
+    ds_id = testing_datasource.ds.id
+    org_id = testing_datasource.org.id
+    experiment_id = testing_experiment.id
+    arm_ids = [arm.id for arm in testing_experiment.arms]
+
+    iaclient.set_organization_turn_connection(
+        organization_id=org_id,
+        body=SetConnectionToTurnRequest(turn_api_token="a" * 335),
+    )
+    iaclient.set_turn_arm_journey_mapping(
+        datasource_id=ds_id,
+        experiment_id=experiment_id,
+        body=SetTurnArmJourneyMappingRequest(
+            arm_to_journeys={arm_ids[0]: "journey-0", arm_ids[1]: "journey-1"},
+        ),
+    )
+
+    # Rotate the token.
+    iaclient.set_organization_turn_connection(
+        organization_id=org_id,
+        body=SetConnectionToTurnRequest(turn_api_token="b" * 335),
+    )
+
+    # Mapping is wiped.
+    with expect_status_code(404):
+        iaclient.get_turn_arm_journey_mapping(datasource_id=ds_id, experiment_id=experiment_id)

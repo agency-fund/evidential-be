@@ -24,7 +24,7 @@ from fastapi import (
     status,
 )
 from loguru import logger
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import constants
@@ -90,6 +90,19 @@ async def set_organization_turn_connection(
         turn_connection = tables.TurnConnection(organization_id=org.id)
         session.add(turn_connection)
     turn_connection.set_turn_api_token(body.turn_api_token)
+
+    # Journey UUIDs belong to a specific Turn workspace, so any stored arm->journey
+    # mappings become stale the moment the token changes. Wipe them for every
+    # experiment under this organization's datasources.
+    await session.execute(
+        delete(tables.ExperimentTurnConfig).where(
+            tables.ExperimentTurnConfig.experiment_id.in_(
+                select(tables.Experiment.id)
+                .join(tables.Datasource, tables.Experiment.datasource_id == tables.Datasource.id)
+                .where(tables.Datasource.organization_id == org.id)
+            )
+        )
+    )
 
     await session.commit()
     return GENERIC_SUCCESS
