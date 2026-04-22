@@ -18,55 +18,6 @@ import numpy as np
 import pandas as pd
 
 
-def generate_cluster_sizes(
-    n_clusters: int,
-    distribution: str = "power_law",
-    target_cv: float = 3.0,
-    min_size: int = 1,
-    max_size: int = 500,
-    seed: int = 42,
-) -> np.ndarray:
-    """
-    Generate cluster sizes following specified distribution.
-
-    Args:
-        n_clusters: Number of clusters to generate
-        distribution: "power_law", "equal", or "moderate"
-        target_cv: Target coefficient of variation (for power_law/moderate)
-        min_size: Minimum cluster size
-        max_size: Maximum cluster size
-        seed: Random seed for reproducibility
-
-    Returns:
-        Array of cluster sizes (integers)
-    """
-    rng = np.random.RandomState(seed)
-
-    if distribution == "equal":
-        # All clusters same size
-        size = (min_size + max_size) // 2
-        sizes = np.full(n_clusters, size)
-
-    elif distribution == "moderate":
-        # Normal distribution around midpoint
-        mean_size = (min_size + max_size) // 2
-        std_size = mean_size * target_cv  # CV = std/mean
-        sizes = rng.normal(mean_size, std_size, n_clusters)
-        sizes = np.clip(sizes, min_size, max_size).astype(int)
-
-    elif distribution == "power_law":
-        # Power-law: many small, few large
-        # Generate from power distribution [0, 1]
-        raw_sizes = rng.power(a=2.0, size=n_clusters)
-        # Scale to [min_size, max_size]
-        sizes = (raw_sizes * (max_size - min_size) + min_size).astype(int)
-
-    else:
-        raise ValueError(f"Unknown distribution: {distribution}")
-
-    return sizes
-
-
 def generate_continuous_outcome_with_icc(
     cluster_sizes: np.ndarray,
     icc: float,
