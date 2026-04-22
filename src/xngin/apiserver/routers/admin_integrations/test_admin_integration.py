@@ -68,6 +68,11 @@ async def test_turn_connection_lifecycle(aclient: AdminAPIClient, iaclient: Admi
     with expect_status_code(404):
         iaclient.get_organization_turn_connection(organization_id=org_id)
 
+    # GET with allow_missing=True -> 200.
+    assert (
+        iaclient.get_organization_turn_connection(organization_id=org_id, allow_missing=True).data.token_preview == ""
+    )
+
     # Create the connection.
     initial_token = "abcde" * 67  # 335 chars
     iaclient.set_organization_turn_connection(
@@ -93,7 +98,7 @@ async def test_turn_connection_lifecycle(aclient: AdminAPIClient, iaclient: Admi
     # Delete.
     iaclient.delete_turn_connection_from_organization(organization_id=org_id)
 
-    # GET after delete -> 404.
+    # GET after delete with allow_missing=False -> 404.
     with expect_status_code(404):
         iaclient.get_organization_turn_connection(organization_id=org_id)
 

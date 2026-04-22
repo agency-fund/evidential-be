@@ -341,6 +341,7 @@ class AdminIntegrationsAPIClient:  # noqa: RUF100,PLR0904
         self,
         *,
         organization_id: str,
+        allow_missing: bool = ADMIN_INTEGRATIONS_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminIntegrationsAPIClientExtensions | None = None,
     ) -> AdminIntegrationsAPIClientResult[
@@ -351,6 +352,7 @@ class AdminIntegrationsAPIClient:  # noqa: RUF100,PLR0904
         self,
         *,
         organization_id: str,
+        allow_missing: bool = ADMIN_INTEGRATIONS_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminIntegrationsAPIClientExtensions | None = None,
     ) -> (
@@ -375,6 +377,7 @@ class AdminIntegrationsAPIClient:  # noqa: RUF100,PLR0904
         self,
         *,
         organization_id: str,
+        allow_missing: bool = ADMIN_INTEGRATIONS_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: AdminIntegrationsAPIClientExtensions | None = None,
     ) -> (
@@ -432,6 +435,9 @@ class AdminIntegrationsAPIClient:  # noqa: RUF100,PLR0904
                 },
                 path_params={
                     "organization_id": organization_id,
+                },
+                query_params={
+                    "allow_missing": allow_missing,
                 },
                 raise_if_not_default_status=raise_if_not_default_status,
                 client_exts=client_exts,

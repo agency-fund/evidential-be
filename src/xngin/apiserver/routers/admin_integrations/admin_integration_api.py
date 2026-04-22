@@ -100,6 +100,9 @@ async def get_organization_turn_connection(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
+    allow_missing: Annotated[
+        bool, Query(description="If true, return a 200 with null body if the resource does not exist.")
+    ] = False,
 ) -> GetTurnConnectionResponse:
     """Returns a preview of the organization's configured Turn.io API token.
 
@@ -111,10 +114,10 @@ async def get_organization_turn_connection(
     turn_connection = (
         await session.execute(select(tables.TurnConnection).where(tables.TurnConnection.organization_id == org.id))
     ).scalar_one_or_none()
-    if turn_connection is None:
+    if turn_connection is None and not allow_missing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Turn connection not found")
 
-    return GetTurnConnectionResponse(token_preview=turn_connection.turn_api_token_preview)
+    return GetTurnConnectionResponse(token_preview=turn_connection.turn_api_token_preview if turn_connection else "")
 
 
 @router.delete(
