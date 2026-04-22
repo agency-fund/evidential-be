@@ -34,15 +34,15 @@ class TestGeneratedClusteredData:
 
         equal_sizes = df.groupby("cluster_equal").size()
         equal_cv = equal_sizes.std() / equal_sizes.mean()
-        assert equal_cv < 0.01
+        assert pytest.approx(equal_cv) == 0.0
 
         moderate_sizes = df.groupby("cluster_moderate").size()
         moderate_cv = moderate_sizes.std() / moderate_sizes.mean()
-        assert 0.2 < moderate_cv < 0.5
+        assert pytest.approx(moderate_cv, abs=1e-3) == 0.347
 
         powerlaw_sizes = df.groupby("cluster_powerlaw").size()
         powerlaw_cv = powerlaw_sizes.std() / powerlaw_sizes.mean()
-        assert powerlaw_cv > 5.0
+        assert pytest.approx(powerlaw_cv, abs=1e-3) == 11.872
 
         print("\nCluster size CVs:")
         print(f"  Equal: {equal_cv:.3f} (range: [{equal_sizes.min()}, {equal_sizes.max()}])")

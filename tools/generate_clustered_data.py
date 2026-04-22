@@ -2,8 +2,9 @@
 """
 Generate realistic clustered test data for cluster randomization testing.
 
-Creates data with MULTIPLE clustering schemes (equal, moderate, power-law)
-and MULTIPLE outcomes (continuous/binary, low/high ICC) for comprehensive testing.
+Creates data with MULTIPLE clustering schemes:
+- having different coefficients of variation (CV): {equal, moderate, power-law}
+- and MULTIPLE outcomes (continuous/binary, low/high ICC) for comprehensive testing.
 
 Usage:
     python tools/generate_clustered_data.py --output data.csv
@@ -76,6 +77,12 @@ def generate_continuous_outcome_with_icc(
     """
     Generate continuous outcome with specified ICC.
 
+    ICC = between-cluster variance / total variance (i.e. the proportion of variance explained by
+    differences between clusters). So we can decompose the user-given total variance into the
+    between and within cluster variances while maintaining the desired ICC. Then use these
+    components generate the cluster-level effects and individual effects, which together with the
+    global mean make up the individual outcomes:
+
     Model: Y[i,j] = μ + u[j] + ε[i,j]
     Where:
     - μ = overall mean
@@ -138,14 +145,13 @@ def generate_binary_outcome_with_icc(
     rng = np.random.RandomState(seed)
 
     # For binary outcomes, ICC relates to variance of cluster probabilities
-    # We'll use beta distribution to generate cluster-specific probabilities
 
     if icc == 0:
         # No clustering - everyone has same probability
         total_n = sum(cluster_sizes)
         return rng.binomial(1, base_prob, total_n)
 
-    # Use beta distribution to generate cluster probabilities
+    # We'll use beta distribution to generate cluster-specific probabilities
     # that have specified variance while maintaining mean = base_prob
 
     # Beta parameters for desired mean and variance
@@ -193,19 +199,34 @@ def generate_multi_cluster_data(
     # Scheme 1: Equal clusters (CV = 0)
     # =================================================================
     equal_sizes = np.full(n_clusters_per_scheme, int(avg_size))
+    # In case the average size is not an integer, add the remaining to the first cluster.
     equal_sizes[0] += total_n - equal_sizes.sum()
 
     # =================================================================
-    # Scheme 2: Moderate (CV ≈ 0.3) - Multinomial with similar probs
+    # Scheme 2: Moderate (CV ≈ 0.35) - Multinomial with similar probs
     # =================================================================
-    # Create probabilities with small variance
+    # Since CV = std / mean, we can generate probabilities of assigning to each cluster with a small
+    # amount of gaussian noise specifically chosen so that the cluster sizes will have moderate
+    # variation (CV ≈ 0.35) from these two sources of variation (noise in p + random assignment).
+    #
+    # To derive the amount of noise:
+    # Let the avg cluster size = 10, then we need std^2 = 3.5^2 = 12.25
+    # The variance of the expected cluster size = Var(n * p) = n^2 * Var(p)
+    # So total variance = Var(E[X|p]) + E[Var(X|p)] = n^2 * (base_prob*noise)**2 + lambda
+    # Now we can solve for noise.
+
     base_prob = 1.0 / n_clusters_per_scheme
+    # This noise induces variation in the cluster Ps = (base_prob*0.15)**2
     noise = rng.normal(0, base_prob * 0.15, n_clusters_per_scheme)
     probs_moderate = base_prob + noise
     probs_moderate = np.maximum(probs_moderate, 0.0001)  # Keep positive
     probs_moderate /= probs_moderate.sum()  # Normalize
 
-    # Use multinomial - guaranteed to sum to total_n
+    # Use a multinomial to allocate total_n users to n_clusters_per_scheme clusters based on the
+    # probabilities.  The count of users in a single cluster follows a binomial distribution with
+    # parameters n=total_n and p=its probs_moderate probability. For large n and small p, the
+    # binomial approximates a poisson distribution with parameter lambda = n * p = mean cluster size
+    # = variance of the cluster size | p. This was used above in the total variance formula.
     moderate_sizes = rng.multinomial(total_n, probs_moderate)
     moderate_sizes = np.maximum(moderate_sizes, 1)  # Ensure >= 1
 
@@ -230,7 +251,7 @@ def generate_multi_cluster_data(
     powerlaw_sizes = rng.multinomial(total_n, probs_powerlaw)
     powerlaw_sizes = np.maximum(powerlaw_sizes, 1)
 
-    # Fix if needed
+    # Fix if needed by taking from the current largest cluster.
     if powerlaw_sizes.sum() > total_n:
         excess = powerlaw_sizes.sum() - total_n
         for _ in range(excess):
@@ -241,13 +262,15 @@ def generate_multi_cluster_data(
     # Randomize which cluster gets which size
     rng.shuffle(powerlaw_sizes)
 
+    # =================================================================
+    # Done generating cluster sizes! Now verify a few stats:
     cv_equal = equal_sizes.std() / equal_sizes.mean() if equal_sizes.mean() > 0 else 0
     cv_moderate = moderate_sizes.std() / moderate_sizes.mean()
     cv_powerlaw = powerlaw_sizes.std() / powerlaw_sizes.mean()
 
     print("\nActual CVs achieved:")
     print(f"  Equal: {cv_equal:.3f} (target: 0.000)")
-    print(f"  Moderate: {cv_moderate:.3f} (target: ~0.300)")
+    print(f"  Moderate: {cv_moderate:.3f} (target: ~0.350)")
     print(f"  Power-law: {cv_powerlaw:.3f} (target: >1.000)")
 
     print("\nCluster size ranges:")
@@ -314,8 +337,8 @@ CREATE TABLE {{table_name}} (
 
     -- Three independent clustering schemes
     cluster_equal INTEGER NOT NULL,      -- Equal-sized clusters (CV ≈ 0)
-    cluster_moderate INTEGER NOT NULL,   -- Moderate variation (CV ≈ 0.3)
-    cluster_powerlaw INTEGER NOT NULL,   -- Power-law distribution (CV ≈ 3)
+    cluster_moderate INTEGER NOT NULL,   -- Moderate variation (CV ≈ 0.35)
+    cluster_powerlaw INTEGER NOT NULL,   -- Power-law distribution (CV > 1)
 
     -- Continuous outcomes
     income DECIMAL,                      -- Low ICC (0.05) with cluster_equal
