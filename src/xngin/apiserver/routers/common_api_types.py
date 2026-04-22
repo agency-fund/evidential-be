@@ -1441,6 +1441,14 @@ class UpdateBanditArmOutcomeRequest(ApiBaseModel):
     outcome: float
 
 
+class TurnConfigResponse(ApiBaseModel):
+    """Describes the configuration for Turn.io Evidential App."""
+
+    experiment_id: str
+    experiment_name: str
+    arm_journey_map: dict[str, str]
+
+
 def validate_gcp_service_account_info_json(serviceaccount_json):
     """Raises a ValueError if decoded does not resemble a JSON string containing GCP Service Account info."""
     try:

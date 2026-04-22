@@ -34,9 +34,11 @@ from pydantic import (
 
 from xngin.apiserver.routers.admin.admin_api import HTTPExceptionError
 from xngin.apiserver.routers.admin_integrations.admin_integration_api_types import (
+    GetTurnArmJourneyMappingResponse,
     GetTurnConnectionResponse,
     GetTurnJourneysResponse,
     SetConnectionToTurnRequest,
+    SetTurnArmJourneyMappingRequest,
 )
 
 if TYPE_CHECKING:
@@ -628,6 +630,320 @@ class AdminIntegrationsAPIClient:  # noqa: RUF100,PLR0904
                 },
                 path_params={
                     "organization_id": organization_id,
+                },
+                raise_if_not_default_status=raise_if_not_default_status,
+                client_exts=client_exts,
+            ),
+        )
+
+    @overload
+    def set_turn_arm_journey_mapping(
+        self,
+        *,
+        datasource_id: str,
+        experiment_id: str,
+        body: SetTurnArmJourneyMappingRequest,
+        raise_if_not_default_status: Literal[True] = True,
+        client_exts: AdminIntegrationsAPIClientExtensions | None = None,
+    ) -> AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
+    @overload
+    def set_turn_arm_journey_mapping(
+        self,
+        *,
+        datasource_id: str,
+        experiment_id: str,
+        body: SetTurnArmJourneyMappingRequest,
+        raise_if_not_default_status: Literal[False],
+        client_exts: AdminIntegrationsAPIClientExtensions | None = None,
+    ) -> (
+        AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
+        | AdminIntegrationsAPIClientResult[
+            Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]
+        ]
+        | AdminIntegrationsAPIClientResult[
+            Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]
+        ]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminIntegrationsAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+            AdminIntegrationsAPIClientHTTPValidationError,
+            type[AdminIntegrationsAPIClientHTTPValidationError],
+        ]
+    ): ...
+    def set_turn_arm_journey_mapping(
+        self,
+        *,
+        datasource_id: str,
+        experiment_id: str,
+        body: SetTurnArmJourneyMappingRequest,
+        raise_if_not_default_status: bool = True,
+        client_exts: AdminIntegrationsAPIClientExtensions | None = None,
+    ) -> (
+        AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
+        | AdminIntegrationsAPIClientResult[
+            Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]
+        ]
+        | AdminIntegrationsAPIClientResult[
+            Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]
+        ]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminIntegrationsAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+            AdminIntegrationsAPIClientHTTPValidationError,
+            type[AdminIntegrationsAPIClientHTTPValidationError],
+        ]
+    ):
+        return cast(
+            (
+                AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
+                | AdminIntegrationsAPIClientResult[
+                    Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]
+                ]
+                | AdminIntegrationsAPIClientResult[
+                    Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]
+                ]
+                | AdminIntegrationsAPIClientResult[
+                    Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]
+                ]
+                | AdminIntegrationsAPIClientResult[
+                    Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]
+                ]
+                | AdminIntegrationsAPIClientResult[
+                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+                    AdminIntegrationsAPIClientHTTPValidationError,
+                    type[AdminIntegrationsAPIClientHTTPValidationError],
+                ]
+            ),
+            self._route_handler(
+                path="/v1/m/integrations/turn-journey-mapping/datasources/{datasource_id}/experiments/{experiment_id}",  # noqa: RUF100,RUF027
+                method=HTTPMethod.PUT,
+                default_status=HTTPStatus.NO_CONTENT,
+                models={
+                    HTTPStatus.NO_CONTENT: None,
+                    HTTPStatus.BAD_REQUEST: HTTPExceptionError,
+                    HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
+                    HTTPStatus.FORBIDDEN: HTTPExceptionError,
+                    HTTPStatus.NOT_FOUND: HTTPExceptionError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminIntegrationsAPIClientHTTPValidationError,
+                },
+                path_params={
+                    "datasource_id": datasource_id,
+                    "experiment_id": experiment_id,
+                },
+                body_params={
+                    "body": body,
+                },
+                raise_if_not_default_status=raise_if_not_default_status,
+                client_exts=client_exts,
+            ),
+        )
+
+    @overload
+    def get_turn_arm_journey_mapping(
+        self,
+        *,
+        datasource_id: str,
+        experiment_id: str,
+        raise_if_not_default_status: Literal[True] = True,
+        client_exts: AdminIntegrationsAPIClientExtensions | None = None,
+    ) -> AdminIntegrationsAPIClientResult[
+        Literal[HTTPStatus.OK], GetTurnArmJourneyMappingResponse, type[GetTurnArmJourneyMappingResponse]
+    ]: ...
+    @overload
+    def get_turn_arm_journey_mapping(
+        self,
+        *,
+        datasource_id: str,
+        experiment_id: str,
+        raise_if_not_default_status: Literal[False],
+        client_exts: AdminIntegrationsAPIClientExtensions | None = None,
+    ) -> (
+        AdminIntegrationsAPIClientResult[
+            Literal[HTTPStatus.OK], GetTurnArmJourneyMappingResponse, type[GetTurnArmJourneyMappingResponse]
+        ]
+        | AdminIntegrationsAPIClientResult[
+            Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]
+        ]
+        | AdminIntegrationsAPIClientResult[
+            Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]
+        ]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminIntegrationsAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+            AdminIntegrationsAPIClientHTTPValidationError,
+            type[AdminIntegrationsAPIClientHTTPValidationError],
+        ]
+    ): ...
+    def get_turn_arm_journey_mapping(
+        self,
+        *,
+        datasource_id: str,
+        experiment_id: str,
+        raise_if_not_default_status: bool = True,
+        client_exts: AdminIntegrationsAPIClientExtensions | None = None,
+    ) -> (
+        AdminIntegrationsAPIClientResult[
+            Literal[HTTPStatus.OK], GetTurnArmJourneyMappingResponse, type[GetTurnArmJourneyMappingResponse]
+        ]
+        | AdminIntegrationsAPIClientResult[
+            Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]
+        ]
+        | AdminIntegrationsAPIClientResult[
+            Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]
+        ]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminIntegrationsAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+            AdminIntegrationsAPIClientHTTPValidationError,
+            type[AdminIntegrationsAPIClientHTTPValidationError],
+        ]
+    ):
+        return cast(
+            (
+                AdminIntegrationsAPIClientResult[
+                    Literal[HTTPStatus.OK], GetTurnArmJourneyMappingResponse, type[GetTurnArmJourneyMappingResponse]
+                ]
+                | AdminIntegrationsAPIClientResult[
+                    Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]
+                ]
+                | AdminIntegrationsAPIClientResult[
+                    Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]
+                ]
+                | AdminIntegrationsAPIClientResult[
+                    Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]
+                ]
+                | AdminIntegrationsAPIClientResult[
+                    Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]
+                ]
+                | AdminIntegrationsAPIClientResult[
+                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+                    AdminIntegrationsAPIClientHTTPValidationError,
+                    type[AdminIntegrationsAPIClientHTTPValidationError],
+                ]
+            ),
+            self._route_handler(
+                path="/v1/m/integrations/turn-journey-mapping/datasources/{datasource_id}/experiments/{experiment_id}",  # noqa: RUF100,RUF027
+                method=HTTPMethod.GET,
+                default_status=HTTPStatus.OK,
+                models={
+                    HTTPStatus.OK: GetTurnArmJourneyMappingResponse,
+                    HTTPStatus.BAD_REQUEST: HTTPExceptionError,
+                    HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
+                    HTTPStatus.FORBIDDEN: HTTPExceptionError,
+                    HTTPStatus.NOT_FOUND: HTTPExceptionError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminIntegrationsAPIClientHTTPValidationError,
+                },
+                path_params={
+                    "datasource_id": datasource_id,
+                    "experiment_id": experiment_id,
+                },
+                raise_if_not_default_status=raise_if_not_default_status,
+                client_exts=client_exts,
+            ),
+        )
+
+    @overload
+    def delete_turn_arm_journey_mapping(
+        self,
+        *,
+        datasource_id: str,
+        experiment_id: str,
+        allow_missing: bool = ADMIN_INTEGRATIONS_API_CLIENT_NOT_REQUIRED,
+        raise_if_not_default_status: Literal[True] = True,
+        client_exts: AdminIntegrationsAPIClientExtensions | None = None,
+    ) -> AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
+    @overload
+    def delete_turn_arm_journey_mapping(
+        self,
+        *,
+        datasource_id: str,
+        experiment_id: str,
+        allow_missing: bool = ADMIN_INTEGRATIONS_API_CLIENT_NOT_REQUIRED,
+        raise_if_not_default_status: Literal[False],
+        client_exts: AdminIntegrationsAPIClientExtensions | None = None,
+    ) -> (
+        AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
+        | AdminIntegrationsAPIClientResult[
+            Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]
+        ]
+        | AdminIntegrationsAPIClientResult[
+            Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]
+        ]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminIntegrationsAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+            AdminIntegrationsAPIClientHTTPValidationError,
+            type[AdminIntegrationsAPIClientHTTPValidationError],
+        ]
+    ): ...
+    def delete_turn_arm_journey_mapping(
+        self,
+        *,
+        datasource_id: str,
+        experiment_id: str,
+        allow_missing: bool = ADMIN_INTEGRATIONS_API_CLIENT_NOT_REQUIRED,
+        raise_if_not_default_status: bool = True,
+        client_exts: AdminIntegrationsAPIClientExtensions | None = None,
+    ) -> (
+        AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
+        | AdminIntegrationsAPIClientResult[
+            Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]
+        ]
+        | AdminIntegrationsAPIClientResult[
+            Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]
+        ]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminIntegrationsAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+            AdminIntegrationsAPIClientHTTPValidationError,
+            type[AdminIntegrationsAPIClientHTTPValidationError],
+        ]
+    ):
+        return cast(
+            (
+                AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
+                | AdminIntegrationsAPIClientResult[
+                    Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]
+                ]
+                | AdminIntegrationsAPIClientResult[
+                    Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]
+                ]
+                | AdminIntegrationsAPIClientResult[
+                    Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]
+                ]
+                | AdminIntegrationsAPIClientResult[
+                    Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]
+                ]
+                | AdminIntegrationsAPIClientResult[
+                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+                    AdminIntegrationsAPIClientHTTPValidationError,
+                    type[AdminIntegrationsAPIClientHTTPValidationError],
+                ]
+            ),
+            self._route_handler(
+                path="/v1/m/integrations/turn-journey-mapping/datasources/{datasource_id}/experiments/{experiment_id}",  # noqa: RUF100,RUF027
+                method=HTTPMethod.DELETE,
+                default_status=HTTPStatus.NO_CONTENT,
+                models={
+                    HTTPStatus.NO_CONTENT: None,
+                    HTTPStatus.BAD_REQUEST: HTTPExceptionError,
+                    HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
+                    HTTPStatus.FORBIDDEN: HTTPExceptionError,
+                    HTTPStatus.NOT_FOUND: HTTPExceptionError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminIntegrationsAPIClientHTTPValidationError,
+                },
+                path_params={
+                    "datasource_id": datasource_id,
+                    "experiment_id": experiment_id,
+                },
+                query_params={
+                    "allow_missing": allow_missing,
                 },
                 raise_if_not_default_status=raise_if_not_default_status,
                 client_exts=client_exts,

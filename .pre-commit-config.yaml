@@ -60,7 +60,7 @@ repos:
         require_serial: true
       - id: generate-typed-clients
         entry: uv run xngin-cli generate-typed-clients
-        files: (experiments_api|admin_api|admin_integration_api)\.py$
+        files: (experiments_api|admin_api|admin_integration_api|integration_api)\.py$
         language: system
         name: generate-typed-clients
         pass_filenames: false

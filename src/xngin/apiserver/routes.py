@@ -6,6 +6,7 @@ from xngin.apiserver.routers.admin import admin_api
 from xngin.apiserver.routers.admin_integrations import admin_integration_api
 from xngin.apiserver.routers.auth import auth_api
 from xngin.apiserver.routers.experiments import experiments_api
+from xngin.apiserver.routers.integrations import integrations_api
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -30,6 +31,12 @@ def register(app: FastAPI):
 
     app.include_router(
         admin_integration_api.router,
-        tags=["Integrations Admin"],
+        tags=["Admin: Third-Party Tools Integrations"],
+        include_in_schema=PUBLISH_ALL_DOCS,
+    )
+
+    app.include_router(
+        integrations_api.router,
+        tags=["Third-Party Tools Integrations"],
         include_in_schema=PUBLISH_ALL_DOCS,
     )
