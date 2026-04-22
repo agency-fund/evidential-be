@@ -1,4 +1,3 @@
-[![lint](https://github.com/agency-fund/evidential-be/actions/workflows/lint.yaml/badge.svg?branch=main)](https://github.com/agency-fund/evidential-be/actions/workflows/lint.yaml)
 [![test](https://github.com/agency-fund/evidential-be/actions/workflows/test.yaml/badge.svg?branch=main)](https://github.com/agency-fund/evidential-be/actions/workflows/test.yaml)
 
 # Evidential<a name="evidential"></a>
