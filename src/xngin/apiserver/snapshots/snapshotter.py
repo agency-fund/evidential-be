@@ -159,29 +159,30 @@ async def _query_dwh_for_snapshot_data(
     session: AsyncSession, datasource: tables.Datasource, experiment: tables.Experiment
 ) -> ExperimentAnalysisResponse:
     """Collect a snapshot from a customer DWH and returns the snapshot data."""
-    if ExperimentsType(experiment.experiment_type).is_bayesian():
+    experiment_type = ExperimentsType(experiment.experiment_type)
+    if experiment_type.is_bayesian():
         context_vals = None
 
         # TODO: If the experiment is a CMAB, we need to pass in context values.
         # Ideally we should marginalize over contexts, but we'll start with just using
         # the mean context values. Captured in issue 140
         # (https://github.com/agency-fund/evidential-sprint/issues/140)
-        if ExperimentsType(experiment.experiment_type).is_cmab():
+        if experiment_type.is_cmab():
             contexts = await experiment.awaitable_attrs.contexts
-            sorted_context_defns = sorted(contexts, key=lambda c: c.id)
-            # draw.context_vals were already sorted corresponding to the sorted_context_defns
+            sorted_contexts = sorted(contexts, key=lambda c: c.id)
+            # draw.context_vals were already sorted corresponding to the sorted_contexts
             # ordering when the assignment was made.
-            mean_context_val = await _mean_context_vals_from_draws(session, experiment.id, len(contexts))
+            mean_context_vals = await _mean_context_vals_from_draws(session, experiment.id, len(contexts))
             context_vals = [
                 abs(float(np.ceil(m - 0.5))) if context.value_type == ContextType.BINARY else m
-                for m, context in zip(mean_context_val, sorted_context_defns, strict=False)
+                for m, context in zip(mean_context_vals, sorted_contexts, strict=False)
             ]
 
         return await experiments_common.analyze_experiment_bandit_impl(
             xngin_session=session, experiment=experiment, context_vals=context_vals
         )
 
-    if ExperimentsType(experiment.experiment_type).is_freq():
+    if experiment_type.is_freq():
         # Look for the arm in position 1. If not found, use the first arm.
         baseline_arm = next((arm for arm in experiment.arms if arm.position == 1), experiment.arms[0])
         assert baseline_arm.id is not None
@@ -192,7 +193,7 @@ async def _query_dwh_for_snapshot_data(
             baseline_arm_id=baseline_arm.id,
             metrics=ExperimentStorageConverter(experiment).get_design_spec_metrics(),
         )
-    raise ValueError(f"Unsupported experiment type: {experiment.experiment_type}")
+    raise ValueError(f"Unsupported experiment type: {experiment_type}")
 
 
 async def _mean_context_vals_from_draws(session: AsyncSession, experiment_id: str, n_contexts: int) -> list[float]:
