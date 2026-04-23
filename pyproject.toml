@@ -76,9 +76,10 @@ log_cli = 0  # set to 1 for live logs
 log_cli_level = "warn"
 markers = [
     "integration: integration tests that rely on remote resources",
-    "xurl: tests that use xurl scripts and can be updated with UPDATE_API_TESTS"
+    "xurl: tests that use xurl scripts and can be updated with UPDATE_API_TESTS",
+    "benchmark: performance benchmarks; opt-in via -m benchmark"
 ]
-addopts = "-m 'not integration'"
+addopts = "-m 'not integration and not benchmark'"
 # filtewarnings can be used to silence warnings during tests.
 # format is: action:message:category:module
 filterwarnings = [
