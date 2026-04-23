@@ -61,6 +61,7 @@ from xngin.apiserver.routers.common_api_types import (
     BanditExperimentAnalysisResponse,
     CMABContextInputRequest,
     CMABExperimentSpec,
+    ContextInput,
     CreateExperimentRequest,
     CreateExperimentResponse,
     DataType,
@@ -77,6 +78,7 @@ from xngin.apiserver.routers.common_api_types import (
     PreassignedFrequentistExperimentSpec,
     PriorTypes,
     Stratum,
+    UpdateBanditArmOutcomeRequest,
 )
 from xngin.apiserver.routers.common_enums import (
     ExperimentState,
@@ -131,9 +133,7 @@ def find_ds_with_name[DSType: HasName](datasources: list[DSType], name: str) -> 
 
 
 async def make_freq_online_experiment(
-    datasource_id: str,
-    aclient: AdminAPIClient,
-    end_date: datetime | None = None,
+    aclient: AdminAPIClient, datasource_id: str, end_date: datetime | None = None
 ) -> GetExperimentForUiResponse:
     """Create a frequentist online experiment using our API (rather than a fixture)."""
     end_date = end_date or datetime.now(UTC) + timedelta(days=1)
@@ -163,6 +163,45 @@ async def make_freq_online_experiment(
     data = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=experiment_id).data
     assert isinstance(data, GetExperimentForUiResponse)
     return data
+
+
+def normalize_bandit_analysis(response: BanditExperimentAnalysisResponse) -> BanditExperimentAnalysisResponse:
+    return response.model_copy(update={"created_at": datetime(2000, 1, 1, tzinfo=UTC)})
+
+
+async def make_bandit_online_experiment(
+    aclient: AdminAPIClient,
+    datasource_id: str,
+    *,
+    experiment_type: ExperimentsType = ExperimentsType.MAB_ONLINE,
+    prior_type: PriorTypes = PriorTypes.BETA,
+    reward_type: LikelihoodTypes = LikelihoodTypes.BERNOULLI,
+) -> GetExperimentForUiResponse:
+    request_obj = make_create_online_bandit_experiment_request(
+        experiment_type=experiment_type,
+        reward_type=reward_type,
+        prior_type=prior_type,
+    )
+    experiment_id = aclient.create_experiment(datasource_id=datasource_id, body=request_obj, random_state=42).data
+    aclient.commit_experiment(datasource_id=datasource_id, experiment_id=experiment_id.experiment_id)
+    data = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=experiment_id.experiment_id).data
+    assert isinstance(data, GetExperimentForUiResponse)
+    return data
+
+
+def make_cmab_context_inputs(
+    experiment: GetExperimentForUiResponse,
+    values: list[float],
+) -> list[ContextInput]:
+    design_spec = experiment.config.design_spec
+    assert isinstance(design_spec, CMABExperimentSpec)
+    assert design_spec.contexts is not None
+    sorted_contexts = sorted(design_spec.contexts, key=lambda c: c.context_id or "")
+    assert len(sorted_contexts) == len(values)
+    return [
+        ContextInput(context_id=context.context_id or "", context_value=value)
+        for context, value in zip(sorted_contexts, values, strict=True)
+    ]
 
 
 @pytest.fixture(name="testing_experiment")
@@ -2350,9 +2389,127 @@ def test_cmab_experiments_analyze(testing_bandit_experiment, aclient: AdminAPICl
         assert analysis.post_pred_stdev is not None
 
 
+async def test_mab_experiments_analyze_ignores_unobserved_draws_with_single_outcome(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+):
+    experiment = await make_bandit_online_experiment(
+        aclient, testing_datasource.ds.id, prior_type=PriorTypes.NORMAL, reward_type=LikelihoodTypes.NORMAL
+    )
+
+    eclient.get_assignment(
+        api_key=testing_datasource.key,
+        experiment_id=experiment.config.experiment_id,
+        participant_id="p1",
+    )
+    eclient.update_bandit_arm_with_participant_outcome(
+        api_key=testing_datasource.key,
+        body=UpdateBanditArmOutcomeRequest(outcome=1.0),
+        experiment_id=experiment.config.experiment_id,
+        participant_id="p1",
+    )
+
+    analysis_before_unobserved_draw = aclient.analyze_experiment(
+        datasource_id=testing_datasource.ds.id,
+        experiment_id=experiment.config.experiment_id,
+    ).data
+    assert isinstance(analysis_before_unobserved_draw, BanditExperimentAnalysisResponse)
+
+    eclient.get_assignment(
+        api_key=testing_datasource.key,
+        experiment_id=experiment.config.experiment_id,
+        participant_id="p2",
+    )
+
+    analysis_after_unobserved_draw = aclient.analyze_experiment(
+        datasource_id=testing_datasource.ds.id,
+        experiment_id=experiment.config.experiment_id,
+    ).data
+    assert isinstance(analysis_after_unobserved_draw, BanditExperimentAnalysisResponse)
+
+    assert normalize_bandit_analysis(analysis_after_unobserved_draw) == normalize_bandit_analysis(
+        analysis_before_unobserved_draw
+    )
+
+
+async def test_mab_experiments_analyze_ignores_unobserved_draws_with_multiple_outcomes(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+):
+    experiment = await make_bandit_online_experiment(
+        aclient, testing_datasource.ds.id, prior_type=PriorTypes.NORMAL, reward_type=LikelihoodTypes.NORMAL
+    )
+
+    for participant_id, outcome in [("p1", 1.0), ("p2", 0.0)]:
+        eclient.get_assignment(
+            api_key=testing_datasource.key,
+            experiment_id=experiment.config.experiment_id,
+            participant_id=participant_id,
+        )
+        eclient.update_bandit_arm_with_participant_outcome(
+            api_key=testing_datasource.key,
+            body=UpdateBanditArmOutcomeRequest(outcome=outcome),
+            experiment_id=experiment.config.experiment_id,
+            participant_id=participant_id,
+        )
+
+    analysis_before_unobserved_draw = aclient.analyze_experiment(
+        datasource_id=testing_datasource.ds.id,
+        experiment_id=experiment.config.experiment_id,
+    ).data
+    assert isinstance(analysis_before_unobserved_draw, BanditExperimentAnalysisResponse)
+
+    eclient.get_assignment(
+        api_key=testing_datasource.key,
+        experiment_id=experiment.config.experiment_id,
+        participant_id="p3",
+    )
+
+    analysis_after_unobserved_draw = aclient.analyze_experiment(
+        datasource_id=testing_datasource.ds.id,
+        experiment_id=experiment.config.experiment_id,
+    ).data
+    assert isinstance(analysis_after_unobserved_draw, BanditExperimentAnalysisResponse)
+
+    assert normalize_bandit_analysis(analysis_after_unobserved_draw) == normalize_bandit_analysis(
+        analysis_before_unobserved_draw
+    )
+
+
+async def test_mab_experiments_analyze_with_assigned_but_unobserved_participants_matches_prior(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+):
+    experiment = await make_bandit_online_experiment(
+        aclient, testing_datasource.ds.id, prior_type=PriorTypes.NORMAL, reward_type=LikelihoodTypes.NORMAL
+    )
+
+    for participant_id in ["p1", "p2"]:
+        eclient.get_assignment(
+            api_key=testing_datasource.key,
+            experiment_id=experiment.config.experiment_id,
+            participant_id=participant_id,
+        )
+
+    experiment_analysis = aclient.analyze_experiment(
+        datasource_id=testing_datasource.ds.id,
+        experiment_id=experiment.config.experiment_id,
+    ).data
+    assert isinstance(experiment_analysis, BanditExperimentAnalysisResponse)
+
+    assert experiment_analysis.n_outcomes == 0
+    assert experiment_analysis.contexts is None
+    for analysis in experiment_analysis.arm_analyses:
+        assert analysis.post_pred_mean == analysis.prior_pred_mean
+        assert analysis.post_pred_stdev == analysis.prior_pred_stdev
+
+
 async def test_analyze_experiment_with_no_participants(testing_datasource, aclient: AdminAPIClient):
     datasource_id = testing_datasource.ds.id
-    experiment_id = (await make_freq_online_experiment(datasource_id, aclient)).config.experiment_id
+    experiment_id = (await make_freq_online_experiment(aclient, datasource_id)).config.experiment_id
 
     with expect_status_code(422, detail_eq="No participants found for experiment."):
         aclient.analyze_experiment(datasource_id=datasource_id, experiment_id=experiment_id)
@@ -2362,7 +2519,7 @@ async def test_analyze_experiment_whose_assignments_have_no_dwh_data(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     datasource_id = testing_datasource.ds.id
-    experiment_id = (await make_freq_online_experiment(datasource_id, aclient)).config.experiment_id
+    experiment_id = (await make_freq_online_experiment(aclient, datasource_id)).config.experiment_id
 
     eclient.get_assignment(api_key=testing_datasource.key, experiment_id=experiment_id, participant_id="0")
 
@@ -2377,7 +2534,7 @@ async def test_analyze_experiment_with_no_assignments_in_one_arm_yet(
     xngin_session, testing_datasource, aclient: AdminAPIClient
 ):
     datasource_id = testing_datasource.ds.id
-    experiment_id = (await make_freq_online_experiment(datasource_id, aclient)).config.experiment_id
+    experiment_id = (await make_freq_online_experiment(aclient, datasource_id)).config.experiment_id
 
     # Setup: create artificial assignments directly in db to deterministically allocate them all to
     # one arm. Multiple are used for stable analysis calcs.
