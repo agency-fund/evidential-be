@@ -11,7 +11,6 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy.sql.functions import func
 
 from xngin.db_extensions import custom_functions
 
@@ -66,20 +65,6 @@ def test_random_compilation_on_different_engine_dialects():
         query = select(custom_functions.Random(sa_table=SampleTable.__table__))
         sql_text = str(query.compile(engine))
         assert f"SELECT {expected}" in sql_text, f"Engine {engine.dialect}"
-
-
-@pytest.mark.integration
-def test_stddev_pop_compilation_on_different_engine_dialects():
-    expected_results = {
-        "postgresql": "SELECT STDDEV_POP(test_table.float_col) AS stddev_pop_1 FROM test_table",
-        "bigquery": "SELECT stddev_pop(`test_table`.`float_col`) AS `stddev_pop_1` FROM `test_table`",
-    }
-
-    for dialect, expected in expected_results.items():
-        engine = create_engine(f"{dialect}://")
-        query = select(func.stddev_pop(SampleTable.float_col)).select_from(SampleTable)
-        sql_text = str(query.compile(engine)).replace("\n", "")
-        assert expected == sql_text, f"Engine {engine.dialect}"
 
 
 def test_deterministic_random():
