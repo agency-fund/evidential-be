@@ -1605,9 +1605,7 @@ async def analyze_experiment(
         xngin_session,
         ds,
         experiment_id,
-        preload=[
-            tables.Experiment.contexts,
-        ],
+        preload=[tables.Experiment.contexts],
         nested_preload=[
             [
                 (PreloadMethod.SELECTINLOAD, tables.Experiment.experiment_fields),
