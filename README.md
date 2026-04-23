@@ -17,7 +17,7 @@
 | src/xngin/apiserver/dwh/inspection\_types.py                         |       55 |        5 |     91% |27, 45, 68, 79, 85 |
 | src/xngin/apiserver/dwh/inspections.py                               |       64 |        4 |     94% |67, 95, 100-103 |
 | src/xngin/apiserver/dwh/participant\_metrics\_queries.py             |      143 |        7 |     95% |73-79, 166, 263, 265, 289 |
-| src/xngin/apiserver/dwh/queries.py                                   |       79 |       44 |     44% |108-152, 162-192, 213-234 |
+| src/xngin/apiserver/dwh/queries.py                                   |       78 |       44 |     44% |107-151, 161-189, 210-231 |
 | src/xngin/apiserver/dwh/query\_constructors.py                       |       66 |        4 |     94% |75-76, 95-96 |
 | src/xngin/apiserver/dwh/test\_dialect\_sql.py                        |       74 |        6 |     92% |494, 507, 510-513 |
 | src/xngin/apiserver/dwh/test\_query\_constructors.py                 |      127 |        2 |     98% |  372, 389 |
@@ -58,8 +58,8 @@
 | src/xngin/apiserver/testing/admin\_api\_client.py                    |      186 |       14 |     92% |158-161, 206, 223-230, 255-259, 315, 1655, 2601, 3819 |
 | src/xngin/apiserver/testing/assertions.py                            |        7 |        1 |     86% |         7 |
 | src/xngin/apiserver/testing/experiments\_api\_client.py              |       96 |       11 |     89% |164, 181-188, 202-203, 213-217, 224, 535 |
-| src/xngin/db\_extensions/custom\_functions.py                        |       39 |        3 |     92% |47, 66, 79 |
-| src/xngin/db\_extensions/test\_custom\_functions.py                  |       46 |       12 |     74% |59-68, 73-82 |
+| src/xngin/db\_extensions/custom\_functions.py                        |       28 |        2 |     93% |    35, 54 |
+| src/xngin/db\_extensions/test\_custom\_functions.py                  |       37 |        6 |     84% |     58-67 |
 | src/xngin/events/common.py                                           |        7 |        2 |     71% |    14, 21 |
 | src/xngin/events/experiment\_created.py                              |       13 |        1 |     92% |        24 |
 | src/xngin/events/webhook\_sent.py                                    |       12 |        5 |     58% |     18-23 |
@@ -79,7 +79,7 @@
 | src/xngin/xsecrets/secretservice.py                                  |       63 |        5 |     92% |37, 49-50, 108, 130 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                       |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                           |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                            | **12118** |  **769** | **94%** |           |
+| **TOTAL**                                                            | **12097** |  **762** | **94%** |           |
 
 65 files skipped due to complete coverage.
 
