@@ -132,19 +132,19 @@ def test_check_power_multiple_metrics():
         DesignSpecMetric(
             field_name="metric1",
             metric_type=MetricType.NUMERIC,
-            metric_baseline=100,
-            metric_target=110,
-            metric_stddev=20,
-            available_nonnull_n=1000,
-            available_n=1000,
+            metric_baseline=100.0,
+            metric_stddev=20.0,
+            metric_pct_change=0.05,
+            available_n=10000,
+            available_nonnull_n=10000,
         ),
         DesignSpecMetric(
             field_name="metric2",
             metric_type=MetricType.BINARY,
-            metric_baseline=0.5,
-            metric_target=0.55,
-            available_nonnull_n=1000,
-            available_n=1000,
+            metric_baseline=0.05,
+            metric_pct_change=0.10,
+            available_n=10000,
+            available_nonnull_n=10000,
         ),
     ]
 
@@ -492,6 +492,7 @@ def test_check_power_with_desired_n():
             metric_type=MetricType.NUMERIC,
             metric_baseline=100.0,
             metric_stddev=20.0,
+            metric_pct_change=0.05,
             available_n=10000,
             available_nonnull_n=10000,
         ),
@@ -499,6 +500,7 @@ def test_check_power_with_desired_n():
             field_name="metric2",
             metric_type=MetricType.BINARY,
             metric_baseline=0.05,
+            metric_pct_change=0.50,
             available_n=10000,
             available_nonnull_n=10000,
         ),
@@ -510,15 +512,17 @@ def test_check_power_with_desired_n():
     assert len(results) == 2
 
     # Both should have MDE calculated
+    # Normal power check always runs — target_n is required N, not desired_n
     for result in results:
-        assert result.target_n == 500
-        assert result.sufficient_n is None
+        assert result.target_n != 500
+        assert result.sufficient_n is True
+        assert result.target_possible is None
+        assert result.pct_change_possible is None
 
-    assert results[0].target_possible == pytest.approx(105.0213)
-    assert results[0].pct_change_possible == pytest.approx(0.0502, abs=1e-4)
+    # MDE for desired_n=500 is in the new field
+    assert results[0].pct_change_with_desired_n == pytest.approx(0.0502, abs=1e-4)
     # standardized effect size (Cohen's h) = 0.2505810918259752
-    assert results[1].target_possible == pytest.approx(0.0100, abs=1e-4)
-    assert results[1].pct_change_possible == pytest.approx(-0.7998, abs=1e-4)
+    assert results[1].pct_change_with_desired_n == pytest.approx(-0.7998, abs=1e-4)
 
 
 def test_analyze_metric_power_without_desired_n_still_works():
