@@ -633,8 +633,8 @@ def test_analyze_power_sample_size_cluster_basic():
     assert result.metric_spec.icc == 0.15
     assert result.metric_spec.avg_cluster_size == 30
     assert result.metric_spec.cv == 0.0  # Default
-    assert result.num_clusters_total is not None
-    assert result.design_effect is not None
+    assert result.num_clusters_total == 24
+    assert result.design_effect == pytest.approx(5.35)
 
 
 def test_analyze_power_sample_size_cluster_with_cv():
