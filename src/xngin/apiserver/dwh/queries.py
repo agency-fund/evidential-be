@@ -219,7 +219,13 @@ def get_cluster_outcome_data(
     outcome_col = sa_table.c[outcome_column_name]
     filters_expr = create_query_filters(sa_table, filters)
 
-    query = select(cluster_col, cast(outcome_col, Float)).where(
+    # PostgreSQL cannot cast BOOLEAN directly to FLOAT; go through INTEGER first.
+    if outcome_col.type.python_type is bool:
+        cast_outcome = cast(cast(outcome_col, Integer), Float)
+    else:
+        cast_outcome = cast(outcome_col, Float)
+
+    query = select(cluster_col, cast_outcome.label(outcome_column_name)).where(
         cluster_col.is_not(None), outcome_col.is_not(None), *filters_expr
     )
 
