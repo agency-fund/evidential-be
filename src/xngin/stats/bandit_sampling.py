@@ -131,8 +131,7 @@ def _update_arm_normal(
 
     # New mean
     llhood_term: np.ndarray | float = reward / llhood_sigma**2
-    if context is not None:
-        llhood_term = (context * llhood_term).squeeze()
+    llhood_term = (context * llhood_term).squeeze()
 
     new_mu = new_covariance @ ((prior_covariance_inv @ current_mu) + llhood_term)
     return UpdateTypeNormal(mu=new_mu.tolist(), covariance=new_covariance.tolist())
