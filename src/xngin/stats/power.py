@@ -1,10 +1,9 @@
 from xngin.apiserver.routers.common_api_types import (
     DesignSpecMetric,
     MetricPowerAnalysis,
-    MetricPowerAnalysisMessage,
 )
 from xngin.apiserver.routers.common_enums import MetricPowerAnalysisMessageType, MetricType
-from xngin.stats.cluster_power import solve_for_mde_cluster_impl, solve_for_sample_size_cluster
+from xngin.stats.cluster_power import solve_for_mde_cluster, solve_for_sample_size_cluster
 from xngin.stats.individual_power import (
     power_analysis_error,
     solve_for_mde_individual,
@@ -39,8 +38,8 @@ def analyze_metric_power(
     """
     is_cluster = metric.icc is not None and metric.avg_cluster_size is not None and metric.cv is not None
 
+    # Sample size mode:
     if desired_n is None:
-        # Sample size mode
         if is_cluster:
             return solve_for_sample_size_cluster(
                 metric=metric,
@@ -57,7 +56,7 @@ def analyze_metric_power(
             arm_weights=arm_weights,
         )
 
-    # MDE mode
+    # else MDE mode:
 
     # Validate baseline is present
     if metric.metric_baseline is None:
@@ -81,8 +80,8 @@ def analyze_metric_power(
             ),
         )
 
-    if not is_cluster:
-        return solve_for_mde_individual(
+    if is_cluster:
+        return solve_for_mde_cluster(
             metric=metric,
             desired_n=desired_n,
             arm_weights=arm_weights,
@@ -91,41 +90,14 @@ def analyze_metric_power(
             alpha=alpha,
         )
 
-    # Cluster MDE
-    target_possible, pct_change_possible = solve_for_mde_cluster_impl(
+    return solve_for_mde_individual(
         metric=metric,
         desired_n=desired_n,
         arm_weights=arm_weights,
         n_arms=n_arms,
-        alpha=alpha,
         power=power,
+        alpha=alpha,
     )
-
-    # Build response object for MDE calculation
-    analysis = MetricPowerAnalysis(metric_spec=metric)
-    analysis.target_n = desired_n
-    analysis.target_possible = target_possible
-    analysis.pct_change_possible = pct_change_possible
-    analysis.sufficient_n = None  # Not applicable in MDE mode
-
-    # Create message
-    values_map: dict[str, float | int] = {
-        "desired_n": desired_n,
-        "metric_baseline": round(metric.metric_baseline, 4),
-        "target_possible": round(target_possible, 4),
-    }
-    msg_type = MetricPowerAnalysisMessageType.SUFFICIENT
-    msg_body = (
-        "With a desired sample size of {desired_n} units and a metric baseline of "  # noqa: RUF027
-        "{metric_baseline}, the minimum detectable effect (MDE) is {target_possible}."
-    )
-    analysis.msg = MetricPowerAnalysisMessage(
-        type=msg_type,
-        msg=msg_body.format_map(values_map),
-        source_msg=msg_body,
-        values=values_map,
-    )
-    return analysis
 
 
 def check_power(

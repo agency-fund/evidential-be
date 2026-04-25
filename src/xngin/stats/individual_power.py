@@ -236,16 +236,14 @@ def solve_for_sample_size_individual(
     has_nulls = metric.available_nonnull_n is not None and metric.available_nonnull_n != metric.available_n
 
     msg_base_stats = (
-        "There are {available_n} units available to run your experiment and a "
-        "minimum of {target_n} units are needed to meet your experimental design specs."  # noqa: RUF027
+        "There are {available_n} units available. You need at least {target_n} units to satisfy your design specs."
     )
     msg_null_warning = (
         (
-            "WARNING: There are {available_nonnull_n} units with a non-null value out of the "
-            "{available_n} available.  The power calculation was done with only units with a "
-            "value present, but random assignment is performed over all available units "
-            "meeting your filters, including those with a missing value. If you do not want "
-            "that, add a filter on this metric to exclude nulls."
+            "WARNING: Of the available units, {available_nonnull_n} have a non-null value. "
+            "These calculations only used units with a real value present, but random assignment "
+            "samples from *all* units that meet your filters, including those missing a value. If "
+            "you do not want that, add a filter on this metric to exclude nulls."
         )
         if has_nulls
         else ""

@@ -8,7 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from xngin.apiserver.routers.common_api_types import DesignSpecMetric
-from xngin.apiserver.routers.common_enums import MetricType
+from xngin.apiserver.routers.common_enums import MetricPowerAnalysisMessageType, MetricType
 from xngin.stats.cluster_power import (
     calculate_design_effect,
     calculate_effective_sample_size,
@@ -401,6 +401,103 @@ def test_solve_for_sample_size_cluster_balanced():
     assert result.n_per_arm == [360, 360]
     assert result.design_effect == pytest.approx(5.35)
     assert result.effective_sample_size == 134
+    assert result.sufficient_n is True
+    assert result.target_n == 720
+    assert result.target_possible is None
+
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
+    msg_values = result.msg.values  # noqa: PD011
+    assert msg_values is not None
+    assert msg_values["target_n"] == result.target_n
+    assert msg_values["num_clusters_total"] == result.num_clusters_total
+    assert "You need at least 720 units across 24 clusters" in result.msg.msg
+    assert "You need at least 128 units" not in result.msg.msg
+    assert result.msg.msg == result.msg.source_msg.format_map(msg_values)
+
+
+def test_solve_for_sample_size_cluster_uses_cluster_target_for_sufficiency():
+    """Test that the cluster-level target n is used for sufficiency, not the individual-level target."""
+    desired_n = 200
+    metric = DesignSpecMetric(
+        field_name="reading_score",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=200,
+        available_nonnull_n=desired_n,
+        icc=0.15,
+        avg_cluster_size=30,
+        cv=0.0,
+    )
+
+    result = solve_for_sample_size_cluster(metric=metric, n_arms=2)
+    expected_target_possible, expected_pct_change_possible = solve_for_mde_cluster_impl(
+        metric=metric,
+        desired_n=desired_n,
+        n_arms=2,
+    )
+    individual_target_possible, _ = solve_for_mde_individual_impl(
+        metric=metric,
+        desired_n=desired_n,
+        n_arms=2,
+    )
+
+    assert result.target_n == 720
+    assert result.sufficient_n is False
+    assert result.target_possible == pytest.approx(expected_target_possible)
+    assert result.pct_change_possible == pytest.approx(expected_pct_change_possible)
+    assert result.target_possible is not None
+    assert result.target_possible > individual_target_possible
+
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
+    msg_values = result.msg.values  # noqa: PD011
+    assert msg_values is not None
+    assert msg_values["target_n"] == result.target_n
+    assert msg_values["additional_n_needed"] == 520
+    assert msg_values["target_possible"] == round(expected_target_possible, 4)
+    assert "You need at least 720 units across 24 clusters" in result.msg.msg
+    assert "You need at least 128 units" not in result.msg.msg
+    assert result.msg.msg == result.msg.source_msg.format_map(msg_values)
+
+
+def test_solve_for_sample_size_cluster_possible_target_uses_cluster_mde():
+    """Test that the cluster-level possible target is used (not individual) when there is insufficient sample size."""
+    desired_n = 100
+    metric = DesignSpecMetric(
+        field_name="reading_score",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=desired_n,
+        available_nonnull_n=100,
+        icc=0.15,
+        avg_cluster_size=30,
+        cv=0.0,
+    )
+
+    result = solve_for_sample_size_cluster(metric=metric, n_arms=2)
+    expected_target_possible, expected_pct_change_possible = solve_for_mde_cluster_impl(
+        metric=metric,
+        desired_n=desired_n,
+        n_arms=2,
+    )
+    individual_target_possible, _ = solve_for_mde_individual_impl(
+        metric=metric,
+        desired_n=desired_n,
+        n_arms=2,
+    )
+
+    assert result.sufficient_n is False
+    assert result.target_possible == pytest.approx(expected_target_possible)
+    assert result.pct_change_possible == pytest.approx(expected_pct_change_possible)
+    assert result.target_possible is not None
+    assert result.target_possible > individual_target_possible
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
 
 
 def test_solve_for_sample_size_cluster_no_clustering():
