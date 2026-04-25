@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 
 from xngin.apiserver.routers.common_api_types import (
     DesignSpecMetric,
@@ -8,12 +9,12 @@ from xngin.apiserver.routers.common_enums import (
     MetricPowerAnalysisMessageType,
     MetricType,
 )
-from xngin.stats.power import (
+from xngin.stats.cluster_power import analyze_metric_power_cluster, calculate_mde_cluster
+from xngin.stats.individual_power import (
     _analyze_power_sample_size_mode,  # noqa: PLC2701
-    analyze_metric_power,
     calculate_mde_with_desired_n,
-    check_power,
 )
+from xngin.stats.power import analyze_metric_power, check_power
 from xngin.stats.stats_errors import StatsPowerError
 
 
@@ -607,7 +608,7 @@ def test_analyze_metric_power_desired_n_with_unbalanced_arms():
 
 
 def test_analyze_power_sample_size_cluster_basic():
-    """Test that cluster params trigger cluster analysis."""
+    """Test that cluster analysis returns correct results."""
     metric = DesignSpecMetric(
         field_name="test_score",
         metric_type=MetricType.NUMERIC,
@@ -618,7 +619,7 @@ def test_analyze_power_sample_size_cluster_basic():
         available_nonnull_n=1000,
     )
 
-    result = _analyze_power_sample_size_mode(
+    result = analyze_metric_power_cluster(
         metric=metric,
         n_arms=2,
         icc=0.15,
@@ -649,7 +650,7 @@ def test_analyze_power_sample_size_cluster_with_cv():
         available_nonnull_n=5000,
     )
 
-    result = _analyze_power_sample_size_mode(
+    result = analyze_metric_power_cluster(
         metric=metric,
         n_arms=2,
         icc=0.15,
@@ -689,26 +690,18 @@ def test_analyze_power_sample_size_individual_when_no_cluster_params():
 
 
 def test_analyze_power_sample_size_individual_when_only_icc():
-    """Test that only ICC (without avg_cluster_size) does individual."""
-    metric = DesignSpecMetric(
-        field_name="test_score",
-        metric_type=MetricType.NUMERIC,
-        metric_baseline=100,
-        metric_target=110,
-        metric_stddev=20,
-        available_n=1000,
-        available_nonnull_n=1000,
-    )
-
-    result = _analyze_power_sample_size_mode(
-        metric=metric,
-        n_arms=2,
-        icc=0.15,  # Provided
-        # avg_cluster_size NOT provided
-    )
-
-    # Should do individual analysis (need both params for cluster)
-    assert type(result).__name__ == "MetricPowerAnalysis"
+    """Partial cluster params are rejected at the model level."""
+    with pytest.raises(ValidationError, match="icc, avg_cluster_size, and cv must all be set together"):
+        DesignSpecMetric(
+            field_name="test_score",
+            metric_type=MetricType.NUMERIC,
+            metric_baseline=100,
+            metric_target=110,
+            metric_stddev=20,
+            available_n=1000,
+            available_nonnull_n=1000,
+            icc=0.15,  # avg_cluster_size and cv intentionally omitted
+        )
 
 
 def test_calculate_mde_cluster_basic():
@@ -720,8 +713,8 @@ def test_calculate_mde_cluster_basic():
         metric_stddev=20,
     )
 
-    target, pct_change = calculate_mde_with_desired_n(
-        desired_n=720,
+    target, pct_change = calculate_mde_cluster(
+        available_n=720,
         metric=metric,
         n_arms=2,
         icc=0.15,
@@ -751,8 +744,8 @@ def test_calculate_mde_individual_when_no_cluster():
     )
 
     # With cluster params
-    target_clust, pct_clust = calculate_mde_with_desired_n(
-        desired_n=720,
+    target_clust, pct_clust = calculate_mde_cluster(
+        available_n=720,
         metric=metric,
         n_arms=2,
         icc=0.15,
@@ -776,7 +769,7 @@ def test_analyze_power_sample_size_cluster_specific_values():
         available_nonnull_n=1000,
     )
 
-    result = _analyze_power_sample_size_mode(
+    result = analyze_metric_power_cluster(
         metric=metric,
         n_arms=2,
         icc=0.15,
@@ -806,7 +799,7 @@ def test_analyze_power_sample_size_cluster_with_high_cv():
         available_nonnull_n=5000,
     )
 
-    result = _analyze_power_sample_size_mode(
+    result = analyze_metric_power_cluster(
         metric=metric,
         n_arms=2,
         icc=0.15,
@@ -837,7 +830,7 @@ def test_analyze_power_sample_size_cluster_unbalanced():
         available_nonnull_n=2000,
     )
 
-    result = _analyze_power_sample_size_mode(
+    result = analyze_metric_power_cluster(
         metric=metric,
         n_arms=2,
         icc=0.15,
@@ -862,8 +855,8 @@ def test_calculate_mde_cluster_specific_values():
         metric_stddev=20,
     )
 
-    target, pct_change = calculate_mde_with_desired_n(
-        desired_n=600,
+    target, pct_change = calculate_mde_cluster(
+        available_n=600,
         metric=metric,
         n_arms=2,
         icc=0.15,
@@ -888,8 +881,8 @@ def test_calculate_mde_cluster_with_cv_specific_values():
     )
 
     # No CV
-    target_no_cv, _ = calculate_mde_with_desired_n(
-        desired_n=720,
+    target_no_cv, _ = calculate_mde_cluster(
+        available_n=720,
         metric=metric,
         n_arms=2,
         icc=0.15,
@@ -898,8 +891,8 @@ def test_calculate_mde_cluster_with_cv_specific_values():
     )
 
     # With CV=1.5
-    target_high_cv, _ = calculate_mde_with_desired_n(
-        desired_n=720,
+    target_high_cv, _ = calculate_mde_cluster(
+        available_n=720,
         metric=metric,
         n_arms=2,
         icc=0.15,
@@ -921,8 +914,8 @@ def test_calculate_mde_cluster_binary_metric():
         metric_baseline=0.10,
     )
 
-    target, pct_change = calculate_mde_with_desired_n(
-        desired_n=1000,
+    target, pct_change = calculate_mde_cluster(
+        available_n=1000,
         metric=metric,
         n_arms=2,
         icc=0.05,

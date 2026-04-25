@@ -9,7 +9,7 @@ from xngin.apiserver.routers.common_api_types import (
     MetricPowerAnalysis,
     MetricPowerAnalysisMessage,
 )
-from xngin.stats.power import (
+from xngin.stats.individual_power import (
     _analyze_power_sample_size_mode,  # noqa: PLC2701
     calculate_mde_with_desired_n,
 )

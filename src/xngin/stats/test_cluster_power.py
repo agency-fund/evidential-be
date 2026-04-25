@@ -15,7 +15,7 @@ from xngin.stats.cluster_power import (
     calculate_mde_cluster,
     calculate_num_clusters_needed,
 )
-from xngin.stats.power import calculate_mde_with_desired_n
+from xngin.stats.individual_power import calculate_mde_with_desired_n
 
 
 @pytest.fixture(scope="module")
