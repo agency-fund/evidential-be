@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from pydantic import ValidationError
 
 from xngin.apiserver.routers.common_api_types import DesignSpecMetric
 from xngin.apiserver.routers.common_enums import MetricType
@@ -153,6 +154,33 @@ class TestCalculateDesignEffect:
             calculate_design_effect(icc=icc, avg_cluster_size=avg_cluster_size, cv=cv)
 
 
+def test_partial_cluster_params_are_rejected():
+    with pytest.raises(ValidationError, match="icc, avg_cluster_size, and cv must all be set together"):
+        DesignSpecMetric(
+            field_name="test_score",
+            metric_type=MetricType.NUMERIC,
+            metric_baseline=100,
+            metric_target=110,
+            metric_stddev=20,
+            available_n=1000,
+            available_nonnull_n=1000,
+            icc=0.15,  # avg_cluster_size and cv intentionally omitted
+        )
+
+    with pytest.raises(ValidationError, match="icc, avg_cluster_size, and cv must all be set together"):
+        DesignSpecMetric(
+            field_name="test_score",
+            metric_type=MetricType.NUMERIC,
+            metric_baseline=100,
+            metric_target=110,
+            metric_stddev=20,
+            available_n=1000,
+            available_nonnull_n=1000,
+            icc=0.15,
+            avg_cluster_size=30,
+        )
+
+
 def test_calculate_effective_sample_size():
     """Test effective sample size calculation."""
     # 1000 participants / DEFF of 2 = 500 effective
@@ -249,11 +277,17 @@ def test_solve_for_mde_cluster_impl_higher_with_clustering():
         cv=0.0,
     )
 
-    ind_target, _ = solve_for_mde_individual_impl(desired_n=600, metric=ind_metric, n_arms=2)
-    clust_target, _ = solve_for_mde_cluster_impl(desired_n=600, metric=clust_metric, n_arms=2)
+    ind_target, ind_pct = solve_for_mde_individual_impl(desired_n=600, metric=ind_metric, n_arms=2)
+    clust_target, clust_pct = solve_for_mde_cluster_impl(desired_n=600, metric=clust_metric, n_arms=2)
 
     assert ind_target == pytest.approx(104.6, rel=0.01)
+    assert ind_pct == pytest.approx(0.046, rel=0.01)
+    # Achievable MDE is higher with clustering because the effective sample size is smaller:
+    # With 600 participants, ICC=0.15, m=30:
+    # DEFF = 5.35, effective_n = 600/5.35 = 112
+    # MDE should be ~10.68 points (10.68% change)
     assert clust_target == pytest.approx(110.7, rel=0.01)
+    assert clust_pct == pytest.approx(0.1068, rel=0.01)
 
 
 def test_solve_for_mde_cluster_impl_binary_metric():
@@ -268,6 +302,8 @@ def test_solve_for_mde_cluster_impl_binary_metric():
 
     target, pct_change = solve_for_mde_cluster_impl(desired_n=1000, metric=metric, n_arms=2)
 
+    # Binary metric with clustering
+    # DEFF = 1 + (50-1)*0.05 = 3.45
     assert target == pytest.approx(0.0243, rel=0.01)
     assert pct_change == pytest.approx(-0.7566, rel=0.01)
 
@@ -300,12 +336,15 @@ def test_solve_for_mde_cluster_impl_with_cv():
         avg_cluster_size=30,
         cv=0.0,
     )
-    metric_high_cv = metric_no_cv.model_copy(update={"cv": 0.5})
+    metric_high_cv = metric_no_cv.model_copy(update={"cv": 1.5})
 
     target_no_cv, pct_no_cv = solve_for_mde_cluster_impl(desired_n=720, metric=metric_no_cv, n_arms=2)
     target_high_cv, pct_high_cv = solve_for_mde_cluster_impl(desired_n=720, metric=metric_high_cv, n_arms=2)
 
+    # CV increases DEFF, which increases MDE
     assert target_high_cv > target_no_cv
+    assert target_no_cv == pytest.approx(110.3, rel=0.01)
+    assert target_high_cv == pytest.approx(116.89, rel=0.01)
     assert pct_high_cv > pct_no_cv
 
 
