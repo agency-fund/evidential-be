@@ -4,11 +4,11 @@ from xngin.apiserver.routers.common_api_types import (
     MetricPowerAnalysisMessage,
 )
 from xngin.apiserver.routers.common_enums import MetricPowerAnalysisMessageType, MetricType
-from xngin.stats.cluster_power import analyze_metric_power_cluster, calculate_mde_cluster
+from xngin.stats.cluster_power import solve_for_mde_cluster_impl, solve_for_sample_size_cluster
 from xngin.stats.individual_power import (
-    _analyze_power_mde_mode,  # noqa: PLC2701
-    _analyze_power_sample_size_mode,  # noqa: PLC2701
-    _power_analysis_error,  # noqa: PLC2701
+    power_analysis_error,
+    solve_for_mde_individual,
+    solve_for_sample_size_individual,
 )
 from xngin.stats.stats_errors import StatsPowerError
 
@@ -29,11 +29,9 @@ def analyze_metric_power(
         n_arms: Number of treatment arms
         power: Desired statistical power
         alpha: Significance level
-        arm_weights: Optional list of weights (summing to 100) for unbalanced arms.
-                     If None, assumes equal allocation.
-        desired_n: Optional desired sample size. If provided, calculates the minimum
-               detectable effect (MDE) for this sample size instead of calculating
-               required sample size for the specified effect.
+        arm_weights: Optional list of weights (summing to 100) for unbalanced arms, else assumes equal allocation.
+        desired_n: Optional desired sample size. If provided, calculates MDE for the desired_n
+            instead of the minimum sample size for a desired effect. Applies to all metrics.
 
     Returns:
         MetricPowerAnalysis containing power analysis results
@@ -47,7 +45,7 @@ def analyze_metric_power(
         # Sample size mode
         if is_cluster:
             assert icc is not None and avg_cluster_size is not None
-            return analyze_metric_power_cluster(
+            return solve_for_sample_size_cluster(
                 metric=metric,
                 n_arms=n_arms,
                 icc=icc,
@@ -57,13 +55,13 @@ def analyze_metric_power(
                 alpha=alpha,
                 arm_weights=arm_weights,
             )
-        return _analyze_power_sample_size_mode(metric, n_arms, power, alpha, arm_weights)
+        return solve_for_sample_size_individual(metric, n_arms, power, alpha, arm_weights)
 
     # MDE mode
 
     # Validate baseline is present
     if metric.metric_baseline is None:
-        return _power_analysis_error(
+        return power_analysis_error(
             metric,
             MetricPowerAnalysisMessageType.NO_BASELINE,
             (
@@ -74,7 +72,7 @@ def analyze_metric_power(
 
     # Validate stddev for NUMERIC metrics
     if metric.metric_type == MetricType.NUMERIC and (metric.metric_stddev is None or metric.metric_stddev <= 0):
-        return _power_analysis_error(
+        return power_analysis_error(
             metric,
             MetricPowerAnalysisMessageType.ZERO_STDDEV,
             (
@@ -84,11 +82,11 @@ def analyze_metric_power(
         )
 
     if not is_cluster:
-        return _analyze_power_mde_mode(metric, n_arms, desired_n, power, alpha, arm_weights)
+        return solve_for_mde_individual(metric, n_arms, desired_n, power, alpha, arm_weights)
 
     # Cluster MDE
     assert icc is not None and avg_cluster_size is not None
-    target_possible, pct_change_possible = calculate_mde_cluster(
+    target_possible, pct_change_possible = solve_for_mde_cluster_impl(
         available_n=desired_n,
         metric=metric,
         n_arms=n_arms,
@@ -146,9 +144,9 @@ def check_power(
         n_arms: Number of treatment arms
         power: Desired statistical power
         alpha: Significance level
-        arm_weights: Optional list of weights (summing to 100) for unbalanced arms
-        desired_n: Optional desired sample size. If provided, calculates MDE
-                   instead of required sample size. Applies to all metrics.
+        arm_weights: Optional list of weights (summing to 100) for unbalanced arms, else assumes equal allocation.
+        desired_n: Optional desired sample size. If provided, calculates MDE for the desired_n
+            instead of the minimum sample size for a desired effect. Applies to all metrics.
 
     Returns:
         List of MetricPowerAnalysis results

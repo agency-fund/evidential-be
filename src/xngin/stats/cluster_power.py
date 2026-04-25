@@ -10,8 +10,8 @@ from xngin.apiserver.routers.common_api_types import (
     MetricPowerAnalysisMessage,
 )
 from xngin.stats.individual_power import (
-    _analyze_power_sample_size_mode,  # noqa: PLC2701
-    calculate_mde_with_desired_n,
+    solve_for_mde_individual_impl,
+    solve_for_sample_size_individual,
 )
 
 
@@ -81,7 +81,7 @@ def calculate_num_clusters_needed(
     return math.ceil(clusters_needed)
 
 
-def calculate_mde_cluster(
+def solve_for_mde_cluster_impl(
     available_n: int,
     metric: DesignSpecMetric,
     n_arms: int,
@@ -117,7 +117,7 @@ def calculate_mde_cluster(
 
     effective_n = calculate_effective_sample_size(available_n, deff)
 
-    return calculate_mde_with_desired_n(
+    return solve_for_mde_individual_impl(
         desired_n=effective_n,
         metric=metric,
         n_arms=n_arms,
@@ -127,7 +127,7 @@ def calculate_mde_cluster(
     )
 
 
-def analyze_metric_power_cluster(
+def solve_for_sample_size_cluster(
     metric: DesignSpecMetric,
     n_arms: int,
     icc: float,
@@ -151,7 +151,7 @@ def analyze_metric_power_cluster(
         arm_weights: Allocation weights for unbalanced designs
 
     """
-    individual_analysis = _analyze_power_sample_size_mode(
+    individual_analysis = solve_for_sample_size_individual(
         metric=metric,
         n_arms=n_arms,
         power=power,

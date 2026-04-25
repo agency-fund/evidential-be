@@ -37,7 +37,7 @@ def _calculate_arm_ratio_and_control_prob_from_weights(
     return arm_ratio, control_prob
 
 
-def _power_analysis_error(
+def power_analysis_error(
     metric: DesignSpecMetric, msg_type: MetricPowerAnalysisMessageType, msg_body: str
 ) -> MetricPowerAnalysis:
     return MetricPowerAnalysis(
@@ -46,7 +46,7 @@ def _power_analysis_error(
     )
 
 
-def calculate_mde_with_desired_n(
+def solve_for_mde_individual_impl(
     desired_n: int,
     metric: DesignSpecMetric,
     n_arms: int,
@@ -125,7 +125,7 @@ def calculate_mde_with_desired_n(
     return target_possible, pct_change_possible
 
 
-def _analyze_power_sample_size_mode(
+def solve_for_sample_size_individual(
     metric: DesignSpecMetric,
     n_arms: int,
     power: float = 0.8,
@@ -142,7 +142,7 @@ def _analyze_power_sample_size_mode(
 
     # Validate available_n is present
     if metric.available_n is None or metric.available_n <= 0:
-        return _power_analysis_error(
+        return power_analysis_error(
             metric,
             MetricPowerAnalysisMessageType.NO_AVAILABLE_N,
             "You have no available units to run your experiment. Adjust your filters to target more units.",
@@ -153,7 +153,7 @@ def _analyze_power_sample_size_mode(
 
     # Check for zero effective_n (no non-null values)
     if effective_n <= 0:
-        return _power_analysis_error(
+        return power_analysis_error(
             metric,
             MetricPowerAnalysisMessageType.INSUFFICIENT,
             (
@@ -168,7 +168,7 @@ def _analyze_power_sample_size_mode(
 
     # Validate baseline and target are present
     if metric.metric_target is None or metric.metric_baseline is None:
-        return _power_analysis_error(
+        return power_analysis_error(
             metric,
             MetricPowerAnalysisMessageType.NO_BASELINE,
             (
@@ -181,7 +181,7 @@ def _analyze_power_sample_size_mode(
     if metric.metric_type == MetricType.NUMERIC:
         # Validate stddev for NUMERIC metrics
         if metric.metric_stddev is None or metric.metric_stddev <= 0:
-            return _power_analysis_error(
+            return power_analysis_error(
                 metric,
                 MetricPowerAnalysisMessageType.ZERO_STDDEV,
                 (
@@ -196,7 +196,7 @@ def _analyze_power_sample_size_mode(
         raise ValueError("metric_type must be NUMERIC or BINARY.")
 
     if effect_size == 0.0:
-        return _power_analysis_error(
+        return power_analysis_error(
             metric,
             MetricPowerAnalysisMessageType.ZERO_EFFECT_SIZE,
             "Cannot detect an effect-size of 0. Try changing your effect-size.",
@@ -255,7 +255,7 @@ def _analyze_power_sample_size_mode(
     else:
         msg_type = MetricPowerAnalysisMessageType.INSUFFICIENT
         # Calculate the Minimum Detectable Effect that meets the power spec with the available subjects.
-        target_possible, pct_change_possible = calculate_mde_with_desired_n(
+        target_possible, pct_change_possible = solve_for_mde_individual_impl(
             desired_n=effective_n,
             metric=metric,
             n_arms=n_arms,
@@ -291,7 +291,7 @@ def _analyze_power_sample_size_mode(
     return analysis
 
 
-def _analyze_power_mde_mode(
+def solve_for_mde_individual(
     metric: DesignSpecMetric,
     n_arms: int,
     desired_n: int,
@@ -304,7 +304,7 @@ def _analyze_power_mde_mode(
     """
     assert metric.metric_baseline is not None
 
-    target_possible, pct_change_possible = calculate_mde_with_desired_n(
+    target_possible, pct_change_possible = solve_for_mde_individual_impl(
         desired_n=desired_n,
         metric=metric,
         n_arms=n_arms,

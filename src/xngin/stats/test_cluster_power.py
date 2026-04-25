@@ -9,13 +9,13 @@ import pytest
 from xngin.apiserver.routers.common_api_types import DesignSpecMetric
 from xngin.apiserver.routers.common_enums import MetricType
 from xngin.stats.cluster_power import (
-    analyze_metric_power_cluster,
     calculate_design_effect,
     calculate_effective_sample_size,
-    calculate_mde_cluster,
     calculate_num_clusters_needed,
+    solve_for_mde_cluster_impl,
+    solve_for_sample_size_cluster,
 )
-from xngin.stats.individual_power import calculate_mde_with_desired_n
+from xngin.stats.individual_power import solve_for_mde_individual_impl
 
 
 @pytest.fixture(scope="module")
@@ -191,7 +191,7 @@ def test_calculate_num_clusters_needed_high_deff():
     assert n_high == 20
 
 
-def test_calculate_mde_cluster_basic():
+def test_solve_for_mde_cluster_impl_basic():
     metric = DesignSpecMetric(
         field_name="reading_score",
         metric_type=MetricType.NUMERIC,
@@ -199,7 +199,7 @@ def test_calculate_mde_cluster_basic():
         metric_stddev=20,
     )
 
-    target, pct_change = calculate_mde_cluster(
+    target, pct_change = solve_for_mde_cluster_impl(
         available_n=600,
         metric=metric,
         n_arms=2,
@@ -211,7 +211,7 @@ def test_calculate_mde_cluster_basic():
     assert pct_change == pytest.approx(0.1068, rel=0.01)
 
 
-def test_calculate_mde_cluster_no_clustering():
+def test_solve_for_mde_cluster_impl_no_clustering():
     metric = DesignSpecMetric(
         field_name="test_metric",
         metric_type=MetricType.NUMERIC,
@@ -219,13 +219,13 @@ def test_calculate_mde_cluster_no_clustering():
         metric_stddev=20,
     )
 
-    ind_target, ind_pct = calculate_mde_with_desired_n(
+    ind_target, ind_pct = solve_for_mde_individual_impl(
         desired_n=1000,
         metric=metric,
         n_arms=2,
     )
 
-    clust_target, clust_pct = calculate_mde_cluster(
+    clust_target, clust_pct = solve_for_mde_cluster_impl(
         available_n=1000,
         metric=metric,
         n_arms=2,
@@ -237,7 +237,7 @@ def test_calculate_mde_cluster_no_clustering():
     assert clust_pct == pytest.approx(ind_pct)
 
 
-def test_calculate_mde_cluster_higher_with_clustering():
+def test_solve_for_mde_cluster_impl_higher_with_clustering():
     metric = DesignSpecMetric(
         field_name="test_metric",
         metric_type=MetricType.NUMERIC,
@@ -245,13 +245,13 @@ def test_calculate_mde_cluster_higher_with_clustering():
         metric_stddev=20,
     )
 
-    ind_target, _ = calculate_mde_with_desired_n(
+    ind_target, _ = solve_for_mde_individual_impl(
         desired_n=600,
         metric=metric,
         n_arms=2,
     )
 
-    clust_target, _ = calculate_mde_cluster(
+    clust_target, _ = solve_for_mde_cluster_impl(
         available_n=600,
         metric=metric,
         n_arms=2,
@@ -263,14 +263,14 @@ def test_calculate_mde_cluster_higher_with_clustering():
     assert clust_target == pytest.approx(110.7, rel=0.01)
 
 
-def test_calculate_mde_cluster_binary_metric():
+def test_solve_for_mde_cluster_impl_binary_metric():
     metric = DesignSpecMetric(
         field_name="conversion",
         metric_type=MetricType.BINARY,
         metric_baseline=0.10,
     )
 
-    target, pct_change = calculate_mde_cluster(
+    target, pct_change = solve_for_mde_cluster_impl(
         available_n=1000,
         metric=metric,
         n_arms=2,
@@ -282,7 +282,7 @@ def test_calculate_mde_cluster_binary_metric():
     assert pct_change == pytest.approx(-0.7566, rel=0.01)
 
 
-def test_calculate_mde_cluster_unbalanced():
+def test_solve_for_mde_cluster_impl_unbalanced():
     metric = DesignSpecMetric(
         field_name="test_metric",
         metric_type=MetricType.NUMERIC,
@@ -290,7 +290,7 @@ def test_calculate_mde_cluster_unbalanced():
         metric_stddev=20,
     )
 
-    target, pct_change = calculate_mde_cluster(
+    target, pct_change = solve_for_mde_cluster_impl(
         available_n=1000,
         metric=metric,
         n_arms=2,
@@ -303,7 +303,7 @@ def test_calculate_mde_cluster_unbalanced():
     assert pct_change == pytest.approx(0.1035, rel=0.01)
 
 
-def test_calculate_mde_cluster_with_cv():
+def test_solve_for_mde_cluster_impl_with_cv():
     """Test that CV increases MDE (makes detection harder)."""
     metric = DesignSpecMetric(
         field_name="test_metric",
@@ -312,7 +312,7 @@ def test_calculate_mde_cluster_with_cv():
         metric_stddev=20,
     )
 
-    target_no_cv, pct_no_cv = calculate_mde_cluster(
+    target_no_cv, pct_no_cv = solve_for_mde_cluster_impl(
         available_n=720,
         metric=metric,
         n_arms=2,
@@ -321,7 +321,7 @@ def test_calculate_mde_cluster_with_cv():
         cv=0.0,
     )
 
-    target_high_cv, pct_high_cv = calculate_mde_cluster(
+    target_high_cv, pct_high_cv = solve_for_mde_cluster_impl(
         available_n=720,
         metric=metric,
         n_arms=2,
@@ -334,7 +334,7 @@ def test_calculate_mde_cluster_with_cv():
     assert pct_high_cv > pct_no_cv
 
 
-def test_analyze_metric_power_cluster_missing_baseline():
+def test_solve_for_sample_size_cluster_missing_baseline():
     metric = DesignSpecMetric(
         field_name="test_metric",
         metric_type=MetricType.NUMERIC,
@@ -345,7 +345,7 @@ def test_analyze_metric_power_cluster_missing_baseline():
         available_nonnull_n=1000,
     )
 
-    result = analyze_metric_power_cluster(
+    result = solve_for_sample_size_cluster(
         metric=metric,
         n_arms=2,
         icc=0.15,
@@ -365,7 +365,7 @@ def test_analyze_metric_power_cluster_missing_baseline():
     assert result.msg is not None
 
 
-def test_analyze_metric_power_cluster_balanced():
+def test_solve_for_sample_size_cluster_balanced():
     metric = DesignSpecMetric(
         field_name="reading_score",
         metric_type=MetricType.NUMERIC,
@@ -376,7 +376,7 @@ def test_analyze_metric_power_cluster_balanced():
         available_nonnull_n=1000,
     )
 
-    result = analyze_metric_power_cluster(
+    result = solve_for_sample_size_cluster(
         metric=metric,
         n_arms=2,
         icc=0.15,
@@ -393,7 +393,7 @@ def test_analyze_metric_power_cluster_balanced():
     assert result.effective_sample_size == 134
 
 
-def test_analyze_metric_power_cluster_no_clustering():
+def test_solve_for_sample_size_cluster_no_clustering():
     metric = DesignSpecMetric(
         field_name="test_metric",
         metric_type=MetricType.NUMERIC,
@@ -404,7 +404,7 @@ def test_analyze_metric_power_cluster_no_clustering():
         available_nonnull_n=1000,
     )
 
-    result = analyze_metric_power_cluster(
+    result = solve_for_sample_size_cluster(
         metric=metric,
         n_arms=2,
         icc=0.0,
@@ -417,7 +417,7 @@ def test_analyze_metric_power_cluster_no_clustering():
     assert result.effective_sample_size == result.target_n
 
 
-def test_analyze_metric_power_cluster_unbalanced():
+def test_solve_for_sample_size_cluster_unbalanced():
     metric = DesignSpecMetric(
         field_name="conversion",
         metric_type=MetricType.NUMERIC,
@@ -428,7 +428,7 @@ def test_analyze_metric_power_cluster_unbalanced():
         available_nonnull_n=2000,
     )
 
-    result = analyze_metric_power_cluster(
+    result = solve_for_sample_size_cluster(
         metric=metric,
         n_arms=2,
         icc=0.15,
@@ -442,7 +442,7 @@ def test_analyze_metric_power_cluster_unbalanced():
     assert result.target_n == sum(result.n_per_arm)
 
 
-def test_analyze_metric_power_cluster_three_arms():
+def test_solve_for_sample_size_cluster_three_arms():
     metric = DesignSpecMetric(
         field_name="test_metric",
         metric_type=MetricType.NUMERIC,
@@ -453,7 +453,7 @@ def test_analyze_metric_power_cluster_three_arms():
         available_nonnull_n=2000,
     )
 
-    result = analyze_metric_power_cluster(
+    result = solve_for_sample_size_cluster(
         metric=metric,
         n_arms=3,
         icc=0.15,
@@ -466,7 +466,7 @@ def test_analyze_metric_power_cluster_three_arms():
     assert result.target_n == sum(result.n_per_arm)
 
 
-def test_analyze_metric_power_cluster_binary_metric():
+def test_solve_for_sample_size_cluster_binary_metric():
     metric = DesignSpecMetric(
         field_name="conversion",
         metric_type=MetricType.BINARY,
@@ -476,7 +476,7 @@ def test_analyze_metric_power_cluster_binary_metric():
         available_nonnull_n=5000,
     )
 
-    result = analyze_metric_power_cluster(
+    result = solve_for_sample_size_cluster(
         metric=metric,
         n_arms=2,
         icc=0.05,
@@ -490,7 +490,7 @@ def test_analyze_metric_power_cluster_binary_metric():
     assert result.design_effect == pytest.approx(3.45)  # 1 + (50-1)*0.05
 
 
-def test_analyze_metric_power_cluster_high_icc():
+def test_solve_for_sample_size_cluster_high_icc():
     metric = DesignSpecMetric(
         field_name="test_metric",
         metric_type=MetricType.NUMERIC,
@@ -501,14 +501,14 @@ def test_analyze_metric_power_cluster_high_icc():
         available_nonnull_n=2000,
     )
 
-    result_low = analyze_metric_power_cluster(
+    result_low = solve_for_sample_size_cluster(
         metric=metric,
         n_arms=2,
         icc=0.05,
         avg_cluster_size=30,
     )
 
-    result_high = analyze_metric_power_cluster(
+    result_high = solve_for_sample_size_cluster(
         metric=metric,
         n_arms=2,
         icc=0.30,
@@ -522,7 +522,7 @@ def test_analyze_metric_power_cluster_high_icc():
     assert result_high.design_effect > result_low.design_effect
 
 
-def test_analyze_metric_power_cluster_cv_increases_clusters():
+def test_solve_for_sample_size_cluster_cv_increases_clusters():
     """Test that higher CV requires more clusters."""
     metric = DesignSpecMetric(
         field_name="test_metric",
@@ -534,7 +534,7 @@ def test_analyze_metric_power_cluster_cv_increases_clusters():
         available_nonnull_n=5000,
     )
 
-    result_low_cv = analyze_metric_power_cluster(
+    result_low_cv = solve_for_sample_size_cluster(
         metric=metric,
         n_arms=2,
         icc=0.15,
@@ -542,7 +542,7 @@ def test_analyze_metric_power_cluster_cv_increases_clusters():
         cv=0.3,
     )
 
-    result_high_cv = analyze_metric_power_cluster(
+    result_high_cv = solve_for_sample_size_cluster(
         metric=metric,
         n_arms=2,
         icc=0.15,
@@ -562,7 +562,7 @@ def test_analyze_metric_power_cluster_cv_increases_clusters():
     assert ratio == pytest.approx(4.06, rel=0.1)
 
 
-def test_analyze_metric_power_cluster_cv_affects_all_arms():
+def test_solve_for_sample_size_cluster_cv_affects_all_arms():
     """Test that CV adjustment applies to all arms in multi-arm design."""
     metric = DesignSpecMetric(
         field_name="test_metric",
@@ -574,7 +574,7 @@ def test_analyze_metric_power_cluster_cv_affects_all_arms():
         available_nonnull_n=5000,
     )
 
-    result = analyze_metric_power_cluster(
+    result = solve_for_sample_size_cluster(
         metric=metric,
         n_arms=3,
         icc=0.15,
@@ -594,7 +594,7 @@ def test_analyze_metric_power_cluster_cv_affects_all_arms():
     "cv,expected_warning",
     [(0, None), (1.0, None), (1.5, "Warning: High cluster size variation (CV=1.50)")],
 )
-def test_analyze_metric_power_cluster_cv_warning_message(cv: float, expected_warning: str | None):
+def test_solve_for_sample_size_cluster_cv_warning_message(cv: float, expected_warning: str | None):
     """Test that high CV (>1.0) adds warning to message."""
     metric = DesignSpecMetric(
         field_name="test_metric",
@@ -606,7 +606,7 @@ def test_analyze_metric_power_cluster_cv_warning_message(cv: float, expected_war
         available_nonnull_n=2000,
     )
 
-    result = analyze_metric_power_cluster(
+    result = solve_for_sample_size_cluster(
         metric=metric,
         n_arms=2,
         icc=0.15,
