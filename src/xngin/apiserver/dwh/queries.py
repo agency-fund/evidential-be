@@ -27,7 +27,6 @@ from xngin.apiserver.routers.common_api_types import (
     GetFiltersResponseNumericOrDate,
 )
 from xngin.apiserver.routers.common_enums import FilterClass, MetricType
-from xngin.db_extensions import custom_functions
 
 
 def get_stats_on_metrics(
@@ -55,7 +54,7 @@ def get_stats_on_metrics(
             cast_column = cast(cast(col, Integer), Float)
         select_columns.extend((
             func.avg(cast_column).label(f"{field_name}__mean"),
-            custom_functions.stddev_pop(cast_column).label(f"{field_name}__stddev"),
+            func.stddev_pop(cast_column).label(f"{field_name}__stddev"),
             func.count(col).label(f"{field_name}__count"),
         ))
     filters_expr = create_query_filters(sa_table, filters)
@@ -178,9 +177,7 @@ def get_cluster_size_stats(
         func.avg(cluster_counts.c.cluster_size).label("avg_cluster_size"),
         func.min(cluster_counts.c.cluster_size).label("min_cluster_size"),
         func.max(cluster_counts.c.cluster_size).label("max_cluster_size"),
-        (custom_functions.stddev_pop(cluster_counts.c.cluster_size) / func.avg(cluster_counts.c.cluster_size)).label(
-            "cv"
-        ),
+        (func.stddev_pop(cluster_counts.c.cluster_size) / func.avg(cluster_counts.c.cluster_size)).label("cv"),
         func.count().label("num_clusters"),
     )
 
