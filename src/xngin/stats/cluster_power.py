@@ -82,29 +82,25 @@ def calculate_num_clusters_needed(
 
 
 def solve_for_mde_cluster_impl(
-    available_n: int,
     metric: DesignSpecMetric,
+    *,
+    desired_n: int,
     n_arms: int,
-    icc: float,
-    avg_cluster_size: float,
-    cv: float = 0.0,
-    power: float = 0.8,
-    alpha: float = 0.05,
     arm_weights: list[float] | None = None,
+    alpha: float = 0.05,
+    power: float = 0.8,
 ) -> tuple[float, float]:
     """
-    Given available sample size,
-    calculate minimum detectable effect (MDE) for cluster-randomized design.
+    Given desired sample size, calculate minimum detectable effect (MDE) for a
+    cluster-randomized design. Cluster parameters are read from the metric.
 
     Args:
-        available_n: Total number of participants available across all arms
-        metric: DesignSpecMetric with baseline and variance information
+        desired_n: Total sample size across all arms to be used in the calculation
+        metric: DesignSpecMetric containing metric descriptive stats
+                (icc, avg_cluster_size, cv must be set)
         n_arms: Number of treatment arms
-        icc: Intracluster correlation coefficient, range [0, 1]
-        avg_cluster_size: Average number of individuals per cluster
-        cv: Coefficient of variation in cluster sizes (default 0.0)
-        power: Desired statistical power (default 0.8)
         alpha: Significance level (default 0.05)
+        power: Desired statistical power (default 0.8)
         arm_weights: Optional allocation weights for unbalanced designs
 
     Returns:
@@ -113,9 +109,10 @@ def solve_for_mde_cluster_impl(
         - pct_change: The minimum detectable effect as percent change from baseline
 
     """
-    deff = calculate_design_effect(icc, avg_cluster_size, cv)
+    assert metric.icc is not None and metric.avg_cluster_size is not None
+    deff = calculate_design_effect(metric.icc, metric.avg_cluster_size, metric.cv or 0.0)
 
-    effective_n = calculate_effective_sample_size(available_n, deff)
+    effective_n = calculate_effective_sample_size(desired_n, deff)
 
     return solve_for_mde_individual_impl(
         desired_n=effective_n,
@@ -129,28 +126,25 @@ def solve_for_mde_cluster_impl(
 
 def solve_for_sample_size_cluster(
     metric: DesignSpecMetric,
+    *,
     n_arms: int,
-    icc: float,
-    avg_cluster_size: float,
-    cv: float = 0.0,
+    arm_weights: list[float] | None = None,
     power: float = 0.8,
     alpha: float = 0.05,
-    arm_weights: list[float] | None = None,
 ) -> MetricPowerAnalysis:
     """
     Calculate required sample size for cluster-randomized design.
 
     Args:
-        metric: Metric specification with baseline, target, and variance
+        metric: Metric specification with baseline, target, variance, and cluster design fields
         n_arms: Number of treatment arms
-        icc: Intracluster correlation coefficient (0 to 1)
-        avg_cluster_size: Average individuals per cluster
-        cv: Coefficient of variation in cluster sizes (default 0.0)
         power: Desired statistical power (default 0.8)
         alpha: Significance level (default 0.05)
         arm_weights: Allocation weights for unbalanced designs
 
     """
+    assert metric.icc is not None and metric.avg_cluster_size is not None and metric.cv is not None
+
     individual_analysis = solve_for_sample_size_individual(
         metric=metric,
         n_arms=n_arms,
@@ -159,13 +153,9 @@ def solve_for_sample_size_cluster(
         arm_weights=arm_weights,
     )
 
-    updated_metric_spec = individual_analysis.metric_spec.model_copy(
-        update={"icc": icc, "avg_cluster_size": avg_cluster_size, "cv": cv}
-    )
-
     if individual_analysis.target_n is None:
         cluster_analysis = MetricPowerAnalysis(
-            metric_spec=updated_metric_spec,
+            metric_spec=metric,
             target_n=None,
             sufficient_n=individual_analysis.sufficient_n,
             target_possible=individual_analysis.target_possible,
@@ -179,7 +169,7 @@ def solve_for_sample_size_cluster(
             total_weight = sum(arm_weights)
             arm_probs = [w / total_weight for w in arm_weights]
 
-        deff = calculate_design_effect(icc, avg_cluster_size, cv)
+        deff = calculate_design_effect(metric.icc, metric.avg_cluster_size, metric.cv)
 
         clusters_per_arm_list = []
         n_per_arm_list = []
@@ -189,11 +179,11 @@ def solve_for_sample_size_cluster(
 
             clusters_this_arm = calculate_num_clusters_needed(
                 n_individual=n_individual_this_arm,
-                avg_cluster_size=avg_cluster_size,
+                avg_cluster_size=metric.avg_cluster_size,
                 deff=deff,
             )
 
-            n_actual_this_arm = math.ceil(clusters_this_arm * avg_cluster_size)
+            n_actual_this_arm = math.ceil(clusters_this_arm * metric.avg_cluster_size)
 
             clusters_per_arm_list.append(clusters_this_arm)
             n_per_arm_list.append(n_actual_this_arm)
@@ -203,9 +193,10 @@ def solve_for_sample_size_cluster(
         effective_n = int(new_target_n / deff)
 
         final_msg = individual_analysis.msg
-        if cv > 1.0 and final_msg:
+        if metric.cv > 1.0 and final_msg:
             warning = (
-                f"\n\nWarning: High cluster size variation (CV={cv:.2f}). Number of clusters estimates are approximate."
+                f"\n\nWarning: High cluster size variation (CV={metric.cv:.2f}).  "
+                f"Number of clusters estimates are approximate."
             )
 
             final_msg = MetricPowerAnalysisMessage(
@@ -216,7 +207,7 @@ def solve_for_sample_size_cluster(
             )
 
         cluster_analysis = MetricPowerAnalysis(
-            metric_spec=updated_metric_spec,
+            metric_spec=metric,
             target_n=new_target_n,
             sufficient_n=individual_analysis.sufficient_n,
             target_possible=individual_analysis.target_possible,

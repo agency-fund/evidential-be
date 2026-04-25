@@ -392,7 +392,7 @@ def test_solve_for_mde_individual_impl():
         available_n=1000,
     )
 
-    target_n, pct_change = solve_for_mde_individual_impl(20000, metric, n_arms=2)
+    target_n, pct_change = solve_for_mde_individual_impl(metric, desired_n=20000, n_arms=2)
     assert target_n == pytest.approx(100.792, rel=1e-3)
     assert pct_change == pytest.approx(0.00793, rel=1e-3)
 
@@ -407,7 +407,7 @@ def test_solve_for_mde_individual_impl_binary():
         available_n=1000,
     )
 
-    target_n, pct_change = solve_for_mde_individual_impl(20000, metric, n_arms=2)
+    target_n, pct_change = solve_for_mde_individual_impl(metric, desired_n=20000, n_arms=2)
     assert target_n == pytest.approx(0.480, rel=1e-3)
     assert pct_change == pytest.approx(-0.0396, rel=1e-3)
 
@@ -415,7 +415,6 @@ def test_solve_for_mde_individual_impl_binary():
 def test_solve_for_mde_individual_impl_zero_n_raises_error():
     with pytest.raises(ValueError):
         solve_for_mde_individual_impl(
-            0,
             DesignSpecMetric(
                 field_name="test_metric",
                 metric_type=MetricType.NUMERIC,
@@ -425,6 +424,7 @@ def test_solve_for_mde_individual_impl_zero_n_raises_error():
                 available_nonnull_n=1000,
                 available_n=1000,
             ),
+            desired_n=0,
             n_arms=2,
         )
 
@@ -440,7 +440,7 @@ def test_solve_for_mde_individual_impl_unbalanced_arms():
         available_n=1000,
     )
 
-    target_n, pct_change = solve_for_mde_individual_impl(20000, metric, n_arms=2, arm_weights=[20, 80])
+    target_n, pct_change = solve_for_mde_individual_impl(metric, desired_n=20000, n_arms=2, arm_weights=[20, 80])
     assert target_n == pytest.approx(100.991, rel=1e-3)
     assert pct_change == pytest.approx(0.00991, rel=1e-3)
 
@@ -617,15 +617,12 @@ def test_solve_for_power_size_cluster_basic():
         metric_stddev=20,
         available_n=1000,
         available_nonnull_n=1000,
-    )
-
-    result = solve_for_sample_size_cluster(
-        metric=metric,
-        n_arms=2,
         icc=0.15,
         avg_cluster_size=30,
-        # cv not provided, should default to 0.0
+        cv=0.0,
     )
+
+    result = solve_for_sample_size_cluster(metric=metric, n_arms=2)
 
     # Should return MetricPowerAnalysis
     assert isinstance(result, MetricPowerAnalysis)
@@ -648,15 +645,12 @@ def test_solve_for_power_size_cluster_with_cv():
         metric_stddev=20,
         available_n=5000,
         available_nonnull_n=5000,
-    )
-
-    result = solve_for_sample_size_cluster(
-        metric=metric,
-        n_arms=2,
         icc=0.15,
         avg_cluster_size=30,
-        cv=1.5,  # High variation
+        cv=1.5,
     )
+
+    result = solve_for_sample_size_cluster(metric=metric, n_arms=2)
 
     assert isinstance(result, MetricPowerAnalysis)
     assert result.metric_spec.cv == 1.5
@@ -711,15 +705,12 @@ def test_solve_for_mde_cluster_impl_basic():
         metric_type=MetricType.NUMERIC,
         metric_baseline=100,
         metric_stddev=20,
-    )
-
-    target, pct_change = solve_for_mde_cluster_impl(
-        available_n=720,
-        metric=metric,
-        n_arms=2,
         icc=0.15,
         avg_cluster_size=30,
+        cv=0.0,
     )
+
+    target, pct_change = solve_for_mde_cluster_impl(desired_n=720, metric=metric, n_arms=2)
 
     # Cluster MDE should be larger than individual
     # (harder to detect with clustering)
@@ -744,13 +735,8 @@ def test_solve_for_mde_individual_when_no_cluster():
     )
 
     # With cluster params
-    target_clust, pct_clust = solve_for_mde_cluster_impl(
-        available_n=720,
-        metric=metric,
-        n_arms=2,
-        icc=0.15,
-        avg_cluster_size=30,
-    )
+    clust_metric = metric.model_copy(update={"icc": 0.15, "avg_cluster_size": 30, "cv": 0.0})
+    target_clust, pct_clust = solve_for_mde_cluster_impl(desired_n=720, metric=clust_metric, n_arms=2)
 
     # Cluster MDE should be worse (larger)
     assert target_clust > target_ind
@@ -767,15 +753,12 @@ def test_solve_for_power_size_cluster_specific_values():
         metric_stddev=20,
         available_n=1000,
         available_nonnull_n=1000,
-    )
-
-    result = solve_for_sample_size_cluster(
-        metric=metric,
-        n_arms=2,
         icc=0.15,
         avg_cluster_size=30,
         cv=0.0,
     )
+
+    result = solve_for_sample_size_cluster(metric=metric, n_arms=2)
 
     assert isinstance(result, MetricPowerAnalysis)
 
@@ -797,15 +780,12 @@ def test_solve_for_power_size_cluster_with_high_cv():
         metric_stddev=20,
         available_n=5000,
         available_nonnull_n=5000,
-    )
-
-    result = solve_for_sample_size_cluster(
-        metric=metric,
-        n_arms=2,
         icc=0.15,
         avg_cluster_size=30,
-        cv=1.5,  # High variation
+        cv=1.5,
     )
+
+    result = solve_for_sample_size_cluster(metric=metric, n_arms=2)
 
     assert isinstance(result, MetricPowerAnalysis)
 
@@ -828,15 +808,12 @@ def test_solve_for_power_size_cluster_unbalanced():
         metric_stddev=20,
         available_n=2000,
         available_nonnull_n=2000,
-    )
-
-    result = solve_for_sample_size_cluster(
-        metric=metric,
-        n_arms=2,
         icc=0.15,
         avg_cluster_size=30,
-        arm_weights=[20, 80],
+        cv=0.0,
     )
+
+    result = solve_for_sample_size_cluster(metric=metric, n_arms=2, arm_weights=[20, 80])
 
     assert isinstance(result, MetricPowerAnalysis)
 
@@ -853,16 +830,12 @@ def test_solve_for_mde_cluster_impl_specific_values():
         metric_type=MetricType.NUMERIC,
         metric_baseline=100,
         metric_stddev=20,
-    )
-
-    target, pct_change = solve_for_mde_cluster_impl(
-        available_n=600,
-        metric=metric,
-        n_arms=2,
         icc=0.15,
         avg_cluster_size=30,
         cv=0.0,
     )
+
+    target, pct_change = solve_for_mde_cluster_impl(desired_n=600, metric=metric, n_arms=2)
 
     # With 600 participants, ICC=0.15, m=30:
     # DEFF = 5.35, effective_n = 600/5.35 = 112
@@ -873,32 +846,19 @@ def test_solve_for_mde_cluster_impl_specific_values():
 
 def test_solve_for_mde_cluster_impl_with_cv_specific_values():
     """Test cluster MDE with CV - specific values."""
-    metric = DesignSpecMetric(
+    metric_no_cv = DesignSpecMetric(
         field_name="test_score",
         metric_type=MetricType.NUMERIC,
         metric_baseline=100,
         metric_stddev=20,
-    )
-
-    # No CV
-    target_no_cv, _ = solve_for_mde_cluster_impl(
-        available_n=720,
-        metric=metric,
-        n_arms=2,
         icc=0.15,
         avg_cluster_size=30,
         cv=0.0,
     )
+    metric_high_cv = metric_no_cv.model_copy(update={"cv": 1.5})
 
-    # With CV=1.5
-    target_high_cv, _ = solve_for_mde_cluster_impl(
-        available_n=720,
-        metric=metric,
-        n_arms=2,
-        icc=0.15,
-        avg_cluster_size=30,
-        cv=1.5,
-    )
+    target_no_cv, _ = solve_for_mde_cluster_impl(desired_n=720, metric=metric_no_cv, n_arms=2)
+    target_high_cv, _ = solve_for_mde_cluster_impl(desired_n=720, metric=metric_high_cv, n_arms=2)
 
     # CV increases DEFF, which increases MDE
     assert target_no_cv == pytest.approx(110.3, rel=0.01)
@@ -912,15 +872,12 @@ def test_solve_for_mde_cluster_impl_binary_metric():
         field_name="conversion",
         metric_type=MetricType.BINARY,
         metric_baseline=0.10,
-    )
-
-    target, pct_change = solve_for_mde_cluster_impl(
-        available_n=1000,
-        metric=metric,
-        n_arms=2,
         icc=0.05,
         avg_cluster_size=50,
+        cv=0.0,
     )
+
+    target, pct_change = solve_for_mde_cluster_impl(desired_n=1000, metric=metric, n_arms=2)
 
     # Binary metric with clustering
     # DEFF = 1 + (50-1)*0.05 = 3.45

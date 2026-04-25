@@ -15,11 +15,12 @@ from xngin.stats.stats_errors import StatsPowerError
 
 def analyze_metric_power(
     metric: DesignSpecMetric,
+    *,
     n_arms: int,
-    power: float = 0.8,
-    alpha: float = 0.05,
     arm_weights: list[float] | None = None,
     desired_n: int | None = None,
+    power: float = 0.8,
+    alpha: float = 0.05,
 ) -> MetricPowerAnalysis:
     """
     Analyze power for a single metric.
@@ -36,26 +37,25 @@ def analyze_metric_power(
     Returns:
         MetricPowerAnalysis containing power analysis results
     """
-    icc = metric.icc
-    avg_cluster_size = metric.avg_cluster_size
-    cv = metric.cv or 0.0
-    is_cluster = icc is not None and avg_cluster_size is not None
+    is_cluster = metric.icc is not None and metric.avg_cluster_size is not None and metric.cv is not None
 
     if desired_n is None:
         # Sample size mode
         if is_cluster:
-            assert icc is not None and avg_cluster_size is not None
             return solve_for_sample_size_cluster(
                 metric=metric,
                 n_arms=n_arms,
-                icc=icc,
-                avg_cluster_size=avg_cluster_size,
-                cv=cv,
                 power=power,
                 alpha=alpha,
                 arm_weights=arm_weights,
             )
-        return solve_for_sample_size_individual(metric, n_arms, power, alpha, arm_weights)
+        return solve_for_sample_size_individual(
+            metric=metric,
+            n_arms=n_arms,
+            power=power,
+            alpha=alpha,
+            arm_weights=arm_weights,
+        )
 
     # MDE mode
 
@@ -82,20 +82,23 @@ def analyze_metric_power(
         )
 
     if not is_cluster:
-        return solve_for_mde_individual(metric, n_arms, desired_n, power, alpha, arm_weights)
+        return solve_for_mde_individual(
+            metric=metric,
+            desired_n=desired_n,
+            arm_weights=arm_weights,
+            n_arms=n_arms,
+            power=power,
+            alpha=alpha,
+        )
 
     # Cluster MDE
-    assert icc is not None and avg_cluster_size is not None
     target_possible, pct_change_possible = solve_for_mde_cluster_impl(
-        available_n=desired_n,
         metric=metric,
-        n_arms=n_arms,
-        icc=icc,
-        avg_cluster_size=avg_cluster_size,
-        cv=cv,
-        power=power,
-        alpha=alpha,
+        desired_n=desired_n,
         arm_weights=arm_weights,
+        n_arms=n_arms,
+        alpha=alpha,
+        power=power,
     )
 
     # Build response object for MDE calculation
@@ -127,11 +130,12 @@ def analyze_metric_power(
 
 def check_power(
     metrics: list[DesignSpecMetric],
+    *,
     n_arms: int,
-    power: float = 0.8,
-    alpha: float = 0.05,
     arm_weights: list[float] | None = None,
     desired_n: int | None = None,
+    power: float = 0.8,
+    alpha: float = 0.05,
 ) -> list[MetricPowerAnalysis]:
     """
     Check power for multiple metrics.
@@ -154,7 +158,16 @@ def check_power(
     analyses = []
     for metric in metrics:
         try:
-            analyses.append(analyze_metric_power(metric, n_arms, power, alpha, arm_weights, desired_n))
+            analyses.append(
+                analyze_metric_power(
+                    metric=metric,
+                    n_arms=n_arms,
+                    arm_weights=arm_weights,
+                    desired_n=desired_n,
+                    power=power,
+                    alpha=alpha,
+                )
+            )
         except ValueError as verr:
             raise StatsPowerError(verr, metric) from verr
     return analyses

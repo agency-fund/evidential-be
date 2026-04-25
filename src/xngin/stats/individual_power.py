@@ -47,19 +47,20 @@ def power_analysis_error(
 
 
 def solve_for_mde_individual_impl(
-    desired_n: int,
     metric: DesignSpecMetric,
+    *,
+    desired_n: int,
     n_arms: int,
+    arm_weights: list[float] | None = None,
     alpha: float = 0.05,
     power: float = 0.8,
-    arm_weights: list[float] | None = None,
 ) -> tuple[float, float]:
     """
     Calculate MDE for individual randomization.
 
     Args:
-        desired_n: Total sample size to be used in the calculation
-        metric: DesignSpecMetric containing metric details
+        desired_n: Total sample size across all arms to be used in the calculation
+        metric: DesignSpecMetric containing metric descriptive stats
         n_arms: Number of treatment arms
         alpha: Significance level
         power: Desired statistical power
@@ -127,10 +128,11 @@ def solve_for_mde_individual_impl(
 
 def solve_for_sample_size_individual(
     metric: DesignSpecMetric,
+    *,
     n_arms: int,
+    arm_weights: list[float] | None = None,
     power: float = 0.8,
     alpha: float = 0.05,
-    arm_weights: list[float] | None = None,
 ) -> MetricPowerAnalysis:
     """
     Calculate required sample size for individual randomization.
@@ -256,12 +258,12 @@ def solve_for_sample_size_individual(
         msg_type = MetricPowerAnalysisMessageType.INSUFFICIENT
         # Calculate the Minimum Detectable Effect that meets the power spec with the available subjects.
         target_possible, pct_change_possible = solve_for_mde_individual_impl(
-            desired_n=effective_n,
             metric=metric,
+            desired_n=effective_n,
             n_arms=n_arms,
+            arm_weights=arm_weights,
             alpha=alpha,
             power=power,
-            arm_weights=arm_weights,
         )
 
         analysis.target_possible = target_possible

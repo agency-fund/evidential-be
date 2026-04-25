@@ -197,67 +197,60 @@ def test_solve_for_mde_cluster_impl_basic():
         metric_type=MetricType.NUMERIC,
         metric_baseline=100,
         metric_stddev=20,
-    )
-
-    target, pct_change = solve_for_mde_cluster_impl(
-        available_n=600,
-        metric=metric,
-        n_arms=2,
         icc=0.15,
         avg_cluster_size=30,
+        cv=0.0,
     )
+
+    target, pct_change = solve_for_mde_cluster_impl(desired_n=600, metric=metric, n_arms=2)
 
     assert target == pytest.approx(110.68, rel=0.01)
     assert pct_change == pytest.approx(0.1068, rel=0.01)
 
 
 def test_solve_for_mde_cluster_impl_no_clustering():
-    metric = DesignSpecMetric(
+    ind_metric = DesignSpecMetric(
         field_name="test_metric",
         metric_type=MetricType.NUMERIC,
         metric_baseline=100,
         metric_stddev=20,
     )
-
-    ind_target, ind_pct = solve_for_mde_individual_impl(
-        desired_n=1000,
-        metric=metric,
-        n_arms=2,
-    )
-
-    clust_target, clust_pct = solve_for_mde_cluster_impl(
-        available_n=1000,
-        metric=metric,
-        n_arms=2,
+    clust_metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_stddev=20,
         icc=0.0,
         avg_cluster_size=30,
+        cv=0.0,
     )
+
+    ind_target, ind_pct = solve_for_mde_individual_impl(desired_n=1000, metric=ind_metric, n_arms=2)
+    clust_target, clust_pct = solve_for_mde_cluster_impl(desired_n=1000, metric=clust_metric, n_arms=2)
 
     assert clust_target == pytest.approx(ind_target)
     assert clust_pct == pytest.approx(ind_pct)
 
 
 def test_solve_for_mde_cluster_impl_higher_with_clustering():
-    metric = DesignSpecMetric(
+    ind_metric = DesignSpecMetric(
         field_name="test_metric",
         metric_type=MetricType.NUMERIC,
         metric_baseline=100,
         metric_stddev=20,
     )
-
-    ind_target, _ = solve_for_mde_individual_impl(
-        desired_n=600,
-        metric=metric,
-        n_arms=2,
-    )
-
-    clust_target, _ = solve_for_mde_cluster_impl(
-        available_n=600,
-        metric=metric,
-        n_arms=2,
+    clust_metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_stddev=20,
         icc=0.15,
         avg_cluster_size=30,
+        cv=0.0,
     )
+
+    ind_target, _ = solve_for_mde_individual_impl(desired_n=600, metric=ind_metric, n_arms=2)
+    clust_target, _ = solve_for_mde_cluster_impl(desired_n=600, metric=clust_metric, n_arms=2)
 
     assert ind_target == pytest.approx(104.6, rel=0.01)
     assert clust_target == pytest.approx(110.7, rel=0.01)
@@ -268,15 +261,12 @@ def test_solve_for_mde_cluster_impl_binary_metric():
         field_name="conversion",
         metric_type=MetricType.BINARY,
         metric_baseline=0.10,
-    )
-
-    target, pct_change = solve_for_mde_cluster_impl(
-        available_n=1000,
-        metric=metric,
-        n_arms=2,
         icc=0.05,
         avg_cluster_size=50,
+        cv=0.0,
     )
+
+    target, pct_change = solve_for_mde_cluster_impl(desired_n=1000, metric=metric, n_arms=2)
 
     assert target == pytest.approx(0.0243, rel=0.01)
     assert pct_change == pytest.approx(-0.7566, rel=0.01)
@@ -288,16 +278,12 @@ def test_solve_for_mde_cluster_impl_unbalanced():
         metric_type=MetricType.NUMERIC,
         metric_baseline=100,
         metric_stddev=20,
-    )
-
-    target, pct_change = solve_for_mde_cluster_impl(
-        available_n=1000,
-        metric=metric,
-        n_arms=2,
         icc=0.15,
         avg_cluster_size=30,
-        arm_weights=[20, 80],
+        cv=0.0,
     )
+
+    target, pct_change = solve_for_mde_cluster_impl(desired_n=1000, metric=metric, n_arms=2, arm_weights=[20, 80])
 
     assert target == pytest.approx(110.35, rel=0.01)
     assert pct_change == pytest.approx(0.1035, rel=0.01)
@@ -305,30 +291,19 @@ def test_solve_for_mde_cluster_impl_unbalanced():
 
 def test_solve_for_mde_cluster_impl_with_cv():
     """Test that CV increases MDE (makes detection harder)."""
-    metric = DesignSpecMetric(
+    metric_no_cv = DesignSpecMetric(
         field_name="test_metric",
         metric_type=MetricType.NUMERIC,
         metric_baseline=100,
         metric_stddev=20,
-    )
-
-    target_no_cv, pct_no_cv = solve_for_mde_cluster_impl(
-        available_n=720,
-        metric=metric,
-        n_arms=2,
         icc=0.15,
         avg_cluster_size=30,
         cv=0.0,
     )
+    metric_high_cv = metric_no_cv.model_copy(update={"cv": 0.5})
 
-    target_high_cv, pct_high_cv = solve_for_mde_cluster_impl(
-        available_n=720,
-        metric=metric,
-        n_arms=2,
-        icc=0.15,
-        avg_cluster_size=30,
-        cv=0.5,
-    )
+    target_no_cv, pct_no_cv = solve_for_mde_cluster_impl(desired_n=720, metric=metric_no_cv, n_arms=2)
+    target_high_cv, pct_high_cv = solve_for_mde_cluster_impl(desired_n=720, metric=metric_high_cv, n_arms=2)
 
     assert target_high_cv > target_no_cv
     assert pct_high_cv > pct_no_cv
@@ -343,14 +318,12 @@ def test_solve_for_sample_size_cluster_missing_baseline():
         metric_stddev=20,
         available_n=1000,
         available_nonnull_n=1000,
-    )
-
-    result = solve_for_sample_size_cluster(
-        metric=metric,
-        n_arms=2,
         icc=0.15,
         avg_cluster_size=30,
+        cv=0.0,
     )
+
+    result = solve_for_sample_size_cluster(metric=metric, n_arms=2)
 
     assert result.target_n is None
     assert result.num_clusters_total is None
@@ -374,14 +347,12 @@ def test_solve_for_sample_size_cluster_balanced():
         metric_stddev=20,
         available_n=1000,
         available_nonnull_n=1000,
-    )
-
-    result = solve_for_sample_size_cluster(
-        metric=metric,
-        n_arms=2,
         icc=0.15,
         avg_cluster_size=30,
+        cv=0.0,
     )
+
+    result = solve_for_sample_size_cluster(metric=metric, n_arms=2)
 
     assert result.metric_spec.icc == 0.15
     assert result.metric_spec.avg_cluster_size == 30
@@ -402,14 +373,12 @@ def test_solve_for_sample_size_cluster_no_clustering():
         metric_stddev=20,
         available_n=1000,
         available_nonnull_n=1000,
-    )
-
-    result = solve_for_sample_size_cluster(
-        metric=metric,
-        n_arms=2,
         icc=0.0,
         avg_cluster_size=30,
+        cv=0.0,
     )
+
+    result = solve_for_sample_size_cluster(metric=metric, n_arms=2)
 
     assert result.design_effect == 1.0
     assert result.num_clusters_total == 6
@@ -426,15 +395,12 @@ def test_solve_for_sample_size_cluster_unbalanced():
         metric_stddev=20,
         available_n=2000,
         available_nonnull_n=2000,
-    )
-
-    result = solve_for_sample_size_cluster(
-        metric=metric,
-        n_arms=2,
         icc=0.15,
         avg_cluster_size=30,
-        arm_weights=[20, 80],
+        cv=0.0,
     )
+
+    result = solve_for_sample_size_cluster(metric=metric, n_arms=2, arm_weights=[20, 80])
 
     assert result.clusters_per_arm == [8, 29]
     assert result.n_per_arm == [240, 870]
@@ -451,14 +417,12 @@ def test_solve_for_sample_size_cluster_three_arms():
         metric_stddev=20,
         available_n=2000,
         available_nonnull_n=2000,
-    )
-
-    result = solve_for_sample_size_cluster(
-        metric=metric,
-        n_arms=3,
         icc=0.15,
         avg_cluster_size=30,
+        cv=0.0,
     )
+
+    result = solve_for_sample_size_cluster(metric=metric, n_arms=3)
 
     assert result.clusters_per_arm == [12, 12, 12]
     assert result.n_per_arm == [360, 360, 360]
@@ -474,14 +438,12 @@ def test_solve_for_sample_size_cluster_binary_metric():
         metric_target=0.15,
         available_n=5000,
         available_nonnull_n=5000,
-    )
-
-    result = solve_for_sample_size_cluster(
-        metric=metric,
-        n_arms=2,
         icc=0.05,
         avg_cluster_size=50,
+        cv=0.0,
     )
+
+    result = solve_for_sample_size_cluster(metric=metric, n_arms=2)
 
     assert result.clusters_per_arm == [48, 48]
     assert result.n_per_arm == [2400, 2400]
@@ -502,17 +464,13 @@ def test_solve_for_sample_size_cluster_high_icc():
     )
 
     result_low = solve_for_sample_size_cluster(
-        metric=metric,
+        metric=metric.model_copy(update={"icc": 0.05, "avg_cluster_size": 30, "cv": 0.0}),
         n_arms=2,
-        icc=0.05,
-        avg_cluster_size=30,
     )
 
     result_high = solve_for_sample_size_cluster(
-        metric=metric,
+        metric=metric.model_copy(update={"icc": 0.30, "avg_cluster_size": 30, "cv": 0.0}),
         n_arms=2,
-        icc=0.30,
-        avg_cluster_size=30,
     )
 
     assert result_low.num_clusters_total == 12
@@ -535,19 +493,13 @@ def test_solve_for_sample_size_cluster_cv_increases_clusters():
     )
 
     result_low_cv = solve_for_sample_size_cluster(
-        metric=metric,
+        metric=metric.model_copy(update={"icc": 0.15, "avg_cluster_size": 30, "cv": 0.3}),
         n_arms=2,
-        icc=0.15,
-        avg_cluster_size=30,
-        cv=0.3,
     )
 
     result_high_cv = solve_for_sample_size_cluster(
-        metric=metric,
+        metric=metric.model_copy(update={"icc": 0.15, "avg_cluster_size": 30, "cv": 2.0}),
         n_arms=2,
-        icc=0.15,
-        avg_cluster_size=30,
-        cv=2.0,
     )
 
     assert result_low_cv.design_effect == pytest.approx(5.755, rel=0.01)  # 1 + 0.15*[(29) + 30*0.09]
@@ -572,15 +524,12 @@ def test_solve_for_sample_size_cluster_cv_affects_all_arms():
         metric_stddev=20,
         available_n=5000,
         available_nonnull_n=5000,
-    )
-
-    result = solve_for_sample_size_cluster(
-        metric=metric,
-        n_arms=3,
         icc=0.15,
         avg_cluster_size=30,
         cv=1.2,
     )
+
+    result = solve_for_sample_size_cluster(metric=metric, n_arms=3)
 
     assert result.metric_spec.cv == 1.2
     assert result.design_effect == pytest.approx(11.83, rel=0.01)  # 1 + 0.15*[(29) + 30*1.44]
@@ -604,15 +553,12 @@ def test_solve_for_sample_size_cluster_cv_warning_message(cv: float, expected_wa
         metric_stddev=20,
         available_n=2000,
         available_nonnull_n=2000,
-    )
-
-    result = solve_for_sample_size_cluster(
-        metric=metric,
-        n_arms=2,
         icc=0.15,
         avg_cluster_size=30,
         cv=cv,
     )
+
+    result = solve_for_sample_size_cluster(metric=metric, n_arms=2)
 
     # CV should be stored
     assert result.metric_spec.cv == cv
