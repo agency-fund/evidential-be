@@ -17,7 +17,7 @@
 | src/xngin/apiserver/dwh/inspection\_types.py                         |       55 |        5 |     91% |27, 45, 68, 79, 85 |
 | src/xngin/apiserver/dwh/inspections.py                               |       64 |        4 |     94% |67, 95, 100-103 |
 | src/xngin/apiserver/dwh/participant\_metrics\_queries.py             |      143 |        7 |     95% |73-79, 166, 263, 265, 289 |
-| src/xngin/apiserver/dwh/queries.py                                   |       78 |       44 |     44% |107-151, 161-189, 210-231 |
+| src/xngin/apiserver/dwh/queries.py                                   |       81 |       27 |     67% |107-151, 162, 187, 211, 213, 233 |
 | src/xngin/apiserver/dwh/query\_constructors.py                       |       66 |        4 |     94% |75-76, 95-96 |
 | src/xngin/apiserver/dwh/test\_dialect\_sql.py                        |       74 |        6 |     92% |494, 507, 510-513 |
 | src/xngin/apiserver/dwh/test\_query\_constructors.py                 |      127 |        2 |     98% |  372, 389 |
@@ -27,7 +27,7 @@
 | src/xngin/apiserver/openapi.py                                       |       22 |       13 |     41% |     22-86 |
 | src/xngin/apiserver/pagination.py                                    |      108 |       13 |     88% |47-48, 53-55, 61, 68, 220, 222, 233-236 |
 | src/xngin/apiserver/request\_encapsulation\_middleware.py            |       69 |        3 |     96% |   113-115 |
-| src/xngin/apiserver/routers/admin/admin\_api.py                      |      629 |       55 |     91% |250-269, 312, 411, 423, 434, 438, 447, 636, 861, 865, 924-930, 1113, 1150, 1267-1345, 1392, 1394-1397, 1437, 1559, 1564, 1624, 1637-1638, 1663, 1670, 1941, 1947 |
+| src/xngin/apiserver/routers/admin/admin\_api.py                      |      621 |       50 |     92% |257, 356, 368, 379, 383, 392, 581, 806, 810, 869-875, 1058, 1095, 1212-1290, 1337, 1339-1342, 1382, 1504, 1509, 1569, 1582-1583, 1608, 1615, 1886, 1892 |
 | src/xngin/apiserver/routers/admin/admin\_api\_converters.py          |       62 |        8 |     87% |29, 73-74, 84, 110-111, 123-124 |
 | src/xngin/apiserver/routers/admin/admin\_api\_types.py               |      125 |        2 |     98% |    39, 41 |
 | src/xngin/apiserver/routers/admin/test\_admin.py                     |     1510 |        1 |     99% |       384 |
@@ -35,7 +35,7 @@
 | src/xngin/apiserver/routers/auth/auth\_dependencies.py               |      137 |       32 |     77% |99, 112-118, 125-152, 249, 257, 270-272 |
 | src/xngin/apiserver/routers/auth/test\_auth\_dependencies.py         |      159 |        7 |     96% | 48, 55-61 |
 | src/xngin/apiserver/routers/auth/token\_cryptor.py                   |       43 |        4 |     91% |16-17, 53-54 |
-| src/xngin/apiserver/routers/common\_api\_types.py                    |      304 |       27 |     91% |122, 148, 150, 426, 428, 430, 487, 750-757, 776, 993, 1002, 1005-1006, 1016, 1018, 1028, 1030, 1104, 1284, 1456, 1458-1460 |
+| src/xngin/apiserver/routers/common\_api\_types.py                    |      311 |       27 |     91% |144, 170, 172, 448, 450, 452, 509, 739-746, 765, 982, 991, 994-995, 1005, 1007, 1017, 1019, 1093, 1273, 1445, 1447-1449 |
 | src/xngin/apiserver/routers/common\_enums.py                         |      201 |       39 |     81% |73, 75, 98-107, 112, 149-165, 187-188, 207-211, 249, 300-303, 312, 351-352, 356, 388 |
 | src/xngin/apiserver/routers/experiments/dependencies.py              |       60 |        3 |     95% |39, 60, 67 |
 | src/xngin/apiserver/routers/experiments/experiments\_api.py          |       96 |        4 |     96% |140-142, 346 |
@@ -70,18 +70,20 @@
 | src/xngin/stats/bandit\_sampling.py                                  |       86 |        7 |     92% |184, 215, 222, 250, 274, 276, 308 |
 | src/xngin/stats/bandit\_weights\_to\_prior.py                        |       50 |        2 |     96% |   75, 138 |
 | src/xngin/stats/cluster\_icc.py                                      |       40 |        2 |     95% |    33, 57 |
-| src/xngin/stats/power.py                                             |      118 |        5 |     96% |71, 74, 118-119, 195 |
-| src/xngin/tq/task\_queue.py                                          |       96 |        2 |     98% |   237-238 |
-| src/xngin/tq/test\_tq.py                                             |      108 |        5 |     95% |33-34, 60, 97, 99 |
+| src/xngin/stats/cluster\_power.py                                    |       89 |       12 |     87% |   215-249 |
+| src/xngin/stats/individual\_power.py                                 |      102 |        5 |     95% |75, 78, 122-123, 198 |
+| src/xngin/stats/power.py                                             |       26 |        2 |     92% |    44, 84 |
+| src/xngin/tq/task\_queue.py                                          |       96 |        9 |     91% |   234-244 |
+| src/xngin/tq/test\_tq.py                                             |      108 |        6 |     94% |33-34, 59-60, 97, 99 |
 | src/xngin/xsecrets/chafernet.py                                      |       52 |        1 |     98% |        92 |
 | src/xngin/xsecrets/gcp\_kms\_provider.py                             |       70 |       28 |     60% |64-79, 86-87, 104-108, 111, 115-123, 127-134 |
 | src/xngin/xsecrets/provider.py                                       |       19 |        1 |     95% |        46 |
 | src/xngin/xsecrets/secretservice.py                                  |       63 |        5 |     92% |37, 49-50, 108, 130 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                       |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                           |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                            | **12097** |  **762** | **94%** |           |
+| **TOTAL**                                                            | **12266** |  **762** | **94%** |           |
 
-65 files skipped due to complete coverage.
+67 files skipped due to complete coverage.
 
 
 ## Setup coverage badge
