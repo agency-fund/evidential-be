@@ -2,7 +2,7 @@ import ipaddress
 import socket
 from sys import platform
 
-import dns.resolver
+from dns.exception import DNSException
 from dns.resolver import resolve
 
 from xngin.apiserver.flags import ALLOW_CONNECTING_TO_PRIVATE_IPS
@@ -37,7 +37,7 @@ def lookup_v4(host: str) -> list[str] | None:
     try:
         dns_answer = resolve(host, "A", lifetime=DNS_TIMEOUT_SECS)
         return [r.to_text() for r in dns_answer]
-    except dns.exception.DNSException:
+    except DNSException:
         return None
 
 
@@ -63,7 +63,10 @@ def is_safe_ipset(ips: set[str]):
     return all(is_safe_ip(address) for address in ips)
 
 
-def safe_resolve(host: str):
+def safe_resolve(host: str | None):
+    if not host:
+        raise DnsLookupError("Missing hostname.")
+
     if host == UNSAFE_IP_FOR_TESTING:
         raise DnsLookupError("Detected sentinel value of invalid IP used for testing purposes.")
 
@@ -76,7 +79,7 @@ def safe_resolve(host: str):
         raise DnsLookupError(host)
     safe = is_safe_ipset(set(answers))
     if not safe:
-        raise DnsLookupUnsafeError(f"{host} => {answers}")
+        raise DnsLookupUnsafeError(host)
     return answers.pop()
 
 
