@@ -67,11 +67,13 @@ def make_webhook_outbound_handler(dsn: str, *, transport: httpx.BaseTransport | 
                 assert hostname is not None  # safe_resolve() checks this but mypy doesn't know that
                 port = parsed.port
 
-                ip_host = f"[{safe_ip}]" if ":" in safe_ip else safe_ip
-                ip_host_port = f"{ip_host}:{port}" if port else ip_host
+                ip_host_port = f"{safe_ip}:{port}" if port else safe_ip
+                # Retain any credentials in the reconstruction e.g. user:pw if they were provided
+                userinfo = parsed.netloc.rsplit("@", 1)[0] if "@" in parsed.netloc else None
+                authority = f"{userinfo}@{ip_host_port}" if userinfo else ip_host_port
                 connect_url = urlunparse((
                     scheme,
-                    ip_host_port,
+                    authority,
                     parsed.path or "/",
                     parsed.params,
                     parsed.query,
