@@ -149,6 +149,7 @@ ignore = [
     "PT011", # pytest.raises(_) is too broad, set the `match` parameter or use a more specific exception
     "PT018", # Assertion should be broken down into multiple parts
     "PYI041", # Use `float` instead of `int | float`
+    "RUF069", # Unreliable floating point equality comparison
     "SIM108", # Use ternary operator instead of `if`-`else`-block
     "RUF029",
     "TRY003",
