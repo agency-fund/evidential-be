@@ -359,6 +359,14 @@ def test_list_orgs_unprivileged(aclient_unpriv: AdminAPIClient):
             dbname="postgres",
             search_path=None,
         ),
+        RedshiftDsn(
+            host="foo.redshift-serverless.amazonaws.com",
+            user="postgres",
+            port=5499,
+            password=RevealedStr(value="postgres"),
+            dbname="postgres",
+            search_path=None,
+        ),
         BqDsn(
             project_id="projectid",
             dataset_id="dataset_id",

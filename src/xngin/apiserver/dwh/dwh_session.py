@@ -12,18 +12,12 @@ from sqlalchemy.exc import NoSuchTableError, OperationalError
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.dns.safe_resolve import safe_resolve
-from xngin.apiserver.dwh import query_constructors
+from xngin.apiserver.dwh import dwh_utils, query_constructors
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor
 from xngin.apiserver.dwh.inspections import generate_field_descriptors
 from xngin.apiserver.exceptions_common import DwhConnectionError, DwhDatabaseDoesNotExistError
 from xngin.apiserver.routers.common_api_types import Filter
-from xngin.apiserver.settings import (
-    SA_LOGGER_NAME_FOR_DWH,
-    TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES,
-    Dsn,
-    Dwh,
-    NoDwh,
-)
+from xngin.apiserver.settings import SA_LOGGER_NAME_FOR_DWH, TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES, Dsn, Dwh
 
 
 def _is_postgres_database_not_found_error(exc: OperationalError) -> bool:
@@ -384,7 +378,7 @@ class DwhSession:
 
         connect_args: dict = {}
 
-        if url.get_backend_name() == "postgresql":
+        if dwh_utils.is_postgres(url):
             connect_args["connect_timeout"] = TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES
             # Replace the Postgres' client default DNS lookup with one that applies security checks first
             connect_args["hostaddr"] = safe_resolve(url.host)
@@ -408,11 +402,8 @@ class DwhSession:
         return engine
 
     def _extra_engine_setup(self, engine: Engine):
-        """Do any extra configuration if needed before a connection is made.
-
-        This method replicates the logic from RemoteDatabaseConfig._extra_engine_setup().
-        """
-        # Handle search_path for PostgreSQL
+        """Do any extra configuration if needed before a connection is made."""
+        # Handle search_path for PostgreSQL & Redshift
         if isinstance(self.dwh_config, Dsn) and self.dwh_config.search_path:
 
             @event.listens_for(engine, "connect", insert=True)
@@ -424,10 +415,4 @@ class DwhSession:
                 cursor.close()
                 dbapi_connection.autocommit = existing_autocommit
 
-        # Handle Redshift incompatibilities
-        if (
-            not isinstance(self.dwh_config, NoDwh)
-            and self.dwh_config.is_redshift()
-            and hasattr(engine.dialect, "_set_backslash_escapes")
-        ):
-            engine.dialect._set_backslash_escapes = lambda _: None
+        dwh_utils.extra_engine_setup(engine)
