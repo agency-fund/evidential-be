@@ -175,7 +175,7 @@ async def _query_dwh_for_snapshot_data(
             mean_context_vals = await _mean_context_vals_from_draws(session, experiment.id, len(contexts))
             context_vals = [
                 abs(float(np.ceil(m - 0.5))) if context.value_type == ContextType.BINARY else m
-                for m, context in zip(mean_context_vals, sorted_contexts, strict=False)
+                for m, context in zip(mean_context_vals, sorted_contexts, strict=True)
             ]
 
         return await experiments_common.analyze_experiment_bandit_impl(
