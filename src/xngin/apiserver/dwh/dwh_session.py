@@ -425,7 +425,7 @@ class DwhSession:
 
         This method replicates the logic from RemoteDatabaseConfig._extra_engine_setup().
         """
-        # Handle search_path for PostgreSQL
+        # Handle search_path for PostgreSQL & Redshift
         if isinstance(self.dwh_config, Dsn) and self.dwh_config.search_path:
             search_path_sql_arg = self.dwh_config.search_path
 
@@ -434,14 +434,16 @@ class DwhSession:
                 existing_autocommit = dbapi_connection.autocommit
                 dbapi_connection.autocommit = True
                 cursor = dbapi_connection.cursor()
-                # Postgres-specific SQL via DBAPI parameterized query to set the search path with a
-                # user-specified, possibly comma-separated string.
-                cursor.execute(
-                    "SELECT set_config('search_path', %(schemas)s, false)",
-                    {"schemas": search_path_sql_arg},
-                )
-                cursor.close()
-                dbapi_connection.autocommit = existing_autocommit
+                try:
+                    # Postgres-compatible SQL via DBAPI parameterized query to set the search path with
+                    # a user-specified, possibly comma-separated string.
+                    cursor.execute(
+                        "SELECT set_config('search_path', %(schemas)s, false)",
+                        {"schemas": search_path_sql_arg},
+                    )
+                finally:
+                    cursor.close()
+                    dbapi_connection.autocommit = existing_autocommit
 
         # Handle Redshift incompatibilities
         if (
