@@ -344,9 +344,11 @@ class DwhSession:
             if isinstance(self.dwh_config, Dsn) and self.dwh_config.is_redshift():
                 query = text(
                     "SELECT table_name FROM information_schema.tables "
-                    "WHERE table_schema IN (:search_path) ORDER BY table_name"
+                    "WHERE table_schema = ANY(current_schemas(false)) "
+                    "AND table_type IN ('BASE TABLE', 'VIEW') "
+                    "ORDER BY table_name"
                 )
-                result = self.session.execute(query, {"search_path": self.dwh_config.search_path or "public"})
+                result = self.session.execute(query)
                 return list(result.scalars().all())
             inspected = sqlalchemy.inspect(self._safe_engine())
 
