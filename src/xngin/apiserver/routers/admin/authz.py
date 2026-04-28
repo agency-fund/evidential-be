@@ -6,7 +6,8 @@ from xngin.apiserver.sqla import tables
 def is_user_authorized_on_datasource(user: tables.User, datasource_id: str) -> sqlalchemy.Select:
     """Create a query that checks if a user is authorized to manage a datasource."""
     return (
-        sqlalchemy.select(tables.Datasource.id)
+        sqlalchemy
+        .select(tables.Datasource.id)
         .join(tables.Organization)
         .join(tables.UserOrganization)
         .where(
@@ -19,7 +20,8 @@ def is_user_authorized_on_datasource(user: tables.User, datasource_id: str) -> s
 def is_user_authorized_on_organization(user: tables.User, organization_id: str) -> sqlalchemy.Select:
     """Create a query that checks if a user is authorized to manage an organization."""
     return (
-        sqlalchemy.select(tables.Organization.id)
+        sqlalchemy
+        .select(tables.Organization.id)
         .join(tables.UserOrganization)
         .where(
             tables.UserOrganization.user_id == user.id,

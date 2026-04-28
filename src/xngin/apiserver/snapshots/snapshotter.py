@@ -128,7 +128,7 @@ async def process_pending_snapshots(snapshot_timeout: int, *, max_jitter_secs: f
     )
 
     while True:
-        await asyncio.sleep(random.uniform(0, max_jitter_secs))  # jitter
+        await asyncio.sleep(random.uniform(0, max_jitter_secs))  # jitter  # noqa: S311
         async with database.async_session() as session, session.begin():
             snapshot = (await session.execute(one_pending_snapshot)).scalar_one_or_none()
             if snapshot is None:

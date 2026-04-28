@@ -120,6 +120,7 @@ select = [
     "PYI",
     "RET",
     "RUF",
+    "S",
     "SIM",
     "TRY",
     "UP",
@@ -150,9 +151,18 @@ ignore = [
     "PT018", # Assertion should be broken down into multiple parts
     "PYI041", # Use `float` instead of `int | float`
     "RUF069", # Unreliable floating point equality comparison
+    "S101", # Use of `assert` detected
     "SIM108", # Use ternary operator instead of `if`-`else`-block
-    "RUF029",
-    "TRY003",
+    "RUF029", # Unused async
+    "TRY003", # Raised bare custom exception with long message
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/test_*" = [
+    "S105",  # Possible hardcoded password assigned
+    "S106",  # Possible hardcoded password assigned to argument
+    "S311",  # Standard pseudo-random generators are not suitable for cryptographic purposes
+    "S608",  # Possible SQL injection vector through string-based query construction
 ]
 
 [tool.ruff.lint.flake8-import-conventions]
