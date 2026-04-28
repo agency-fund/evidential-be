@@ -1,4 +1,5 @@
 import asyncio
+import math
 import warnings
 from datetime import UTC, datetime, timedelta
 
@@ -700,7 +701,19 @@ async def test_create_snapshot_cmab_matches_admin_analysis_at_mean_contexts(
                 participant_id=participant_id,
             )
 
-    expected_contexts = [1.0 if context.value_type == ContextType.BINARY else 7.0 / 3.0 for context in sorted_contexts]
+    # BINARY context uses rounded mean of values; REAL_VALUED maps values < 0.5 to 0, else 1.
+    expected_real_context = sum(
+        participant_context_values[ContextType.REAL_VALUED] for _, participant_context_values, _ in participant_specs
+    ) / len(participant_specs)
+    mean_binary_context = sum(
+        participant_context_values[ContextType.BINARY] for _, participant_context_values, _ in participant_specs
+    ) / len(participant_specs)
+    # See snapshotter for details on thresholding behavior.
+    expected_binary_context = abs(float(math.ceil(mean_binary_context - 0.5)))
+    expected_contexts = [
+        expected_binary_context if context.value_type == ContextType.BINARY else expected_real_context
+        for context in sorted_contexts
+    ]
     admin_analysis = aclient.analyze_cmab_experiment(
         datasource_id=testing_datasource.ds.id,
         experiment_id=experiment_id,
