@@ -603,6 +603,7 @@ class MetricPowerAnalysisMessage(ApiBaseModel):
         ),
     ]
     values: dict[str, float | int] | None = None
+    high_cluster_variation: bool = False
 
 
 class MetricPowerAnalysis(ApiBaseModel):
@@ -1086,6 +1087,44 @@ class PowerRequest(ApiBaseModel):
         Field(description="Table name for ad-hoc power calculations. Fields are verified against the inspected table."),
     ]
     primary_key: Annotated[str, Field(description="Primary key field name.")]
+
+    cluster_column: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description="Column name for cluster IDs. When provided, calculates ICC and CV from data "
+            "and performs cluster randomization power analysis.",
+        ),
+    ] = None
+
+    icc: Annotated[
+        float | None,
+        Field(
+            default=None,
+            ge=0.0,
+            le=1.0,
+            description="Intracluster correlation coefficient (0 to 1). If provided with avg_cluster_size, "
+            "uses these values instead of calculating from data.",
+        ),
+    ] = None
+
+    avg_cluster_size: Annotated[
+        float | None,
+        Field(
+            default=None,
+            gt=0,
+            description="Average cluster size. Required if icc is provided.",
+        ),
+    ] = None
+
+    cv: Annotated[
+        float | None,
+        Field(
+            default=None,
+            ge=0.0,
+            description="Coefficient of variation in cluster sizes. Defaults to 0 if not provided.",
+        ),
+    ] = None
 
     @model_validator(mode="after")
     def check_table_name_and_primary_key_together(self) -> Self:
