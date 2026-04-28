@@ -1207,7 +1207,4 @@ async def _draws_outcome_aggregates(xngin_session: AsyncSession, experiment_id: 
             )
         )
     ).one()
-    return DrawsOutcomeAggregates(
-        n_outcomes=n_outcomes,
-        outcome_std_dev=std_dev if n_outcomes > 1 else 0.0,
-    )
+    return DrawsOutcomeAggregates(n_outcomes=n_outcomes, outcome_std_dev=std_dev)
