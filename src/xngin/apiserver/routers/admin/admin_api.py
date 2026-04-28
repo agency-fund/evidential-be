@@ -10,7 +10,6 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, assert_never
 
-import pandas as pd
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -44,8 +43,6 @@ from xngin.apiserver.dwh.inspections import (
     dehydrate_participants,
 )
 from xngin.apiserver.dwh.queries import (
-    get_cluster_outcome_data,
-    get_cluster_size_stats,
     get_stats_on_filters,
     get_stats_on_metrics,
 )
@@ -125,7 +122,6 @@ from xngin.apiserver.routers.common_api_types import (
     CreateExperimentResponse,
     ExperimentAnalysisResponse,
     ExperimentsType,
-    Filter,
     GetMetricsResponseElement,
     GetStrataResponseElement,
     ListExperimentsResponse,
@@ -148,7 +144,6 @@ from xngin.apiserver.snapshots import snapshotter
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.stats import check_power
-from xngin.stats.cluster_icc import calculate_icc_from_dataframe
 
 GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
 RESPONSE_CACHE_MAX_AGE_SECONDS = timedelta(minutes=15).seconds
@@ -221,56 +216,6 @@ DWH_CONNECTION_AND_NOT_FOUND_RESPONSES: dict[str | int, dict[str, Any]] = {
 
 def cache_is_fresh(updated: datetime | None):
     return updated is not None and datetime.now(UTC) - updated < timedelta(minutes=5)
-
-
-def calculate_icc_and_cv_from_database(
-    session,
-    sa_table,
-    cluster_column: str,
-    outcome_column: str,
-    filters: list[Filter],
-) -> dict[str, float]:
-    """
-    Calculate ICC and cluster statistics from database.
-
-    This is a convenience function that orchestrates DWH queries with stats calculations.
-    It belongs in the API layer since it combines database access and stats functions.
-
-    Args:
-        session: SQLAlchemy session for DWH
-        sa_table: SQLAlchemy Table object
-        cluster_column: Column name containing cluster IDs
-        outcome_column: Column name containing outcome values
-        filters: List of filters to apply
-
-    Returns:
-        dict with keys: icc, avg_cluster_size, cv
-    """
-    # Get cluster size statistics from database (queries.py)
-    cluster_stats = get_cluster_size_stats(
-        session,
-        sa_table,
-        cluster_column,
-        filters,
-    )
-
-    # Get cluster-outcome data for ICC calculation (queries.py)
-    data = get_cluster_outcome_data(
-        session,
-        sa_table,
-        cluster_column,
-        outcome_column,
-        filters,
-    )
-
-    df = pd.DataFrame(data)
-    icc = calculate_icc_from_dataframe(df, cluster_column=cluster_column, outcome_column=outcome_column)
-
-    return {
-        "icc": icc,
-        "avg_cluster_size": cluster_stats["avg_cluster_size"],
-        "cv": cluster_stats["cv"],
-    }
 
 
 @asynccontextmanager

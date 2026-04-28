@@ -7,6 +7,7 @@ from annotated_types import Ge, Le
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from xngin.apiserver.common_field_types import FieldName
+from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.limits import (
     MAX_LENGTH_OF_DESCRIPTION_VALUE,
@@ -39,6 +40,10 @@ def validate_webhook_url(url: str) -> str:
         raise ValueError("URL must use http or https scheme")
     if not parsed.netloc:
         raise ValueError("URL must include a valid domain")
+    try:
+        safe_resolve(parsed.hostname)
+    except DnsLookupError as e:
+        raise ValueError(f"Failed to resolve hostname from webhook URL: {parsed.hostname}") from e
     return url
 
 
