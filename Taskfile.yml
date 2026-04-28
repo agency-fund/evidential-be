@@ -252,15 +252,6 @@ tasks:
       DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"
     cmds:
       - uv run pytest -m integration
-  update-api-tests:
-    desc: "Run the API tests and update the expected responses."
-    interactive: true
-    env:
-      UPDATE_API_TESTS: "1"
-      DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"
-    deps:
-      - bootstrap-dwh-database
-    cmd: uv run pytest -m xurl
   make-migrations:
     desc: "Build Postgres migrations"
     interactive: true
