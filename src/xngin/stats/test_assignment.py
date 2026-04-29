@@ -141,7 +141,8 @@ def test_assign_treatment_with_infer_objects():
     """Test that we infer objects correctly, resulting in a proper number of strata."""
     n = 300
     df = (
-        pd.DataFrame()
+        pd
+        .DataFrame()
         .assign(
             id=np.arange(n),
             # nullable, non-unique numeric => 3 levels (NaN, 0, 1)
