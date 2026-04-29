@@ -402,3 +402,63 @@ def test_simple_random_assignment_unbalanced(sample_df):
     assert len(assignments) == len(sample_df)
     assert assignments.count(0) == 667
     assert assignments.count(1) == 333
+
+
+def test_assign_clusters_equal_sizes():
+    """Cluster assignment with equal-sized clusters produces balanced arms and no balance result."""
+    cluster_ids = np.repeat(range(20), 10)
+    df = pd.DataFrame({"participant_id": range(200), "cluster": cluster_ids})
+    result = assign_treatment_and_check_balance(
+        df=df, stratum_cols=[], id_col="participant_id", n_arms=2, random_state=42, cluster_col="cluster"
+    )
+
+    assert len(result.treatment_ids) == 200
+    assert result.stratum_ids is not None
+    assert len(result.stratum_ids) == 200
+    assert result.arm_pop[0] == 100
+    assert result.arm_pop[1] == 100
+    assert result.balance_result is None
+
+
+def test_assign_clusters_unequal_sizes():
+    """Cluster assignment with unequal-sized clusters stratifies by size and produces a balance result."""
+    rng = np.random.default_rng(42)
+    cluster_sizes = rng.integers(5, 50, 20)
+    cluster_ids = np.repeat(range(20), cluster_sizes)
+    df = pd.DataFrame({"participant_id": range(len(cluster_ids)), "cluster": cluster_ids})
+    result = assign_treatment_and_check_balance(
+        df=df, stratum_cols=[], id_col="participant_id", n_arms=2, random_state=42, cluster_col="cluster"
+    )
+
+    assert len(result.treatment_ids) == 575
+    assert result.stratum_ids is not None
+    assert len(result.stratum_ids) == 575
+    assert result.arm_pop[0] == 294
+    assert result.arm_pop[1] == 281
+    assert isinstance(result.balance_result, BalanceResult)
+    assert result.balance_result.f_pvalue == pytest.approx(0.8275, abs=1e-3)
+    assert result.balance_result.f_statistic == pytest.approx(0.0489, abs=1e-3)
+    assert result.balance_result.f_pvalue > 0.2
+
+
+def test_assign_clusters_three_arms_unequal_sizes():
+    """Cluster assignment with three arms and unequal-sized clusters produces balanced arms."""
+    rng = np.random.default_rng(42)
+    cluster_sizes = rng.integers(5, 50, 30)
+    cluster_ids = np.repeat(range(30), cluster_sizes)
+    df = pd.DataFrame({"participant_id": range(len(cluster_ids)), "cluster": cluster_ids})
+    result = assign_treatment_and_check_balance(
+        df=df, stratum_cols=[], id_col="participant_id", n_arms=3, random_state=42, cluster_col="cluster"
+    )
+
+    assert len(result.treatment_ids) == 873
+    assert result.stratum_ids is not None
+    assert len(result.stratum_ids) == 873
+    assert set(result.treatment_ids) == {0, 1, 2}
+    assert result.arm_pop[0] == 307
+    assert result.arm_pop[1] == 237
+    assert result.arm_pop[2] == 329
+    assert isinstance(result.balance_result, BalanceResult)
+    assert result.balance_result.f_pvalue == pytest.approx(0.7733, abs=1e-3)
+    assert result.balance_result.f_statistic == pytest.approx(0.0857, abs=1e-3)
+    assert result.balance_result.f_pvalue > 0.2
