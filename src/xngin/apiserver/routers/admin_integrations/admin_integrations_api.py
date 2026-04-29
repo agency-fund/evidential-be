@@ -220,6 +220,13 @@ async def get_organization_turn_journeys(
             detail=f"Failed to reach Turn.io API to fetch journeys. Details: {exc}",
         ) from exc
 
+    if response.status_code in {401, 403}:
+        logger.error("Unauthorized when fetching Turn.io journeys. API token may be invalid.")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Unauthorized when fetching Turn.io journeys. Please check that the configured API token is valid.",
+        )
+
     if response.status_code != 200:
         logger.error(f"Non-200 response from Turn.io journeys endpoint: {response.status_code} - {response.text}")
         raise HTTPException(
