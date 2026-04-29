@@ -23,7 +23,7 @@
 | src/xngin/apiserver/dwh/test\_queries.py                             |       67 |        1 |     99% |       160 |
 | src/xngin/apiserver/dwh/test\_query\_constructors.py                 |      132 |        2 |     98% |  377, 394 |
 | src/xngin/apiserver/exceptionhandlers.py                             |       68 |        9 |     87% |50, 62, 70-75, 89, 108 |
-| src/xngin/apiserver/flags.py                                         |       50 |        4 |     92% |75, 78, 96, 99 |
+| src/xngin/apiserver/flags.py                                         |       50 |        4 |     92% |74, 77, 95, 98 |
 | src/xngin/apiserver/main.py                                          |       38 |        6 |     84% |40, 48, 76-77, 94-96 |
 | src/xngin/apiserver/openapi.py                                       |       22 |       13 |     41% |     22-86 |
 | src/xngin/apiserver/pagination.py                                    |      108 |       13 |     88% |47-48, 53-55, 61, 68, 220, 222, 233-236 |
@@ -82,9 +82,9 @@
 | src/xngin/xsecrets/secretservice.py                                  |       63 |        5 |     92% |37, 49-50, 108, 130 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                       |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                           |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                            | **12440** |  **750** | **94%** |           |
+| **TOTAL**                                                            | **12441** |  **750** | **94%** |           |
 
-70 files skipped due to complete coverage.
+71 files skipped due to complete coverage.
 
 
 ## Setup coverage badge
