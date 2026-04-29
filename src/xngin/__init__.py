@@ -1,1 +1,1 @@
-from xngin import _warnings as _warnings
+from xngin import _warnings as _warnings  # noqa: PLC2701
