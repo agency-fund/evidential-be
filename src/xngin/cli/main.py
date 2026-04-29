@@ -204,8 +204,9 @@ def create_testing_dwh(
     bucket: Annotated[
         str | None,
         typer.Option(
-            help="Name of the temporary S3 bucket that is readable by Redshift when --iam-role is assumed, and "
-            "writable with your own AWS credentials to upload the temp data. Required when connecting to Redshift."
+            help="Name of the temporary S3 bucket that is readable by Redshift when --iam-role is "
+            "assumed, and writable with your own AWS credentials to upload & delete the temp data. "
+            "Required when connecting to Redshift."
         ),
     ] = None,
     iam_role: Annotated[
@@ -270,7 +271,6 @@ def create_testing_dwh(
         return pd_read_csv(src, nrows=nrows)
 
     def drop_and_create(cur, create_table_ddl: str):
-        # Guard against trying to drop from a schema that doesn't even exist yet.
         if schema_name is not None:
             cur.execute(create_schema_ddl)
         cur.execute(drop_table_ddl)

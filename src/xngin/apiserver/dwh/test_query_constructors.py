@@ -354,7 +354,7 @@ def test_relations(testcase, queries_dwh_session, shared_sample_tables):
 def _datatype_to_sqlalchemy_type(data_type: DataType, is_redshift: bool):
     """Maps DataType enum to generic camel-case SQLAlchemy column type. Helper to create tables for filter tests."""
     # DDL for sqlalchemy.types.Uuid is not supported by sqlalchemy-bigquery (falls back to invalid CHAR(32)),
-    # nor by Redshift, which uses the"postgresql" dialect.
+    # nor by Redshift, which uses the "postgresql" dialect.
     my_uuid_type: Uuid = Uuid().with_variant(String(), "bigquery" if not is_redshift else "postgresql")
     # DDL for bigquery mapped to invalid DOUBLE, so force it to FLOAT64.
     my_double_type: Double = Double().with_variant(Float(), "bigquery")

@@ -160,6 +160,9 @@ def disable_safe_resolve_check():
 
 def get_test_uri_info(connection_uri: str) -> TestUriInfo:
     """Returns a TestUriInfo dataclass about a test database given its connection_uri."""
+    if not connection_uri:
+        raise ValueError("connection_uri is empty")
+
     parsed_url = make_url(connection_uri)
     if dwh_utils.is_bigquery(parsed_url):
         dbtype = DbType.BQ
@@ -172,7 +175,7 @@ def get_test_uri_info(connection_uri: str) -> TestUriInfo:
             f"connection_uri is not recognized as a BigQuery, Redshift, or Postgres database: {connection_uri}"
         )
 
-    return TestUriInfo(connect_url=make_url(connection_uri), db_type=dbtype)
+    return TestUriInfo(connect_url=parsed_url, db_type=dbtype)
 
 
 @pytest.fixture(scope="session", autouse=True)
