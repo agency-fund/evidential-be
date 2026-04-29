@@ -7,7 +7,7 @@ import logging
 import os
 import re
 import shutil
-import subprocess
+import subprocess  # noqa: S404
 import sys
 import uuid
 from compression import zstd
@@ -245,6 +245,8 @@ def create_testing_dwh(
 
     Due to variations in all of the above, the loaded data may vary in small ways when loaded with different data
     stores. E.g. floats may not roundtrip.
+
+    This command does not support schemas or non-trivial database names or table names consistently.
     """
 
     create_schema_ddl = f"CREATE SCHEMA IF NOT EXISTS {schema_name}" if schema_name else ""
@@ -291,9 +293,9 @@ def create_testing_dwh(
 
     def count(cur):
         if url.drivername == "bigquery":
-            cur.execute(f"SELECT COUNT(*) FROM `{url.database}.{table_name}`")
+            cur.execute(f"SELECT COUNT(*) FROM `{url.database}.{table_name}`")  # noqa: S608
         else:
-            cur.execute(f"SELECT COUNT(*) FROM {full_table_name}")
+            cur.execute(f"SELECT COUNT(*) FROM {full_table_name}")  # noqa: S608
         ct = cur.fetchone()[0]
         print(f"{full_table_name} has {ct} rows.")
         return ct
@@ -304,7 +306,9 @@ def create_testing_dwh(
         for view_name in views.split(","):
             qualified_view_name = f"{schema_name}.{view_name}" if schema_name else view_name
             print(f"Creating view {qualified_view_name}...")
-            cur.execute(f"CREATE OR REPLACE VIEW {qualified_view_name} AS SELECT * FROM {full_table_name}")
+            cur.execute(
+                f"CREATE OR REPLACE VIEW {qualified_view_name} AS SELECT * FROM {full_table_name}"  # noqa: S608
+            )
 
     if allow_existing:
         if create_db:
@@ -691,7 +695,7 @@ def generate_typed_clients():
 
     print("Formatting generated files...")
     try:
-        subprocess.run(
+        subprocess.run(  # noqa: S603
             [
                 ruff_bin,
                 "format",

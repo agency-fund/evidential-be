@@ -222,6 +222,7 @@ tasks:
       task test -- src/xngin/apiserver/routers/admin/test_admin.py # run a single test file
       task test -- -k tests_matching_some_string_expression -rA    # run subset of tests, show all output in summary
       task test -- -m integration                                  # run tests annotated with @pytest.mark.integration
+      task test -- --lf                                            # only re-run failed tests
     interactive: true
     env:
       DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"
@@ -229,13 +230,11 @@ tasks:
       - bootstrap-dwh-database
     cmds:
       - uv run pytest {{.CLI_ARGS}}
-  test-psycopg2:
-    desc: "Runs unit tests with the older psycopg2 driver"
+  test-only:
+    desc: "Runs unit tests without boostrapping the DWH database."
     interactive: true
     env:
       DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"
-      XNGIN_DEVDWH_DSN: "{{regexReplaceAll `psycopg\\d*` .XNGIN_DEVDWH_DSN `psycopg2`}}"
-      XNGIN_QUERIES_TEST_URI: "{{regexReplaceAll `psycopg\\d*` .XNGIN_QUERIES_TEST_URI `psycopg2`}}"
     cmds:
       - uv run pytest {{.CLI_ARGS}}
   test-airplane:
