@@ -2,7 +2,7 @@
 This module defines the public API for clients to integrate with specific third-party tools.
 Currently, we only support Turn.io, so this includes endpoints for the Turn.io Evidential App config
 
-(See admin_integration_api.py for Evidential UI-facing integration endpoints.)
+(See admin_integrations_api.py for Evidential UI-facing integration endpoints.)
 """
 
 from contextlib import asynccontextmanager

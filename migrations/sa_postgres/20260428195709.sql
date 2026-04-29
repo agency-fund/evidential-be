@@ -10,7 +10,10 @@ CREATE TABLE "public"."experiment_turn_configs" (
 -- Create "turn_connections" table
 CREATE TABLE "public"."turn_connections" (
   "organization_id" character varying NOT NULL,
-  "turn_api_token" character varying NOT NULL,
+  "encrypted_turn_api_token" character varying NOT NULL,
+  "turn_api_token_preview" character varying(4) NOT NULL,
+  "cached_journeys" jsonb NULL,
+  "cached_journeys_updated_at" timestamptz NULL,
   "created_at" timestamptz NOT NULL DEFAULT now(),
   "updated_at" timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY ("organization_id"),

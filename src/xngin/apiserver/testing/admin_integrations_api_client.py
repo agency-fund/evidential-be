@@ -33,7 +33,7 @@ from pydantic import (
 )
 
 from xngin.apiserver.routers.admin.admin_api import HTTPExceptionError
-from xngin.apiserver.routers.admin_integrations.admin_integration_api_types import (
+from xngin.apiserver.routers.admin_integrations.admin_integrations_api_types import (
     GetTurnArmJourneyMappingResponse,
     GetTurnConnectionResponse,
     GetTurnJourneysResponse,

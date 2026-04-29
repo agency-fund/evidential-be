@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 from xngin.apiserver.flags import PUBLISH_ALL_DOCS
 from xngin.apiserver.routers import healthchecks_api
 from xngin.apiserver.routers.admin import admin_api
-from xngin.apiserver.routers.admin_integrations import admin_integration_api
+from xngin.apiserver.routers.admin_integrations import admin_integrations_api
 from xngin.apiserver.routers.auth import auth_api
 from xngin.apiserver.routers.experiments import experiments_api
 from xngin.apiserver.routers.integrations import integrations_api
@@ -30,7 +30,7 @@ def register(app: FastAPI):
     )
 
     app.include_router(
-        admin_integration_api.router,
+        admin_integrations_api.router,
         tags=["Admin: Third-Party Tools Integrations"],
         include_in_schema=PUBLISH_ALL_DOCS,
     )

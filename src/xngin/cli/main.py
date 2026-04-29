@@ -688,7 +688,7 @@ def generate_typed_clients():
     )
     print(f"Generating AdminIntegrationsAPIClient: {iadminapi_path}")
     fastapi_typed_client.generate_fastapi_typed_client(
-        "xngin.apiserver.routers.admin_integrations.admin_integration_api:router",
+        "xngin.apiserver.routers.admin_integrations.admin_integrations_api:router",
         output_path=iadminapi_path,
         raise_if_not_default_status=True,
         title="AdminIntegrationsAPIClient",

@@ -39,7 +39,7 @@ from xngin.apiserver.routers.admin.admin_api import (
     get_organization_or_raise,
 )
 from xngin.apiserver.routers.admin.generic_handlers import handle_delete
-from xngin.apiserver.routers.admin_integrations.admin_integration_api_types import (
+from xngin.apiserver.routers.admin_integrations.admin_integrations_api_types import (
     GetTurnArmJourneyMappingResponse,
     GetTurnConnectionResponse,
     GetTurnJourneysResponse,
@@ -88,23 +88,29 @@ async def set_organization_turn_connection(
     ).scalar_one_or_none()
     if turn_connection is None:
         turn_connection = tables.TurnConnection(organization_id=org.id)
+        turn_connection.set_turn_api_token(body.turn_api_token)
         session.add(turn_connection)
-    turn_connection.set_turn_api_token(body.turn_api_token)
+        await session.commit()
 
-    # Journey UUIDs belong to a specific Turn workspace, so any stored arm->journey
-    # mappings become stale the moment the token changes. Wipe them for every
-    # experiment under this organization's datasources.
-    await session.execute(
-        delete(tables.ExperimentTurnConfig).where(
-            tables.ExperimentTurnConfig.experiment_id.in_(
-                select(tables.Experiment.id)
-                .join(tables.Datasource, tables.Experiment.datasource_id == tables.Datasource.id)
-                .where(tables.Datasource.organization_id == org.id)
+    elif turn_connection.get_turn_api_token() != body.turn_api_token:
+        turn_connection.set_turn_api_token(body.turn_api_token)
+
+        # Journey UUIDs belong to a specific Turn workspace, so any stored arm->journey
+        # mappings become stale the moment the token changes. Wipe them for every
+        # experiment under this organization's datasources.
+        await session.execute(
+            delete(tables.ExperimentTurnConfig).where(
+                tables.ExperimentTurnConfig.experiment_id.in_(
+                    select(tables.Experiment.id)
+                    .join(tables.Datasource, tables.Experiment.datasource_id == tables.Datasource.id)
+                    .where(tables.Datasource.organization_id == org.id)
+                )
             )
         )
-    )
 
-    await session.commit()
+        await session.commit()
+    else:
+        logger.debug(f"Turn.io API token for organization {org.id} is unchanged. No update performed.")
     return GENERIC_SUCCESS
 
 
@@ -154,6 +160,22 @@ async def delete_turn_connection_from_organization(
         authz.is_user_authorized_on_organization(user, organization_id),
         resource_query,
     )
+
+    # Cascade delete all Turn journey mappings for experiments under this organization,
+    # since they become invalid without a Turn connection.
+    mapping_query = select(tables.ExperimentTurnConfig).where(
+        tables.ExperimentTurnConfig.experiment_id.in_(
+            select(tables.Experiment.id)
+            .join(tables.Datasource, tables.Experiment.datasource_id == tables.Datasource.id)
+            .where(tables.Datasource.organization_id == organization_id)
+        )
+    )
+    await handle_delete(
+        session,
+        True,
+        authz.is_user_authorized_on_organization(user, organization_id),
+        mapping_query,
+    )
     await session.commit()
     return response
 
@@ -185,20 +207,28 @@ async def get_organization_turn_journeys(
     ):
         return GetTurnJourneysResponse(journeys=turn_connection.cached_journeys)
 
-    async with httpx.AsyncClient(timeout=TURN_REQUEST_TIMEOUT_SECONDS) as client:
-        response = await client.get(
-            "https://whatsapp.turn.io/v1/stacks",
-            headers={"Authorization": f"Bearer {turn_connection.get_turn_api_token()}"},
-        )
-
     try:
-        response.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        logger.error(f"Error fetching Turn.io journeys: {exc.response.status_code} - {exc.response.text}")
+        async with httpx.AsyncClient(timeout=TURN_REQUEST_TIMEOUT_SECONDS) as client:
+            response = await client.get(
+                TURN_JOURNEYS_URL,
+                headers={"Authorization": f"Bearer {turn_connection.get_turn_api_token()}"},
+            )
+    except httpx.RequestError as exc:
+        logger.error(f"Error fetching Turn.io journeys: {exc}")
         raise HTTPException(
-            status_code=exc.response.status_code,
-            detail=f"Error fetching Turn.io journeys: {exc.response.text}",
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to reach Turn.io API to fetch journeys. Details: {exc}",
         ) from exc
+
+    if response.status_code != 200:
+        logger.error(f"Non-200 response from Turn.io journeys endpoint: {response.status_code} - {response.text}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=(
+                "Turn.io API returned non-200 status code when fetching journeys. "
+                f"Details: {response.status_code} - {response.text}"
+            ),
+        )
 
     journey_dict = {journey["name"]: journey["uuid"] for journey in response.json()}
     turn_connection.cached_journeys = journey_dict
@@ -228,7 +258,7 @@ async def set_turn_arm_journey_mapping(
     ).scalar_one_or_none()
     if not turn_connection:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_409_CONFLICT,
             detail=(
                 "No Turn.io connection configured for organization. "
                 "Please set up a Turn.io connection before configuring turn/arm to journey mappings."
