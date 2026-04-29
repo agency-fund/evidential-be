@@ -12,15 +12,16 @@
 | src/xngin/apiserver/database.py                                      |       48 |        5 |     90% |30, 41, 58, 64, 71 |
 | src/xngin/apiserver/dependencies.py                                  |       12 |        4 |     67% | 12, 23-25 |
 | src/xngin/apiserver/dns/safe\_resolve.py                             |       52 |       13 |     75% |32-36, 40-41, 54, 68, 79, 82, 87-88 |
-| src/xngin/apiserver/dwh/dwh\_session.py                              |      189 |       65 |     66% |75, 78, 141, 147, 158, 160-161, 172-229, 249-251, 266, 332-337, 341, 348-350, 369, 371-372, 383, 418-425, 433 |
+| src/xngin/apiserver/dwh/dwh\_session.py                              |      191 |       56 |     71% |76, 79, 142, 148, 169, 171-172, 183-238, 262-264, 279, 345-352, 356, 363-365, 384, 386-387, 398, 456 |
 | src/xngin/apiserver/dwh/dwh\_test\_support.py                        |       84 |        1 |     99% |       175 |
 | src/xngin/apiserver/dwh/inspection\_types.py                         |       55 |        5 |     91% |27, 45, 68, 79, 85 |
 | src/xngin/apiserver/dwh/inspections.py                               |       64 |        4 |     94% |67, 95, 100-103 |
 | src/xngin/apiserver/dwh/participant\_metrics\_queries.py             |      143 |        7 |     95% |73-79, 166, 263, 265, 289 |
 | src/xngin/apiserver/dwh/queries.py                                   |       81 |       27 |     67% |107-151, 162, 187, 211, 213, 233 |
-| src/xngin/apiserver/dwh/query\_constructors.py                       |       66 |        4 |     94% |75-76, 95-96 |
+| src/xngin/apiserver/dwh/query\_constructors.py                       |       69 |        4 |     94% |75-76, 95-96 |
 | src/xngin/apiserver/dwh/test\_dialect\_sql.py                        |       74 |        6 |     92% |494, 507, 510-513 |
-| src/xngin/apiserver/dwh/test\_query\_constructors.py                 |      127 |        2 |     98% |  372, 389 |
+| src/xngin/apiserver/dwh/test\_queries.py                             |       67 |        1 |     99% |       160 |
+| src/xngin/apiserver/dwh/test\_query\_constructors.py                 |      132 |        2 |     98% |  377, 394 |
 | src/xngin/apiserver/exceptionhandlers.py                             |       68 |        9 |     87% |50, 62, 70-75, 89, 108 |
 | src/xngin/apiserver/flags.py                                         |       50 |        4 |     92% |75, 78, 96, 99 |
 | src/xngin/apiserver/main.py                                          |       38 |        6 |     84% |40, 48, 76-77, 94-96 |
@@ -81,9 +82,9 @@
 | src/xngin/xsecrets/secretservice.py                                  |       63 |        5 |     92% |37, 49-50, 108, 130 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                       |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                           |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                            | **12409** |  **758** | **94%** |           |
+| **TOTAL**                                                            | **12440** |  **750** | **94%** |           |
 
-71 files skipped due to complete coverage.
+70 files skipped due to complete coverage.
 
 
 ## Setup coverage badge
