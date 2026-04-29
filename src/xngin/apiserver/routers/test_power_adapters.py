@@ -7,7 +7,10 @@ from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags
 from xngin.apiserver.conftest import get_test_uri_info
+from xngin.apiserver.routers.common_api_types import Filter
+from xngin.apiserver.routers.common_enums import Relation
 from xngin.apiserver.routers.power_adapters import calculate_icc_and_cv_from_database
+from xngin.stats.stats_errors import StatsPowerError
 
 
 class TestGeneratedClusteredData:
@@ -31,6 +34,19 @@ class TestGeneratedClusteredData:
     @pytest.fixture(name="sa_table", scope="module")
     def fixture_clustered_dwh_sa_table(self, clustered_dwh_session):
         return Table("clustered_dwh", MetaData(), autoload_with=clustered_dwh_session.get_bind())
+
+    def test_raises_stats_power_error(self, clustered_dwh_session, sa_table):
+        with pytest.raises(
+            StatsPowerError,
+            match="Power calc error for metric income: Need at least 2 clusters to calculate ICC",
+        ):
+            calculate_icc_and_cv_from_database(
+                session=clustered_dwh_session,
+                sa_table=sa_table,
+                cluster_column="cluster_equal",
+                outcome_column="income",
+                filters=[Filter(field_name="cluster_equal", relation=Relation.INCLUDES, value=[1])],
+            )
 
     def test_income_low_icc_equal_clusters(self, clustered_dwh_session, sa_table):
         """Verify income has ICC ≈ 0.05 with equal-sized clusters."""
