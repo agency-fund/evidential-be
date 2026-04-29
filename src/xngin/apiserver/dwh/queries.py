@@ -27,7 +27,6 @@ from xngin.apiserver.routers.common_api_types import (
     GetFiltersResponseNumericOrDate,
 )
 from xngin.apiserver.routers.common_enums import FilterClass, MetricType
-from xngin.db_extensions import custom_functions
 
 
 def get_stats_on_metrics(
@@ -55,7 +54,7 @@ def get_stats_on_metrics(
             cast_column = cast(cast(col, Integer), Float)
         select_columns.extend((
             func.avg(cast_column).label(f"{field_name}__mean"),
-            custom_functions.stddev_pop(cast_column).label(f"{field_name}__stddev"),
+            func.stddev_pop(cast_column).label(f"{field_name}__stddev"),
             func.count(col).label(f"{field_name}__count"),
         ))
     filters_expr = create_query_filters(sa_table, filters)
@@ -178,9 +177,7 @@ def get_cluster_size_stats(
         func.avg(cluster_counts.c.cluster_size).label("avg_cluster_size"),
         func.min(cluster_counts.c.cluster_size).label("min_cluster_size"),
         func.max(cluster_counts.c.cluster_size).label("max_cluster_size"),
-        (custom_functions.stddev_pop(cluster_counts.c.cluster_size) / func.avg(cluster_counts.c.cluster_size)).label(
-            "cv"
-        ),
+        (func.stddev_pop(cluster_counts.c.cluster_size) / func.avg(cluster_counts.c.cluster_size)).label("cv"),
         func.count().label("num_clusters"),
     )
 
@@ -219,7 +216,13 @@ def get_cluster_outcome_data(
     outcome_col = sa_table.c[outcome_column_name]
     filters_expr = create_query_filters(sa_table, filters)
 
-    query = select(cluster_col, cast(outcome_col, Float)).where(
+    # PostgreSQL cannot cast BOOLEAN directly to FLOAT; go through INTEGER first.
+    if outcome_col.type.python_type is bool:
+        cast_outcome = cast(cast(outcome_col, Integer), Float)
+    else:
+        cast_outcome = cast(outcome_col, Float)
+
+    query = select(cluster_col, cast_outcome.label(outcome_column_name)).where(
         cluster_col.is_not(None), outcome_col.is_not(None), *filters_expr
     )
 
