@@ -119,6 +119,7 @@ def check_balance_of_preprocessed_df(
     data: pd.DataFrame,
     treatment_col: str = "treat",
     exclude_col_set: set[str] | None = None,
+    cluster_col: str | None = None,
 ) -> BalanceResult:
     """
     Perform a balance check on treatment assignment.  One should typically first use
@@ -130,6 +131,8 @@ def check_balance_of_preprocessed_df(
         treatment_col: Name of treatment assignment column
         exclude_col_set: Columns to exclude from balance check. Typically should come from
             preprocess_for_balance_and_stratification().
+        cluster_col: Name of column containing cluster identifiers. If provided, uses clustered
+            standard errors instead of HC1.
 
     Returns:
         BalanceResult object containing test results
@@ -140,6 +143,8 @@ def check_balance_of_preprocessed_df(
     exclude_from_covariates_set = {treatment_col}
     if exclude_col_set:
         exclude_from_covariates_set |= exclude_col_set
+    if cluster_col is not None:
+        exclude_from_covariates_set.add(cluster_col)
 
     covariates = sorted(set(data.columns) - exclude_from_covariates_set)
     if len(covariates) == 0:
@@ -169,10 +174,17 @@ def check_balance_of_preprocessed_df(
     exog = exog.astype(np.float64)
     endog = df_analysis[treatment_col].astype(np.float64)
 
-    # While HC3 may be better at low sample sizes (Long & Ervin 2000), it is sensitive to high
-    # leverage points, so use HC1 for now. Future work should consider:
-    # https://blog.stata.com/2022/10/06/heteroskedasticity-robust-standard-errors-some-practical-considerations/
-    model = sm.OLS(endog, exog).fit(method="pinv", cov_type="HC1")
+    if cluster_col is not None:
+        model = sm.OLS(endog, exog).fit(
+            method="pinv",
+            cov_type="cluster",
+            cov_kwds={"groups": df_analysis[cluster_col]},
+        )
+    else:
+        # While HC3 may be better at low sample sizes (Long & Ervin 2000), it is sensitive to high
+        # leverage points, so use HC1 for now. Future work should consider:
+        # https://blog.stata.com/2022/10/06/heteroskedasticity-robust-standard-errors-some-practical-considerations/
+        model = sm.OLS(endog, exog).fit(method="pinv", cov_type="HC1")
 
     return BalanceResult(
         f_statistic=model.fvalue,
