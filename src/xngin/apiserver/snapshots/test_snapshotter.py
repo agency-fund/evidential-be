@@ -1,4 +1,5 @@
 import asyncio
+import math
 import warnings
 from datetime import UTC, datetime, timedelta
 
@@ -40,6 +41,10 @@ from xngin.apiserver.storage.storage_format_converters import ExperimentStorageC
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
+
+
+def normalize_bandit_analysis(response: BanditExperimentAnalysisResponse) -> BanditExperimentAnalysisResponse:
+    return response.model_copy(update={"created_at": datetime(2000, 1, 1, tzinfo=UTC)})
 
 
 async def make_experiment(
@@ -149,6 +154,52 @@ def create_snapshot_experiment(
     ).data.experiment_id
     aclient.commit_experiment(datasource_id=testing_datasource.ds.id, experiment_id=experiment_id)
     return experiment_id
+
+
+def get_bandit_snapshot_analysis(
+    aclient: AdminAPIClient,
+    testing_datasource,
+    experiment_id: str,
+    snapshot_id: str,
+) -> BanditExperimentAnalysisResponse:
+    snapshot = aclient.get_snapshot(
+        organization_id=testing_datasource.org.id,
+        datasource_id=testing_datasource.ds.id,
+        experiment_id=experiment_id,
+        snapshot_id=snapshot_id,
+    ).data.snapshot
+    assert snapshot.status == SnapshotStatus.SUCCESS
+    data = snapshot.data
+    assert isinstance(data, BanditExperimentAnalysisResponse)
+    return data
+
+
+def get_sorted_cmab_context_inputs(
+    aclient: AdminAPIClient,
+    testing_datasource,
+    experiment_id: str,
+    values: list[float],
+) -> list[ContextInput]:
+    sorted_contexts = get_sorted_cmab_contexts(aclient, testing_datasource, experiment_id)
+    assert len(sorted_contexts) == len(values)
+    return [
+        ContextInput(context_id=context.context_id or "", context_value=value)
+        for context, value in zip(sorted_contexts, values, strict=True)
+    ]
+
+
+def get_sorted_cmab_contexts(
+    aclient: AdminAPIClient,
+    testing_datasource,
+    experiment_id: str,
+) -> list[Context]:
+    config = aclient.get_experiment_for_ui(
+        datasource_id=testing_datasource.ds.id,
+        experiment_id=experiment_id,
+    ).data.config
+    assert isinstance(config.design_spec, CMABExperimentSpec)
+    assert config.design_spec.contexts is not None
+    return sorted(config.design_spec.contexts, key=lambda c: c.context_id or "")
 
 
 async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_datasource):
@@ -466,6 +517,9 @@ async def create_bandit_snapshot_experiment(
     *,
     experiment_type: ExperimentsType,
     with_draws: bool = True,
+    desired_n: int = 2,
+    prior_type: PriorTypes = PriorTypes.NORMAL,
+    reward_type: LikelihoodTypes = LikelihoodTypes.BERNOULLI,
 ) -> str:
     """Helper to create a bandit experiment for the test_create_snapshot_bandit_succeeds test."""
     design_spec: MABExperimentSpec | CMABExperimentSpec
@@ -478,11 +532,25 @@ async def create_bandit_snapshot_experiment(
                 start_date=datetime(2024, 1, 1, tzinfo=UTC),
                 end_date=datetime.now(UTC) + timedelta(days=1),
                 arms=[
-                    ArmBandit(arm_name="control", arm_description="", alpha_init=1, beta_init=1),
-                    ArmBandit(arm_name="treatment", arm_description="", alpha_init=1, beta_init=1),
+                    ArmBandit(
+                        arm_name="control",
+                        arm_description="",
+                        alpha_init=1 if prior_type == PriorTypes.BETA else None,
+                        beta_init=1 if prior_type == PriorTypes.BETA else None,
+                        mu_init=0 if prior_type == PriorTypes.NORMAL else None,
+                        sigma_init=1 if prior_type == PriorTypes.NORMAL else None,
+                    ),
+                    ArmBandit(
+                        arm_name="treatment",
+                        arm_description="",
+                        alpha_init=1 if prior_type == PriorTypes.BETA else None,
+                        beta_init=1 if prior_type == PriorTypes.BETA else None,
+                        mu_init=0 if prior_type == PriorTypes.NORMAL else None,
+                        sigma_init=1 if prior_type == PriorTypes.NORMAL else None,
+                    ),
                 ],
-                prior_type=PriorTypes.BETA,
-                reward_type=LikelihoodTypes.BERNOULLI,
+                prior_type=prior_type,
+                reward_type=reward_type,
             )
         case ExperimentsType.CMAB_ONLINE:
             design_spec = CMABExperimentSpec(
@@ -499,8 +567,8 @@ async def create_bandit_snapshot_experiment(
                     Context(context_name="context1", context_description="", value_type=ContextType.BINARY),
                     Context(context_name="context2", context_description="", value_type=ContextType.REAL_VALUED),
                 ],
-                prior_type=PriorTypes.NORMAL,
-                reward_type=LikelihoodTypes.BERNOULLI,
+                prior_type=prior_type,
+                reward_type=reward_type,
             )
         case _:
             raise ValueError(f"Unsupported experiment type: {experiment_type}")
@@ -508,7 +576,7 @@ async def create_bandit_snapshot_experiment(
     experiment_id = aclient.create_experiment(
         datasource_id=testing_datasource.ds.id,
         body=CreateExperimentRequest(design_spec=design_spec),
-        desired_n=2,
+        desired_n=desired_n,
         random_state=42,
     ).data.experiment_id
     aclient.commit_experiment(datasource_id=testing_datasource.ds.id, experiment_id=experiment_id)
@@ -588,7 +656,96 @@ async def test_create_snapshot_bandit_succeeds(
     assert data.n_outcomes == 2
 
 
-async def test_create_snapshot_cmab_with_zero_draws_succeeds(
+async def test_create_snapshot_cmab_matches_admin_analysis_at_mean_contexts(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+):
+    experiment_id = await create_bandit_snapshot_experiment(
+        aclient,
+        eclient,
+        testing_datasource,
+        experiment_type=ExperimentsType.CMAB_ONLINE,
+        with_draws=False,
+        desired_n=3,
+        reward_type=LikelihoodTypes.NORMAL,
+    )
+    sorted_contexts = get_sorted_cmab_contexts(aclient, testing_datasource, experiment_id)
+
+    participant_specs = [
+        ("p1", {ContextType.BINARY: 1.0, ContextType.REAL_VALUED: 1.0}, 0.0),
+        ("p2", {ContextType.BINARY: 0.0, ContextType.REAL_VALUED: 2.0}, 1.0),
+        ("p3", {ContextType.BINARY: 1.0, ContextType.REAL_VALUED: 4.0}, None),
+    ]
+    for participant_id, context_values_by_type, outcome in participant_specs:
+        context_inputs = [
+            ContextInput(
+                context_id=context.context_id or "",
+                context_value=context_values_by_type[context.value_type],
+            )
+            for context in sorted_contexts
+        ]
+        assignment_response = eclient.get_assignment_cmab(
+            api_key=testing_datasource.key,
+            body=CMABContextInputRequest(context_inputs=context_inputs),
+            experiment_id=experiment_id,
+            participant_id=participant_id,
+            raise_if_not_default_status=False,
+        )
+        assert assignment_response.status == 200, assignment_response.data
+        if outcome is not None:
+            eclient.update_bandit_arm_with_participant_outcome(
+                api_key=testing_datasource.key,
+                body=UpdateBanditArmOutcomeRequest(outcome=outcome),
+                experiment_id=experiment_id,
+                participant_id=participant_id,
+            )
+
+    # BINARY context uses rounded mean of values; REAL_VALUED maps values < 0.5 to 0, else 1.
+    expected_real_context = sum(
+        participant_context_values[ContextType.REAL_VALUED] for _, participant_context_values, _ in participant_specs
+    ) / len(participant_specs)
+    mean_binary_context = sum(
+        participant_context_values[ContextType.BINARY] for _, participant_context_values, _ in participant_specs
+    ) / len(participant_specs)
+    # See snapshotter for details on thresholding behavior.
+    expected_binary_context = abs(float(math.ceil(mean_binary_context - 0.5)))
+    expected_contexts = [
+        expected_binary_context if context.value_type == ContextType.BINARY else expected_real_context
+        for context in sorted_contexts
+    ]
+    admin_analysis = aclient.analyze_cmab_experiment(
+        datasource_id=testing_datasource.ds.id,
+        experiment_id=experiment_id,
+        body=CMABContextInputRequest(
+            context_inputs=get_sorted_cmab_context_inputs(
+                aclient,
+                testing_datasource,
+                experiment_id,
+                expected_contexts,
+            )
+        ),
+    ).data
+    assert isinstance(admin_analysis, BanditExperimentAnalysisResponse)
+
+    create_snapshot_response = aclient.create_snapshot(
+        organization_id=testing_datasource.org.id,
+        datasource_id=testing_datasource.ds.id,
+        experiment_id=experiment_id,
+    ).data
+    snapshot_analysis = get_bandit_snapshot_analysis(
+        aclient,
+        testing_datasource,
+        experiment_id,
+        create_snapshot_response.id,
+    )
+
+    assert snapshot_analysis.n_outcomes == 2
+    assert snapshot_analysis.contexts == expected_contexts
+    assert normalize_bandit_analysis(snapshot_analysis) == normalize_bandit_analysis(admin_analysis)
+
+
+async def test_create_snapshot_cmab_with_zero_draws_matches_zero_context_admin_analysis(
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
@@ -601,19 +758,33 @@ async def test_create_snapshot_cmab_with_zero_draws_succeeds(
         with_draws=False,
     )
 
-    aclient.create_snapshot(
+    expected_contexts = [0.0, 0.0]
+    admin_analysis = aclient.analyze_cmab_experiment(
+        datasource_id=testing_datasource.ds.id,
+        experiment_id=experiment_id,
+        body=CMABContextInputRequest(
+            context_inputs=get_sorted_cmab_context_inputs(
+                aclient,
+                testing_datasource,
+                experiment_id,
+                expected_contexts,
+            )
+        ),
+    ).data
+    assert isinstance(admin_analysis, BanditExperimentAnalysisResponse)
+
+    create_snapshot_response = aclient.create_snapshot(
         organization_id=testing_datasource.org.id,
         datasource_id=testing_datasource.ds.id,
         experiment_id=experiment_id,
+    ).data
+    snapshot_analysis = get_bandit_snapshot_analysis(
+        aclient,
+        testing_datasource,
+        experiment_id,
+        create_snapshot_response.id,
     )
 
-    snapshots = aclient.list_snapshots(
-        organization_id=testing_datasource.org.id,
-        datasource_id=testing_datasource.ds.id,
-        experiment_id=experiment_id,
-    ).data.items
-    assert len(snapshots) == 1
-    assert snapshots[0].status == SnapshotStatus.SUCCESS
-    data = snapshots[0].data
-    assert isinstance(data, BanditExperimentAnalysisResponse)
-    assert data.n_outcomes == 0
+    assert snapshot_analysis.n_outcomes == 0
+    assert snapshot_analysis.contexts == expected_contexts
+    assert normalize_bandit_analysis(snapshot_analysis) == normalize_bandit_analysis(admin_analysis)
