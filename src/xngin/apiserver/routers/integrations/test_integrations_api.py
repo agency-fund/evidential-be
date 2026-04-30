@@ -12,6 +12,7 @@ from xngin.apiserver.routers.common_api_types import (
     ArmBandit,
     CreateExperimentRequest,
     MABExperimentSpec,
+    TurnConfigResponse,
 )
 from xngin.apiserver.routers.common_enums import (
     ExperimentsType,
@@ -42,13 +43,13 @@ async def fixture_testing_design_spec() -> MABExperimentSpec:
     )
 
 
-@pytest.fixture(name="arm_to_journey_mapping")
-def fixture_arm_to_journey_mapping(
+@pytest.fixture(name="turn_config_response")
+def fixture_turn_config_response(
     aclient: AdminAPIClient,
     iaclient: AdminIntegrationsAPIClient,
     testing_datasource: DatasourceMetadata,
     testing_design_spec: MABExperimentSpec,
-) -> Generator[tuple[dict[str, str], str]]:
+) -> Generator[TurnConfigResponse]:
     """Configure a Turn connection for the org and save an arm→journey mapping for the experiment."""
     ds_id = testing_datasource.ds.id
     experiment = aclient.create_experiment(
@@ -71,7 +72,11 @@ def fixture_arm_to_journey_mapping(
         body=SetTurnArmJourneyMappingRequest(arm_to_journeys=arm_to_journeys),
     )
 
-    yield arm_to_journeys, experiment.experiment_id
+    yield TurnConfigResponse.model_validate({
+        "experiment_id": experiment.experiment_id,
+        "experiment_name": "Test experiment",
+        "arm_journey_map": arm_to_journeys,
+    })
 
     iaclient.delete_turn_arm_journey_mapping(
         datasource_id=testing_datasource.ds.id, experiment_id=experiment.experiment_id, allow_missing=True
@@ -82,26 +87,26 @@ def fixture_arm_to_journey_mapping(
 async def test_get_turn_app_config_returns_mapping(
     testing_datasource: DatasourceMetadata,
     iclient: IntegrationsAPIClient,
-    arm_to_journey_mapping: tuple[dict[str, str], str],
+    turn_config_response: TurnConfigResponse,
 ):
     """Valid API key + existing mapping returns the configured arm→journey map."""
     turn_config = iclient.get_turn_app_config(
-        experiment_id=arm_to_journey_mapping[1], api_key=testing_datasource.key
+        experiment_id=turn_config_response.experiment_id, api_key=testing_datasource.key
     ).data
 
-    assert turn_config.experiment_id == arm_to_journey_mapping[1]
-    assert turn_config.arm_journey_map == arm_to_journey_mapping[0]
+    assert turn_config.experiment_id == turn_config_response.experiment_id
+    assert turn_config.arm_journey_map == turn_config_response.arm_journey_map
 
 
 async def test_get_turn_app_config_404_when_no_mapping(
     testing_datasource: DatasourceMetadata,
-    arm_to_journey_mapping: tuple[dict[str, str], str],
+    turn_config_response: TurnConfigResponse,
     iaclient: AdminIntegrationsAPIClient,
     iclient: IntegrationsAPIClient,
 ):
     """Experiment exists but has no ExperimentTurnConfig row."""
     iaclient.delete_turn_arm_journey_mapping(
-        datasource_id=testing_datasource.ds.id, experiment_id=arm_to_journey_mapping[1]
+        datasource_id=testing_datasource.ds.id, experiment_id=turn_config_response.experiment_id
     )
     with expect_status_code(404):
-        iclient.get_turn_app_config(experiment_id=arm_to_journey_mapping[1], api_key=testing_datasource.key)
+        iclient.get_turn_app_config(experiment_id=turn_config_response.experiment_id, api_key=testing_datasource.key)

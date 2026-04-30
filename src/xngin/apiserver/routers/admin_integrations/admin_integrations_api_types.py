@@ -21,7 +21,7 @@ class SetConnectionToTurnRequest(AdminApiBaseModel):
     @field_validator("turn_api_token")
     @classmethod
     def validate_turn_api_token(cls, v: str) -> str:
-        "Check for newline or carriage return characters to prevent HTTP header injection."
+        """Check for newline or carriage return characters to prevent HTTP header injection."""
         if "\n" in v or "\r" in v:
             raise ValueError("Turn API token must not contain newline or carriage return characters.")
         return v

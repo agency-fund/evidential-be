@@ -153,29 +153,30 @@ async def delete_turn_connection_from_organization(
     ] = False,
 ):
     """Removes an organization's Turn.io connection."""
+
+    async def _delete_turn_connection_and_mapping(session: AsyncSession, turn_connection: tables.TurnConnection):
+        await session.delete(turn_connection)
+        # Cascade delete all Turn journey mappings for experiments under this organization,
+        # since they become invalid without a Turn connection.
+        await session.execute(
+            delete(tables.ExperimentTurnConfig).where(
+                tables.ExperimentTurnConfig.experiment_id.in_(
+                    select(tables.Experiment.id)
+                    .join(tables.Datasource, tables.Experiment.datasource_id == tables.Datasource.id)
+                    .where(tables.Datasource.organization_id == organization_id)
+                )
+            )
+        )
+
     resource_query = select(tables.TurnConnection).where(tables.TurnConnection.organization_id == organization_id)
     response = await handle_delete(
         session,
         allow_missing,
         authz.is_user_authorized_on_organization(user, organization_id),
         resource_query,
+        deleter=_delete_turn_connection_and_mapping,
     )
 
-    # Cascade delete all Turn journey mappings for experiments under this organization,
-    # since they become invalid without a Turn connection.
-    mapping_query = select(tables.ExperimentTurnConfig).where(
-        tables.ExperimentTurnConfig.experiment_id.in_(
-            select(tables.Experiment.id)
-            .join(tables.Datasource, tables.Experiment.datasource_id == tables.Datasource.id)
-            .where(tables.Datasource.organization_id == organization_id)
-        )
-    )
-    await handle_delete(
-        session,
-        True,
-        authz.is_user_authorized_on_organization(user, organization_id),
-        mapping_query,
-    )
     await session.commit()
     return response
 
@@ -221,14 +222,16 @@ async def get_organization_turn_journeys(
         ) from exc
 
     if response.status_code in {401, 403}:
-        logger.error("Unauthorized when fetching Turn.io journeys. API token may be invalid.")
+        with logger.contextualize(organization_id=turn_connection.organization_id):
+            logger.error("Unauthorized when fetching Turn.io journeys. API token may be invalid.")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Unauthorized when fetching Turn.io journeys. Please check that the configured API token is valid.",
         )
 
     if response.status_code != 200:
-        logger.error(f"Non-200 response from Turn.io journeys endpoint: {response.status_code} - {response.text}")
+        with logger.contextualize(organization_id=turn_connection.organization_id):
+            logger.error(f"Non-200 response from Turn.io journeys endpoint: {response.status_code} - {response.text}")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=(
