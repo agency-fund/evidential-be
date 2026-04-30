@@ -46,9 +46,15 @@ from xngin.apiserver.settings import (
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing import (
     admin_api_client,
+    admin_integrations_api_client,
     experiments_api_client,
+    integrations_api_client,
 )
 from xngin.apiserver.testing.admin_api_client import AdminAPIClientNotDefaultStatusError
+from xngin.apiserver.testing.admin_integrations_api_client import (
+    AdminIntegrationsAPIClientNotDefaultStatusError,
+)
+from xngin.apiserver.testing.integrations_api_client import IntegrationsAPIClientNotDefaultStatusError
 from xngin.apiserver.testing.pg_helpers import create_database_if_not_exists_pg
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 from xngin.db_extensions import custom_functions
@@ -224,6 +230,20 @@ def fixture_admin_api_client_unpriv(xngin_session):
     """Returns a generated API client for unprivileged Admin API requests."""
     with TestClient(app, headers={"Authorization": f"Bearer {UNPRIVILEGED_TOKEN_FOR_TESTING}"}) as client:
         yield admin_api_client.AdminAPIClient(client)
+
+
+@pytest.fixture(name="iaclient")
+def fixture_integrations_admin_api_client(xngin_session):
+    """Returns a generated API client for privileged Admin API requests."""
+    with TestClient(app, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"}) as client:
+        yield admin_integrations_api_client.AdminIntegrationsAPIClient(client)
+
+
+@pytest.fixture(name="iclient")
+def fixture_integrations_api_client(xngin_session):
+    """Returns a generated API client for privileged Integrations API requests."""
+    with TestClient(app, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"}) as client:
+        yield integrations_api_client.IntegrationsAPIClient(client)
 
 
 @pytest.fixture(scope="session")
@@ -422,7 +442,12 @@ def _convert_dwh_to_create_api_dsn(dwh: settings.Dwh) -> aapi.Dsn:
 
 @dataclass
 class StatusCodeMatcher:
-    exc: AdminAPIClientNotDefaultStatusError | None = None
+    exc: (
+        AdminAPIClientNotDefaultStatusError
+        | AdminIntegrationsAPIClientNotDefaultStatusError
+        | IntegrationsAPIClientNotDefaultStatusError
+        | None
+    ) = None
 
     def http_response(self):
         """Returns the httpx Response."""
@@ -465,9 +490,18 @@ def expect_status_code(
 ) -> Iterator[StatusCodeMatcher]:
     """Like pytest.raises(), but for checking the non-default response codes of an AdminAPIClient request."""
     match = StatusCodeMatcher()
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with pytest.raises((
+        AdminAPIClientNotDefaultStatusError,
+        AdminIntegrationsAPIClientNotDefaultStatusError,
+        IntegrationsAPIClientNotDefaultStatusError,
+    )) as exc:
         yield match
-    match.exc = exc.value
+    match.exc = cast(
+        "AdminAPIClientNotDefaultStatusError"
+        " | AdminIntegrationsAPIClientNotDefaultStatusError"
+        " | IntegrationsAPIClientNotDefaultStatusError",
+        exc.value,
+    )
     http_response = match.http_response()
     assert http_response.status_code == status_code, (
         f"Expected '{status_code}' response code but got {http_response.status_code}: {http_response.content}"

@@ -676,6 +676,8 @@ def generate_typed_clients():
     root = Path("src/xngin/apiserver/testing")
     eapi_path = root / "experiments_api_client.py"
     aapi_path = root / "admin_api_client.py"
+    iadminapi_path = root / "admin_integrations_api_client.py"
+    iapi_path = root / "integrations_api_client.py"
 
     print(f"Generating ExperimentsAPIClient: {eapi_path}")
     fastapi_typed_client.generate_fastapi_typed_client(
@@ -692,6 +694,22 @@ def generate_typed_clients():
         raise_if_not_default_status=True,
         title="AdminAPIClient",
     )
+    print(f"Generating AdminIntegrationsAPIClient: {iadminapi_path}")
+    fastapi_typed_client.generate_fastapi_typed_client(
+        "xngin.apiserver.routers.admin_integrations.admin_integrations_api:router",
+        output_path=iadminapi_path,
+        raise_if_not_default_status=True,
+        title="AdminIntegrationsAPIClient",
+    )
+
+    print(f"Generating IntegrationsAPIClient: {iapi_path}")
+    fastapi_typed_client.generate_fastapi_typed_client(
+        "xngin.apiserver.routers.integrations.integrations_api:router",
+        include_security_params=True,
+        output_path=iapi_path,
+        raise_if_not_default_status=True,
+        title="IntegrationsAPIClient",
+    )
 
     ruff_bin = shutil.which("ruff")
     if ruff_bin is None:
@@ -705,6 +723,8 @@ def generate_typed_clients():
                 "format",
                 eapi_path,
                 aapi_path,
+                iadminapi_path,
+                iapi_path,
             ],
             check=True,
         )

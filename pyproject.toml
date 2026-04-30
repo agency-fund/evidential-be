@@ -176,6 +176,7 @@ banned-from = [
 # https://docs.astral.sh/ruff/settings/#lint_flake8-import-conventions_extend-aliases
 "xngin.apiserver.routers.admin.admin_api_types" = "aapi"
 "xngin.apiserver.routers.common_api_types" = "capi"
+"xngin.apiserver.routers.admin_integrations.admin_integrations_api_types" = "aiapi"
 
 [tool.uv]
 required-version = ">=0.9.4"
