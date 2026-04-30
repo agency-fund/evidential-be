@@ -11,7 +11,7 @@ from xngin.apiserver.routers.common_api_types import (
     Arm,
     ArmBandit,
     BanditExperimentAnalysisResponse,
-    BaseFrequentistDesignSpec,
+    BayesABExperimentSpec,
     CMABContextInputRequest,
     CMABExperimentSpec,
     Context,
@@ -24,11 +24,12 @@ from xngin.apiserver.routers.common_api_types import (
     FreqExperimentAnalysisResponse,
     LikelihoodTypes,
     MABExperimentSpec,
+    OnlineFrequentistExperimentSpec,
     PreassignedFrequentistExperimentSpec,
     PriorTypes,
     UpdateBanditArmOutcomeRequest,
 )
-from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
+from xngin.apiserver.routers.common_enums import DataType, ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers.experiments.experiments_common import fetch_fields_or_raise
 from xngin.apiserver.snapshots.snapshotter import (
     SNAPSHOT_TIMEOUT_SECS,
@@ -51,16 +52,19 @@ async def make_experiment(
     xngin_session,
     datasource: tables.Datasource,
     design_spec: DesignSpec,
-    *,
-    table_name: str | None = None,
-    primary_key: str | None = None,
 ) -> tables.Experiment:
-    field_type_map = None
-    if design_spec.experiment_type in {ExperimentsType.FREQ_PREASSIGNED, ExperimentsType.FREQ_ONLINE}:
-        assert isinstance(design_spec, BaseFrequentistDesignSpec)
-        assert table_name is not None
-        assert primary_key is not None
-        field_type_map = await fetch_fields_or_raise(datasource, design_spec, table_name, primary_key)
+    table_name: str | None
+    primary_key: str | None
+    field_type_map: dict[str, DataType] | None
+    match design_spec:
+        case PreassignedFrequentistExperimentSpec() | OnlineFrequentistExperimentSpec():
+            table_name = design_spec.table_name
+            primary_key = design_spec.primary_key
+            field_type_map = await fetch_fields_or_raise(datasource, design_spec)
+        case MABExperimentSpec() | CMABExperimentSpec() | BayesABExperimentSpec():
+            table_name = None
+            primary_key = None
+            field_type_map = None
 
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
@@ -71,8 +75,8 @@ async def make_experiment(
         stopped_assignments_at=datetime.now(UTC),
         stopped_assignments_reason=StopAssignmentReason.PREASSIGNED,
         table_name=table_name,
-        field_type_map=field_type_map,
         unique_id_name=primary_key,
+        field_type_map=field_type_map,
     )
     experiment = experiment_converter.get_experiment()
     xngin_session.add(experiment)
@@ -132,6 +136,8 @@ def make_snapshot_design_spec(
         metrics=[DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1)],
         strata=[],
         filters=[],
+        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
     )
 
 
@@ -145,11 +151,7 @@ def create_snapshot_experiment(
 ) -> str:
     experiment_id = aclient.create_experiment(
         datasource_id=testing_datasource.ds.id,
-        body=CreateExperimentRequest(
-            design_spec=make_snapshot_design_spec(name, end_date=end_date),
-            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
-            primary_key="id",
-        ),
+        body=CreateExperimentRequest(design_spec=make_snapshot_design_spec(name, end_date=end_date)),
         desired_n=desired_n,
     ).data.experiment_id
     aclient.commit_experiment(datasource_id=testing_datasource.ds.id, experiment_id=experiment_id)
@@ -210,6 +212,8 @@ async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_da
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
         experiment_name="test experiment",
         description="test experiment",
+        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
         end_date=datetime.now(UTC) + timedelta(days=1),
         arms=[
@@ -221,13 +225,7 @@ async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_da
         filters=[],
     )
 
-    experiment = await make_experiment(
-        xngin_session,
-        datasource,
-        design_spec,
-        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
-        primary_key="id",
-    )
+    experiment = await make_experiment(xngin_session, datasource, design_spec)
     # Arms' intial position should reflect design spec ordering
     arm1 = experiment.arms[0]
     assert arm1.position == 1

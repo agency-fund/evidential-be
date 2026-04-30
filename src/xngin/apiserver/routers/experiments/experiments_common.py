@@ -27,6 +27,7 @@ from xngin.apiserver.routers.assignment_adapters import (
     make_balance_check,
 )
 from xngin.apiserver.routers.common_api_types import (
+    AnyFrequentistDesignSpec,
     Arm,
     ArmAnalysis,
     ArmSize,
@@ -34,7 +35,8 @@ from xngin.apiserver.routers.common_api_types import (
     AssignSummary,
     BalanceCheck,
     BanditExperimentAnalysisResponse,
-    BaseFrequentistDesignSpec,
+    BayesABExperimentSpec,
+    CMABExperimentSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
     DesignSpecMetricRequest,
@@ -42,8 +44,11 @@ from xngin.apiserver.routers.common_api_types import (
     GetExperimentResponse,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
+    MABExperimentSpec,
     MetricAnalysis,
+    OnlineFrequentistExperimentSpec,
     ParticipantProperty,
+    PreassignedFrequentistExperimentSpec,
 )
 from xngin.apiserver.routers.common_enums import (
     DataType,
@@ -127,7 +132,8 @@ def make_participants_def_from_experiment(experiment: tables.Experiment) -> Part
 
 
 async def fetch_fields_or_raise(
-    datasource: tables.Datasource, design_spec: BaseFrequentistDesignSpec, table_name: str, primary_key: str
+    datasource: tables.Datasource,
+    design_spec: AnyFrequentistDesignSpec,
 ) -> dict[str, DataType]:
     """Inspect an explicit table/primary_key experiment request and return field metadata.
 
@@ -136,15 +142,11 @@ async def fetch_fields_or_raise(
     certain use, or if filter values are invalid for the field type.
     """
     async with DwhSession(datasource.get_config().dwh) as dwh:
-        sa_table = await dwh.inspect_table(table_name)
-        return await fetch_fields_from_table_or_raise(sa_table, design_spec, primary_key)
+        sa_table = await dwh.inspect_table(design_spec.table_name)
+        return await fetch_fields_from_table_or_raise(sa_table, design_spec)
 
 
-async def fetch_fields_from_table_or_raise(
-    table: Table,
-    design_spec: BaseFrequentistDesignSpec,
-    primary_key: str,
-) -> dict[str, DataType]:
+async def fetch_fields_from_table_or_raise(table: Table, design_spec: AnyFrequentistDesignSpec) -> dict[str, DataType]:
     """Helper to fetch_fields_or_raise that operates on a pre-inspected SQLAlchemy table."""
     schema_supported_fields_map: dict[str, DataType] = {}
     for column in table.columns.values():
@@ -156,7 +158,7 @@ async def fetch_fields_from_table_or_raise(
         *[metric.field_name for metric in design_spec.metrics],
         *[filter_.field_name for filter_ in design_spec.filters],
         *[stratum.field_name for stratum in design_spec.strata],
-        primary_key,
+        design_spec.primary_key,
     }
 
     referenced_fields_and_types = {
@@ -200,16 +202,15 @@ async def create_experiment_impl(
     random_state: int | None,
     validated_webhooks: list[tables.Webhook],
 ) -> CreateExperimentResponse:
-    match request.design_spec.experiment_type:
-        case ExperimentsType.FREQ_PREASSIGNED:
+    match request.design_spec:
+        case PreassignedFrequentistExperimentSpec():
             if desired_n is None:
                 raise LateValidationError("Preassigned experiments must have a desired_n.")
 
-            assert request.table_name is not None
-            assert request.primary_key is not None
-            table_name = request.table_name
-            primary_key = request.primary_key
-            field_type_map = await fetch_fields_or_raise(datasource, request.design_spec, table_name, primary_key)
+            preassigned_spec = request.design_spec
+            table_name = preassigned_spec.table_name
+            primary_key = preassigned_spec.primary_key
+            field_type_map = await fetch_fields_or_raise(datasource, preassigned_spec)
 
             # Get participants and their schema info from the client dwh.
             # Only fetch the columns we might need for stratified random assignment.
@@ -243,12 +244,9 @@ async def create_experiment_impl(
                 field_type_map=field_type_map,
             )
 
-        case ExperimentsType.FREQ_ONLINE:
-            assert request.table_name is not None
-            assert request.primary_key is not None
-            field_type_map = await fetch_fields_or_raise(
-                datasource, request.design_spec, request.table_name, request.primary_key
-            )
+        case OnlineFrequentistExperimentSpec():
+            online_spec = request.design_spec
+            field_type_map = await fetch_fields_or_raise(datasource, online_spec)
 
             return await create_freq_online_experiment_impl(
                 request=request,
@@ -259,7 +257,7 @@ async def create_experiment_impl(
                 field_type_map=field_type_map,
             )
 
-        case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
+        case MABExperimentSpec() | CMABExperimentSpec():
             return await create_bandit_online_experiment_impl(
                 xngin_session=xngin_session,
                 organization_id=datasource.organization_id,
@@ -292,12 +290,11 @@ async def create_preassigned_experiment_impl(
     """Create a frequentist preassigned experiment and persist it to the database."""
 
     design_spec = request.design_spec
-    table_name = request.table_name
-    unique_id_name = request.primary_key
-    assert table_name is not None and unique_id_name is not None
-
-    if design_spec.experiment_type != ExperimentsType.FREQ_PREASSIGNED:
+    if not isinstance(design_spec, PreassignedFrequentistExperimentSpec):
         raise MismatchedExperimentTypeError(f"can't create preassigned exp of type: {design_spec.experiment_type}")
+
+    table_name = design_spec.table_name
+    unique_id_name = design_spec.primary_key
 
     metric_names = [m.field_name for m in design_spec.metrics]
     strata_names = [s.field_name for s in design_spec.strata]
@@ -374,12 +371,11 @@ async def create_freq_online_experiment_impl(
 ) -> CreateExperimentResponse:
     """Create a frequentist online experiment and persist it to the database."""
     design_spec = request.design_spec
-    table_name = request.table_name
-    unique_id_name = request.primary_key
-    assert table_name is not None and unique_id_name is not None
-
-    if design_spec.experiment_type != ExperimentsType.FREQ_ONLINE:
+    if not isinstance(design_spec, OnlineFrequentistExperimentSpec):
         raise MismatchedExperimentTypeError(f"Can't create freq online exp of type: {design_spec.experiment_type}")
+
+    table_name = design_spec.table_name
+    unique_id_name = design_spec.primary_key
 
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
@@ -863,10 +859,17 @@ async def update_bandit_arm_with_outcome_impl(
     # Not supported for frequentist experiments
     design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
 
-    if isinstance(design_spec, BaseFrequentistDesignSpec):
-        raise LateValidationError(
-            "Cannot dynamically update arms for frequentist experiments.",
-        )
+    match design_spec:
+        case PreassignedFrequentistExperimentSpec() | OnlineFrequentistExperimentSpec():
+            raise LateValidationError("Cannot dynamically update arms for frequentist experiments.")
+        case BayesABExperimentSpec():
+            # TODO: Add support for Bayesian A/B experiments.
+            raise LateValidationError(
+                f"Invalid experiment type for bandit outcome update: {design_spec.experiment_type.value}"
+            )
+        case MABExperimentSpec() | CMABExperimentSpec():
+            pass
+
     # Look up the participant's assignment if it exists
     assignment = await get_existing_assignment_for_participant(
         xngin_session, experiment.id, participant_id, experiment.experiment_type
@@ -878,12 +881,6 @@ async def update_bandit_arm_with_outcome_impl(
     if assignment.outcome is not None:
         raise ExperimentsAssignmentError(
             f"Participant {participant_id} already has an outcome recorded.",
-        )
-
-    # TODO: Add support for Bayesian A/B experiments.
-    if design_spec.experiment_type == ExperimentsType.BAYESAB_ONLINE:
-        raise LateValidationError(
-            f"Invalid experiment type for bandit outcome update: {design_spec.experiment_type.value}"
         )
 
     if design_spec.reward_type == LikelihoodTypes.BERNOULLI and outcome not in {
