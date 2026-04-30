@@ -11,7 +11,7 @@ the mapping from experiment arms to Turn.io journeys.
 
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Any
 
 import httpx
 from fastapi import (
@@ -34,6 +34,7 @@ from xngin.apiserver.routers.admin import authz
 from xngin.apiserver.routers.admin.admin_api import (
     GENERIC_SUCCESS,
     STANDARD_ADMIN_RESPONSES,
+    HTTPExceptionError,
     get_datasource_or_raise,
     get_experiment_via_ds_or_raise,
     get_organization_or_raise,
@@ -51,6 +52,29 @@ from xngin.apiserver.sqla import tables
 
 TURN_JOURNEYS_URL = "https://whatsapp.turn.io/v1/stacks"
 
+TURN_JOURNEYS_RESPONSES: dict[str | int, dict[str, Any]] = {
+    "404": {
+        "model": HTTPExceptionError,
+        "description": "No Turn.io connection has been configured for the organization.",
+    },
+    "409": {
+        "model": HTTPExceptionError,
+        "description": "The configured Turn.io API token is invalid or unauthorized.",
+    },
+    "502": {
+        "model": HTTPExceptionError,
+        "description": "Failed to reach Turn.io API, or Turn.io returned a non-200 response.",
+    },
+}
+
+
+TURN_JOURNEY_MAPPING_RESPONSES: dict[str | int, dict[str, Any]] = {
+    "409": {
+        "model": HTTPExceptionError,
+        "description": "A Turn.io connection must be configured before journey mappings can be saved.",
+    },
+}
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -66,10 +90,7 @@ router = APIRouter(
 )
 
 
-@router.put(
-    "/integrations/turn-connection/{organization_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-)
+@router.put("/integrations/turn-connection/{organization_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def set_organization_turn_connection(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
@@ -181,7 +202,10 @@ async def delete_turn_connection_from_organization(
     return response
 
 
-@router.get("/integrations/turn-connection/{organization_id}/journeys")
+@router.get(
+    "/integrations/turn-connection/{organization_id}/journeys",
+    responses=TURN_JOURNEY_MAPPING_RESPONSES,
+)
 async def get_organization_turn_journeys(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
@@ -250,6 +274,7 @@ async def get_organization_turn_journeys(
 @router.put(
     "/integrations/turn-journey-mapping/datasources/{datasource_id}/experiments/{experiment_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    responses=TURN_JOURNEY_MAPPING_RESPONSES,
 )
 async def set_turn_arm_journey_mapping(
     datasource_id: str,
