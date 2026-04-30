@@ -23,7 +23,7 @@ def truthy_env(env_var: str):
 AIRPLANE_MODE = truthy_env("AIRPLANE_MODE")
 ENV_GOOGLE_OIDC_CLIENT_ID = "GOOGLE_OIDC_CLIENT_ID"
 CLIENT_ID = os.environ.get(ENV_GOOGLE_OIDC_CLIENT_ID)
-ENV_GOOGLE_OIDC_CLIENT_SECRET = "GOOGLE_OIDC_CLIENT_SECRET"
+ENV_GOOGLE_OIDC_CLIENT_SECRET = "GOOGLE_OIDC_CLIENT_SECRET"  # noqa: S105
 CLIENT_SECRET = os.environ.get(ENV_GOOGLE_OIDC_CLIENT_SECRET)
 DEFAULT_REDIRECT_URI = f"http://localhost:8000{constants.API_PREFIX_V1}/a/oidc"
 OIDC_REDIRECT_URI = os.environ.get("GOOGLE_OIDC_REDIRECT_URI", DEFAULT_REDIRECT_URI)  # used for testing UI only
@@ -31,7 +31,7 @@ OIDC_REDIRECT_URI = os.environ.get("GOOGLE_OIDC_REDIRECT_URI", DEFAULT_REDIRECT_
 # XNGIN_SESSION_TOKEN_KEYSET contains a keyset for encrypting session tokens. This is generated using the
 # `xngin-cli create-nacl-keyset` command. If set to "local", we will read from a local file (see:
 # token_cryptor).
-ENV_SESSION_TOKEN_KEYSET = "XNGIN_SESSION_TOKEN_KEYSET"
+ENV_SESSION_TOKEN_KEYSET = "XNGIN_SESSION_TOKEN_KEYSET"  # noqa: S105
 
 ALLOW_CONNECTING_TO_PRIVATE_IPS = truthy_env("ALLOW_CONNECTING_TO_PRIVATE_IPS")
 DISABLE_SAFEDNS_CHECK = truthy_env("DISABLE_SAFEDNS_CHECK")
@@ -41,7 +41,6 @@ XNGIN_DEVDWH_DSN = os.environ.get("XNGIN_DEVDWH_DSN", "")
 
 # Hosting providers may set hosted database URL as DATABASE_URL, so we use the same.
 DATABASE_URL = os.environ.get("DATABASE_URL")
-
 
 # XNGIN_PUBLIC_PROTOCOL defines the protocol clients should use on our public URL. This should always be "https",
 # except in dev environments.
