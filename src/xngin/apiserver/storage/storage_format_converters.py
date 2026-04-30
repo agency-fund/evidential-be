@@ -516,5 +516,5 @@ class ExperimentStorageConverter:
                 ]
 
                 return cls(experiment)
-            case _:
+            case capi.BayesABExperimentSpec():
                 raise ValueError(f"Unsupported design_spec type: {type(design_spec)}.")

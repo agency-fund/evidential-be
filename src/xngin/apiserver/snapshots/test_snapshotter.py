@@ -11,6 +11,7 @@ from xngin.apiserver.routers.common_api_types import (
     Arm,
     ArmBandit,
     BanditExperimentAnalysisResponse,
+    BayesABExperimentSpec,
     CMABContextInputRequest,
     CMABExperimentSpec,
     Context,
@@ -28,7 +29,7 @@ from xngin.apiserver.routers.common_api_types import (
     PriorTypes,
     UpdateBanditArmOutcomeRequest,
 )
-from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
+from xngin.apiserver.routers.common_enums import DataType, ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers.experiments.experiments_common import fetch_fields_or_raise
 from xngin.apiserver.snapshots.snapshotter import (
     SNAPSHOT_TIMEOUT_SECS,
@@ -52,16 +53,18 @@ async def make_experiment(
     datasource: tables.Datasource,
     design_spec: DesignSpec,
 ) -> tables.Experiment:
-    table_name = None
-    primary_key = None
-    field_type_map = None
+    table_name: str | None
+    primary_key: str | None
+    field_type_map: dict[str, DataType] | None
     match design_spec:
         case PreassignedFrequentistExperimentSpec() | OnlineFrequentistExperimentSpec():
             table_name = design_spec.table_name
             primary_key = design_spec.primary_key
             field_type_map = await fetch_fields_or_raise(datasource, design_spec)
-        case _:
-            pass
+        case MABExperimentSpec() | CMABExperimentSpec() | BayesABExperimentSpec():
+            table_name = None
+            primary_key = None
+            field_type_map = None
 
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
