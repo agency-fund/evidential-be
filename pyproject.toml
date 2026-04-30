@@ -51,7 +51,7 @@ dev = [
     "pytest-mock>=3.15.1,<4",
     "pytest-randomly>=4.0.1",
     "pytest>=8.4.2,<9.0.0",
-    "ruff>=0.14.2,<0.15.0",
+    "ruff==0.15.12",
     "scipy-stubs>=1.16.2,<2",
     "types-cachetools>=6.0.0.20250525",
     "types-psycopg2>=2.9.10,<3",
@@ -59,7 +59,7 @@ dev = [
 ]
 
 [build-system]
-requires = ["uv_build>=0.9.4,<0.11.0"]
+requires = ["uv_build>=0.9.4"]
 build-backend = "uv_build"
 
 [project.scripts]
@@ -76,7 +76,6 @@ log_cli = 0  # set to 1 for live logs
 log_cli_level = "warn"
 markers = [
     "integration: integration tests that rely on remote resources",
-    "xurl: tests that use xurl scripts and can be updated with UPDATE_API_TESTS"
 ]
 addopts = "-m 'not integration'"
 # filtewarnings can be used to silence warnings during tests.
@@ -121,6 +120,7 @@ select = [
     "PYI",
     "RET",
     "RUF",
+    "S",
     "SIM",
     "TRY",
     "UP",
@@ -150,9 +150,19 @@ ignore = [
     "PT011", # pytest.raises(_) is too broad, set the `match` parameter or use a more specific exception
     "PT018", # Assertion should be broken down into multiple parts
     "PYI041", # Use `float` instead of `int | float`
+    "RUF069", # Unreliable floating point equality comparison
+    "S101", # Use of `assert` detected
     "SIM108", # Use ternary operator instead of `if`-`else`-block
-    "RUF029",
-    "TRY003",
+    "RUF029", # Unused async
+    "TRY003", # Raised bare custom exception with long message
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/test_*" = [
+    "S105",  # Possible hardcoded password assigned
+    "S106",  # Possible hardcoded password assigned to argument
+    "S311",  # Standard pseudo-random generators are not suitable for cryptographic purposes
+    "S608",  # Possible SQL injection vector through string-based query construction
 ]
 
 [tool.ruff.lint.flake8-import-conventions]
@@ -168,7 +178,7 @@ banned-from = [
 "xngin.apiserver.routers.common_api_types" = "capi"
 
 [tool.uv]
-required-version = ">=0.9.4,<0.11.0"
+required-version = ">=0.9.4"
 environments = [
     "sys_platform == 'darwin'",
     "sys_platform == 'linux'",

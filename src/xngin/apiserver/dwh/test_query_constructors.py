@@ -1,6 +1,5 @@
 """Stand-alone test cases for basic dynamic query generation."""
 
-import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -20,7 +19,12 @@ from xngin.apiserver.dwh.dwh_test_support import (
     Case,
     SampleTable,
 )
-from xngin.apiserver.dwh.query_constructors import compose_query, create_filter, create_query_filters, make_csv_regex
+from xngin.apiserver.dwh.query_constructors import (
+    compose_query,
+    create_filter,
+    create_inspect_table_from_cursor_query,
+    create_query_filters,
+)
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import Filter, Relation
 from xngin.apiserver.routers.common_enums import DataType
@@ -296,37 +300,6 @@ def test_is_nullable(testcase, queries_dwh_session, shared_sample_tables):
 
 
 RELATION_CASES = [
-    # compound filters
-    Case(
-        filters=[
-            Filter(
-                field_name="int_col",
-                relation=Relation.INCLUDES,
-                value=[ROW_100.int_col, ROW_200.int_col],
-            ),
-            Filter(
-                field_name="experiment_ids",
-                relation=Relation.INCLUDES,
-                value=["b", "C"],
-            ),
-        ],
-        matches=[ROW_200],
-    ),
-    Case(
-        filters=[
-            Filter(
-                field_name="int_col",
-                relation=Relation.INCLUDES,
-                value=[ROW_100.int_col, ROW_200.int_col],
-            ),
-            Filter(
-                field_name="experiment_ids",
-                relation=Relation.EXCLUDES,
-                value=["b", "c"],
-            ),
-        ],
-        matches=[ROW_100],
-    ),
     # int_col
     Case(
         filters=[
@@ -367,55 +340,6 @@ RELATION_CASES = [
             )
         ],
         matches=[ROW_100, ROW_300],
-    ),
-    # regexp hacks
-    Case(
-        filters=[Filter(field_name="experiment_ids", relation=Relation.INCLUDES, value=["a"])],
-        matches=[ROW_100, ROW_200, ROW_300],
-    ),
-    Case(
-        filters=[Filter(field_name="experiment_ids", relation=Relation.INCLUDES, value=["B"])],
-        matches=[ROW_200, ROW_300],
-    ),
-    Case(
-        filters=[Filter(field_name="experiment_ids", relation=Relation.INCLUDES, value=["c"])],
-        matches=[ROW_300],
-    ),
-    Case(
-        filters=[Filter(field_name="experiment_ids", relation=Relation.EXCLUDES, value=["a"])],
-        matches=[],
-    ),
-    Case(
-        filters=[Filter(field_name="experiment_ids", relation=Relation.EXCLUDES, value=["D"])],
-        matches=[ROW_100, ROW_200, ROW_300],
-    ),
-    Case(
-        filters=[
-            Filter(
-                field_name="experiment_ids",
-                relation=Relation.INCLUDES,
-                value=["a", "d"],
-            )
-        ],
-        matches=[ROW_100, ROW_200, ROW_300],
-    ),
-    Case(
-        filters=[
-            Filter(
-                field_name="experiment_ids",
-                relation=Relation.EXCLUDES,
-                value=["a", "d"],
-            )
-        ],
-        matches=[],
-    ),
-    Case(
-        filters=[Filter(field_name="experiment_ids", relation=Relation.INCLUDES, value=["d"])],
-        matches=[],
-    ),
-    Case(
-        filters=[Filter(field_name="experiment_ids", relation=Relation.EXCLUDES, value=["d"])],
-        matches=[ROW_100, ROW_200, ROW_300],
     ),
 ]
 
@@ -626,29 +550,23 @@ def test_allowed_date_or_datetime_filter_validation(column_type):
     )
 
 
-REGEX_TESTS = [
-    ("", ["a"], False),
-    ("a", [""], False),
-    ("a", ["a"], True),
-    ("a,b", ["a"], True),
-    ("b,a", ["a"], True),
-    ("b,a", ["a", "b"], True),
-    ("b,a", ["b", "a"], True),
-    ("b,a", ["b", ""], True),
-    ("c,a,b,d", ["a"], True),
-]
-
-
-@pytest.mark.parametrize("csv,values,expected", REGEX_TESTS)
-def test_make_csv_regex(csv, values, expected):
-    """Tests for the regular expression, generated in isolation of the database stack.
-
-    Null-, empty string, and negative cases are special and handled in SQL elsewhere.
-    """
-    r = make_csv_regex(values)
-    matches = re.search(r, csv)
-    actual = matches is not None
-    assert actual == expected, (
-        f'Expression {r} is expected to {"match" if expected else "not match"} in "{csv}". '
-        f"Values = {values}. Matches = {matches}."
+@pytest.mark.parametrize(
+    "table_name,schema_name,expected_sql",
+    [
+        ("foo", None, "SELECT * FROM foo LIMIT 0"),
+        ("--bar", "my;schema", 'SELECT * FROM "my;schema"."--bar" LIMIT 0'),
+    ],
+)
+def test_create_inspect_table_from_cursor_query(table_name, schema_name, expected_sql):
+    query = create_inspect_table_from_cursor_query(table_name, schema_name=schema_name)
+    actual = (
+        str(
+            query.compile(
+                dialect=sqlalchemy.dialects.postgresql.psycopg.dialect(),
+                compile_kwargs={"literal_binds": True},
+            )
+        )
+        .replace("\n", "")
+        .replace("  ", " ")
     )
+    assert actual == expected_sql

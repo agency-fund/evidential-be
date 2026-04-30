@@ -1,11 +1,10 @@
-import re
 from collections.abc import Sequence
 from datetime import date, datetime
 
 import sqlalchemy
-from sqlalchemy import ColumnElement, Table, and_, func, not_, or_, select
+from sqlalchemy import ColumnElement, Table, and_, or_, select, text
 
-from xngin.apiserver.routers.common_api_types import EXPERIMENT_IDS_SUFFIX, Filter, FilterValueTypes
+from xngin.apiserver.routers.common_api_types import Filter, FilterValueTypes
 from xngin.apiserver.routers.common_enums import DataType, Relation
 from xngin.apiserver.routers.experiments.property_filters import validate_filter_value
 from xngin.db_extensions import custom_functions
@@ -13,40 +12,12 @@ from xngin.db_extensions import custom_functions
 
 def create_one_filter(filter_: Filter, sa_table: sqlalchemy.Table):
     """Converts a Filter into a SQLAlchemy filter."""
-    if filter_.field_name.endswith(EXPERIMENT_IDS_SUFFIX):
-        return create_special_experiment_id_filter(sa_table.columns[filter_.field_name], filter_)
     return create_filter(sa_table.columns[filter_.field_name], filter_)
 
 
 def create_query_filters(sa_table: sqlalchemy.Table, filters: list[Filter]):
     """Converts a list of Filter into a list of SQLAlchemy filters."""
     return [create_one_filter(filter_, sa_table) for filter_ in filters]
-
-
-def create_special_experiment_id_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:
-    matching_regex = make_csv_regex(filter_.value)
-    match filter_.relation:
-        case Relation.INCLUDES:
-            return func.lower(col).regexp_match(matching_regex)
-        case Relation.EXCLUDES:
-            return or_(
-                col.is_(None),
-                func.char_length(col) == 0,
-                not_(func.lower(col).regexp_match(matching_regex)),
-            )
-        case Relation.BETWEEN:
-            # This should be impossible as it's caught by the Filter validator:
-            raise ValueError(f"Experiment id filter on {filter_.field_name} has invalid relation: {filter_.relation}")
-
-
-def make_csv_regex(values):
-    """Constructs a regular expression for matching a CSV string against a list of values.
-
-    The generated regexp is to be used by re.search() or equivalent. We assume that most database engines
-    will support identical syntax.
-    """
-    value_regexp = r"(" + r"|".join(re.escape(str(v).lower()) for v in values if v is not None) + r")"
-    return r"(^x$)|(^x,)|(,x$)|(,x,)".replace("x", value_regexp)
 
 
 def general_excludes_filter(
@@ -123,6 +94,15 @@ def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:
             return general_includes_filter(col, parsed_values)
         case _:
             raise RuntimeError("Bug: invalid Filter.")
+
+
+def create_inspect_table_from_cursor_query(table_name: str, schema_name: str | None = None) -> sqlalchemy.Select:
+    """Returns a zero-row SELECT used to read column metadata via cursor.description (driver-dependent).
+
+    SQLAlchemy's identifier quoting is used to prevent SQL injection attacks.
+    """
+    table = Table(table_name, sqlalchemy.MetaData(), schema=schema_name)
+    return select(text("*")).select_from(table).limit(0)
 
 
 def compose_query(sa_table: Table, select_columns: set[str], filters: list[ColumnElement], desired_n: int):

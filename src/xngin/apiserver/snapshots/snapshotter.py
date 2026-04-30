@@ -87,7 +87,6 @@ async def make_first_snapshot(experiment_id: str, snapshot_id: str):
                 .options(
                     selectinload(tables.Snapshot.experiment),
                     selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.arms),
-                    selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.arm_assignments),
                     selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.draws),
                     selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.contexts),
                     selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.datasource),
@@ -103,7 +102,7 @@ async def make_first_snapshot(experiment_id: str, snapshot_id: str):
         await _handle_one_snapshot_safely(session, snapshot, SNAPSHOT_TIMEOUT_SECS)
 
 
-async def process_pending_snapshots(snapshot_timeout: int):
+async def process_pending_snapshots(snapshot_timeout: int, *, max_jitter_secs: float = 2):
     """Processes pending snapshots, one at a time, until there are no more available.
 
     Interactions with the client data warehouse will be considered timed-out after snapshot_timeout seconds. These
@@ -119,7 +118,6 @@ async def process_pending_snapshots(snapshot_timeout: int):
         .options(
             selectinload(tables.Snapshot.experiment),
             selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.arms),
-            selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.arm_assignments),
             selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.draws),
             selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.contexts),
             selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.datasource),
@@ -130,7 +128,7 @@ async def process_pending_snapshots(snapshot_timeout: int):
     )
 
     while True:
-        await asyncio.sleep(random.uniform(0, 2))  # jitter
+        await asyncio.sleep(random.uniform(0, max_jitter_secs))  # jitter  # noqa: S311
         async with database.async_session() as session, session.begin():
             snapshot = (await session.execute(one_pending_snapshot)).scalar_one_or_none()
             if snapshot is None:

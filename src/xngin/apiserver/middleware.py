@@ -1,6 +1,7 @@
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
+from xngin.apiserver import flags
 from xngin.apiserver.request_encapsulation_middleware import RequestEncapsulationMiddleware
 
 
@@ -16,7 +17,7 @@ def setup(app):
         allow_credentials=False,
         allow_headers=["*"],
         allow_methods=["*"],
-        allow_origins=["*"],
+        allow_origins=flags.CORS_ALLOWED_ORIGINS,
         max_age=7200,  # https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Access-Control-Max-Age
     )
     app.add_middleware(RequestEncapsulationMiddleware, path_prefix="/v1/experiments")

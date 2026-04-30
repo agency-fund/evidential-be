@@ -1,6 +1,9 @@
 """Task queue implementation using Postgres."""
 
+# mypy: disable-error-code="misc"
+
 import os
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -81,7 +84,8 @@ class TaskQueue:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                CREATE OR REPLACE FUNCTION notify_task_queue() RETURNS TRIGGER AS $$
+                CREATE OR REPLACE FUNCTION notify_task_queue() RETURNS TRIGGER AS
+                $$
                 BEGIN
                     PERFORM pg_notify('task_queue', 'new_task');
                     RETURN NEW;
@@ -93,8 +97,9 @@ class TaskQueue:
             cur.execute(
                 """
                 CREATE OR REPLACE TRIGGER task_queue_notify_trigger
-                AFTER INSERT ON tasks
-                FOR EACH ROW
+                    AFTER INSERT
+                    ON tasks
+                    FOR EACH ROW
                 EXECUTE FUNCTION notify_task_queue();
                 """
             )
@@ -107,21 +112,20 @@ class TaskQueue:
         """Fetch a task from the queue."""
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
-                """
+                t"""
                 UPDATE tasks
                 SET status = 'running', updated_at = NOW()
                 WHERE id IN (
                     SELECT id FROM tasks
                     WHERE status = 'pending'
                     AND embargo_until <= NOW()
-                    AND retry_count <= %s
+                    AND retry_count <= {self.max_retries}
                     ORDER BY created_at
                     LIMIT 1
                     FOR UPDATE SKIP LOCKED
                 )
                 RETURNING *
-                """,
-                (self.max_retries,),
+                """
             )
             row = cur.fetchone()
             if row:
@@ -151,12 +155,11 @@ class TaskQueue:
         """Mark a task as completed by setting its status to 'success'."""
         with conn.cursor() as cur:
             cur.execute(
-                """
+                t"""
                 UPDATE tasks
                 SET status = 'success', updated_at = NOW(), message = null
-                WHERE id = %s
-                """,
-                (task.id,),
+                WHERE id = {task.id}
+                """
             )
             conn.commit()
             logger.info(f"Task {task.id} completed and marked as successful")
@@ -167,18 +170,14 @@ class TaskQueue:
             if task.retry_count >= self.max_retries:
                 # Mark as dead if max retries reached
                 cur.execute(
-                    """
+                    t"""
                     UPDATE tasks
                     SET status = 'dead',
                         retry_count = retry_count + 1,
                         updated_at = NOW(),
-                        message = %s
-                    WHERE id = %s
-                    """,
-                    (
-                        err,
-                        task.id,
-                    ),
+                        message = {err}
+                    WHERE id = {task.id}
+                    """
                 )
                 logger.warning(f"Task {task.id} failed and reached max retries, marked as dead")
             else:
@@ -187,16 +186,15 @@ class TaskQueue:
 
                 # Reset to pending for retry with embargo using Postgres interval
                 cur.execute(
-                    """
+                    t"""
                     UPDATE tasks
                     SET status = 'pending',
                         retry_count = retry_count + 1,
                         updated_at = NOW(),
-                        embargo_until = NOW() + INTERVAL '%s minutes',
-                        message = %s
-                    WHERE id = %s
-                    """,
-                    (backoff_minutes, err, task.id),
+                        embargo_until = NOW() + make_interval(mins => {backoff_minutes}),
+                        message = {err}
+                    WHERE id = {task.id}
+                    """
                 )
                 logger.info(
                     f"Task {task.id} failed, retry count now {task.retry_count + 1}, next attempt after "
@@ -204,15 +202,16 @@ class TaskQueue:
                 )
             conn.commit()
 
-    def run(self) -> None:
+    def run(self, cancel: threading.Event | None = None) -> None:
         """Run the task queue processor.
 
-        This method will run indefinitely, processing tasks as they become available.
+        This method will run indefinitely, processing tasks as they become available. If cancel is provided, the loop
+        will eventually exit when the cancel event is set.
         """
         logger.info(f"Starting task queue with DSN: {self.dsn}")
 
         # Main task handling loop: Handle any new tasks, then wait for NOTIFY or polling_interval, repeat.
-        while True:
+        while cancel is None or not cancel.is_set():
             try:
                 with psycopg.connect(
                     self.dsn,
@@ -228,6 +227,9 @@ class TaskQueue:
 
                     logger.debug("No tasks available, waiting for notifications...")
                     conn.commit()
+
+                    if cancel is not None and cancel.is_set():
+                        break
 
                     try:
                         gen = conn.notifies(timeout=self.poll_interval)

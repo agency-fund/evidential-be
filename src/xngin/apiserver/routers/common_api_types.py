@@ -3,7 +3,7 @@ import json
 import math
 import uuid
 from collections.abc import Sequence
-from typing import Annotated, Literal, Self, TypedDict
+from typing import Annotated, Literal, NotRequired, Self, TypedDict
 
 import sqlalchemy.sql
 from annotated_types import MaxLen, MinLen
@@ -113,6 +113,28 @@ class DesignSpecMetric(DesignSpecMetricBase):
             )
         ),
     ] = None
+
+    # Cluster randomization design parameters (all must be set together, or none)
+    icc: Annotated[
+        float | None,
+        Field(description="Intracluster correlation coefficient for cluster-randomized designs."),
+    ] = None
+    avg_cluster_size: Annotated[
+        float | None,
+        Field(description="Average number of individuals per cluster."),
+    ] = None
+    cv: Annotated[
+        float | None,
+        Field(description="Coefficient of variation in cluster sizes (0 = equal sizes)."),
+    ] = None
+
+    @model_validator(mode="after")
+    def cluster_fields_check(self) -> Self:
+        """Enforce that cluster fields are either all set or all unset."""
+        cluster_fields = (self.icc, self.avg_cluster_size, self.cv)
+        if any(f is not None for f in cluster_fields) and any(f is None for f in cluster_fields):
+            raise ValueError("icc, avg_cluster_size, and cv must all be set together or all be None")
+        return self
 
     @model_validator(mode="after")
     def stddev_check(self):
@@ -240,7 +262,7 @@ class CMABContextInputRequest(ApiBaseModel):
         "cmab_assignment"  # Adding type field to allow for type-discriminated unions in future
     )
     context_inputs: Annotated[
-        list[ContextInput],
+        list[ContextInput] | None,
         Field(
             description="""
             List of context values for the assignment.
@@ -453,11 +475,11 @@ class BanditArmAnalysis(ArmBandit):
 
     post_pred_mean: Annotated[
         float,
-        Field(description="Prior predictive mean for this arm."),
+        Field(description="Posterior predictive mean for this arm."),
     ]
     post_pred_stdev: Annotated[
         float,
-        Field(description="Prior predictive standard deviation for this arm."),
+        Field(description="Posterior predictive standard deviation for this arm."),
     ]
     post_pred_ci_upper: Annotated[
         float,
@@ -627,56 +649,23 @@ class MetricPowerAnalysis(ApiBaseModel):
         Field(description="Human friendly message about the above results."),
     ] = None
 
-
-class ClusterMetricPowerAnalysis(MetricPowerAnalysis):
-    """
-    Power analysis results for cluster-randomized designs.
-
-    Extends MetricPowerAnalysis with cluster-specific information
-    for designs where randomization occurs at the cluster level
-    (e.g., schools, hospitals, clinics) rather than individual level.
-
-    Note: Cluster-specific fields will be None if the power analysis failed
-    (e.g., missing baseline, zero variance, insufficient data).
-    """
-
-    # Design parameters (always present - user provides these)
-    icc: Annotated[
-        float,
-        Field(description="Intracluster correlation coefficient used in calculation"),
-    ]
-
-    avg_cluster_size: Annotated[
-        float,
-        Field(description="Average number of individuals per cluster"),
-    ]
-
-    cv: Annotated[
-        float,
-        Field(description="Coefficient of variation in cluster sizes (0 = equal sizes)"),
-    ] = 0.0
-
-    # Results (None if analysis failed)
+    # Cluster randomization results (None for non-cluster designs)
     num_clusters_total: Annotated[
         int | None,
         Field(description="Total number of clusters needed across all arms"),
     ] = None
-
     clusters_per_arm: Annotated[
         list[int] | None,
         Field(description="Number of clusters needed for each arm (one entry per arm)"),
     ] = None
-
     n_per_arm: Annotated[
         list[int] | None,
         Field(description="Number of participants for each arm (one entry per arm)"),
     ] = None
-
     design_effect: Annotated[
         float | None,
         Field(description="Design effect (DEFF) - clustering penalty multiplier"),
     ] = None
-
     effective_sample_size: Annotated[
         int | None,
         Field(description="Effective sample size accounting for clustering (total_n / DEFF)"),
@@ -697,9 +686,6 @@ class GetMetricsResponseElement(ApiBaseModel):
     field_name: FieldName
     data_type: DataType
     description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
-
-
-EXPERIMENT_IDS_SUFFIX = "experiment_ids"
 
 
 class Filter(ApiBaseModel):
@@ -730,21 +716,6 @@ class Filter(ApiBaseModel):
     including null in addition to the values in the between range via an OR IS NULL clause, as
     indicated by a 3rd value of None. Any other 3rd value is invalid.
 
-    ## Special Handling for Comma-Separated Fields
-
-    When the filter name ends in "experiment_ids", the filter is interpreted as follows:
-
-    | Value | Filter         | Result   |
-    |-------|----------------|----------|
-    | "a,b" | INCLUDES ["a"] | Match    |
-    | "a,b" | INCLUDES ["d"] | No match |
-    | "a,b" | EXCLUDES ["d"] | Match    |
-    | "a,b" | EXCLUDES ["b"] | No match |
-
-    Note: The BETWEEN relation is not supported for comma-separated values.
-
-    Note: CSV field comparisons are case-insensitive.
-
     ## Handling of DATE, DATETIME and TIMESTAMP values
 
     DATE, DATETIME or TIMESTAMP-type columns support INCLUDES/EXCLUDES/BETWEEN, similar to numerics.
@@ -773,25 +744,6 @@ class Filter(ApiBaseModel):
         if isinstance(column_type, sqlalchemy.sql.sqltypes.UUID | sqlalchemy.sql.sqltypes.String):
             return pid
         raise LateValidationError(f"Unsupported participant ID type: {column_type}")
-
-    @model_validator(mode="after")
-    def ensure_experiment_ids_hack_compatible(self) -> Filter:
-        """Ensures that the filter is compatible with the "experiment_ids" hack."""
-        if not self.field_name.endswith(EXPERIMENT_IDS_SUFFIX):
-            return self
-        allowed_relations = (Relation.INCLUDES, Relation.EXCLUDES)
-        if self.relation not in allowed_relations:
-            raise ValueError(
-                f"filters on experiment_id fields must have relations of type {', '.join(sorted(allowed_relations))}"
-            )
-        for v in self.value:
-            if not isinstance(v, str):
-                continue
-            if "," in v:
-                raise ValueError("values in an experiment_id filter may not contain commas")
-            if v.strip() != v:
-                raise ValueError("values in an experiment_id filter may not contain leading or trailing whitespace")
-        return self
 
     @model_validator(mode="after")
     def ensure_value(self) -> Filter:
@@ -1167,7 +1119,10 @@ class PowerResponse(ApiBaseModel):
 
 
 class StrataTypedDict(TypedDict):
-    """Strata as a TypedDict to avoid Pydantic model work on hot paths."""
+    """Strata as a TypedDict to avoid Pydantic model work on hot paths.
+
+    TypedDict provides some type safety without a runtime cost.
+    """
 
     field_name: str
     strata_value: str | None
@@ -1181,6 +1136,22 @@ class Strata(ApiBaseModel):
     # from data warehouse.
     # strata_type: Optional[StrataType]
     strata_value: str | None = None
+
+
+class AssignmentTypedDict(TypedDict):
+    """Assignment as a TypedDict to avoid Pydantic model work on hot paths.
+
+    TypedDict provides some type safety without a runtime cost.
+    """
+
+    arm_id: str
+    participant_id: str
+    arm_name: str
+    created_at: NotRequired[str | None]
+    strata: NotRequired[list[StrataTypedDict] | None]
+    observed_at: NotRequired[str | None]
+    outcome: NotRequired[float | None]
+    context_values: NotRequired[list[float] | None]
 
 
 class Assignment(ApiBaseModel):

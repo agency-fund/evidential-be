@@ -196,10 +196,9 @@ jobs:
           lfs: true
           persist-credentials: true
       - uses: astral-sh/setup-uv@e06108dd0aef18192324c70427afc47652e63a82 # v7.5.0
-      - uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+      - uses: go-task/setup-task@3be4020d41929789a01026e0e427a4321ce0ad44 # v2.0.0
         with:
           version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: write secrets
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         run: |
@@ -251,10 +250,9 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@e06108dd0aef18192324c70427afc47652e63a82 # v7.5.0
       - name: Install Task
-        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+        uses: go-task/setup-task@3be4020d41929789a01026e0e427a4321ce0ad44 # v2.0.0
         with:
           version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: xngin-cli export-openapi-spec
         run: |
           XNGIN_PUBLISH_ALL_DOCS=true uv run xngin-cli export-openapi-spec
