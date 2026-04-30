@@ -2,6 +2,7 @@ import asyncio
 import enum
 import io
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import numpy as np
@@ -1161,26 +1162,49 @@ async def read_assignments_efficiently(xngin_session: AsyncSession, experiment_i
     return df["participant_id"].to_list(), df
 
 
-def analyze_experiment_bandit_impl(
+@dataclass(frozen=True, slots=True)
+class DrawsOutcomeAggregates:
+    """Aggregate statistics over the non-null outcomes of an experiment's draws."""
+
+    n_outcomes: int
+    outcome_std_dev: float
+
+
+async def analyze_experiment_bandit_impl(
+    xngin_session: AsyncSession,
     experiment: tables.Experiment,
     context_vals: list[float] | None = None,
 ) -> BanditExperimentAnalysisResponse:
-    """Analyze a bandit experiment. Assumes arms and draws are preloaded."""
-
-    draws = experiment.draws
-    outcomes = [draw.outcome for draw in draws if draw.outcome is not None]
-
-    outcome_std_dev = np.std(outcomes).astype(float) if len(outcomes) > 1 else 0.0
+    """Analyze a bandit experiment. Assumes arms are preloaded."""
+    aggregates = await _draws_outcome_aggregates(xngin_session, experiment.id)
     arm_analyses = analyze_bandit_experiment(
         experiment=experiment,
-        outcome_std_dev=outcome_std_dev,
+        outcome_std_dev=aggregates.outcome_std_dev,
         context_vals=context_vals,
     )
-
     return BanditExperimentAnalysisResponse(
         experiment_id=experiment.id,
         arm_analyses=arm_analyses,
-        n_outcomes=len(outcomes),
+        n_outcomes=aggregates.n_outcomes,
         created_at=datetime.now(UTC),
         contexts=context_vals,
     )
+
+
+async def _draws_outcome_aggregates(xngin_session: AsyncSession, experiment_id: str) -> DrawsOutcomeAggregates:
+    """Count of non-null outcomes and population std dev of those outcomes.
+
+    Returns a 0.0 standard deviation when fewer than two non-null outcomes exist.
+    """
+    n_outcomes, std_dev = (
+        await xngin_session.execute(
+            select(
+                func.count(tables.Draw.outcome),
+                func.coalesce(func.stddev_pop(tables.Draw.outcome), 0.0),
+            ).where(
+                tables.Draw.experiment_id == experiment_id,
+                tables.Draw.outcome.is_not(None),
+            )
+        )
+    ).one()
+    return DrawsOutcomeAggregates(n_outcomes=n_outcomes, outcome_std_dev=std_dev)
