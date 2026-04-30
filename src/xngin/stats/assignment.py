@@ -11,7 +11,7 @@ from xngin.stats.balance import (
     preprocess_for_balance_and_stratification,
     restore_original_numeric_columns,
 )
-from xngin.stats.stats_errors import StatsError
+from xngin.stats.stats_errors import StatsAssignmentError
 
 STOCHATREAT_STRATUM_ID_NAME = "stratum_id"
 STOCHATREAT_TREAT_NAME = "treat"
@@ -66,6 +66,9 @@ def assign_treatment_and_check_balance(
             orig_stratum_cols - deduplicated and sorted list of stratum_cols.
                 May be useful for referencing original db values used in your df.
     """
+    if id_col in stratum_cols:
+        raise StatsAssignmentError(f"Columns with only unique values should not be used as strata: {id_col}")
+
     if len(stratum_cols) == 0:
         # No stratification, so use simple random assignment
         treatment_ids = simple_random_assignment(df, n_arms, random_state, arm_weights)
@@ -125,7 +128,7 @@ def assign_treatment_and_check_balance(
     treatment_ids = df_cleaned[STOCHATREAT_TREAT_NAME]
 
     if len(df) != len(df_cleaned):
-        raise StatsError(
+        raise StatsAssignmentError(
             f"Expected {len(df)} assignments but only have {len(df_cleaned)}. "
             f"Check if your {id_col} values could be causing problems."
         )
