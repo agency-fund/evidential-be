@@ -34,6 +34,7 @@ from xngin.apiserver.routers.common_api_types import (
     AssignSummary,
     BalanceCheck,
     BanditExperimentAnalysisResponse,
+    BayesABExperimentSpec,
     CMABExperimentSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
@@ -857,10 +858,17 @@ async def update_bandit_arm_with_outcome_impl(
     # Not supported for frequentist experiments
     design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
 
-    if isinstance(design_spec, PreassignedFrequentistExperimentSpec | OnlineFrequentistExperimentSpec):
-        raise LateValidationError(
-            "Cannot dynamically update arms for frequentist experiments.",
-        )
+    match design_spec:
+        case PreassignedFrequentistExperimentSpec() | OnlineFrequentistExperimentSpec():
+            raise LateValidationError("Cannot dynamically update arms for frequentist experiments.")
+        case BayesABExperimentSpec():
+            # TODO: Add support for Bayesian A/B experiments.
+            raise LateValidationError(
+                f"Invalid experiment type for bandit outcome update: {design_spec.experiment_type.value}"
+            )
+        case MABExperimentSpec() | CMABExperimentSpec():
+            pass
+
     # Look up the participant's assignment if it exists
     assignment = await get_existing_assignment_for_participant(
         xngin_session, experiment.id, participant_id, experiment.experiment_type
@@ -872,12 +880,6 @@ async def update_bandit_arm_with_outcome_impl(
     if assignment.outcome is not None:
         raise ExperimentsAssignmentError(
             f"Participant {participant_id} already has an outcome recorded.",
-        )
-
-    # TODO: Add support for Bayesian A/B experiments.
-    if design_spec.experiment_type == ExperimentsType.BAYESAB_ONLINE:
-        raise LateValidationError(
-            f"Invalid experiment type for bandit outcome update: {design_spec.experiment_type.value}"
         )
 
     if design_spec.reward_type == LikelihoodTypes.BERNOULLI and outcome not in {

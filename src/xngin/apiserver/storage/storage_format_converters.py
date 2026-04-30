@@ -53,12 +53,13 @@ class ExperimentStorageConverter:
             field_type_map: Optional field name to data type mapping.
             unique_id_name: Optional unique ID field name.
         """
-        if not isinstance(
-            design_spec, capi.PreassignedFrequentistExperimentSpec | capi.OnlineFrequentistExperimentSpec
-        ):
-            self.experiment.design_spec_fields = None
-            self.experiment.experiment_fields = []
-            return self
+        match design_spec:
+            case capi.MABExperimentSpec() | capi.CMABExperimentSpec() | capi.BayesABExperimentSpec():
+                self.experiment.design_spec_fields = None
+                self.experiment.experiment_fields = []
+                return self
+            case capi.PreassignedFrequentistExperimentSpec() | capi.OnlineFrequentistExperimentSpec():
+                pass
 
         field_type_map = field_type_map or {}
 
