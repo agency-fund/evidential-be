@@ -1141,9 +1141,16 @@ type AnyFrequentistDesignSpec = Annotated[
     ),
 ]
 
+type AnyBanditDesignSpec = Annotated[
+    MABExperimentSpec | CMABExperimentSpec | BayesABExperimentSpec,
+    Field(
+        discriminator="experiment_type",
+        description="The specific type of bandit experiment design.",
+    ),
+]
 
 type DesignSpec = Annotated[
-    AnyFrequentistDesignSpec | MABExperimentSpec | CMABExperimentSpec | BayesABExperimentSpec,
+    AnyFrequentistDesignSpec | AnyBanditDesignSpec,
     Field(
         discriminator="experiment_type",
         description="The type of assignment and experiment design.",

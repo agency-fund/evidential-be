@@ -116,8 +116,9 @@ from xngin.apiserver.routers.admin.generic_handlers import handle_delete
 from xngin.apiserver.routers.auth.auth_api_types import CallerIdentity
 from xngin.apiserver.routers.auth.auth_dependencies import require_user_from_token
 from xngin.apiserver.routers.common_api_types import (
-    BaseBanditExperimentSpec,
+    BayesABExperimentSpec,
     CMABContextInputRequest,
+    CMABExperimentSpec,
     ContextInput,
     ContextType,
     CreateExperimentRequest,
@@ -128,6 +129,7 @@ from xngin.apiserver.routers.common_api_types import (
     GetMetricsResponseElement,
     GetStrataResponseElement,
     ListExperimentsResponse,
+    MABExperimentSpec,
     OnlineFrequentistExperimentSpec,
     PowerRequest,
     PowerResponse,
@@ -1615,7 +1617,7 @@ async def analyze_experiment(
 
     design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
     match design_spec:
-        case BaseBanditExperimentSpec():
+        case MABExperimentSpec() | CMABExperimentSpec() | BayesABExperimentSpec():
             if experiment.experiment_type != ExperimentsType.MAB_ONLINE.value:
                 raise LateValidationError(
                     """Invalid experiment type for bandit analysis; for CMAB experiments,
