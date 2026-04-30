@@ -33,7 +33,7 @@ def _is_postgres_database_not_found_error(exc: OperationalError) -> bool:
 
 def _safe_url(url: sqlalchemy.engine.url.URL) -> sqlalchemy.engine.url.URL:
     """Prepares a URL for presentation or capture in logs by stripping sensitive values."""
-    cleaned = url.set(password="redacted")
+    cleaned = url.set(password="redacted")  # noqa: S106
     for qp in ("credentials_base64", "credentials_info"):
         if cleaned.query.get(qp):
             cleaned = cleaned.update_query_dict({qp: "redacted"})
