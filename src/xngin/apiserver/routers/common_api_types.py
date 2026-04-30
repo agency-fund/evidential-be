@@ -1138,9 +1138,17 @@ type DesignSpec = Annotated[
     ),
 ]
 
+type AnyFrequentistDesignSpec = Annotated[
+    PreassignedFrequentistExperimentSpec | OnlineFrequentistExperimentSpec,
+    Field(
+        discriminator="experiment_type",
+        description="The specific type of frequentist experiment design.",
+    ),
+]
+
 
 class PowerRequest(ApiBaseModel):
-    design_spec: BaseFrequentistDesignSpec
+    design_spec: AnyFrequentistDesignSpec
 
 
 class PowerResponse(ApiBaseModel):

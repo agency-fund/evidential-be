@@ -6,10 +6,10 @@ import pytest
 from pydantic import TypeAdapter
 
 from xngin.apiserver.routers.common_api_types import (
+    AnyFrequentistDesignSpec,
     Arm,
     ArmBandit,
     BaseDesignSpec,
-    BaseFrequentistDesignSpec,
     CMABContextInputRequest,
     CMABExperimentSpec,
     Context,
@@ -110,7 +110,7 @@ def make_unvalidated_create_experiment_request(
         arms=[Arm(arm_name="overwritten1", arm_description=""), Arm(arm_name="overwritten2", arm_description="")],
     ).model_dump(exclude={"arms"})
 
-    design_spec: BaseFrequentistDesignSpec | MABExperimentSpec | CMABExperimentSpec
+    design_spec: AnyFrequentistDesignSpec | MABExperimentSpec | CMABExperimentSpec
     match experiment_type:
         case ExperimentsType.FREQ_PREASSIGNED:
             props: dict = {

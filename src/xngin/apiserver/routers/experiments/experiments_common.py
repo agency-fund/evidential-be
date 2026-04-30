@@ -26,6 +26,7 @@ from xngin.apiserver.routers.assignment_adapters import (
     make_balance_check,
 )
 from xngin.apiserver.routers.common_api_types import (
+    AnyFrequentistDesignSpec,
     Arm,
     ArmAnalysis,
     ArmSize,
@@ -129,7 +130,7 @@ def make_participants_def_from_experiment(experiment: tables.Experiment) -> Part
 
 async def fetch_fields_or_raise(
     datasource: tables.Datasource,
-    design_spec: BaseFrequentistDesignSpec,
+    design_spec: AnyFrequentistDesignSpec,
 ) -> dict[str, DataType]:
     """Inspect an explicit table/primary_key experiment request and return field metadata.
 
@@ -142,7 +143,7 @@ async def fetch_fields_or_raise(
         return await fetch_fields_from_table_or_raise(sa_table, design_spec)
 
 
-async def fetch_fields_from_table_or_raise(table: Table, design_spec: BaseFrequentistDesignSpec) -> dict[str, DataType]:
+async def fetch_fields_from_table_or_raise(table: Table, design_spec: AnyFrequentistDesignSpec) -> dict[str, DataType]:
     """Helper to fetch_fields_or_raise that operates on a pre-inspected SQLAlchemy table."""
     schema_supported_fields_map: dict[str, DataType] = {}
     for column in table.columns.values():
