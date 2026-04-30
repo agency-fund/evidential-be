@@ -28,6 +28,7 @@ from xngin.apiserver.dependencies import (
     random_seed_dependency,
 )
 from xngin.apiserver.dns import safe_resolve
+from xngin.apiserver.dwh import dwh_utils
 from xngin.apiserver.exceptionhandlers import XHTTPValidationError
 from xngin.apiserver.main import app
 from xngin.apiserver.routers.admin import admin_api_types as aapi
@@ -159,17 +160,22 @@ def disable_safe_resolve_check():
 
 def get_test_uri_info(connection_uri: str) -> TestUriInfo:
     """Returns a TestUriInfo dataclass about a test database given its connection_uri."""
-    if connection_uri.startswith("bigquery"):
+    if not connection_uri:
+        raise ValueError("connection_uri is empty")
+
+    parsed_url = make_url(connection_uri)
+    if dwh_utils.is_bigquery(parsed_url):
         dbtype = DbType.BQ
-    elif "redshift.amazonaws.com" in connection_uri:
+    elif dwh_utils.is_redshift(parsed_url):
         dbtype = DbType.RS
-    elif connection_uri.startswith("postgres"):
+    elif dwh_utils.is_postgres(parsed_url):
         dbtype = DbType.PG
     else:
         raise ValueError(
             f"connection_uri is not recognized as a BigQuery, Redshift, or Postgres database: {connection_uri}"
         )
-    return TestUriInfo(connect_url=make_url(connection_uri), db_type=dbtype)
+
+    return TestUriInfo(connect_url=parsed_url, db_type=dbtype)
 
 
 @pytest.fixture(scope="session", autouse=True)
