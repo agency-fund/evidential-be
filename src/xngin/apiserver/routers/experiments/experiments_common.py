@@ -34,7 +34,7 @@ from xngin.apiserver.routers.common_api_types import (
     AssignSummary,
     BalanceCheck,
     BanditExperimentAnalysisResponse,
-    BaseFrequentistDesignSpec,
+    CMABExperimentSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
     DesignSpecMetricRequest,
@@ -43,8 +43,11 @@ from xngin.apiserver.routers.common_api_types import (
     GetExperimentResponse,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
+    MABExperimentSpec,
     MetricAnalysis,
+    OnlineFrequentistExperimentSpec,
     ParticipantProperty,
+    PreassignedFrequentistExperimentSpec,
     Strata,
 )
 from xngin.apiserver.routers.common_enums import (
@@ -199,13 +202,12 @@ async def create_experiment_impl(
     random_state: int | None,
     validated_webhooks: list[tables.Webhook],
 ) -> CreateExperimentResponse:
-    match request.design_spec.experiment_type:
-        case ExperimentsType.FREQ_PREASSIGNED:
+    match request.design_spec:
+        case PreassignedFrequentistExperimentSpec():
             if desired_n is None:
                 raise LateValidationError("Preassigned experiments must have a desired_n.")
 
             preassigned_spec = request.design_spec
-            assert isinstance(preassigned_spec, BaseFrequentistDesignSpec)
             table_name = preassigned_spec.table_name
             primary_key = preassigned_spec.primary_key
             field_type_map = await fetch_fields_or_raise(datasource, preassigned_spec)
@@ -242,9 +244,8 @@ async def create_experiment_impl(
                 field_type_map=field_type_map,
             )
 
-        case ExperimentsType.FREQ_ONLINE:
+        case OnlineFrequentistExperimentSpec():
             online_spec = request.design_spec
-            assert isinstance(online_spec, BaseFrequentistDesignSpec)
             field_type_map = await fetch_fields_or_raise(datasource, online_spec)
 
             return await create_freq_online_experiment_impl(
@@ -256,7 +257,7 @@ async def create_experiment_impl(
                 field_type_map=field_type_map,
             )
 
-        case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
+        case MABExperimentSpec() | CMABExperimentSpec():
             return await create_bandit_online_experiment_impl(
                 xngin_session=xngin_session,
                 organization_id=datasource.organization_id,
@@ -289,12 +290,11 @@ async def create_preassigned_experiment_impl(
     """Create a frequentist preassigned experiment and persist it to the database."""
 
     design_spec = request.design_spec
-    assert isinstance(design_spec, BaseFrequentistDesignSpec)
+    if not isinstance(design_spec, PreassignedFrequentistExperimentSpec):
+        raise MismatchedExperimentTypeError(f"can't create preassigned exp of type: {design_spec.experiment_type}")
+
     table_name = design_spec.table_name
     unique_id_name = design_spec.primary_key
-
-    if design_spec.experiment_type != ExperimentsType.FREQ_PREASSIGNED:
-        raise MismatchedExperimentTypeError(f"can't create preassigned exp of type: {design_spec.experiment_type}")
 
     metric_names = [m.field_name for m in design_spec.metrics]
     strata_names = [s.field_name for s in design_spec.strata]
@@ -371,12 +371,11 @@ async def create_freq_online_experiment_impl(
 ) -> CreateExperimentResponse:
     """Create a frequentist online experiment and persist it to the database."""
     design_spec = request.design_spec
-    assert isinstance(design_spec, BaseFrequentistDesignSpec)
+    if not isinstance(design_spec, OnlineFrequentistExperimentSpec):
+        raise MismatchedExperimentTypeError(f"Can't create freq online exp of type: {design_spec.experiment_type}")
+
     table_name = design_spec.table_name
     unique_id_name = design_spec.primary_key
-
-    if design_spec.experiment_type != ExperimentsType.FREQ_ONLINE:
-        raise MismatchedExperimentTypeError(f"Can't create freq online exp of type: {design_spec.experiment_type}")
 
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
@@ -905,7 +904,7 @@ async def update_bandit_arm_with_outcome_impl(
     # Not supported for frequentist experiments
     design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
 
-    if isinstance(design_spec, BaseFrequentistDesignSpec):
+    if isinstance(design_spec, PreassignedFrequentistExperimentSpec | OnlineFrequentistExperimentSpec):
         raise LateValidationError(
             "Cannot dynamically update arms for frequentist experiments.",
         )

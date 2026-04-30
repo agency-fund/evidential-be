@@ -53,7 +53,9 @@ class ExperimentStorageConverter:
             field_type_map: Optional field name to data type mapping.
             unique_id_name: Optional unique ID field name.
         """
-        if not isinstance(design_spec, capi.BaseFrequentistDesignSpec):
+        if not isinstance(
+            design_spec, capi.PreassignedFrequentistExperimentSpec | capi.OnlineFrequentistExperimentSpec
+        ):
             self.experiment.design_spec_fields = None
             self.experiment.experiment_fields = []
             return self
@@ -431,7 +433,7 @@ class ExperimentStorageConverter:
         )
 
         match design_spec:
-            case capi.BaseFrequentistDesignSpec():
+            case capi.PreassignedFrequentistExperimentSpec() | capi.OnlineFrequentistExperimentSpec():
                 # Set frequentist-specific fields
                 experiment.power = design_spec.power
                 experiment.alpha = design_spec.alpha
@@ -455,7 +457,7 @@ class ExperimentStorageConverter:
                     .set_power_response(power_analyses)
                 )
 
-            case capi.BaseBanditExperimentSpec():
+            case capi.MABExperimentSpec() | capi.CMABExperimentSpec():
                 if design_spec.experiment_type == ExperimentsType.CMAB_ONLINE and not design_spec.contexts:
                     raise ValueError("Contexts are required for CMAB experiments.")
 

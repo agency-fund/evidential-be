@@ -5,11 +5,11 @@ from sqlalchemy import select
 
 from xngin.apiserver.routers.common_api_types import (
     Arm,
-    BaseFrequentistDesignSpec,
     DesignSpec,
     DesignSpecMetricRequest,
     ExperimentsType,
     FreqExperimentAnalysisResponse,
+    OnlineFrequentistExperimentSpec,
     PreassignedFrequentistExperimentSpec,
 )
 from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
@@ -28,11 +28,13 @@ async def make_experiment(
     table_name = None
     primary_key = None
     field_type_map = None
-    if design_spec.experiment_type in {ExperimentsType.FREQ_PREASSIGNED, ExperimentsType.FREQ_ONLINE}:
-        assert isinstance(design_spec, BaseFrequentistDesignSpec)
-        table_name = design_spec.table_name
-        primary_key = design_spec.primary_key
-        field_type_map = await fetch_fields_or_raise(datasource, design_spec)
+    match design_spec:
+        case PreassignedFrequentistExperimentSpec() | OnlineFrequentistExperimentSpec():
+            table_name = design_spec.table_name
+            primary_key = design_spec.primary_key
+            field_type_map = await fetch_fields_or_raise(datasource, design_spec)
+        case _:
+            pass
 
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,

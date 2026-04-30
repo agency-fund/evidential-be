@@ -117,7 +117,6 @@ from xngin.apiserver.routers.auth.auth_api_types import CallerIdentity
 from xngin.apiserver.routers.auth.auth_dependencies import require_user_from_token
 from xngin.apiserver.routers.common_api_types import (
     BaseBanditExperimentSpec,
-    BaseFrequentistDesignSpec,
     CMABContextInputRequest,
     ContextInput,
     ContextType,
@@ -129,8 +128,10 @@ from xngin.apiserver.routers.common_api_types import (
     GetMetricsResponseElement,
     GetStrataResponseElement,
     ListExperimentsResponse,
+    OnlineFrequentistExperimentSpec,
     PowerRequest,
     PowerResponse,
+    PreassignedFrequentistExperimentSpec,
 )
 from xngin.apiserver.routers.common_enums import ExperimentState, PreloadMethod
 from xngin.apiserver.routers.experiments import experiments_common, experiments_common_csv
@@ -1622,7 +1623,7 @@ async def analyze_experiment(
                 )
             return experiments_common.analyze_experiment_bandit_impl(experiment)
 
-        case BaseFrequentistDesignSpec():
+        case PreassignedFrequentistExperimentSpec() | OnlineFrequentistExperimentSpec():
             # Always assume the first arm is the baseline; UI can override this.
             baseline_arm_id = baseline_arm_id or design_spec.arms[0].arm_id
             assert baseline_arm_id is not None

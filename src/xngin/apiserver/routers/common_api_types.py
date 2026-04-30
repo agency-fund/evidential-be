@@ -1126,23 +1126,20 @@ class BayesABExperimentSpec(BaseBanditExperimentSpec):
     experiment_type: Literal[ExperimentsType.BAYESAB_ONLINE] = ExperimentsType.BAYESAB_ONLINE
 
 
-type DesignSpec = Annotated[
-    PreassignedFrequentistExperimentSpec
-    | OnlineFrequentistExperimentSpec
-    | MABExperimentSpec
-    | CMABExperimentSpec
-    | BayesABExperimentSpec,
-    Field(
-        discriminator="experiment_type",
-        description="The type of assignment and experiment design.",
-    ),
-]
-
 type AnyFrequentistDesignSpec = Annotated[
     PreassignedFrequentistExperimentSpec | OnlineFrequentistExperimentSpec,
     Field(
         discriminator="experiment_type",
         description="The specific type of frequentist experiment design.",
+    ),
+]
+
+
+type DesignSpec = Annotated[
+    AnyFrequentistDesignSpec | MABExperimentSpec | CMABExperimentSpec | BayesABExperimentSpec,
+    Field(
+        discriminator="experiment_type",
+        description="The type of assignment and experiment design.",
     ),
 ]
 

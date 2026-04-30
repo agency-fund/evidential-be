@@ -21,7 +21,6 @@ from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import (
     Arm,
     ArmBandit,
-    BaseFrequentistDesignSpec,
     CMABExperimentSpec,
     Context,
     ContextType,
@@ -202,12 +201,12 @@ def make_createexperimentrequest_json(
 
 def make_create_preassigned_experiment_request() -> CreateExperimentRequest:
     request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_PREASSIGNED)
-    return TypeAdapter(CreateExperimentRequest).validate_python(request)
+    return CreateExperimentRequest.model_validate(request)
 
 
 def make_create_freq_online_experiment_request() -> CreateExperimentRequest:
     request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
-    return TypeAdapter(CreateExperimentRequest).validate_python(request)
+    return CreateExperimentRequest.model_validate(request)
 
 
 def make_create_online_bandit_experiment_request(
@@ -218,7 +217,7 @@ def make_create_online_bandit_experiment_request(
     request = make_createexperimentrequest_json(
         experiment_type=experiment_type, prior_type=prior_type, reward_type=reward_type
     )
-    return TypeAdapter(CreateExperimentRequest).validate_python(request)
+    return CreateExperimentRequest.model_validate(request)
 
 
 async def make_insertable_experiment(
@@ -976,7 +975,7 @@ async def test_create_experiment_impl_for_freq_online_with_unbalanced_arms(
     expected_weights = [100 * 1 / 3, 100 * 2 / 3]
     request["design_spec"]["arms"][0]["arm_weight"] = expected_weights[0]
     request["design_spec"]["arms"][1]["arm_weight"] = expected_weights[1]
-    request = TypeAdapter(CreateExperimentRequest).validate_python(request)
+    request = CreateExperimentRequest.model_validate(request)
 
     response = await create_experiment_impl(
         request=request,
@@ -1069,9 +1068,9 @@ async def test_create_experiment_impl_for_freq_raises_on_bad_filters(
 ):
     """Test that validate_filter_value is being called correctly during experiment creation."""
     request = make_createexperimentrequest_json(experiment_type=experiment_type)
-    request = TypeAdapter(CreateExperimentRequest).validate_python(request)
+    request = CreateExperimentRequest.model_validate(request)
     # Attach test filters
-    assert isinstance(request.design_spec, BaseFrequentistDesignSpec)
+    assert isinstance(request.design_spec, PreassignedFrequentistExperimentSpec | OnlineFrequentistExperimentSpec)
     request.design_spec.filters = filters
 
     with pytest.raises(LateValidationError, match=match):
@@ -2270,7 +2269,7 @@ async def test_create_assignment_for_participant_with_unbalanced_arms(xngin_sess
     request["design_spec"]["arms"][1]["arm_weight"] = expected_weights[1]
 
     response = await create_experiment_impl(
-        request=TypeAdapter(CreateExperimentRequest).validate_python(request),
+        request=CreateExperimentRequest.model_validate(request),
         datasource=testing_datasource.ds,
         xngin_session=xngin_session,
         desired_n=None,
@@ -2314,7 +2313,7 @@ async def test_create_assignment_for_participant_with_three_weighted_arms(xngin_
     request["design_spec"]["arms"][2]["arm_weight"] = expected_weights[2]
 
     response = await create_experiment_impl(
-        request=TypeAdapter(CreateExperimentRequest).validate_python(request),
+        request=CreateExperimentRequest.model_validate(request),
         datasource=testing_datasource.ds,
         xngin_session=xngin_session,
         desired_n=None,
