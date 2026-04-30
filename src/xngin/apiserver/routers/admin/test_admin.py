@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 import numpy as np
 import pytest
 from deepdiff import DeepDiff
-from pydantic import HttpUrl, TypeAdapter
+from pydantic import HttpUrl
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1336,7 +1336,7 @@ async def test_lifecycle_with_db(testing_datasource, aclient: AdminAPIClient, ac
 
     # Create experiment using that participant type.
     create_exp_dict = make_createexperimentrequest_json()
-    create_exp_request = TypeAdapter(CreateExperimentRequest).validate_python(create_exp_dict)
+    create_exp_request = CreateExperimentRequest.model_validate(create_exp_dict)
     create_exp_request.design_spec.design_url = HttpUrl("https://example.com/design")
     assert isinstance(create_exp_request.design_spec, PreassignedFrequentistExperimentSpec)
     create_exp_request.design_spec.filters = [
@@ -1607,6 +1607,15 @@ async def test_create_experiment_with_invalid_design_url(testing_datasource, acl
     # And we need a host.
     request["design_spec"]["design_url"] = "https://"
     with expect_status_code(422, detail_contains="Input should be a valid URL, empty host"):
+        aclient.create_experiment(datasource_id=datasource_id, body=request, desired_n=1)
+
+
+async def test_create_experiment_with_primary_key_as_strata_fails(testing_datasource, aclient: AdminAPIClient):
+    datasource_id = testing_datasource.ds.id
+    request = make_createexperimentrequest_json()
+    primary_key = request["design_spec"]["primary_key"]
+    request["design_spec"]["strata"] = [Stratum(field_name=primary_key)]
+    with expect_status_code(422, detail_contains=f"Primary key {primary_key} cannot be used in strata."):
         aclient.create_experiment(datasource_id=datasource_id, body=request, desired_n=1)
 
 

@@ -989,6 +989,13 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
         return dt.isoformat()
 
+    @model_validator(mode="after")
+    def validate_strata(self) -> Self:
+        """Validate that the strata are valid."""
+        if any(stratum.field_name == self.primary_key for stratum in self.strata):
+            raise ValueError(f"Primary key {self.primary_key} cannot be used in strata.")
+        return self
+
 
 class BaseBanditExperimentSpec(BaseDesignSpec):
     """Experiment design parameters for bandit experiments."""

@@ -479,8 +479,10 @@ def expect_status_code(
             f"Expected '{detail_eq}' to be one of the .msg fields in the response: {http_response.content}"
         )
     if detail_contains is not None:
-        assert any(detail_contains in msg for msg in match._detail_messages()), (
-            f"Expected '{detail_eq}' to be in one of the .msg fields in the response: {http_response.content}"
+        messages = match._detail_messages()
+        assert any(detail_contains in msg for msg in messages), (
+            f"Expected '{detail_contains}' to be in one of the .msg fields in the response: {http_response.content}"
+            f"\nmsg list (length {len(messages)}): \n\t{'\n\t'.join(messages)}"
         )
     if text is not None:
         assert match._has_text(text), f"Expected '{text}' to be in the response: {http_response.content}"
