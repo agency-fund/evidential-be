@@ -32,11 +32,7 @@ from xngin.apiserver import constants, flags
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
-from xngin.apiserver.dwh.dwh_session import (
-    CannotFindTableError,
-    DwhSession,
-    NoDwh,
-)
+from xngin.apiserver.dwh.dwh_session import CannotFindTableError, DwhSession
 from xngin.apiserver.dwh.inspections import (
     build_proposed_and_drift,
     create_inspect_table_response_from_table,
@@ -137,6 +133,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
 from xngin.apiserver.settings import (
+    NoDwh,
     ParticipantsDef,
     RemoteDatabaseConfig,
 )
