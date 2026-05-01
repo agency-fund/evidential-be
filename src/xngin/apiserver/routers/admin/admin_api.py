@@ -1559,20 +1559,19 @@ async def analyze_experiment(
 
     design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
     match design_spec:
-        case MABExperimentSpec() | CMABExperimentSpec() | BayesABExperimentSpec():
-            if experiment.experiment_type != ExperimentsType.MAB_ONLINE.value:
-                raise LateValidationError(
-                    """Invalid experiment type for bandit analysis; for CMAB experiments,
-                    use the corresponding POST endpoint.""",
-                )
-            return experiments_common.analyze_experiment_bandit_impl(experiment)
-
         case PreassignedFrequentistExperimentSpec() | OnlineFrequentistExperimentSpec():
             # Always assume the first arm is the baseline; UI can override this.
             baseline_arm_id = baseline_arm_id or design_spec.arms[0].arm_id
             assert baseline_arm_id is not None
             return await experiments_common.analyze_experiment_freq_impl(
                 xngin_session, ds.get_config(), experiment, baseline_arm_id, design_spec.metrics
+            )
+        case MABExperimentSpec():
+            return experiments_common.analyze_experiment_bandit_impl(experiment)
+        case CMABExperimentSpec() | BayesABExperimentSpec():
+            raise LateValidationError(
+                """Invalid experiment type for bandit analysis; for CMAB experiments,
+                use the corresponding POST endpoint.""",
             )
         case _:
             assert_never()

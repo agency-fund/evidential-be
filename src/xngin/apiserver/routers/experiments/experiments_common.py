@@ -3,6 +3,7 @@ import enum
 import io
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from typing import assert_never
 
 import numpy as np
 import pandas as pd
@@ -414,8 +415,11 @@ async def create_bandit_online_experiment_impl(
     """Create a bandit experiment and persist it to the database."""
     design_spec = request.design_spec
 
-    if design_spec.experiment_type not in {ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE}:
-        raise MismatchedExperimentTypeError(f"can't create bandit exp of type: {design_spec.experiment_type}")
+    match design_spec:
+        case MABExperimentSpec() | CMABExperimentSpec():
+            pass
+        case _:
+            raise MismatchedExperimentTypeError(f"can't create bandit exp of type: {design_spec.experiment_type}")
 
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
@@ -859,6 +863,8 @@ async def update_bandit_arm_with_outcome_impl(
     design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
 
     match design_spec:
+        case MABExperimentSpec() | CMABExperimentSpec():
+            pass
         case PreassignedFrequentistExperimentSpec() | OnlineFrequentistExperimentSpec():
             raise LateValidationError("Cannot dynamically update arms for frequentist experiments.")
         case BayesABExperimentSpec():
@@ -866,8 +872,8 @@ async def update_bandit_arm_with_outcome_impl(
             raise LateValidationError(
                 f"Invalid experiment type for bandit outcome update: {design_spec.experiment_type.value}"
             )
-        case MABExperimentSpec() | CMABExperimentSpec():
-            pass
+        case _:
+            assert_never(design_spec)
 
     # Look up the participant's assignment if it exists
     assignment = await get_existing_assignment_for_participant(

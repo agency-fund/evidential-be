@@ -2,6 +2,7 @@ import asyncio
 import math
 import warnings
 from datetime import UTC, datetime, timedelta
+from typing import assert_never
 
 import pytest
 from sqlalchemy import select
@@ -65,6 +66,8 @@ async def make_experiment(
             table_name = None
             primary_key = None
             field_type_map = None
+        case _:
+            assert_never(design_spec)
 
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,

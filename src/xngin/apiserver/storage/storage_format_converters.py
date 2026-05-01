@@ -8,7 +8,7 @@ JSONB type columns for multi-value/complex types, use the converters to get/set 
 
 import operator
 from datetime import datetime
-from typing import Any, Self
+from typing import Any, Self, assert_never
 
 import numpy as np
 from pydantic import TypeAdapter
@@ -60,6 +60,8 @@ class ExperimentStorageConverter:
                 return self
             case capi.PreassignedFrequentistExperimentSpec() | capi.OnlineFrequentistExperimentSpec():
                 pass
+            case _:
+                assert_never(design_spec)
 
         field_type_map = field_type_map or {}
 
@@ -459,7 +461,7 @@ class ExperimentStorageConverter:
                 )
 
             case capi.MABExperimentSpec() | capi.CMABExperimentSpec():
-                if design_spec.experiment_type == ExperimentsType.CMAB_ONLINE and not design_spec.contexts:
+                if isinstance(design_spec, capi.CMABExperimentSpec) and not design_spec.contexts:
                     raise ValueError("Contexts are required for CMAB experiments.")
 
                 # Set bandit fields
@@ -519,3 +521,5 @@ class ExperimentStorageConverter:
                 return cls(experiment)
             case capi.BayesABExperimentSpec():
                 raise ValueError(f"Unsupported design_spec type: {type(design_spec)}.")
+            case _:
+                assert_never(design_spec)
