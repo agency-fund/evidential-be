@@ -3917,3 +3917,82 @@ async def test_list_experiments_empty(
     org_id = testing_datasource.org.id
     experiments = aclient.list_organization_experiments(organization_id=org_id).data
     assert experiments.items == []
+
+
+async def test_power_check_with_manual_icc(testing_datasource, aclient: AdminAPIClient):
+    """Power check accepts user-supplied ICC values and returns cluster analysis."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test cluster power",
+        description="test power check with manual ICC",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="control", arm_description="Control group"),
+            Arm(arm_name="treatment", arm_description="Treatment group"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+    )
+
+    result = aclient.power_check(
+        datasource_id=testing_datasource.ds.id,
+        body=PowerRequest(
+            design_spec=design_spec,
+            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+            primary_key="id",
+            icc=0.15,
+            avg_cluster_size=30,
+            cv=1.2,
+        ),
+    )
+
+    assert len(result.data.analyses) == 1
+    analysis = result.data.analyses[0]
+    assert analysis.metric_spec.icc == 0.15
+    assert analysis.metric_spec.avg_cluster_size == 30
+    assert analysis.metric_spec.cv == 1.2
+    assert analysis.design_effect is not None
+    assert analysis.design_effect > 1.0
+
+
+async def test_power_check_with_calculated_icc(testing_datasource, aclient: AdminAPIClient):
+    """Power check calculates ICC from the database when cluster_column is provided."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test cluster power from DB",
+        description="test power check calculating ICC from database",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="control", arm_description="Control"),
+            Arm(arm_name="treatment", arm_description="Treatment"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="test_score", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+    )
+
+    result = aclient.power_check(
+        datasource_id=testing_datasource.ds.id,
+        body=PowerRequest(
+            design_spec=design_spec,
+            table_name="clustered_dwh",
+            primary_key="participant_id",
+            cluster_column="cluster_powerlaw",
+        ),
+    )
+
+    assert len(result.data.analyses) == 1
+    analysis = result.data.analyses[0]
+    assert analysis.metric_spec.icc is not None
+    assert 0.15 <= analysis.metric_spec.icc <= 0.25
+    assert analysis.metric_spec.avg_cluster_size is not None
+    assert analysis.metric_spec.avg_cluster_size > 0
+    assert analysis.metric_spec.cv is not None
+    assert analysis.metric_spec.cv > 2.0
+    assert analysis.design_effect is not None
+    assert analysis.design_effect > 1.0
+    assert analysis.num_clusters_total is not None
+    assert analysis.num_clusters_total > 0

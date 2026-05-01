@@ -1,4 +1,4 @@
-from xngin.apiserver.routers.common_api_types import DesignSpecMetric
+"""Custom exceptions for statistical procedures in the xngin.stats package."""
 
 
 class StatsError(Exception):
@@ -12,9 +12,8 @@ class StatsPowerError(StatsError):
     - metric_type must be NUMERIC or BINARY.
     """
 
-    def __init__(self, verr: ValueError, metric: DesignSpecMetric):
-        self.metric = metric
-        super().__init__(f"Power calc error for metric {metric.field_name}: {verr}")
+    def __init__(self, verr: ValueError, metric_field_name: str):
+        super().__init__(f"Power calc error for metric {metric_field_name}: {verr}")
 
 
 class StatsBalanceError(StatsError):

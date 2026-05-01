@@ -132,6 +132,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     make_participants_def_from_experiment,
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
+from xngin.apiserver.routers.power_adapters import calculate_icc_and_cv_from_database
 from xngin.apiserver.settings import (
     NoDwh,
     ParticipantsDef,
@@ -1900,6 +1901,34 @@ async def power_check(
             design_spec.metrics,
             design_spec.filters,
         )
+
+        # Handle cluster randomization parameters
+        if body.icc is not None and body.avg_cluster_size is not None:
+            # User-supplied cluster params: same values for all metrics
+            cv_value = body.cv if body.cv is not None else 0.0
+            for metric_stat in metric_stats:
+                metric_stat.icc = body.icc
+                metric_stat.avg_cluster_size = body.avg_cluster_size
+                metric_stat.cv = cv_value
+        elif body.cluster_column is not None:
+            # Compute per-metric ICC/CV from the database
+            if not design_spec.metrics:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="At least one metric required for cluster analysis",
+                )
+            for metric_stat in metric_stats:
+                cluster_stats = await asyncio.to_thread(
+                    calculate_icc_and_cv_from_database,
+                    dwh.session,
+                    sa_table,
+                    body.cluster_column,
+                    metric_stat.field_name,
+                    design_spec.filters,
+                )
+                metric_stat.icc = cluster_stats["icc"]
+                metric_stat.avg_cluster_size = cluster_stats["avg_cluster_size"]
+                metric_stat.cv = cluster_stats["cv"]
 
     arm_weights = design_spec.get_validated_arm_weights()
 

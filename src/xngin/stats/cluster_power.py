@@ -155,6 +155,7 @@ def _build_cluster_sample_size_message(
         msg=source_msg.format_map(values_map),
         source_msg=source_msg,
         values=values_map,
+        high_cluster_variation=metric.cv is not None and metric.cv > 1.0,
     )
 
 
