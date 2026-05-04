@@ -21,5 +21,9 @@ class StatsBalanceError(StatsError):
     """Errors arising from steps in the balance check, e.g. not having usable covariates."""
 
 
+class StatsAssignmentError(StatsError):
+    """Errors arising from steps in the assignment, e.g. invalid strata."""
+
+
 class StatsAnalysisError(StatsError):
     """Errors arising from steps in the analysis, e.g. not having data."""

@@ -17,6 +17,7 @@ from sqlalchemy.types import TypeEngine
 
 from xngin.apiserver.settings import DatasourceConfig, EncryptedDsn
 from xngin.events import EventDataTypes
+from xngin.xsecrets import secretservice
 
 ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
@@ -94,6 +95,10 @@ class Organization(Base):
     datasources: Mapped[list[Datasource]] = relationship(back_populates="organization", cascade="all, delete-orphan")
     events: Mapped[list[Event]] = relationship(back_populates="organization", cascade="all, delete-orphan")
     webhooks: Mapped[list[Webhook]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+    # We allow only 1 Turn connection per organization
+    turn_connection: Mapped[TurnConnection | None] = relationship(
+        back_populates="organization", cascade="all, delete-orphan", uselist=False
+    )
 
 
 class Webhook(Base):
@@ -124,6 +129,69 @@ class Webhook(Base):
 
     organization: Mapped[Organization] = relationship(back_populates="webhooks")
     experiments: Mapped[list[Experiment]] = relationship(secondary="experiment_webhooks", back_populates="webhooks")
+
+
+class TurnConnection(Base):
+    """Stores an organization's connection to a Turn.io workspace.
+
+    One connection per organization. The API token is encrypted at rest; call
+    get_turn_api_token() to retrieve the plaintext when making outbound requests
+    to Turn, and set_turn_api_token() to configure or rotate it.
+    """
+
+    __tablename__ = "turn_connections"
+
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True)
+    encrypted_turn_api_token: Mapped[str] = mapped_column()
+    turn_api_token_preview: Mapped[str] = mapped_column(String(4))
+
+    cached_journeys: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+    cached_journeys_updated_at: Mapped[datetime | None] = mapped_column()
+
+    created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now(),
+        onupdate=sqlalchemy.sql.func.now(),
+    )
+
+    organization: Mapped[Organization] = relationship(back_populates="turn_connection")
+
+    def set_turn_api_token(self, token: str) -> Self:
+        """Encrypts and stores the Turn.io API token, records its preview, and invalidates
+        the cached journey list so the next read refetches from Turn."""
+        self.encrypted_turn_api_token = secretservice.get_symmetric().encrypt(token, f"turn.{self.organization_id}")
+        self.turn_api_token_preview = token[-4:]
+        self.cached_journeys = None
+        self.cached_journeys_updated_at = None
+        return self
+
+    def get_turn_api_token(self) -> str:
+        """Decrypts and returns the plaintext Turn.io API token."""
+        return secretservice.get_symmetric().decrypt(self.encrypted_turn_api_token, f"turn.{self.organization_id}")
+
+
+class ExperimentTurnConfig(Base):
+    """Stores the arm->journey mapping for an experiment served via the Evidential Turn App.
+
+    One row per experiment. The Turn App reads this mapping (via a public API endpoint) to
+    resolve an Evidential arm assignment to the Turn.io journey UUID it should start.
+    """
+
+    __tablename__ = "experiment_turn_configs"
+
+    experiment_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True
+    )
+    # JSON object of the form {"<arm_id>": "<turn_journey_uuid>"}.
+    arm_journey_map: Mapped[dict] = mapped_column(postgresql.JSONB)
+
+    created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now(),
+        onupdate=sqlalchemy.sql.func.now(),
+    )
+
+    experiment: Mapped[Experiment] = relationship(back_populates="turn_config")
 
 
 class Event(Base):
@@ -455,6 +523,11 @@ class Experiment(Base):
         overlaps="experiment_field,experiment_filters",
     )
     snapshots: Mapped[Snapshot] = relationship(viewonly=True)
+
+    # Only one configuration per experiment allowd
+    turn_config: Mapped[ExperimentTurnConfig | None] = relationship(
+        back_populates="experiment", cascade="all, delete-orphan", uselist=False
+    )
 
     def unique_id_field(self) -> ExperimentField | None:
         return next((f for f in self.experiment_fields if f.is_unique_id), None)

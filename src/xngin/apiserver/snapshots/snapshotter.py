@@ -87,7 +87,6 @@ async def make_first_snapshot(experiment_id: str, snapshot_id: str):
                 .options(
                     selectinload(tables.Snapshot.experiment),
                     selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.arms),
-                    selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.draws),
                     selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.contexts),
                     selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.datasource),
                     selectinload(tables.Snapshot.experiment)
@@ -118,7 +117,6 @@ async def process_pending_snapshots(snapshot_timeout: int, *, max_jitter_secs: f
         .options(
             selectinload(tables.Snapshot.experiment),
             selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.arms),
-            selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.draws),
             selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.contexts),
             selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.datasource),
             selectinload(tables.Snapshot.experiment)
@@ -161,33 +159,30 @@ async def _query_dwh_for_snapshot_data(
     session: AsyncSession, datasource: tables.Datasource, experiment: tables.Experiment
 ) -> ExperimentAnalysisResponse:
     """Collect a snapshot from a customer DWH and returns the snapshot data."""
-    if ExperimentsType(experiment.experiment_type).is_bayesian():
+    experiment_type = ExperimentsType(experiment.experiment_type)
+    if experiment_type.is_bayesian():
         context_vals = None
 
         # TODO: If the experiment is a CMAB, we need to pass in context values.
         # Ideally we should marginalize over contexts, but we'll start with just using
         # the mean context values. Captured in issue 140
         # (https://github.com/agency-fund/evidential-sprint/issues/140)
-        if ExperimentsType(experiment.experiment_type).is_cmab():
-            draws = await experiment.awaitable_attrs.draws
+        if experiment_type.is_cmab():
             contexts = await experiment.awaitable_attrs.contexts
+            sorted_contexts = sorted(contexts, key=lambda c: c.id)
+            # draw.context_vals were already sorted corresponding to the sorted_contexts
+            # ordering when the assignment was made.
+            mean_context_vals = await _mean_context_vals_from_draws(session, experiment.id, len(contexts))
+            context_vals = [
+                abs(float(np.ceil(m - 0.5))) if context.value_type == ContextType.BINARY else m
+                for m, context in zip(mean_context_vals, sorted_contexts, strict=True)
+            ]
 
-            if len(draws) == 0:
-                context_vals = [0.0] * len(contexts)
-            else:
-                sorted_context_defns = sorted(contexts, key=lambda c: c.id)
-                # draw.context_vals were already sorted corresponding to the sorted_context_defns
-                # ordering when the assignment was made.
-                all_context_vals = [draw.context_vals for draw in draws if draw.context_vals is not None]
-                mean_context_val = np.mean(all_context_vals, axis=0)
-                context_vals = [
-                    abs(float(np.ceil(m - 0.5))) if context.value_type == ContextType.BINARY else m
-                    for m, context in zip(mean_context_val, sorted_context_defns, strict=False)
-                ]
+        return await experiments_common.analyze_experiment_bandit_impl(
+            xngin_session=session, experiment=experiment, context_vals=context_vals
+        )
 
-        return experiments_common.analyze_experiment_bandit_impl(experiment=experiment, context_vals=context_vals)
-
-    if ExperimentsType(experiment.experiment_type).is_freq():
+    if experiment_type.is_freq():
         # Look for the arm in position 1. If not found, use the first arm.
         baseline_arm = next((arm for arm in experiment.arms if arm.position == 1), experiment.arms[0])
         assert baseline_arm.id is not None
@@ -198,4 +193,30 @@ async def _query_dwh_for_snapshot_data(
             baseline_arm_id=baseline_arm.id,
             metrics=ExperimentStorageConverter(experiment).get_design_spec_metrics(),
         )
-    raise ValueError(f"Unsupported experiment type: {experiment.experiment_type}")
+    raise ValueError(f"Unsupported experiment type: {experiment_type}")
+
+
+async def _mean_context_vals_from_draws(session: AsyncSession, experiment_id: str, n_contexts: int) -> list[float]:
+    """Per-position mean of non-null context_vals across draws.
+
+    Returns a zero vector when no rows match. Assumes all non-null context_vals
+    arrays share the same length and contain no inner NULLs — both invariants
+    enforced by the assignment write path.
+    """
+    if n_contexts == 0:
+        return []
+    rows = (
+        await session.execute(
+            text("""
+                SELECT AVG(val)
+                FROM draws, unnest(context_vals) WITH ORDINALITY AS t(val, ord)
+                WHERE experiment_id = :eid AND context_vals IS NOT NULL
+                GROUP BY ord
+                ORDER BY ord
+            """),
+            {"eid": experiment_id},
+        )
+    ).all()
+    if not rows:
+        return [0.0] * n_contexts
+    return [r[0] for r in rows]

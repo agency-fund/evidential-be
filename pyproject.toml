@@ -76,8 +76,9 @@ log_cli = 0  # set to 1 for live logs
 log_cli_level = "warn"
 markers = [
     "integration: integration tests that rely on remote resources",
+    "benchmark: performance benchmarks; opt-in via -m benchmark"
 ]
-addopts = "-m 'not integration'"
+addopts = "-m 'not integration and not benchmark'"
 # filtewarnings can be used to silence warnings during tests.
 # format is: action:message:category:module
 filterwarnings = [
@@ -176,6 +177,7 @@ banned-from = [
 # https://docs.astral.sh/ruff/settings/#lint_flake8-import-conventions_extend-aliases
 "xngin.apiserver.routers.admin.admin_api_types" = "aapi"
 "xngin.apiserver.routers.common_api_types" = "capi"
+"xngin.apiserver.routers.admin_integrations.admin_integrations_api_types" = "aiapi"
 
 [tool.uv]
 required-version = ">=0.9.4"

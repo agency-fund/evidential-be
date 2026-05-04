@@ -12,6 +12,7 @@ from xngin.stats.assignment import (
     simple_random_assignment,
 )
 from xngin.stats.balance import BalanceResult
+from xngin.stats.stats_errors import StatsAssignmentError
 
 
 def make_sample_data_dict(n=1000):
@@ -253,6 +254,12 @@ def test_assign_treatment_with_no_valid_strata(sample_df):
     # Arm lengths should be equal
     assert set(result.treatment_ids) == {0, 1}
     assert result.treatment_ids.count(0) == result.treatment_ids.count(1)
+
+
+def test_assign_treatment_incorrectly_using_id_as_strata(sample_df):
+    """Test assignment when incorrectly uses the unique id column also as a strata column."""
+    with pytest.raises(StatsAssignmentError, match="Columns with only unique values should not be used as strata: id"):
+        assign_treatment_and_check_balance(df=sample_df, stratum_cols=["id"], id_col="id", n_arms=2, random_state=42)
 
 
 def test_simple_random_assignment(sample_df):

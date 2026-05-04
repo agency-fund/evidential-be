@@ -1545,10 +1545,7 @@ async def analyze_experiment(
         xngin_session,
         ds,
         experiment_id,
-        preload=[
-            tables.Experiment.draws,
-            tables.Experiment.contexts,
-        ],
+        preload=[tables.Experiment.contexts],
         nested_preload=[
             [
                 (PreloadMethod.SELECTINLOAD, tables.Experiment.experiment_fields),
@@ -1567,7 +1564,7 @@ async def analyze_experiment(
                 xngin_session, ds.get_config(), experiment, baseline_arm_id, design_spec.metrics
             )
         case MABExperimentSpec():
-            return experiments_common.analyze_experiment_bandit_impl(experiment)
+            return await experiments_common.analyze_experiment_bandit_impl(xngin_session, experiment)
         case CMABExperimentSpec() | BayesABExperimentSpec():
             raise LateValidationError(
                 """Invalid experiment type for bandit analysis; for CMAB experiments,
@@ -1595,7 +1592,7 @@ async def analyze_cmab_experiment(
         xngin_session,
         ds,
         experiment_id,
-        preload=[tables.Experiment.draws, tables.Experiment.contexts],
+        preload=[tables.Experiment.contexts],
     )
 
     if experiment.experiment_type != ExperimentsType.CMAB_ONLINE.value:
@@ -1609,8 +1606,8 @@ async def analyze_cmab_experiment(
         raise LateValidationError("context_inputs must be provided when analyzing a CMAB experiment.")
     sorted_context_inputs = sort_contexts_by_id_or_raise(experiment.contexts, body.context_inputs)
 
-    return experiments_common.analyze_experiment_bandit_impl(
-        experiment, context_vals=[ci.context_value for ci in sorted_context_inputs]
+    return await experiments_common.analyze_experiment_bandit_impl(
+        xngin_session, experiment, context_vals=[ci.context_value for ci in sorted_context_inputs]
     )
 
 
