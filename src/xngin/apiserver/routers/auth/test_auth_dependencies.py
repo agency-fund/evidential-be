@@ -273,7 +273,7 @@ async def test_initial_user_setup_matches_testing_dwh(xngin_session: AsyncSessio
         .select_from(tables.Experiment)
         .where(tables.Experiment.datasource_id.in_([datasource.id for datasource in datasources]))
     )
-    assert experiment_count == 7
+    assert experiment_count == 6
 
     snapshot_count_rows = (
         await xngin_session.execute(
