@@ -112,7 +112,6 @@ async def bulk_insert_arm_assignments(
     participant_id_col: str,
     data: Sequence[RowProtocol],
     assignment_result: AssignmentResult,
-    stratum_id_name: str | None = None,
 ) -> None:
     """Bulk insert arm assignments into the database via async COPY.
 
@@ -125,8 +124,6 @@ async def bulk_insert_arm_assignments(
         data: sqlalchemy result set of Rows representing units to be assigned
         assignment_result: AssignmentResult containing assignments and balance check results. AssignmentResult.arm_pop
           indexes are parallel to indexes on arm_ids.
-        stratum_id_name: If you want to output the strata group ids, provide a non-null name for
-                         the column to add to the assignment output as a Strata field.
     """
     with performance.timing("_bulk_insert_async"):
         await _bulk_insert_async(
@@ -137,7 +134,6 @@ async def bulk_insert_arm_assignments(
             participant_id_col=participant_id_col,
             data=data,
             assignment_result=assignment_result,
-            stratum_id_name=stratum_id_name,
         )
 
     arm_stats_rows = [
@@ -155,13 +151,8 @@ async def _bulk_insert_async(
     participant_id_col: str,
     data: Sequence[RowProtocol],
     assignment_result: AssignmentResult,
-    stratum_id_name: str | None,
 ) -> None:
     """Write arm assignments in bulk via COPY on the session's driver connection."""
-    # Track if we originally had valid strata
-    had_valid_strata = assignment_result.stratum_ids is not None
-    stratum_ids = assignment_result.stratum_ids or [0] * len(assignment_result.treatment_ids)
-    # These columns were the original columns to stratify on.
     orig_stratum_cols = assignment_result.orig_stratum_cols
 
     copy_sql = "COPY arm_assignments (experiment_id, participant_id, participant_type, arm_id, strata) FROM STDIN"
@@ -171,9 +162,7 @@ async def _bulk_insert_async(
         cur.copy(copy_sql) as copy,
     ):
         copy.set_types(["text", "text", "text", "text", "jsonb"])
-        for stratum_id, treatment_assignment, row in zip(
-            stratum_ids, assignment_result.treatment_ids, data, strict=True
-        ):
+        for treatment_assignment, row in zip(assignment_result.treatment_ids, data, strict=True):
             row_mapping = row._mapping
 
             strata: list[StrataTypedDict]  # Use TypedDict to avoid runtime overhead of Pydantic.
@@ -188,9 +177,6 @@ async def _bulk_insert_async(
                     }
                     for column in orig_stratum_cols
                 ]
-                # Only add stratum_id if we had valid strata and stratum_id_name is provided
-                if stratum_id_name is not None and had_valid_strata:
-                    strata.append({"field_name": stratum_id_name, "strata_value": str(stratum_id)})
 
             arm_id = arm_ids[treatment_assignment]
             await copy.write_row((

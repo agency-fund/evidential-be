@@ -210,14 +210,12 @@ def test_assign_treatments_with_balance_basic(sample_table, sample_rows):
     assert result.balance_result.f_pvalue == pytest.approx(0.99990, abs=1e-4)
 
 
-@pytest.mark.parametrize("stratum_id_name", [None, "stratum_id"])
 async def test_bulk_insert_arm_assignments_basic(
     xngin_session: AsyncSession,
     testing_datasource: DatasourceMetadata,
     sample_rows,
-    stratum_id_name: str | None,
 ):
-    """Test bulk inserts of arm assignments, with and without strata group ids."""
+    """Test bulk inserts of arm assignments."""
     # First create an experiment and arms in db
     experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
     arm_ids = [arm.id for arm in experiment.arms]
@@ -242,7 +240,6 @@ async def test_bulk_insert_arm_assignments_basic(
         participant_id_col=unique_id_field.field_name,
         data=sample_rows,
         assignment_result=fake_assignment_results,
-        stratum_id_name=stratum_id_name,
     )
 
     # Verify arm_stats populations were upserted
@@ -267,13 +264,9 @@ async def test_bulk_insert_arm_assignments_basic(
         assert assignment.arm_id in arm_ids
 
         # Verify strata are properly stored
+        assert len(assignment.strata) == 1
         assert assignment.strata[0]["field_name"] == "gender"
         assert assignment.strata[0]["strata_value"] in {"M", "F"}
-        assert len(assignment.strata) == 1 if stratum_id_name is None else 2
-        if stratum_id_name is not None:
-            assert assignment.strata[1]["field_name"] == stratum_id_name
-            # Note that all strata values are rendered as strings
-            assert assignment.strata[1]["strata_value"] in {"0", "1"}
 
 
 MAX_SAFE_INTEGER = (1 << 53) - 1  # 9007199254740991
