@@ -256,7 +256,10 @@ class ExperimentStorageConverter:
             await self.experiment.awaitable_attrs.experiment_fields
             primary_key_field = self.experiment.unique_id_field()
             if self.experiment.datasource_table is None or primary_key_field is None:
-                raise ValueError("Frequentist experiment is missing datasource_table or unique participant key field.")
+                raise ValueError(
+                    f"Frequentist experiment {self.experiment.id} "
+                    "is missing datasource_table or unique participant key field."
+                )
 
             return TypeAdapter(capi.DesignSpec).validate_python({
                 **base_experiment_dict,
@@ -284,7 +287,7 @@ class ExperimentStorageConverter:
             ExperimentsType.CMAB_ONLINE.value,
         }:
             if not self.experiment.prior_type or not self.experiment.reward_type:
-                raise ValueError("Bandit experiments must have prior_type and reward_type set.")
+                raise ValueError(f"Bandit experiment {self.experiment.id} must have prior_type and reward_type set.")
             contexts = None
             if self.experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value:
                 contexts = [
@@ -462,7 +465,7 @@ class ExperimentStorageConverter:
 
             case capi.MABExperimentSpec() | capi.CMABExperimentSpec():
                 if isinstance(design_spec, capi.CMABExperimentSpec) and not design_spec.contexts:
-                    raise ValueError("Contexts are required for CMAB experiments.")
+                    raise ValueError(f"CMAB experiment {experiment.id} must have contexts set.")
 
                 # Set bandit fields
                 context_len = len(design_spec.contexts) if design_spec.contexts else 1
