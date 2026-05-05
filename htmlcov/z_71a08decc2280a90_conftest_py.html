@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Coverage for src/xngin/apiserver/conftest.py: 89%</title>
+    <title>Coverage for src/xngin/apiserver/conftest.py: 90%</title>
     <link rel="icon" sizes="32x32" href="favicon_32_cb_c827f16f.png">
     <link rel="stylesheet" href="style_cb_9ff733b0.css" type="text/css">
     <script src="coverage_html_cb_dd2e7eb5.js" defer></script>
@@ -12,7 +12,7 @@
     <div class="content">
         <h1>
             <span class="text">Coverage for </span><b>src&#8201;/&#8201;xngin&#8201;/&#8201;apiserver&#8201;/&#8201;conftest.py</b>:
-            <span class="pc_cov">89%</span>
+            <span class="pc_cov">90%</span>
         </h1>
         <aside id="help_panel_wrapper">
             <input id="help_panel_state" type="checkbox">
@@ -54,8 +54,8 @@
             </div>
         </aside>
         <h2>
-            <span class="text">247 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">221<span class="text"> run</span></button>
+            <span class="text">248 statements &nbsp;</span>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">222<span class="text"> run</span></button>
             <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">26<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_71a08decc2280a90_customlogging_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.5">coverage.py v7.13.5</a>,
-            created at 2026-04-30 16:57 +0000
+            created at 2026-05-05 04:09 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -601,11 +601,13 @@
     <p class="run run2"><span class="n"><a id="t519" href="#t519">519</a></span><span class="t">            <span class="fst">f"</span><span class="fst">Expected '</span><span class="op">{</span><span class="nam">detail_eq</span><span class="op">}</span><span class="fst">' to be one of the .msg fields in the response: </span><span class="op">{</span><span class="nam">http_response</span><span class="op">.</span><span class="nam">content</span><span class="op">}</span><span class="fst">"</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t520" href="#t520">520</a></span><span class="t">        <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t521" href="#t521">521</a></span><span class="t">    <span class="key">if</span> <span class="nam">detail_contains</span> <span class="key">is</span> <span class="key">not</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t522" href="#t522">522</a></span><span class="t">        <span class="key">assert</span> <span class="nam">any</span><span class="op">(</span><span class="nam">detail_contains</span> <span class="key">in</span> <span class="nam">msg</span> <span class="key">for</span> <span class="nam">msg</span> <span class="key">in</span> <span class="nam">match</span><span class="op">.</span><span class="nam">_detail_messages</span><span class="op">(</span><span class="op">)</span><span class="op">)</span><span class="op">,</span> <span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t523" href="#t523">523</a></span><span class="t">            <span class="fst">f"</span><span class="fst">Expected '</span><span class="op">{</span><span class="nam">detail_eq</span><span class="op">}</span><span class="fst">' to be in one of the .msg fields in the response: </span><span class="op">{</span><span class="nam">http_response</span><span class="op">.</span><span class="nam">content</span><span class="op">}</span><span class="fst">"</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t524" href="#t524">524</a></span><span class="t">        <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t525" href="#t525">525</a></span><span class="t">    <span class="key">if</span> <span class="nam">text</span> <span class="key">is</span> <span class="key">not</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t526" href="#t526">526</a></span><span class="t">        <span class="key">assert</span> <span class="nam">match</span><span class="op">.</span><span class="nam">_has_text</span><span class="op">(</span><span class="nam">text</span><span class="op">)</span><span class="op">,</span> <span class="fst">f"</span><span class="fst">Expected '</span><span class="op">{</span><span class="nam">text</span><span class="op">}</span><span class="fst">' to be in the response: </span><span class="op">{</span><span class="nam">http_response</span><span class="op">.</span><span class="nam">content</span><span class="op">}</span><span class="fst">"</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t522" href="#t522">522</a></span><span class="t">        <span class="nam">messages</span> <span class="op">=</span> <span class="nam">match</span><span class="op">.</span><span class="nam">_detail_messages</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t523" href="#t523">523</a></span><span class="t">        <span class="key">assert</span> <span class="nam">any</span><span class="op">(</span><span class="nam">detail_contains</span> <span class="key">in</span> <span class="nam">msg</span> <span class="key">for</span> <span class="nam">msg</span> <span class="key">in</span> <span class="nam">messages</span><span class="op">)</span><span class="op">,</span> <span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t524" href="#t524">524</a></span><span class="t">            <span class="fst">f"</span><span class="fst">Expected '</span><span class="op">{</span><span class="nam">detail_contains</span><span class="op">}</span><span class="fst">' to be in one of the .msg fields in the response: </span><span class="op">{</span><span class="nam">http_response</span><span class="op">.</span><span class="nam">content</span><span class="op">}</span><span class="fst">"</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t525" href="#t525">525</a></span><span class="t">            <span class="fst">f"</span><span class="fst">\nmsg list (length </span><span class="op">{</span><span class="nam">len</span><span class="op">(</span><span class="nam">messages</span><span class="op">)</span><span class="op">}</span><span class="fst">): \n\t</span><span class="op">{</span><span class="str">'\n\t'</span><span class="op">.</span><span class="nam">join</span><span class="op">(</span><span class="nam">messages</span><span class="op">)</span><span class="op">}</span><span class="fst">"</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t526" href="#t526">526</a></span><span class="t">        <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t527" href="#t527">527</a></span><span class="t">    <span class="key">if</span> <span class="nam">text</span> <span class="key">is</span> <span class="key">not</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t528" href="#t528">528</a></span><span class="t">        <span class="key">assert</span> <span class="nam">match</span><span class="op">.</span><span class="nam">_has_text</span><span class="op">(</span><span class="nam">text</span><span class="op">)</span><span class="op">,</span> <span class="fst">f"</span><span class="fst">Expected '</span><span class="op">{</span><span class="nam">text</span><span class="op">}</span><span class="fst">' to be in the response: </span><span class="op">{</span><span class="nam">http_response</span><span class="op">.</span><span class="nam">content</span><span class="op">}</span><span class="fst">"</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -615,7 +617,7 @@
             <a class="nav" href="z_71a08decc2280a90_customlogging_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.13.5">coverage.py v7.13.5</a>,
-            created at 2026-04-30 16:57 +0000
+            created at 2026-05-05 04:09 +0000
         </p>
     </div>
 </footer>
