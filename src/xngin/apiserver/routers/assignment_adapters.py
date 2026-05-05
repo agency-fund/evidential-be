@@ -163,18 +163,15 @@ async def _bulk_insert_async(
         for treatment_assignment, row in zip(assignments.treatment_ids, data, strict=True):
             row_mapping = row._mapping
 
-            strata: list[StrataTypedDict]  # Use TypedDict to avoid runtime overhead of Pydantic.
-            if not stratum_cols:
-                strata = []
-            else:
-                # Output the participant's strata values as seen at this time of assignment.
-                strata = [
-                    {
-                        "field_name": column,
-                        "strata_value": str(row_mapping[column]) if _is_present_scalar(row_mapping[column]) else "NA",
-                    }
-                    for column in stratum_cols
-                ]
+            # Output the participant's strata values as seen at this time of assignment.
+            # StrataTypedDict avoids the runtime overhead of Pydantic.
+            strata: list[StrataTypedDict] = [
+                {
+                    "field_name": column,
+                    "strata_value": str(row_mapping[column]) if _is_present_scalar(row_mapping[column]) else "NA",
+                }
+                for column in stratum_cols
+            ]
 
             arm_id = arm_ids[treatment_assignment]
             await copy.write_row((
