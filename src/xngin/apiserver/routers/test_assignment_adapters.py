@@ -239,7 +239,7 @@ async def test_bulk_insert_arm_assignments_basic(
         participant_type=participant_type_name,
         participant_id_col=unique_id_field.field_name,
         data=sample_rows,
-        assignment_result=fake_assignment_results,
+        assignments=fake_assignment_results,
     )
 
     # Verify arm_stats populations were upserted
@@ -306,7 +306,7 @@ async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
             participant_type=participant_type_name,
             participant_id_col=unique_id_field.field_name,
             data=rows,
-            assignment_result=assignment_result,
+            assignments=assignment_result,
         )
 
         # Get assignments for verification
@@ -399,7 +399,7 @@ async def test_bulk_insert_renders_decimal_and_bool_strata_correctly(
         participant_type=participant_type_name,
         participant_id_col=unique_id_field.field_name,
         data=sample_rows,
-        assignment_result=fake_assignment_results,
+        assignments=fake_assignment_results,
     )
 
     # Get assignments for verification
@@ -440,7 +440,7 @@ async def test_bulk_insert_with_no_stratification(xngin_session: AsyncSession, t
         participant_type=participant_type_name,
         participant_id_col=unique_id_field.field_name,
         data=sample_rows,
-        assignment_result=fake_assignment_results,
+        assignments=fake_assignment_results,
     )
 
     # Get assignments for verification
@@ -482,7 +482,7 @@ async def test_bulk_insert_with_no_valid_strata(xngin_session: AsyncSession, tes
         participant_type=participant_type_name,
         participant_id_col=unique_id_field.field_name,
         data=sample_rows,
-        assignment_result=fake_assignment_results,
+        assignments=fake_assignment_results,
     )
 
     # Get assignments for verification
@@ -521,7 +521,7 @@ async def test_bulk_insert_renders_missing_strata_values_as_na(
         participant_type=participant_type_name,
         participant_id_col=unique_id_field.field_name,
         data=rows,
-        assignment_result=fake_assignment_results,
+        assignments=fake_assignment_results,
     )
 
     assignments = (await xngin_session.scalars(select(tables.ArmAssignment))).all()

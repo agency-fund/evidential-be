@@ -355,7 +355,7 @@ async def create_preassigned_experiment_impl(
         participant_type=experiment.participant_type,
         participant_id_col=unique_id_name,
         data=dwh_participants,
-        assignment_result=assignment_result,
+        assignments=assignment_result,
     )
 
     assign_summary = convert_assignment_results_to_assign_summary(experiment.arms, assignment_result, balance_check)

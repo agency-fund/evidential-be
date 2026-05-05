@@ -111,7 +111,7 @@ async def bulk_insert_arm_assignments(
     participant_type: str,
     participant_id_col: str,
     data: Sequence[RowProtocol],
-    assignment_result: AssignmentResult,
+    assignments: AssignmentResult,
 ) -> None:
     """Bulk insert arm assignments into the database via async COPY.
 
@@ -122,7 +122,7 @@ async def bulk_insert_arm_assignments(
         participant_type: Type of participant in the experiment
         participant_id_col: Name of column in `data` containing participant identifiers
         data: sqlalchemy result set of Rows representing units to be assigned
-        assignment_result: AssignmentResult containing assignments and balance check results. AssignmentResult.arm_pop
+        assignments: AssignmentResult containing assignments and balance check results. AssignmentResult.arm_pop
           indexes are parallel to indexes on arm_ids.
     """
     with performance.timing("_bulk_insert_async"):
@@ -133,12 +133,10 @@ async def bulk_insert_arm_assignments(
             participant_type=participant_type,
             participant_id_col=participant_id_col,
             data=data,
-            assignment_result=assignment_result,
+            assignments=assignments,
         )
 
-    arm_stats_rows = [
-        {"arm_id": arm_id, "population": int(assignment_result.arm_pop[i])} for i, arm_id in enumerate(arm_ids)
-    ]
+    arm_stats_rows = [{"arm_id": arm_id, "population": int(assignments.arm_pop[i])} for i, arm_id in enumerate(arm_ids)]
     await xngin_session.execute(insert(tables.ArmStats).values(arm_stats_rows))
 
 
@@ -150,10 +148,10 @@ async def _bulk_insert_async(
     participant_type: str,
     participant_id_col: str,
     data: Sequence[RowProtocol],
-    assignment_result: AssignmentResult,
+    assignments: AssignmentResult,
 ) -> None:
     """Write arm assignments in bulk via COPY on the session's driver connection."""
-    stratum_cols = assignment_result.stratum_cols
+    stratum_cols = assignments.stratum_cols
 
     copy_sql = "COPY arm_assignments (experiment_id, participant_id, participant_type, arm_id, strata) FROM STDIN"
     async with (
@@ -162,7 +160,7 @@ async def _bulk_insert_async(
         cur.copy(copy_sql) as copy,
     ):
         copy.set_types(["text", "text", "text", "text", "jsonb"])
-        for treatment_assignment, row in zip(assignment_result.treatment_ids, data, strict=True):
+        for treatment_assignment, row in zip(assignments.treatment_ids, data, strict=True):
             row_mapping = row._mapping
 
             strata: list[StrataTypedDict]  # Use TypedDict to avoid runtime overhead of Pydantic.
