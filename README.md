@@ -49,7 +49,7 @@
 | src/xngin/apiserver/routers/experiments/test\_experiments\_common.py               |      996 |        8 |     99% |194-195, 1227-1229, 1607-1608, 2069 |
 | src/xngin/apiserver/routers/experiments/test\_property\_filters.py                 |       41 |        1 |     98% |        24 |
 | src/xngin/apiserver/routers/healthchecks\_api.py                                   |       16 |        2 |     88% |     26-27 |
-| src/xngin/apiserver/routers/test\_assignment\_adapters.py                          |      208 |        1 |     99% |       103 |
+| src/xngin/apiserver/routers/test\_assignment\_adapters.py                          |      204 |        1 |     99% |       103 |
 | src/xngin/apiserver/settings.py                                                    |      143 |       23 |     84% |102, 122, 129, 135, 180-181, 241, 246, 252-253, 305-308, 327, 349, 360, 362, 372, 375, 389, 392, 417 |
 | src/xngin/apiserver/snapshots/fake\_data.py                                        |      126 |       37 |     71% |73-81, 87, 90, 92, 97, 102, 107, 199-202, 280, 301-306, 322-349 |
 | src/xngin/apiserver/snapshots/snapshotter.py                                       |       80 |        2 |     98% |  196, 207 |
@@ -87,7 +87,7 @@
 | src/xngin/xsecrets/secretservice.py                                                |       63 |        5 |     92% |37, 49-50, 108, 130 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                                     |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                                         |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                                          | **13216** |  **861** | **93%** |           |
+| **TOTAL**                                                                          | **13206** |  **861** | **93%** |           |
 
 78 files skipped due to complete coverage.
 
