@@ -59,7 +59,7 @@ def test_assign_treatment_with_stratification(sample_df):
     assert len(result.stratum_ids) == len(sample_df)
     # 2 genders, 4 regions => 8 strata
     assert set(result.stratum_ids) == set(range(8))
-    assert set(result.orig_stratum_cols) == {"region", "gender"}
+    assert set(result.stratum_cols) == {"region", "gender"}
 
     # Check balance result structure
     assert isinstance(result.balance_result, BalanceResult)
@@ -83,7 +83,7 @@ def test_assign_treatment_multiple_arms(sample_df):
     assert len(result.treatment_ids) == len(sample_df)
     assert result.stratum_ids
     assert len(result.stratum_ids) == len(sample_df)
-    assert set(result.orig_stratum_cols) == {"gender", "region"}
+    assert set(result.stratum_cols) == {"gender", "region"}
     assert result.balance_result is not None
     assert isinstance(result.balance_result, BalanceResult)
 
@@ -109,7 +109,7 @@ def test_assign_treatment_reproducibility(sample_df):
     # Check that results are identical
     assert result1.treatment_ids == result2.treatment_ids
     assert result1.stratum_ids == result2.stratum_ids
-    assert result1.orig_stratum_cols == result2.orig_stratum_cols
+    assert result1.stratum_cols == result2.stratum_cols
     # Balance results should have same values
     assert result1.balance_result
     assert result2.balance_result
@@ -173,7 +173,7 @@ def test_assign_treatment_with_infer_objects():
     # Note: HC1 robust standard errors doesn't downweight by leverage, so p-value is quite low, i.e.
     # it's not a great estimator either in this scenario of singleton categories.
     assert result.balance_result.f_pvalue < 0.2
-    assert result.orig_stratum_cols == ["col1", "col2", "col3"]
+    assert result.stratum_cols == ["col1", "col2", "col3"]
 
 
 def test_assign_treatment_decimal_strata_columns_may_cause_problems(sample_df):
@@ -230,7 +230,7 @@ def test_assign_treatment_with_no_stratification(sample_df):
     assert len(result.treatment_ids) == len(sample_df)
     assert result.stratum_ids is None
     assert result.balance_result is None
-    assert result.orig_stratum_cols == []
+    assert result.stratum_cols == []
     # Arm lengths should be equal
     assert set(result.treatment_ids) == {0, 1}
     assert result.treatment_ids.count(0) == result.treatment_ids.count(1)
@@ -250,7 +250,7 @@ def test_assign_treatment_with_no_valid_strata(sample_df):
     assert len(result.treatment_ids) == len(sample_df)
     assert result.stratum_ids is None
     assert result.balance_result is None
-    assert result.orig_stratum_cols == ["single_value"]
+    assert result.stratum_cols == ["single_value"]
     # Arm lengths should be equal
     assert set(result.treatment_ids) == {0, 1}
     assert result.treatment_ids.count(0) == result.treatment_ids.count(1)
@@ -337,7 +337,7 @@ def test_assign_treatment_unbalanced_arms(sample_df):
     assert set(result.treatment_ids) == {0, 1}
     assert result.stratum_ids
     assert len(result.stratum_ids) == len(sample_df)
-    assert result.orig_stratum_cols == ["gender", "region"]
+    assert result.stratum_cols == ["gender", "region"]
     # Check proportions
     n_control = result.treatment_ids.count(0)
     n_treatment = result.treatment_ids.count(1)
