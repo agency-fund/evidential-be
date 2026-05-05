@@ -29,7 +29,7 @@ class AssignmentResult:
 
     stratum_ids: list[int] | None
     balance_result: BalanceResult | None
-    orig_stratum_cols: list[str]
+    stratum_cols: list[str]
 
 
 def assign_treatment_and_check_balance(
@@ -63,7 +63,7 @@ def assign_treatment_and_check_balance(
             stratum_ids - list of stratum ids starting from 0, one per row in the dataframe.
                 May be useful if you wish to do any post-hoc analyses by stratum.
             balance_result - BalanceResult object containing the balance check results.
-            orig_stratum_cols - deduplicated and sorted list of stratum_cols.
+            stratum_cols - deduplicated and sorted list of stratum_cols.
                 May be useful for referencing original db values used in your df.
     """
     if id_col in stratum_cols:
@@ -76,7 +76,7 @@ def assign_treatment_and_check_balance(
             treatment_ids=treatment_ids,
             stratum_ids=None,
             balance_result=None,
-            orig_stratum_cols=[],
+            stratum_cols=[],
             arm_pop=np.bincount(treatment_ids, minlength=n_arms),
         )
 
@@ -102,7 +102,7 @@ def assign_treatment_and_check_balance(
             treatment_ids=treatment_ids,
             stratum_ids=None,
             balance_result=None,
-            orig_stratum_cols=orig_stratum_cols,
+            stratum_cols=orig_stratum_cols,
             arm_pop=np.bincount(treatment_ids, minlength=n_arms),
         )
 
@@ -156,7 +156,7 @@ def assign_treatment_and_check_balance(
         treatment_ids=list(treatment_ids),
         stratum_ids=list(stratum_ids),
         balance_result=balance_result,
-        orig_stratum_cols=orig_stratum_cols,
+        stratum_cols=orig_stratum_cols,
         arm_pop=np.bincount(treatment_ids, minlength=n_arms),
     )
 

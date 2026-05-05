@@ -153,7 +153,7 @@ async def _bulk_insert_async(
     assignment_result: AssignmentResult,
 ) -> None:
     """Write arm assignments in bulk via COPY on the session's driver connection."""
-    orig_stratum_cols = assignment_result.orig_stratum_cols
+    stratum_cols = assignment_result.stratum_cols
 
     copy_sql = "COPY arm_assignments (experiment_id, participant_id, participant_type, arm_id, strata) FROM STDIN"
     async with (
@@ -166,7 +166,7 @@ async def _bulk_insert_async(
             row_mapping = row._mapping
 
             strata: list[StrataTypedDict]  # Use TypedDict to avoid runtime overhead of Pydantic.
-            if not orig_stratum_cols:
+            if not stratum_cols:
                 strata = []
             else:
                 # Output the participant's strata values as seen at this time of assignment.
@@ -175,7 +175,7 @@ async def _bulk_insert_async(
                         "field_name": column,
                         "strata_value": str(row_mapping[column]) if _is_present_scalar(row_mapping[column]) else "NA",
                     }
-                    for column in orig_stratum_cols
+                    for column in stratum_cols
                 ]
 
             arm_id = arm_ids[treatment_assignment]

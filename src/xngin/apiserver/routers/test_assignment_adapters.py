@@ -198,7 +198,7 @@ def test_assign_treatments_with_balance_basic(sample_table, sample_rows):
     assert result.stratum_ids is not None
     assert len(result.stratum_ids) == len(sample_rows)
     assert len(result.treatment_ids) == len(sample_rows)
-    assert result.orig_stratum_cols == ["gender", "region"]
+    assert result.stratum_cols == ["gender", "region"]
     assert result.balance_result is not None
     # Use relative tolerance to accommodate BLAS/LAPACK differences between environments
     # (e.g. Apple Accelerate on macOS vs OpenBLAS on Linux)
@@ -228,7 +228,7 @@ async def test_bulk_insert_arm_assignments_basic(
         treatment_ids=[0, 1] * (len(sample_rows) // 2),
         stratum_ids=[int(s.is_male) for s in sample_rows],
         balance_result=None,
-        orig_stratum_cols=["gender"],
+        stratum_cols=["gender"],
         arm_pop=np.bincount([0, 1] * (len(sample_rows) // 2), minlength=len(arm_ids)),
     )
 
@@ -388,7 +388,7 @@ async def test_bulk_insert_renders_decimal_and_bool_strata_correctly(
         treatment_ids=[0, 1] * (len(sample_rows) // 2),
         stratum_ids=[0, 1] * (len(sample_rows) // 2),
         balance_result=None,
-        orig_stratum_cols=["income_dec", "is_male"],
+        stratum_cols=["income_dec", "is_male"],
         arm_pop=np.bincount([0, 1] * (len(sample_rows) // 2), minlength=len(arm_ids)),
     )
 
@@ -429,7 +429,7 @@ async def test_bulk_insert_with_no_stratification(xngin_session: AsyncSession, t
         treatment_ids=[0, 1] * (len(sample_rows) // 2),
         stratum_ids=None,
         balance_result=None,
-        orig_stratum_cols=[],
+        stratum_cols=[],
         arm_pop=np.bincount([0, 1] * (len(sample_rows) // 2), minlength=len(arm_ids)),
     )
 
@@ -471,7 +471,7 @@ async def test_bulk_insert_with_no_valid_strata(xngin_session: AsyncSession, tes
         treatment_ids=[0, 1] * (len(sample_rows) // 2),
         stratum_ids=None,
         balance_result=None,
-        orig_stratum_cols=["single_value"],
+        stratum_cols=["single_value"],
         arm_pop=np.bincount([0, 1] * (len(sample_rows) // 2), minlength=len(arm_ids)),
     )
 
@@ -510,7 +510,7 @@ async def test_bulk_insert_renders_missing_strata_values_as_na(
         treatment_ids=[0, 1] * (len(rows) // 2),
         stratum_ids=None,
         balance_result=None,
-        orig_stratum_cols=["nullable_value"],
+        stratum_cols=["nullable_value"],
         arm_pop=np.bincount([0, 1] * (len(rows) // 2), minlength=len(arm_ids)),
     )
 
