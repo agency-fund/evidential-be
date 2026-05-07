@@ -429,7 +429,7 @@ class ArmAssignment(Base):
 class Experiment(Base):
     """Stores experiment metadata.
 
-    Use the ExperimentStorageConverter to set/get the different JSONB columns with the appropriate
+    Use storage_format_converters helpers to set/get the different JSONB columns with the appropriate
     storage models, as well as derive other API types from the Experiment db record.
     """
 

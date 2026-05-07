@@ -8,7 +8,7 @@ JSONB type columns for multi-value/complex types, use the converters to get/set 
 
 import operator
 from datetime import datetime
-from typing import Any, Self, assert_never
+from typing import Any, assert_never
 
 import numpy as np
 from pydantic import TypeAdapter
@@ -283,293 +283,183 @@ def experiment_from_design_spec(
             assert_never(design_spec)
 
 
-class ExperimentStorageConverter:
-    """Converts API components to storage components and vice versa for an Experiment."""
-
-    def __init__(self, experiment: tables.Experiment):
-        """
-        Assemble a partial experiment with setters, and get the final object or derived API objects.
-        """
-        self.experiment = experiment
-
-    def _convert_experiment_field_to_api_filters(
-        self,
-        experiment_field: tables.ExperimentField,
-    ) -> list[tuple[int, capi.Filter]]:
-        """Converts an ExperimentField to a list of (position, API filter) tuples, or empty list if not a filter."""
-        filters = []
-        for f in experiment_field.experiment_filters or []:
-            # Convert storage type to API type
-            values: list[Any]
-            if experiment_field.data_type == DataType.BIGINT:
-                values = [None if v is None else str(v) for v in (f.numeric_values or [])]
-            else:
-                values = f.string_values or f.numeric_values or f.boolean_values or []
-            filters.append((
-                f.position,
-                capi.Filter(
-                    field_name=experiment_field.field_name,
-                    relation=capi.Relation(f.relation),
-                    value=values,
-                ),
-            ))
-
-        return filters
-
-    def _convert_experiment_field_to_api_metric(
-        self,
-        experiment_field: tables.ExperimentField,
-    ) -> capi.DesignSpecMetricRequest | None:
-        """Converts an ExperimentField to an API metric, or None if the field is not a metric."""
-        if experiment_field.is_metric:
-            return capi.DesignSpecMetricRequest(
+def _convert_experiment_field_to_api_filters(
+    experiment_field: tables.ExperimentField,
+) -> list[tuple[int, capi.Filter]]:
+    """Convert an ExperimentField to (position, API filter) tuples, or an empty list if not a filter."""
+    filters = []
+    for f in experiment_field.experiment_filters or []:
+        values: list[Any]
+        if experiment_field.data_type == DataType.BIGINT:
+            values = [None if v is None else str(v) for v in (f.numeric_values or [])]
+        else:
+            values = f.string_values or f.numeric_values or f.boolean_values or []
+        filters.append((
+            f.position,
+            capi.Filter(
                 field_name=experiment_field.field_name,
-                metric_pct_change=experiment_field.metric_pct_change,
-                metric_target=experiment_field.metric_target,
-            )
-        return None
+                relation=capi.Relation(f.relation),
+                value=values,
+            ),
+        ))
 
-    def _convert_experiment_field_to_api_stratum(
-        self,
-        experiment_field: tables.ExperimentField,
-    ) -> capi.Stratum | None:
-        """Converts an ExperimentField to an API stratum, or None if the field is not a stratum."""
-        if experiment_field.is_strata:
-            return capi.Stratum(field_name=experiment_field.field_name)
-        return None
+    return filters
 
-    def get_design_spec_filters(self) -> list[capi.Filter]:
-        """Return design-spec filters from experiment_fields sorted by their position."""
-        position_filters: list[tuple[int, capi.Filter]] = []
-        for ef in self.experiment.experiment_fields:
-            if api_filters := self._convert_experiment_field_to_api_filters(ef):
-                position_filters.extend(api_filters)
 
-        return [f[1] for f in sorted(position_filters, key=operator.itemgetter(0))]
-
-    def get_design_spec_metrics(self) -> list[capi.DesignSpecMetricRequest]:
-        """Return design-spec metrics from experiment_fields."""
-        metrics = []
-        for ef in self.experiment.experiment_fields:
-            if api_metric := self._convert_experiment_field_to_api_metric(ef):
-                metrics.append(api_metric)
-        return metrics
-
-    def get_design_spec_strata(self) -> list[capi.Stratum]:
-        """Return design-spec strata from experiment_fields."""
-        strata = []
-        for ef in self.experiment.experiment_fields:
-            if api_stratum := self._convert_experiment_field_to_api_stratum(ef):
-                strata.append(api_stratum)
-        return strata
-
-    def get_field_type_map(self) -> dict[str, DataType]:
-        """Return a map of all the field names used in the experiment to their respective data types."""
-        return {ef.field_name: DataType(ef.data_type) for ef in self.experiment.experiment_fields}
-
-    async def get_design_spec(self) -> capi.DesignSpec:
-        """Converts stored experiment metadata to a DesignSpec object."""
-        base_experiment_dict = {
-            "experiment_type": self.experiment.experiment_type,
-            "experiment_name": self.experiment.name,
-            "description": self.experiment.description,
-            "design_url": self.experiment.design_url or None,
-            "start_date": self.experiment.start_date,
-            "end_date": self.experiment.end_date,
-        }
-        await self.experiment.awaitable_attrs.arms
-
-        if self.experiment.experiment_type in {
-            ExperimentsType.FREQ_ONLINE.value,
-            ExperimentsType.FREQ_PREASSIGNED.value,
-        }:
-            await self.experiment.awaitable_attrs.experiment_fields
-            primary_key_field = self.experiment.unique_id_field()
-            if self.experiment.datasource_table is None or primary_key_field is None:
-                raise ValueError(
-                    f"Frequentist experiment {self.experiment.id} "
-                    "is missing datasource_table or unique participant key field."
-                )
-
-            return TypeAdapter(capi.DesignSpec).validate_python({
-                **base_experiment_dict,
-                "table_name": self.experiment.datasource_table,
-                "primary_key": primary_key_field.field_name,
-                "arms": [
-                    {
-                        "arm_id": arm.id,
-                        "arm_name": arm.name,
-                        "arm_description": arm.description,
-                        "arm_weight": arm.arm_weight,
-                    }
-                    for arm in self.experiment.arms
-                ],
-                "strata": self.get_design_spec_strata(),
-                "metrics": self.get_design_spec_metrics(),
-                "filters": self.get_design_spec_filters(),
-                "power": self.experiment.power,
-                "alpha": self.experiment.alpha,
-                "fstat_thresh": self.experiment.fstat_thresh,
-            })
-
-        if self.experiment.experiment_type in {
-            ExperimentsType.MAB_ONLINE.value,
-            ExperimentsType.CMAB_ONLINE.value,
-        }:
-            if not self.experiment.prior_type or not self.experiment.reward_type:
-                raise ValueError(f"Bandit experiment {self.experiment.id} must have prior_type and reward_type set.")
-            contexts = None
-            if self.experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value:
-                contexts = [
-                    capi.Context(
-                        context_id=context.id,
-                        context_name=context.name,
-                        context_description=context.description,
-                        value_type=capi.ContextType(context.value_type),
-                    )
-                    for context in self.experiment.contexts
-                ]
-
-            return TypeAdapter(capi.DesignSpec).validate_python({
-                **base_experiment_dict,
-                "arms": [
-                    {
-                        "arm_id": arm.id,
-                        "arm_name": arm.name,
-                        "arm_description": arm.description,
-                        "arm_weight": arm.arm_weight,
-                        "mu_init": arm.mu_init,
-                        "sigma_init": arm.sigma_init,
-                        "alpha_init": arm.alpha_init,
-                        "beta_init": arm.beta_init,
-                        "mu": arm.mu,
-                        "covariance": arm.covariance,
-                        "alpha": arm.alpha,
-                        "beta": arm.beta,
-                    }
-                    for arm in self.experiment.arms
-                ],
-                "prior_type": capi.PriorTypes(self.experiment.prior_type),
-                "reward_type": capi.LikelihoodTypes(self.experiment.reward_type),
-                "contexts": contexts,
-            })
-        raise ValueError(f"Unsupported experiment type: {self.experiment.experiment_type}")
-
-    def get_balance_check(self) -> capi.BalanceCheck | None:
-        if self.experiment.balance_check is not None:
-            return capi.BalanceCheck.model_validate(self.experiment.balance_check)
-        return None
-
-    def get_power_response(
-        self,
-    ) -> capi.PowerResponse | None:
-        if self.experiment.power_analyses is None:
-            return None
-        return capi.PowerResponse.model_validate(self.experiment.power_analyses)
-
-    async def get_experiment_config(
-        self,
-        assign_summary: capi.AssignSummary,
-        webhook_ids: list[str] | None = None,
-    ) -> capi.GetExperimentResponse:
-        """Construct an ExperimentConfig from the internal Experiment and an AssignSummary.
-
-        Expects assign_summary since that typically requires a db lookup."""
-        return capi.GetExperimentResponse(
-            experiment_id=(await self.experiment.awaitable_attrs.id),
-            datasource_id=self.experiment.datasource_id,
-            participant_type_deprecated=self.experiment.participant_type,
-            state=ExperimentState(self.experiment.state),
-            stopped_assignments_at=self.experiment.stopped_assignments_at,
-            stopped_assignments_reason=StopAssignmentReason.from_str(self.experiment.stopped_assignments_reason),
-            design_spec=await self.get_design_spec(),
-            power_analyses=self.get_power_response(),
-            assign_summary=assign_summary,
-            webhooks=webhook_ids or [],
-            decision=self.experiment.decision,
-            impact=self.experiment.impact,
+def _convert_experiment_field_to_api_metric(
+    experiment_field: tables.ExperimentField,
+) -> capi.DesignSpecMetricRequest | None:
+    """Convert an ExperimentField to an API metric, or None if the field is not a metric."""
+    if experiment_field.is_metric:
+        return capi.DesignSpecMetricRequest(
+            field_name=experiment_field.field_name,
+            metric_pct_change=experiment_field.metric_pct_change,
+            metric_target=experiment_field.metric_target,
         )
-
-    async def get_experiment_response(
-        self,
-        assign_summary: capi.AssignSummary,
-        webhook_ids: list[str] | None = None,
-    ) -> capi.GetExperimentResponse:
-        # Although GetExperimentResponse is a subclass of ExperimentConfig, we revalidate the
-        # response in case we ever change the API.
-        return capi.GetExperimentResponse.model_validate(
-            (await self.get_experiment_config(assign_summary, webhook_ids)).model_dump()
-        )
-
-    async def get_create_experiment_response(
-        self,
-        assign_summary: capi.AssignSummary,
-        webhook_ids: list[str] | None = None,
-    ) -> capi.CreateExperimentResponse:
-        # Revalidate the response in case we ever change the API.
-        return capi.CreateExperimentResponse.model_validate(
-            (await self.get_experiment_config(assign_summary, webhook_ids)).model_dump()
-        )
-
-    @classmethod
-    def init_from_components(
-        cls,
-        datasource_id: str,
-        organization_id: str,
-        design_spec: capi.DesignSpec,
-        state: ExperimentState = ExperimentState.ASSIGNED,
-        stopped_assignments_at: datetime | None = None,
-        stopped_assignments_reason: StopAssignmentReason | str | None = None,
-        balance_check: capi.BalanceCheck | None = None,
-        power_analyses: capi.PowerResponse | None = None,
-        n_trials: int = 0,
-        decision: str = "",
-        impact: str = "",
-        field_type_map: dict[str, DataType] | None = None,
-        participant_type: str = "",
-    ) -> Self:
-        """Compatibility wrapper around experiment_from_design_spec."""
-        return cls(
-            experiment_from_design_spec(
-                datasource_id=datasource_id,
-                organization_id=organization_id,
-                design_spec=design_spec,
-                state=state,
-                stopped_assignments_at=stopped_assignments_at,
-                stopped_assignments_reason=stopped_assignments_reason,
-                balance_check=balance_check,
-                power_analyses=power_analyses,
-                n_trials=n_trials,
-                decision=decision,
-                impact=impact,
-                field_type_map=field_type_map,
-                participant_type=participant_type,
-            )
-        )
+    return None
 
 
-async def design_spec_from_experiment(experiment: tables.Experiment) -> capi.DesignSpec:
-    return await ExperimentStorageConverter(experiment).get_design_spec()
+def _convert_experiment_field_to_api_stratum(
+    experiment_field: tables.ExperimentField,
+) -> capi.Stratum | None:
+    """Convert an ExperimentField to an API stratum, or None if the field is not a stratum."""
+    if experiment_field.is_strata:
+        return capi.Stratum(field_name=experiment_field.field_name)
+    return None
 
 
 def design_spec_filters_from_experiment(experiment: tables.Experiment) -> list[capi.Filter]:
-    return ExperimentStorageConverter(experiment).get_design_spec_filters()
+    """Return design-spec filters from experiment_fields sorted by their position."""
+    position_filters: list[tuple[int, capi.Filter]] = []
+    for ef in experiment.experiment_fields:
+        if api_filters := _convert_experiment_field_to_api_filters(ef):
+            position_filters.extend(api_filters)
+
+    return [f[1] for f in sorted(position_filters, key=operator.itemgetter(0))]
 
 
 def design_spec_metrics_from_experiment(experiment: tables.Experiment) -> list[capi.DesignSpecMetricRequest]:
-    return ExperimentStorageConverter(experiment).get_design_spec_metrics()
+    """Return design-spec metrics from experiment_fields."""
+    metrics = []
+    for ef in experiment.experiment_fields:
+        if api_metric := _convert_experiment_field_to_api_metric(ef):
+            metrics.append(api_metric)
+    return metrics
+
+
+def design_spec_strata_from_experiment(experiment: tables.Experiment) -> list[capi.Stratum]:
+    """Return design-spec strata from experiment_fields."""
+    strata = []
+    for ef in experiment.experiment_fields:
+        if api_stratum := _convert_experiment_field_to_api_stratum(ef):
+            strata.append(api_stratum)
+    return strata
 
 
 def field_type_map_from_experiment(experiment: tables.Experiment) -> dict[str, DataType]:
-    return ExperimentStorageConverter(experiment).get_field_type_map()
+    """Return a map of field names used in the experiment to their data types."""
+    return {ef.field_name: DataType(ef.data_type) for ef in experiment.experiment_fields}
+
+
+async def design_spec_from_experiment(experiment: tables.Experiment) -> capi.DesignSpec:
+    """Convert stored experiment metadata to a DesignSpec object."""
+    base_experiment_dict = {
+        "experiment_type": experiment.experiment_type,
+        "experiment_name": experiment.name,
+        "description": experiment.description,
+        "design_url": experiment.design_url or None,
+        "start_date": experiment.start_date,
+        "end_date": experiment.end_date,
+    }
+    await experiment.awaitable_attrs.arms
+
+    if experiment.experiment_type in {
+        ExperimentsType.FREQ_ONLINE.value,
+        ExperimentsType.FREQ_PREASSIGNED.value,
+    }:
+        await experiment.awaitable_attrs.experiment_fields
+        primary_key_field = experiment.unique_id_field()
+        if experiment.datasource_table is None or primary_key_field is None:
+            raise ValueError(
+                f"Frequentist experiment {experiment.id} "
+                "is missing datasource_table or unique participant key field."
+            )
+
+        return TypeAdapter(capi.DesignSpec).validate_python({
+            **base_experiment_dict,
+            "table_name": experiment.datasource_table,
+            "primary_key": primary_key_field.field_name,
+            "arms": [
+                {
+                    "arm_id": arm.id,
+                    "arm_name": arm.name,
+                    "arm_description": arm.description,
+                    "arm_weight": arm.arm_weight,
+                }
+                for arm in experiment.arms
+            ],
+            "strata": design_spec_strata_from_experiment(experiment),
+            "metrics": design_spec_metrics_from_experiment(experiment),
+            "filters": design_spec_filters_from_experiment(experiment),
+            "power": experiment.power,
+            "alpha": experiment.alpha,
+            "fstat_thresh": experiment.fstat_thresh,
+        })
+
+    if experiment.experiment_type in {
+        ExperimentsType.MAB_ONLINE.value,
+        ExperimentsType.CMAB_ONLINE.value,
+    }:
+        if not experiment.prior_type or not experiment.reward_type:
+            raise ValueError(f"Bandit experiment {experiment.id} must have prior_type and reward_type set.")
+        contexts = None
+        if experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value:
+            contexts = [
+                capi.Context(
+                    context_id=context.id,
+                    context_name=context.name,
+                    context_description=context.description,
+                    value_type=capi.ContextType(context.value_type),
+                )
+                for context in experiment.contexts
+            ]
+
+        return TypeAdapter(capi.DesignSpec).validate_python({
+            **base_experiment_dict,
+            "arms": [
+                {
+                    "arm_id": arm.id,
+                    "arm_name": arm.name,
+                    "arm_description": arm.description,
+                    "arm_weight": arm.arm_weight,
+                    "mu_init": arm.mu_init,
+                    "sigma_init": arm.sigma_init,
+                    "alpha_init": arm.alpha_init,
+                    "beta_init": arm.beta_init,
+                    "mu": arm.mu,
+                    "covariance": arm.covariance,
+                    "alpha": arm.alpha,
+                    "beta": arm.beta,
+                }
+                for arm in experiment.arms
+            ],
+            "prior_type": capi.PriorTypes(experiment.prior_type),
+            "reward_type": capi.LikelihoodTypes(experiment.reward_type),
+            "contexts": contexts,
+        })
+    raise ValueError(f"Unsupported experiment type: {experiment.experiment_type}")
 
 
 def balance_check_from_experiment(experiment: tables.Experiment) -> capi.BalanceCheck | None:
-    return ExperimentStorageConverter(experiment).get_balance_check()
+    if experiment.balance_check is not None:
+        return capi.BalanceCheck.model_validate(experiment.balance_check)
+    return None
 
 
 def power_response_from_experiment(experiment: tables.Experiment) -> capi.PowerResponse | None:
-    return ExperimentStorageConverter(experiment).get_power_response()
+    if experiment.power_analyses is None:
+        return None
+    return capi.PowerResponse.model_validate(experiment.power_analyses)
 
 
 async def experiment_config_from_experiment(
@@ -577,7 +467,21 @@ async def experiment_config_from_experiment(
     assign_summary: capi.AssignSummary,
     webhook_ids: list[str] | None = None,
 ) -> capi.GetExperimentResponse:
-    return await ExperimentStorageConverter(experiment).get_experiment_config(assign_summary, webhook_ids)
+    """Construct an ExperimentConfig from the internal Experiment and an AssignSummary."""
+    return capi.GetExperimentResponse(
+        experiment_id=(await experiment.awaitable_attrs.id),
+        datasource_id=experiment.datasource_id,
+        participant_type_deprecated=experiment.participant_type,
+        state=ExperimentState(experiment.state),
+        stopped_assignments_at=experiment.stopped_assignments_at,
+        stopped_assignments_reason=StopAssignmentReason.from_str(experiment.stopped_assignments_reason),
+        design_spec=await design_spec_from_experiment(experiment),
+        power_analyses=power_response_from_experiment(experiment),
+        assign_summary=assign_summary,
+        webhooks=webhook_ids or [],
+        decision=experiment.decision,
+        impact=experiment.impact,
+    )
 
 
 async def get_experiment_response_from_experiment(
@@ -585,7 +489,10 @@ async def get_experiment_response_from_experiment(
     assign_summary: capi.AssignSummary,
     webhook_ids: list[str] | None = None,
 ) -> capi.GetExperimentResponse:
-    return await ExperimentStorageConverter(experiment).get_experiment_response(assign_summary, webhook_ids)
+    # Although GetExperimentResponse is a subclass of ExperimentConfig, revalidate in case the API diverges.
+    return capi.GetExperimentResponse.model_validate(
+        (await experiment_config_from_experiment(experiment, assign_summary, webhook_ids)).model_dump()
+    )
 
 
 async def create_experiment_response_from_experiment(
@@ -593,4 +500,7 @@ async def create_experiment_response_from_experiment(
     assign_summary: capi.AssignSummary,
     webhook_ids: list[str] | None = None,
 ) -> capi.CreateExperimentResponse:
-    return await ExperimentStorageConverter(experiment).get_create_experiment_response(assign_summary, webhook_ids)
+    # Revalidate in case CreateExperimentResponse diverges from ExperimentConfig.
+    return capi.CreateExperimentResponse.model_validate(
+        (await experiment_config_from_experiment(experiment, assign_summary, webhook_ids)).model_dump()
+    )
