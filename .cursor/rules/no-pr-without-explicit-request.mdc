@@ -1,0 +1,11 @@
+---
+description: Do not create or update pull requests without explicit user approval.
+alwaysApply: true
+---
+
+# Pull Request Creation
+
+Do not create, update, or otherwise manage GitHub pull requests unless the user explicitly asks for a PR action in the current conversation.
+
+When changes are complete, push the working branch and tell the user the branch name so they can pull it down locally for review and edits.
+
