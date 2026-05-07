@@ -142,7 +142,7 @@ from xngin.apiserver.settings import (
 )
 from xngin.apiserver.snapshots import snapshotter
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
+from xngin.apiserver.storage.storage_format_converters import design_spec_from_experiment
 from xngin.stats import check_power
 
 GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -1554,7 +1554,7 @@ async def analyze_experiment(
         ],
     )
 
-    design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
+    design_spec = await design_spec_from_experiment(experiment)
     match design_spec:
         case PreassignedFrequentistExperimentSpec() | OnlineFrequentistExperimentSpec():
             # Always assume the first arm is the baseline; UI can override this.

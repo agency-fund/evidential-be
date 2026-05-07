@@ -63,7 +63,7 @@ from xngin.apiserver.routers.experiments.experiments_common_csv import (
 )
 from xngin.apiserver.settings import Datasource
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
+from xngin.apiserver.storage.storage_format_converters import balance_check_from_experiment
 
 JSON_STREAM_ROWS_PER_YIELD = 1_000
 
@@ -116,7 +116,7 @@ async def _stream_experiment_assignments_response(
     experiment: tables.Experiment, assignments: AsyncGenerator[AssignmentTypedDict]
 ) -> AsyncIterator[bytes]:
     """Efficiently streams Assignments to the client."""
-    balance_check = ExperimentStorageConverter(experiment).get_balance_check()
+    balance_check = balance_check_from_experiment(experiment)
     yield (
         b'{"balance_check":'
         + orjson.dumps(None if balance_check is None else balance_check.model_dump(mode="json"))

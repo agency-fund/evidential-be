@@ -64,7 +64,16 @@ from xngin.apiserver.routers.experiments.property_filters import passes_filters,
 from xngin.apiserver.settings import DatasourceConfig, ParticipantsDef
 from xngin.apiserver.sql.queries import select_as_csv
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter, experiment_from_design_spec
+from xngin.apiserver.storage.storage_format_converters import (
+    balance_check_from_experiment,
+    create_experiment_response_from_experiment,
+    design_spec_filters_from_experiment,
+    design_spec_from_experiment,
+    experiment_config_from_experiment,
+    experiment_from_design_spec,
+    field_type_map_from_experiment,
+    get_experiment_response_from_experiment,
+)
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent
 from xngin.stats.analysis import analyze_experiment as analyze_freq_experiment
@@ -353,8 +362,7 @@ async def create_preassigned_experiment_impl(
 
     assign_summary = convert_assignment_results_to_assign_summary(experiment.arms, assignment_result, balance_check)
     webhook_ids = [webhook.id for webhook in validated_webhooks]
-    experiment_converter = ExperimentStorageConverter(experiment)
-    return await experiment_converter.get_create_experiment_response(assign_summary, webhook_ids)
+    return await create_experiment_response_from_experiment(experiment, assign_summary, webhook_ids)
 
 
 async def create_freq_online_experiment_impl(
@@ -391,8 +399,7 @@ async def create_freq_online_experiment_impl(
         arm_sizes=[ArmSize(arm=Arm(arm_id=arm.id, arm_name=arm.name), size=0) for arm in experiment.arms],
     )
     webhook_ids = [webhook.id for webhook in validated_webhooks]
-    experiment_converter = ExperimentStorageConverter(experiment)
-    return await experiment_converter.get_create_experiment_response(empty_assign_summary, webhook_ids)
+    return await create_experiment_response_from_experiment(experiment, empty_assign_summary, webhook_ids)
 
 
 async def create_bandit_online_experiment_impl(
@@ -432,8 +439,7 @@ async def create_bandit_online_experiment_impl(
         arm_sizes=[ArmSize(arm=Arm(arm_id=arm.id, arm_name=arm.name), size=0) for arm in experiment.arms],
     )
     webhook_ids = [webhook.id for webhook in validated_webhooks]
-    experiment_converter = ExperimentStorageConverter(experiment)
-    return await experiment_converter.get_create_experiment_response(empty_assign_summary, webhook_ids)
+    return await create_experiment_response_from_experiment(experiment, empty_assign_summary, webhook_ids)
 
 
 async def commit_experiment_impl(xngin_session: AsyncSession, experiment: tables.Experiment) -> CommitExperimentResult:
@@ -492,15 +498,14 @@ async def get_experiment_impl(
     xngin_session: AsyncSession,
     experiment: tables.Experiment,
 ) -> GetExperimentResponse:
-    converter = ExperimentStorageConverter(experiment)
     assign_summary = await get_assign_summary(
         xngin_session,
         experiment.id,
-        converter.get_balance_check(),
+        balance_check_from_experiment(experiment),
         experiment_type=ExperimentsType(experiment.experiment_type),
     )
     webhook_ids = [webhook.id for webhook in experiment.webhooks]
-    return await converter.get_experiment_response(assign_summary, webhook_ids)
+    return await get_experiment_response_from_experiment(experiment, assign_summary, webhook_ids)
 
 
 async def list_organization_or_datasource_experiments_impl(
@@ -545,13 +550,12 @@ async def list_organization_or_datasource_experiments_impl(
     experiments = await xngin_session.scalars(stmt)
     items = []
     for e in experiments:
-        converter = ExperimentStorageConverter(e)
-        balance_check = converter.get_balance_check()
+        balance_check = balance_check_from_experiment(e)
         assign_summary = await get_assign_summary(
             xngin_session, e.id, balance_check, experiment_type=ExperimentsType(e.experiment_type)
         )
         webhook_ids = [webhook.id for webhook in e.webhooks]
-        items.append(await converter.get_experiment_config(assign_summary, webhook_ids))
+        items.append(await experiment_config_from_experiment(e, assign_summary, webhook_ids))
     return ListExperimentsResponse(items=items)
 
 
@@ -644,9 +648,8 @@ def _participant_passes_filters(experiment: tables.Experiment, participant_props
         return True
 
     props_map = {p.field_name: p.value for p in participant_props}
-    experiment_converter = ExperimentStorageConverter(experiment)
-    field_map = experiment_converter.get_field_type_map()
-    return passes_filters(props_map, field_map, experiment_converter.get_design_spec_filters())
+    field_map = field_type_map_from_experiment(experiment)
+    return passes_filters(props_map, field_map, design_spec_filters_from_experiment(experiment))
 
 
 async def get_or_create_assignment_for_participant(
@@ -850,7 +853,7 @@ async def update_bandit_arm_with_outcome_impl(
 ) -> tables.Arm:
     """Update the Draw table with the outcome for a bandit experiment."""
     # Not supported for frequentist experiments
-    design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
+    design_spec = await design_spec_from_experiment(experiment)
 
     match design_spec:
         case MABExperimentSpec() | CMABExperimentSpec():

@@ -60,7 +60,11 @@ from xngin.apiserver.routers.experiments.experiments_common import (
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import get_experiment_assignments_as_csv_impl
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter, experiment_from_design_spec
+from xngin.apiserver.storage.storage_format_converters import (
+    design_spec_from_experiment,
+    experiment_from_design_spec,
+    power_response_from_experiment,
+)
 from xngin.apiserver.testing.assertions import assert_dates_equal
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 
@@ -270,8 +274,7 @@ async def make_insertable_experiment(
         stopped_assignments_reason=stopped_assignments_reason,
         field_type_map=field_type_map,
     )
-    experiment_converter = ExperimentStorageConverter(experiment)
-    return experiment, await experiment_converter.get_design_spec()
+    return experiment, await design_spec_from_experiment(experiment)
 
 
 async def insert_experiment_and_arms(
@@ -577,10 +580,9 @@ async def test_create_preassigned_experiment_impl(
     assert experiment.power == request.design_spec.power
     assert experiment.alpha == request.design_spec.alpha
     assert experiment.fstat_thresh == request.design_spec.fstat_thresh
-    converter = ExperimentStorageConverter(experiment)
-    assert converter.get_power_response() == response.power_analyses
+    assert power_response_from_experiment(experiment) == response.power_analyses
     # Verify design_spec was stored correctly.
-    rehydrated_design_spec = await converter.get_design_spec()
+    rehydrated_design_spec = await design_spec_from_experiment(experiment)
     assert rehydrated_design_spec == response.design_spec
 
     # Verify assignments were created
@@ -1010,8 +1012,7 @@ async def test_create_experiment_impl_for_freq_online_with_unbalanced_arms(
         experiment = await get_experiment_preloaded(xngin_session, experiment.id)
 
     # and the rehydrated design spec
-    converter = ExperimentStorageConverter(experiment)
-    design_spec = await converter.get_design_spec()
+    design_spec = await design_spec_from_experiment(experiment)
     assert isinstance(design_spec, OnlineFrequentistExperimentSpec)
     assert design_spec.get_validated_arm_weights() == expected_weights
     # verify arm positions were stored correctly.
@@ -1139,8 +1140,7 @@ async def test_create_experiment_impl_for_freq_online(xngin_session, testing_dat
     assert experiment.alpha == req_online_spec.alpha
     assert experiment.fstat_thresh == req_online_spec.fstat_thresh
     # Verify design_spec was stored correctly
-    converter = ExperimentStorageConverter(experiment)
-    assert await converter.get_design_spec() == response.design_spec
+    assert await design_spec_from_experiment(experiment) == response.design_spec
     # Verify no power_analyses for online experiments
     assert experiment.power_analyses is None
 
@@ -1219,8 +1219,7 @@ async def test_create_experiment_impl_for_mab_online(xngin_session, testing_data
     assert_dates_equal(experiment.end_date, request.design_spec.end_date)
 
     # Verify design_spec was stored correctly
-    converter = ExperimentStorageConverter(experiment)
-    converted_design_spec = await converter.get_design_spec()
+    converted_design_spec = await design_spec_from_experiment(experiment)
     assert converted_design_spec == response.design_spec
     assert isinstance(converted_design_spec, MABExperimentSpec)
     for arms in converted_design_spec.arms:
@@ -1302,8 +1301,7 @@ async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_dat
     assert_dates_equal(experiment.end_date, request.design_spec.end_date)
 
     # Verify design_spec was stored correctly
-    converter = ExperimentStorageConverter(experiment)
-    converted_design_spec = await converter.get_design_spec()
+    converted_design_spec = await design_spec_from_experiment(experiment)
     assert converted_design_spec == response.design_spec
     assert isinstance(converted_design_spec, CMABExperimentSpec)
     assert converted_design_spec.prior_type == PriorTypes.NORMAL

@@ -98,7 +98,7 @@ from xngin.apiserver.routers.experiments.test_experiments_common import (
 )
 from xngin.apiserver.settings import ParticipantsDef, RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter, experiment_from_design_spec
+from xngin.apiserver.storage.storage_format_converters import experiment_from_design_spec
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF

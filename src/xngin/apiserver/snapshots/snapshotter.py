@@ -13,7 +13,7 @@ from xngin.apiserver.routers.common_api_types import ExperimentAnalysisResponse
 from xngin.apiserver.routers.common_enums import ContextType, ExperimentsType
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
+from xngin.apiserver.storage.storage_format_converters import design_spec_metrics_from_experiment
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -191,7 +191,7 @@ async def _query_dwh_for_snapshot_data(
             dsconfig=datasource.get_config(),
             experiment=experiment,
             baseline_arm_id=baseline_arm.id,
-            metrics=ExperimentStorageConverter(experiment).get_design_spec_metrics(),
+            metrics=design_spec_metrics_from_experiment(experiment),
         )
     raise ValueError(f"Unsupported experiment type: {experiment_type}")
 

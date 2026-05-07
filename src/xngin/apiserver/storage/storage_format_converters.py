@@ -546,3 +546,51 @@ class ExperimentStorageConverter:
                 participant_type=participant_type,
             )
         )
+
+
+async def design_spec_from_experiment(experiment: tables.Experiment) -> capi.DesignSpec:
+    return await ExperimentStorageConverter(experiment).get_design_spec()
+
+
+def design_spec_filters_from_experiment(experiment: tables.Experiment) -> list[capi.Filter]:
+    return ExperimentStorageConverter(experiment).get_design_spec_filters()
+
+
+def design_spec_metrics_from_experiment(experiment: tables.Experiment) -> list[capi.DesignSpecMetricRequest]:
+    return ExperimentStorageConverter(experiment).get_design_spec_metrics()
+
+
+def field_type_map_from_experiment(experiment: tables.Experiment) -> dict[str, DataType]:
+    return ExperimentStorageConverter(experiment).get_field_type_map()
+
+
+def balance_check_from_experiment(experiment: tables.Experiment) -> capi.BalanceCheck | None:
+    return ExperimentStorageConverter(experiment).get_balance_check()
+
+
+def power_response_from_experiment(experiment: tables.Experiment) -> capi.PowerResponse | None:
+    return ExperimentStorageConverter(experiment).get_power_response()
+
+
+async def experiment_config_from_experiment(
+    experiment: tables.Experiment,
+    assign_summary: capi.AssignSummary,
+    webhook_ids: list[str] | None = None,
+) -> capi.GetExperimentResponse:
+    return await ExperimentStorageConverter(experiment).get_experiment_config(assign_summary, webhook_ids)
+
+
+async def get_experiment_response_from_experiment(
+    experiment: tables.Experiment,
+    assign_summary: capi.AssignSummary,
+    webhook_ids: list[str] | None = None,
+) -> capi.GetExperimentResponse:
+    return await ExperimentStorageConverter(experiment).get_experiment_response(assign_summary, webhook_ids)
+
+
+async def create_experiment_response_from_experiment(
+    experiment: tables.Experiment,
+    assign_summary: capi.AssignSummary,
+    webhook_ids: list[str] | None = None,
+) -> capi.CreateExperimentResponse:
+    return await ExperimentStorageConverter(experiment).get_create_experiment_response(assign_summary, webhook_ids)
