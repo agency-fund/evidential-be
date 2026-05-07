@@ -26,7 +26,6 @@ def make_experiment_table(
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id="ds_id",
         organization_id="org_id",
-        experiment_type=experiment_type,
         design_spec=design_spec,
         state=ExperimentState.COMMITTED,
         stopped_assignments_at=None,

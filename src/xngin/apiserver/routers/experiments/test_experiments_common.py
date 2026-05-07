@@ -257,24 +257,17 @@ async def make_insertable_experiment(
 
     # Get participants schema from datasource for frequentist experiments
     field_type_map = None
-    exp_table_name: str | None = None
-    exp_primary_key: str | None = None
     if experiment_type in {ExperimentsType.FREQ_PREASSIGNED, ExperimentsType.FREQ_ONLINE}:
         assert isinstance(design_spec, PreassignedFrequentistExperimentSpec | OnlineFrequentistExperimentSpec)
-        exp_table_name = design_spec.table_name
-        exp_primary_key = design_spec.primary_key
         field_type_map = await fetch_fields_or_raise(datasource, design_spec)
 
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
         organization_id=datasource.organization_id,
-        experiment_type=experiment_type,
         design_spec=design_spec,
         state=state,
         stopped_assignments_at=stopped_assignments_at,
         stopped_assignments_reason=stopped_assignments_reason,
-        table_name=exp_table_name,
-        unique_id_name=exp_primary_key,
         field_type_map=field_type_map,
     )
     experiment = experiment_converter.get_experiment()

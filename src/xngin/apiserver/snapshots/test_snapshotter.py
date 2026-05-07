@@ -54,17 +54,11 @@ async def make_experiment(
     datasource: tables.Datasource,
     design_spec: DesignSpec,
 ) -> tables.Experiment:
-    table_name: str | None
-    primary_key: str | None
     field_type_map: dict[str, DataType] | None
     match design_spec:
         case PreassignedFrequentistExperimentSpec() | OnlineFrequentistExperimentSpec():
-            table_name = design_spec.table_name
-            primary_key = design_spec.primary_key
             field_type_map = await fetch_fields_or_raise(datasource, design_spec)
         case MABExperimentSpec() | CMABExperimentSpec() | BayesABExperimentSpec():
-            table_name = None
-            primary_key = None
             field_type_map = None
         case _:
             assert_never(design_spec)
@@ -72,13 +66,10 @@ async def make_experiment(
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
         organization_id=datasource.organization_id,
-        experiment_type=design_spec.experiment_type,
         design_spec=design_spec,
         state=ExperimentState.COMMITTED,
         stopped_assignments_at=datetime.now(UTC),
         stopped_assignments_reason=StopAssignmentReason.PREASSIGNED,
-        table_name=table_name,
-        unique_id_name=primary_key,
         field_type_map=field_type_map,
     )
     experiment = experiment_converter.get_experiment()
