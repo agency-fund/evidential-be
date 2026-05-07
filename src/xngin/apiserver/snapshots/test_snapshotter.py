@@ -39,7 +39,7 @@ from xngin.apiserver.snapshots.snapshotter import (
     process_pending_snapshots,
 )
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
+from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter, experiment_from_design_spec
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
@@ -63,7 +63,7 @@ async def make_experiment(
         case _:
             assert_never(design_spec)
 
-    experiment_converter = ExperimentStorageConverter.init_from_components(
+    experiment = experiment_from_design_spec(
         datasource_id=datasource.id,
         organization_id=datasource.organization_id,
         design_spec=design_spec,
@@ -72,7 +72,6 @@ async def make_experiment(
         stopped_assignments_reason=StopAssignmentReason.PREASSIGNED,
         field_type_map=field_type_map,
     )
-    experiment = experiment_converter.get_experiment()
     xngin_session.add(experiment)
     await xngin_session.commit()
     # Add assignments to the experiment so analysis doesn't error.

@@ -6,7 +6,7 @@ from xngin.apiserver.routers.common_api_types import DesignSpec
 from xngin.apiserver.routers.common_enums import ExperimentState, ExperimentsType, LikelihoodTypes, PriorTypes
 from xngin.apiserver.routers.experiments.test_experiments_common import make_createexperimentrequest_json
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
+from xngin.apiserver.storage.storage_format_converters import experiment_from_design_spec
 from xngin.stats.bandit_sampling import choose_arm, update_arm
 
 
@@ -23,7 +23,7 @@ def make_experiment_table(
         num_arms=num_arms,
     )
     design_spec: DesignSpec = TypeAdapter(DesignSpec).validate_python(request["design_spec"])
-    experiment_converter = ExperimentStorageConverter.init_from_components(
+    fake_experiment = experiment_from_design_spec(
         datasource_id="ds_id",
         organization_id="org_id",
         design_spec=design_spec,
@@ -31,7 +31,6 @@ def make_experiment_table(
         stopped_assignments_at=None,
         stopped_assignments_reason=None,
     )
-    fake_experiment = experiment_converter.get_experiment()
     # Add fake ids to the arms
     for i, arm in enumerate(fake_experiment.arms):
         arm.id = f"arm_{i}"

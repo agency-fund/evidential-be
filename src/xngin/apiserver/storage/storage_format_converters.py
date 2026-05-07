@@ -154,6 +154,135 @@ def _set_power_response_json(experiment: tables.Experiment, value: capi.PowerRes
         experiment.power_analyses = capi.PowerResponse.model_validate(value).model_dump()
 
 
+def experiment_from_design_spec(
+    *,
+    datasource_id: str,
+    organization_id: str,
+    design_spec: capi.DesignSpec,
+    state: ExperimentState = ExperimentState.ASSIGNED,
+    stopped_assignments_at: datetime | None = None,
+    stopped_assignments_reason: StopAssignmentReason | str | None = None,
+    balance_check: capi.BalanceCheck | None = None,
+    power_analyses: capi.PowerResponse | None = None,
+    n_trials: int = 0,
+    decision: str = "",
+    impact: str = "",
+    field_type_map: dict[str, DataType] | None = None,
+    participant_type: str = "",
+) -> tables.Experiment:
+    """Create an Experiment ORM object from a design spec and storage metadata."""
+    datasource_table = (
+        design_spec.table_name
+        if isinstance(design_spec, capi.PreassignedFrequentistExperimentSpec | capi.OnlineFrequentistExperimentSpec)
+        else None
+    )
+
+    # Initialize common fields
+    experiment = tables.Experiment(
+        datasource_id=datasource_id,
+        experiment_type=design_spec.experiment_type,
+        participant_type=participant_type,
+        datasource_table=datasource_table,
+        name=design_spec.experiment_name,
+        description=design_spec.description,
+        design_url=str(design_spec.design_url) if design_spec.design_url else None,
+        state=state.value,
+        start_date=design_spec.start_date,
+        end_date=design_spec.end_date,
+        stopped_assignments_at=stopped_assignments_at,
+        stopped_assignments_reason=stopped_assignments_reason,
+        decision=decision,
+        impact=impact,
+    )
+
+    match design_spec:
+        case capi.PreassignedFrequentistExperimentSpec() | capi.OnlineFrequentistExperimentSpec():
+            # Set frequentist-specific fields
+            experiment.power = design_spec.power
+            experiment.alpha = design_spec.alpha
+            experiment.fstat_thresh = design_spec.fstat_thresh
+
+            experiment.arms = [
+                tables.Arm(
+                    name=arm.arm_name,
+                    description=arm.arm_description,
+                    arm_weight=arm.arm_weight,
+                    position=i,
+                    experiment_id=experiment.id,
+                    organization_id=organization_id,
+                )
+                for i, arm in enumerate(design_spec.arms, start=1)
+            ]
+            _set_experiment_fields_from_design_spec(experiment, design_spec, field_type_map)
+            _set_balance_check_json(experiment, balance_check)
+            _set_power_response_json(experiment, power_analyses)
+            return experiment
+
+        case capi.MABExperimentSpec() | capi.CMABExperimentSpec():
+            if isinstance(design_spec, capi.CMABExperimentSpec) and not design_spec.contexts:
+                raise ValueError(f"CMAB experiment {experiment.id} must have contexts set.")
+
+            # Set bandit fields
+            context_len = len(design_spec.contexts) if design_spec.contexts else 1
+            if design_spec.contexts:
+                experiment.contexts = [
+                    tables.Context(
+                        name=context.context_name,
+                        description=context.context_description,
+                        value_type=context.value_type.value,
+                        experiment_id=experiment.id,
+                    )
+                    for context in design_spec.contexts
+                ]
+            experiment.reward_type = design_spec.reward_type.value
+            experiment.prior_type = design_spec.prior_type.value
+            experiment.n_trials = n_trials
+
+            arm_weights = design_spec.get_validated_arm_weights()
+            if arm_weights:
+                # TODO: this method can be expensive and should be on a thread.
+                param1, param2 = convert_arm_weights_to_prior_params(
+                    arm_weights=arm_weights,
+                    prior_type=design_spec.prior_type,
+                    num_contexts=context_len,
+                )
+                match design_spec.prior_type:
+                    case capi.PriorTypes.BETA:
+                        for arm, alpha, beta in zip(design_spec.arms, param1, param2, strict=True):
+                            arm.alpha_init = alpha
+                            arm.beta_init = beta
+                    case capi.PriorTypes.NORMAL:
+                        for arm, mu, sigma in zip(design_spec.arms, param1, param2, strict=True):
+                            arm.mu_init = mu
+                            arm.sigma_init = sigma
+
+            experiment.arms = [
+                tables.Arm(
+                    name=arm.arm_name,
+                    description=arm.arm_description,
+                    arm_weight=arm.arm_weight,
+                    position=i,
+                    experiment_id=experiment.id,
+                    organization_id=organization_id,
+                    mu_init=arm.mu_init,
+                    sigma_init=arm.sigma_init,
+                    mu=None if arm.mu_init is None else [arm.mu_init] * context_len,
+                    covariance=None if arm.sigma_init is None else np.diag([arm.sigma_init] * context_len).tolist(),
+                    alpha_init=arm.alpha_init,
+                    beta_init=arm.beta_init,
+                    alpha=arm.alpha_init,
+                    beta=arm.beta_init,
+                )
+                for i, arm in enumerate(design_spec.arms, start=1)
+            ]
+
+            return experiment
+        case capi.BayesABExperimentSpec():
+            raise ValueError(f"Unsupported design_spec type: {type(design_spec)}.")
+        case _:
+            assert_never(design_spec)
+
+
 class ExperimentStorageConverter:
     """Converts API components to storage components and vice versa for an Experiment."""
 
@@ -162,10 +291,6 @@ class ExperimentStorageConverter:
         Assemble a partial experiment with setters, and get the final object or derived API objects.
         """
         self.experiment = experiment
-
-    def get_experiment(self) -> tables.Experiment:
-        """When you're done assembling the experiment, use this to get the final object."""
-        return self.experiment
 
     def _convert_experiment_field_to_api_filters(
         self,
@@ -403,114 +528,21 @@ class ExperimentStorageConverter:
         field_type_map: dict[str, DataType] | None = None,
         participant_type: str = "",
     ) -> Self:
-        """Init experiment with arms from components. Get the final object with get_experiment()."""
-        datasource_table = (
-            design_spec.table_name
-            if isinstance(design_spec, capi.PreassignedFrequentistExperimentSpec | capi.OnlineFrequentistExperimentSpec)
-            else None
+        """Compatibility wrapper around experiment_from_design_spec."""
+        return cls(
+            experiment_from_design_spec(
+                datasource_id=datasource_id,
+                organization_id=organization_id,
+                design_spec=design_spec,
+                state=state,
+                stopped_assignments_at=stopped_assignments_at,
+                stopped_assignments_reason=stopped_assignments_reason,
+                balance_check=balance_check,
+                power_analyses=power_analyses,
+                n_trials=n_trials,
+                decision=decision,
+                impact=impact,
+                field_type_map=field_type_map,
+                participant_type=participant_type,
+            )
         )
-
-        # Initialize common fields
-        experiment = tables.Experiment(
-            datasource_id=datasource_id,
-            experiment_type=design_spec.experiment_type,
-            participant_type=participant_type,
-            datasource_table=datasource_table,
-            name=design_spec.experiment_name,
-            description=design_spec.description,
-            design_url=str(design_spec.design_url) if design_spec.design_url else None,
-            state=state.value,
-            start_date=design_spec.start_date,
-            end_date=design_spec.end_date,
-            stopped_assignments_at=stopped_assignments_at,
-            stopped_assignments_reason=stopped_assignments_reason,
-            decision=decision,
-            impact=impact,
-        )
-
-        match design_spec:
-            case capi.PreassignedFrequentistExperimentSpec() | capi.OnlineFrequentistExperimentSpec():
-                # Set frequentist-specific fields
-                experiment.power = design_spec.power
-                experiment.alpha = design_spec.alpha
-                experiment.fstat_thresh = design_spec.fstat_thresh
-
-                experiment.arms = [
-                    tables.Arm(
-                        name=arm.arm_name,
-                        description=arm.arm_description,
-                        arm_weight=arm.arm_weight,
-                        position=i,
-                        experiment_id=experiment.id,
-                        organization_id=organization_id,
-                    )
-                    for i, arm in enumerate(design_spec.arms, start=1)
-                ]
-                _set_experiment_fields_from_design_spec(experiment, design_spec, field_type_map)
-                _set_balance_check_json(experiment, balance_check)
-                _set_power_response_json(experiment, power_analyses)
-                return cls(experiment)
-
-            case capi.MABExperimentSpec() | capi.CMABExperimentSpec():
-                if isinstance(design_spec, capi.CMABExperimentSpec) and not design_spec.contexts:
-                    raise ValueError(f"CMAB experiment {experiment.id} must have contexts set.")
-
-                # Set bandit fields
-                context_len = len(design_spec.contexts) if design_spec.contexts else 1
-                if design_spec.contexts:
-                    experiment.contexts = [
-                        tables.Context(
-                            name=context.context_name,
-                            description=context.context_description,
-                            value_type=context.value_type.value,
-                            experiment_id=experiment.id,
-                        )
-                        for context in design_spec.contexts
-                    ]
-                experiment.reward_type = design_spec.reward_type.value
-                experiment.prior_type = design_spec.prior_type.value
-                experiment.n_trials = n_trials
-
-                arm_weights = design_spec.get_validated_arm_weights()
-                if arm_weights:
-                    # TODO: this method can be expensive and should be on a thread.
-                    param1, param2 = convert_arm_weights_to_prior_params(
-                        arm_weights=arm_weights,
-                        prior_type=design_spec.prior_type,
-                        num_contexts=context_len,
-                    )
-                    match design_spec.prior_type:
-                        case capi.PriorTypes.BETA:
-                            for arm, alpha, beta in zip(design_spec.arms, param1, param2, strict=True):
-                                arm.alpha_init = alpha
-                                arm.beta_init = beta
-                        case capi.PriorTypes.NORMAL:
-                            for arm, mu, sigma in zip(design_spec.arms, param1, param2, strict=True):
-                                arm.mu_init = mu
-                                arm.sigma_init = sigma
-
-                experiment.arms = [
-                    tables.Arm(
-                        name=arm.arm_name,
-                        description=arm.arm_description,
-                        arm_weight=arm.arm_weight,
-                        position=i,
-                        experiment_id=experiment.id,
-                        organization_id=organization_id,
-                        mu_init=arm.mu_init,
-                        sigma_init=arm.sigma_init,
-                        mu=None if arm.mu_init is None else [arm.mu_init] * context_len,
-                        covariance=None if arm.sigma_init is None else np.diag([arm.sigma_init] * context_len).tolist(),
-                        alpha_init=arm.alpha_init,
-                        beta_init=arm.beta_init,
-                        alpha=arm.alpha_init,
-                        beta=arm.beta_init,
-                    )
-                    for i, arm in enumerate(design_spec.arms, start=1)
-                ]
-
-                return cls(experiment)
-            case capi.BayesABExperimentSpec():
-                raise ValueError(f"Unsupported design_spec type: {type(design_spec)}.")
-            case _:
-                assert_never(design_spec)

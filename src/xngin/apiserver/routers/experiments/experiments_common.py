@@ -64,7 +64,7 @@ from xngin.apiserver.routers.experiments.property_filters import passes_filters,
 from xngin.apiserver.settings import DatasourceConfig, ParticipantsDef
 from xngin.apiserver.sql.queries import select_as_csv
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
+from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter, experiment_from_design_spec
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
 from xngin.events.experiment_created import ExperimentCreatedEvent
 from xngin.stats.analysis import analyze_experiment as analyze_freq_experiment
@@ -323,7 +323,7 @@ async def create_preassigned_experiment_impl(
     )
     balance_check = make_balance_check(assignment_result.balance_result, design_spec.fstat_thresh)
 
-    experiment_converter = ExperimentStorageConverter.init_from_components(
+    experiment = experiment_from_design_spec(
         datasource_id=datasource_id,
         organization_id=organization_id,
         design_spec=design_spec,
@@ -334,7 +334,6 @@ async def create_preassigned_experiment_impl(
         power_analyses=request.power_analyses,
         field_type_map=field_type_map,
     )
-    experiment = experiment_converter.get_experiment()
     # Associate webhooks with the experiment
     for webhook in validated_webhooks:
         experiment.webhooks.append(webhook)
@@ -354,6 +353,7 @@ async def create_preassigned_experiment_impl(
 
     assign_summary = convert_assignment_results_to_assign_summary(experiment.arms, assignment_result, balance_check)
     webhook_ids = [webhook.id for webhook in validated_webhooks]
+    experiment_converter = ExperimentStorageConverter(experiment)
     return await experiment_converter.get_create_experiment_response(assign_summary, webhook_ids)
 
 
@@ -371,13 +371,12 @@ async def create_freq_online_experiment_impl(
     if not isinstance(design_spec, OnlineFrequentistExperimentSpec):
         raise MismatchedExperimentTypeError(f"Can't create freq online exp of type: {design_spec.experiment_type}")
 
-    experiment_converter = ExperimentStorageConverter.init_from_components(
+    experiment = experiment_from_design_spec(
         datasource_id=datasource_id,
         organization_id=organization_id,
         design_spec=design_spec,
         field_type_map=field_type_map,
     )
-    experiment = experiment_converter.get_experiment()
     # Associate webhooks with the experiment
     for webhook in validated_webhooks:
         experiment.webhooks.append(webhook)
@@ -392,6 +391,7 @@ async def create_freq_online_experiment_impl(
         arm_sizes=[ArmSize(arm=Arm(arm_id=arm.id, arm_name=arm.name), size=0) for arm in experiment.arms],
     )
     webhook_ids = [webhook.id for webhook in validated_webhooks]
+    experiment_converter = ExperimentStorageConverter(experiment)
     return await experiment_converter.get_create_experiment_response(empty_assign_summary, webhook_ids)
 
 
@@ -412,13 +412,12 @@ async def create_bandit_online_experiment_impl(
         case _:
             raise MismatchedExperimentTypeError(f"can't create bandit exp of type: {design_spec.experiment_type}")
 
-    experiment_converter = ExperimentStorageConverter.init_from_components(
+    experiment = experiment_from_design_spec(
         datasource_id=datasource_id,
         organization_id=organization_id,
         design_spec=design_spec,
         n_trials=desired_n if desired_n is not None else 0,
     )
-    experiment = experiment_converter.get_experiment()
     # Associate webhooks with the experiment
     for webhook in validated_webhooks:
         experiment.webhooks.append(webhook)
@@ -433,6 +432,7 @@ async def create_bandit_online_experiment_impl(
         arm_sizes=[ArmSize(arm=Arm(arm_id=arm.id, arm_name=arm.name), size=0) for arm in experiment.arms],
     )
     webhook_ids = [webhook.id for webhook in validated_webhooks]
+    experiment_converter = ExperimentStorageConverter(experiment)
     return await experiment_converter.get_create_experiment_response(empty_assign_summary, webhook_ids)
 
 

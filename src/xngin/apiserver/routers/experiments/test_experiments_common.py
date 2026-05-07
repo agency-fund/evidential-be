@@ -60,7 +60,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import get_experiment_assignments_as_csv_impl
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
+from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter, experiment_from_design_spec
 from xngin.apiserver.testing.assertions import assert_dates_equal
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 
@@ -261,7 +261,7 @@ async def make_insertable_experiment(
         assert isinstance(design_spec, PreassignedFrequentistExperimentSpec | OnlineFrequentistExperimentSpec)
         field_type_map = await fetch_fields_or_raise(datasource, design_spec)
 
-    experiment_converter = ExperimentStorageConverter.init_from_components(
+    experiment = experiment_from_design_spec(
         datasource_id=datasource.id,
         organization_id=datasource.organization_id,
         design_spec=design_spec,
@@ -270,7 +270,7 @@ async def make_insertable_experiment(
         stopped_assignments_reason=stopped_assignments_reason,
         field_type_map=field_type_map,
     )
-    experiment = experiment_converter.get_experiment()
+    experiment_converter = ExperimentStorageConverter(experiment)
     return experiment, await experiment_converter.get_design_spec()
 
 

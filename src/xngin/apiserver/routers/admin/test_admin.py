@@ -98,7 +98,7 @@ from xngin.apiserver.routers.experiments.test_experiments_common import (
 )
 from xngin.apiserver.settings import ParticipantsDef, RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
+from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter, experiment_from_design_spec
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
@@ -224,7 +224,7 @@ async def fixture_testing_experiment(xngin_session: AsyncSession, testing_dataso
     )
     field_type_map = await fetch_fields_or_raise(datasource, design_spec)
 
-    experiment_converter = ExperimentStorageConverter.init_from_components(
+    experiment = experiment_from_design_spec(
         datasource_id=datasource.id,
         organization_id=datasource.organization_id,
         design_spec=design_spec,
@@ -233,7 +233,6 @@ async def fixture_testing_experiment(xngin_session: AsyncSession, testing_dataso
         stopped_assignments_reason=StopAssignmentReason.PREASSIGNED,
         field_type_map=field_type_map,
     )
-    experiment = experiment_converter.get_experiment()
     xngin_session.add(experiment)
     await xngin_session.commit()
 
