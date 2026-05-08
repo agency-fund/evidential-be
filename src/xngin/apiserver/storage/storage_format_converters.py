@@ -400,7 +400,6 @@ class ExperimentStorageConverter:
         cls,
         datasource_id: str,
         organization_id: str,
-        experiment_type: capi.ExperimentsType,
         design_spec: capi.DesignSpec,
         state: ExperimentState = ExperimentState.ASSIGNED,
         stopped_assignments_at: datetime | None = None,
@@ -410,22 +409,16 @@ class ExperimentStorageConverter:
         n_trials: int = 0,
         decision: str = "",
         impact: str = "",
-        table_name: str | None = None,
         field_type_map: dict[str, DataType] | None = None,
-        unique_id_name: str | None = None,
         participant_type: str = "",
     ) -> Self:
-        """Init experiment with arms from components. Get the final object with get_experiment().
-
-        Raises:
-            ValueError: If the experiment_id is not set in the design_spec.
-        """
+        """Init experiment with arms from components. Get the final object with get_experiment()."""
         # Initialize common fields
         experiment = tables.Experiment(
             datasource_id=datasource_id,
-            experiment_type=experiment_type,
+            experiment_type=design_spec.experiment_type,
             participant_type=participant_type,
-            datasource_table=table_name,
+            datasource_table=None,
             name=design_spec.experiment_name,
             description=design_spec.description,
             design_url=str(design_spec.design_url) if design_spec.design_url else None,
@@ -441,6 +434,7 @@ class ExperimentStorageConverter:
         match design_spec:
             case capi.PreassignedFrequentistExperimentSpec() | capi.OnlineFrequentistExperimentSpec():
                 # Set frequentist-specific fields
+                experiment.datasource_table = design_spec.table_name
                 experiment.power = design_spec.power
                 experiment.alpha = design_spec.alpha
                 experiment.fstat_thresh = design_spec.fstat_thresh
@@ -458,7 +452,7 @@ class ExperimentStorageConverter:
                 ]
                 return (
                     cls(experiment)
-                    .set_experiment_fields(design_spec, field_type_map, unique_id_name)
+                    .set_experiment_fields(design_spec, field_type_map, design_spec.primary_key)
                     .set_balance_check(balance_check)
                     .set_power_response(power_analyses)
                 )
