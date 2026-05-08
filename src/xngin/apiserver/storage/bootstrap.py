@@ -38,8 +38,6 @@ async def _create_and_commit_experiment(
     session: AsyncSession,
     datasource: tables.Datasource,
     create_experiment_request: CreateExperimentRequest,
-    *,
-    participant_type_deprecated: str | None = None,
 ):
     result = await experiments_common.create_experiment_impl(
         create_experiment_request,
@@ -52,11 +50,6 @@ async def _create_and_commit_experiment(
     )
     experiment = await session.get_one(tables.Experiment, result.experiment_id)
     await experiments_common.commit_experiment_impl(session, experiment)
-    # We can't use the API anymore to simulate a user setting the participant type, so do it manually.
-    if participant_type_deprecated is not None:
-        experiment.participant_type = participant_type_deprecated
-        await session.commit()
-
     return experiment
 
 
@@ -102,7 +95,7 @@ async def _maybe_create_developer_samples(
         datasource,
         CreateExperimentRequest(
             design_spec=PreassignedFrequentistExperimentSpec(
-                experiment_name="Preassigned steady gain",
+                experiment_name="Preassigned - steady gain",
                 description="Hypothesis",
                 table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
                 primary_key="id",
@@ -117,7 +110,6 @@ async def _maybe_create_developer_samples(
                 metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.10)],
             ),
         ),
-        participant_type_deprecated="test_participant_type",
     )
     await seed_historical_snapshots(session, preassigned, STEADY_GAIN)
 
@@ -126,7 +118,7 @@ async def _maybe_create_developer_samples(
         datasource,
         CreateExperimentRequest(
             design_spec=PreassignedFrequentistExperimentSpec(
-                experiment_name="Preassigned 2.0",
+                experiment_name="Preassigned - late breakout",
                 description="Hypothesis",
                 table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
                 primary_key="id",
@@ -150,30 +142,6 @@ async def _maybe_create_developer_samples(
         CreateExperimentRequest(
             design_spec=OnlineFrequentistExperimentSpec(
                 experiment_name="Online",
-                description="Hypothesis",
-                table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
-                primary_key="id",
-                start_date=datetime.datetime.now() - datetime.timedelta(days=7),
-                end_date=datetime.datetime.now() + datetime.timedelta(days=7),
-                arms=[
-                    Arm(arm_name="Control", arm_description="First arm"),
-                    Arm(arm_name="Treatment", arm_description="Second arm"),
-                ],
-                filters=[],
-                strata=[],
-                metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.10)],
-            ),
-        ),
-        participant_type_deprecated="test_participant_type",
-    )
-
-    # Create an online frequentist experiment with table name and primary key instead of a participant type
-    await _create_and_commit_experiment(
-        session,
-        datasource,
-        CreateExperimentRequest(
-            design_spec=OnlineFrequentistExperimentSpec(
-                experiment_name="Online 2.0",
                 description="Hypothesis",
                 table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
                 primary_key="id",
@@ -243,7 +211,7 @@ async def _maybe_create_developer_samples(
         alt_datasource,
         CreateExperimentRequest(
             design_spec=PreassignedFrequentistExperimentSpec(
-                experiment_name="Wide Preassigned",
+                experiment_name="Preassigned - wide",
                 description="Hypothesis",
                 table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
                 primary_key="id",
