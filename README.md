@@ -57,7 +57,7 @@
 | src/xngin/apiserver/snapshots/test\_snapshotter.py                                 |      256 |        8 |     97% |65-70, 574-575 |
 | src/xngin/apiserver/sql/queries.py                                                 |       43 |       10 |     77% | 23, 61-70 |
 | src/xngin/apiserver/sqla/tables.py                                                 |      336 |        4 |     99% |58, 223, 422, 426 |
-| src/xngin/apiserver/storage/bootstrap.py                                           |       44 |        1 |     98% |        67 |
+| src/xngin/apiserver/storage/bootstrap.py                                           |       40 |        1 |     98% |        60 |
 | src/xngin/apiserver/storage/storage\_format\_converters.py                         |      180 |       13 |     93% |58-60, 63-64, 259, 290, 326, 468, 525-528 |
 | src/xngin/apiserver/testing/admin\_api\_client.py                                  |      186 |       14 |     92% |158-161, 206, 223-230, 255-259, 315, 1655, 2601, 3819 |
 | src/xngin/apiserver/testing/admin\_integrations\_api\_client.py                    |       93 |       12 |     87% |114-117, 162, 179-186, 200-201, 211-215 |
@@ -87,7 +87,7 @@
 | src/xngin/xsecrets/secretservice.py                                                |       63 |        5 |     92% |37, 49-50, 108, 130 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                                     |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                                         |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                                          | **13241** |  **875** | **93%** |           |
+| **TOTAL**                                                                          | **13237** |  **875** | **93%** |           |
 
 78 files skipped due to complete coverage.
 
