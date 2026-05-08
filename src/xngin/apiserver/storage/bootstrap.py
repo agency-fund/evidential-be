@@ -94,11 +94,11 @@ async def _maybe_create_developer_samples(
         session,
         datasource,
         CreateExperimentRequest(
-            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
-            primary_key="id",
             design_spec=PreassignedFrequentistExperimentSpec(
                 experiment_name="Preassigned - steady gain",
                 description="Hypothesis",
+                table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+                primary_key="id",
                 start_date=datetime.datetime.now() - datetime.timedelta(days=7),
                 end_date=datetime.datetime.now() + datetime.timedelta(days=7),
                 arms=[
@@ -117,11 +117,11 @@ async def _maybe_create_developer_samples(
         session,
         datasource,
         CreateExperimentRequest(
-            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
-            primary_key="id",
             design_spec=PreassignedFrequentistExperimentSpec(
                 experiment_name="Preassigned - late breakout",
                 description="Hypothesis",
+                table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+                primary_key="id",
                 start_date=datetime.datetime.now() - datetime.timedelta(days=7),
                 end_date=datetime.datetime.now() + datetime.timedelta(days=7),
                 arms=[
@@ -140,11 +140,11 @@ async def _maybe_create_developer_samples(
         session,
         datasource,
         CreateExperimentRequest(
-            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
-            primary_key="id",
             design_spec=OnlineFrequentistExperimentSpec(
                 experiment_name="Online",
                 description="Hypothesis",
+                table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+                primary_key="id",
                 start_date=datetime.datetime.now() - datetime.timedelta(days=7),
                 end_date=datetime.datetime.now() + datetime.timedelta(days=7),
                 arms=[
@@ -210,11 +210,11 @@ async def _maybe_create_developer_samples(
         session,
         alt_datasource,
         CreateExperimentRequest(
-            table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
-            primary_key="id",
             design_spec=PreassignedFrequentistExperimentSpec(
                 experiment_name="Preassigned - wide",
                 description="Hypothesis",
+                table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
+                primary_key="id",
                 start_date=datetime.datetime.now() - datetime.timedelta(days=7),
                 end_date=datetime.datetime.now() + datetime.timedelta(days=7),
                 arms=[
