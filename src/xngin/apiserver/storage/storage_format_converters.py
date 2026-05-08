@@ -8,7 +8,7 @@ JSONB type columns for multi-value/complex types, use the converters to get/set 
 
 import operator
 from datetime import datetime
-from typing import Any, Self
+from typing import Any, Self, assert_never
 
 import numpy as np
 from pydantic import TypeAdapter
@@ -53,10 +53,15 @@ class ExperimentStorageConverter:
             field_type_map: Optional field name to data type mapping.
             unique_id_name: Optional unique ID field name.
         """
-        if not isinstance(design_spec, capi.BaseFrequentistDesignSpec):
-            self.experiment.design_spec_fields = None
-            self.experiment.experiment_fields = []
-            return self
+        match design_spec:
+            case capi.MABExperimentSpec() | capi.CMABExperimentSpec() | capi.BayesABExperimentSpec():
+                self.experiment.design_spec_fields = None
+                self.experiment.experiment_fields = []
+                return self
+            case capi.PreassignedFrequentistExperimentSpec() | capi.OnlineFrequentistExperimentSpec():
+                pass
+            case _:
+                assert_never(design_spec)
 
         field_type_map = field_type_map or {}
 
@@ -248,8 +253,18 @@ class ExperimentStorageConverter:
             ExperimentsType.FREQ_ONLINE.value,
             ExperimentsType.FREQ_PREASSIGNED.value,
         }:
+            await self.experiment.awaitable_attrs.experiment_fields
+            primary_key_field = self.experiment.unique_id_field()
+            if self.experiment.datasource_table is None or primary_key_field is None:
+                raise ValueError(
+                    f"Frequentist experiment {self.experiment.id} "
+                    "is missing datasource_table or unique participant key field."
+                )
+
             return TypeAdapter(capi.DesignSpec).validate_python({
                 **base_experiment_dict,
+                "table_name": self.experiment.datasource_table,
+                "primary_key": primary_key_field.field_name,
                 "arms": [
                     {
                         "arm_id": arm.id,
@@ -266,12 +281,13 @@ class ExperimentStorageConverter:
                 "alpha": self.experiment.alpha,
                 "fstat_thresh": self.experiment.fstat_thresh,
             })
+
         if self.experiment.experiment_type in {
             ExperimentsType.MAB_ONLINE.value,
             ExperimentsType.CMAB_ONLINE.value,
         }:
             if not self.experiment.prior_type or not self.experiment.reward_type:
-                raise ValueError("Bandit experiments must have prior_type and reward_type set.")
+                raise ValueError(f"Bandit experiment {self.experiment.id} must have prior_type and reward_type set.")
             contexts = None
             if self.experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value:
                 contexts = [
@@ -423,7 +439,7 @@ class ExperimentStorageConverter:
         )
 
         match design_spec:
-            case capi.BaseFrequentistDesignSpec():
+            case capi.PreassignedFrequentistExperimentSpec() | capi.OnlineFrequentistExperimentSpec():
                 # Set frequentist-specific fields
                 experiment.power = design_spec.power
                 experiment.alpha = design_spec.alpha
@@ -447,9 +463,9 @@ class ExperimentStorageConverter:
                     .set_power_response(power_analyses)
                 )
 
-            case capi.BaseBanditExperimentSpec():
-                if design_spec.experiment_type == ExperimentsType.CMAB_ONLINE and not design_spec.contexts:
-                    raise ValueError("Contexts are required for CMAB experiments.")
+            case capi.MABExperimentSpec() | capi.CMABExperimentSpec():
+                if isinstance(design_spec, capi.CMABExperimentSpec) and not design_spec.contexts:
+                    raise ValueError(f"CMAB experiment {experiment.id} must have contexts set.")
 
                 # Set bandit fields
                 context_len = len(design_spec.contexts) if design_spec.contexts else 1
@@ -506,5 +522,7 @@ class ExperimentStorageConverter:
                 ]
 
                 return cls(experiment)
-            case _:
+            case capi.BayesABExperimentSpec():
                 raise ValueError(f"Unsupported design_spec type: {type(design_spec)}.")
+            case _:
+                assert_never(design_spec)

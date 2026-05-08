@@ -853,6 +853,18 @@ class BaseDesignSpec(ApiBaseModel):
 class BaseFrequentistDesignSpec(BaseDesignSpec):
     """Experiment design parameters for frequentist experiments."""
 
+    table_name: Annotated[
+        str,
+        Field(
+            max_length=MAX_LENGTH_OF_NAME_VALUE,
+            description="Datasource table used to resolve participant field metadata.",
+        ),
+    ]
+    primary_key: Annotated[
+        FieldName,
+        Field(description="Column name in table_name that uniquely identifies each participant."),
+    ]
+
     # Frequentist config params
     strata: Annotated[
         list[Stratum],
@@ -928,6 +940,13 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
     def serialize_dt(self, dt: datetime.datetime, _info):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
         return dt.isoformat()
+
+    @model_validator(mode="after")
+    def validate_strata(self) -> Self:
+        """Validate that the strata are valid."""
+        if any(stratum.field_name == self.primary_key for stratum in self.strata):
+            raise ValueError(f"Primary key {self.primary_key} cannot be used in strata.")
+        return self
 
 
 class BaseBanditExperimentSpec(BaseDesignSpec):
@@ -1066,12 +1085,24 @@ class BayesABExperimentSpec(BaseBanditExperimentSpec):
     experiment_type: Literal[ExperimentsType.BAYESAB_ONLINE] = ExperimentsType.BAYESAB_ONLINE
 
 
+type AnyFrequentistDesignSpec = Annotated[
+    PreassignedFrequentistExperimentSpec | OnlineFrequentistExperimentSpec,
+    Field(
+        discriminator="experiment_type",
+        description="The specific type of frequentist experiment design.",
+    ),
+]
+
+type AnyBanditDesignSpec = Annotated[
+    MABExperimentSpec | CMABExperimentSpec | BayesABExperimentSpec,
+    Field(
+        discriminator="experiment_type",
+        description="The specific type of bandit experiment design.",
+    ),
+]
+
 type DesignSpec = Annotated[
-    PreassignedFrequentistExperimentSpec
-    | OnlineFrequentistExperimentSpec
-    | MABExperimentSpec
-    | CMABExperimentSpec
-    | BayesABExperimentSpec,
+    AnyFrequentistDesignSpec | AnyBanditDesignSpec,
     Field(
         discriminator="experiment_type",
         description="The type of assignment and experiment design.",
@@ -1080,18 +1111,7 @@ type DesignSpec = Annotated[
 
 
 class PowerRequest(ApiBaseModel):
-    design_spec: DesignSpec
-    table_name: Annotated[
-        str,
-        Field(description="Table name for ad-hoc power calculations. Fields are verified against the inspected table."),
-    ]
-    primary_key: Annotated[str, Field(description="Primary key field name.")]
-
-    @model_validator(mode="after")
-    def check_table_name_and_primary_key_together(self) -> Self:
-        if (self.table_name is None) != (self.primary_key is None):
-            raise ValueError("table_name and primary_key must be provided together or both omitted")
-        return self
+    design_spec: AnyFrequentistDesignSpec
 
 
 class PowerResponse(ApiBaseModel):
@@ -1249,21 +1269,6 @@ class CreateExperimentRequest(ApiBaseModel):
             ),
         ),
     ] = []
-    table_name: Annotated[
-        str | None,
-        Field(
-            default=None,
-            description="Optional table name for creating experiments without a pre-registered participant type. "
-            "When provided with primary_key, inspects the datasource table to derive experiment field metadata.",
-        ),
-    ] = None
-    primary_key: Annotated[
-        str | None,
-        Field(
-            default=None,
-            description="Optional primary key field name. Must be provided together with table_name.",
-        ),
-    ] = None
 
     @field_validator("webhooks")
     @classmethod
@@ -1272,15 +1277,6 @@ class CreateExperimentRequest(ApiBaseModel):
         if len(v) != len(set(v)):
             raise ValueError("Webhook IDs must be unique")
         return v
-
-    @model_validator(mode="after")
-    def check_table_name_and_primary_key_exist_for_frequentist_only(self) -> Self:
-        if self.design_spec.experiment_type in {ExperimentsType.FREQ_ONLINE, ExperimentsType.FREQ_PREASSIGNED}:
-            if self.table_name is None or self.primary_key is None:
-                raise ValueError("table_name and primary_key must be provided together for frequentist experiments.")
-        elif self.table_name is not None or self.primary_key is not None:
-            raise ValueError("table_name and primary_key are not supported for non-frequentist experiments.")
-        return self
 
 
 # TODO: make this class work with the Bayesian experiment types and their Draw records.
