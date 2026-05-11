@@ -1618,6 +1618,44 @@ async def test_power_check_with_unbalanced_arms(testing_datasource, aclient: Adm
     assert metric_analysis3.target_n == math.ceil(metric_analysis2.target_n * 0.2 / 0.10)
 
 
+async def test_power_check_also_sets_pct_change_with_desired_n(testing_datasource, aclient: AdminAPIClient):
+    """design_spec.desired_n populates pct_change_with_desired_n on power check analyses."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test power check desired_n",
+        description="design_spec.desired_n drives optional MDE field",
+        table_name="dwh",
+        primary_key="id",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="control", arm_description="Control group"),
+            Arm(arm_name="treatment", arm_description="Treatment group"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+        desired_n=500,
+    )
+
+    power_response = aclient.power_check(
+        datasource_id=testing_datasource.ds.id,
+        body=PowerRequest(design_spec=design_spec),
+    ).data
+    assert len(power_response.analyses) == 1
+    assert power_response.analyses[0].pct_change_with_desired_n == pytest.approx(0.0973, rel=1e-3)
+    assert power_response.analyses[0].target_n == 474  # min sample size
+
+    # And when not set, we get only the default minimum sample size calculation.
+    design_spec_plain = design_spec.model_copy(update={"desired_n": None})
+    power_response_plain = aclient.power_check(
+        datasource_id=testing_datasource.ds.id,
+        body=PowerRequest(design_spec=design_spec_plain),
+    ).data
+    assert power_response_plain.analyses[0].pct_change_with_desired_n is None
+    assert power_response_plain.analyses[0].target_n == 474
+
+
 async def test_power_check_validations(testing_datasource, aclient: AdminAPIClient):
     """Test power check validations."""
     ds_id = testing_datasource.datasource_id
