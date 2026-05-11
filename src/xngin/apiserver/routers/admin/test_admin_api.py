@@ -227,13 +227,10 @@ async def fixture_testing_experiment(xngin_session: AsyncSession, testing_dataso
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
         organization_id=datasource.organization_id,
-        experiment_type=design_spec.experiment_type,
         design_spec=design_spec,
         state=ExperimentState.COMMITTED,
         stopped_assignments_at=datetime.now(UTC),
         stopped_assignments_reason=StopAssignmentReason.PREASSIGNED,
-        table_name=design_spec.table_name,
-        unique_id_name=design_spec.primary_key,
         field_type_map=field_type_map,
     )
     experiment = experiment_converter.get_experiment()

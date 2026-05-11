@@ -294,7 +294,6 @@ async def create_preassigned_experiment_impl(
     if not isinstance(design_spec, PreassignedFrequentistExperimentSpec):
         raise MismatchedExperimentTypeError(f"can't create preassigned exp of type: {design_spec.experiment_type}")
 
-    table_name = design_spec.table_name
     unique_id_name = design_spec.primary_key
 
     metric_names = [m.field_name for m in design_spec.metrics]
@@ -327,16 +326,13 @@ async def create_preassigned_experiment_impl(
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
-        experiment_type=design_spec.experiment_type,
         design_spec=design_spec,
         state=ExperimentState.ASSIGNED,
         stopped_assignments_at=datetime.now(UTC),
         stopped_assignments_reason=StopAssignmentReason.PREASSIGNED,
         balance_check=balance_check,
         power_analyses=request.power_analyses,
-        table_name=table_name,
         field_type_map=field_type_map,
-        unique_id_name=unique_id_name,
     )
     experiment = experiment_converter.get_experiment()
     # Associate webhooks with the experiment
@@ -375,17 +371,11 @@ async def create_freq_online_experiment_impl(
     if not isinstance(design_spec, OnlineFrequentistExperimentSpec):
         raise MismatchedExperimentTypeError(f"Can't create freq online exp of type: {design_spec.experiment_type}")
 
-    table_name = design_spec.table_name
-    unique_id_name = design_spec.primary_key
-
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
-        experiment_type=ExperimentsType.FREQ_ONLINE,
         design_spec=design_spec,
-        table_name=table_name,
         field_type_map=field_type_map,
-        unique_id_name=unique_id_name,
     )
     experiment = experiment_converter.get_experiment()
     # Associate webhooks with the experiment
@@ -425,7 +415,6 @@ async def create_bandit_online_experiment_impl(
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
-        experiment_type=design_spec.experiment_type,
         design_spec=design_spec,
         n_trials=desired_n if desired_n is not None else 0,
     )
