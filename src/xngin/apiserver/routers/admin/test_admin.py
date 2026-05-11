@@ -3766,9 +3766,18 @@ async def test_power_check_with_manual_icc(testing_datasource, aclient: AdminAPI
             Arm(arm_name="control", arm_description="Control group"),
             Arm(arm_name="treatment", arm_description="Treatment group"),
         ],
-        metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
+        metrics=[
+            DesignSpecMetricRequest(
+                field_name="current_income",
+                metric_pct_change=0.1,
+                icc=0.15,
+                avg_cluster_size=30,
+                cv=1.2,
+            )
+        ],
         strata=[],
         filters=[],
+        cluster_column="cluster_id",
     )
 
     result = aclient.power_check(
@@ -3777,9 +3786,6 @@ async def test_power_check_with_manual_icc(testing_datasource, aclient: AdminAPI
             design_spec=design_spec,
             table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
             primary_key="id",
-            icc=0.15,
-            avg_cluster_size=30,
-            cv=1.2,
         ),
     )
 
@@ -3807,6 +3813,7 @@ async def test_power_check_with_calculated_icc(testing_datasource, aclient: Admi
         metrics=[DesignSpecMetricRequest(field_name="test_score", metric_pct_change=0.1)],
         strata=[],
         filters=[],
+        cluster_column="cluster_powerlaw",
     )
 
     result = aclient.power_check(
@@ -3815,7 +3822,6 @@ async def test_power_check_with_calculated_icc(testing_datasource, aclient: Admi
             design_spec=design_spec,
             table_name="clustered_dwh",
             primary_key="participant_id",
-            cluster_column="cluster_powerlaw",
         ),
     )
 

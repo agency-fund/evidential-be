@@ -1908,27 +1908,20 @@ async def power_check(
             design_spec.filters,
         )
 
-        # Handle cluster randomization parameters
-        if body.icc is not None and body.avg_cluster_size is not None:
-            # User-supplied cluster params: same values for all metrics
-            cv_value = body.cv if body.cv is not None else 0.0
-            for metric_stat in metric_stats:
-                metric_stat.icc = body.icc
-                metric_stat.avg_cluster_size = body.avg_cluster_size
-                metric_stat.cv = cv_value
-        elif body.cluster_column is not None:
-            # Compute per-metric ICC/CV from the database
-            if not design_spec.metrics:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="At least one metric required for cluster analysis",
-                )
-            for metric_stat in metric_stats:
+    if design_spec.cluster_column is not None:
+        request_metrics_by_name = {m.field_name: m for m in design_spec.metrics}
+        for metric_stat in metric_stats:
+            req_metric = request_metrics_by_name[metric_stat.field_name]
+            if req_metric.icc is not None:
+                metric_stat.icc = req_metric.icc
+                metric_stat.avg_cluster_size = req_metric.avg_cluster_size
+                metric_stat.cv = req_metric.cv
+            else:
                 cluster_stats = await asyncio.to_thread(
                     calculate_icc_and_cv_from_database,
                     dwh.session,
                     sa_table,
-                    body.cluster_column,
+                    design_spec.cluster_column,
                     metric_stat.field_name,
                     design_spec.filters,
                 )

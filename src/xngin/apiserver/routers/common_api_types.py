@@ -79,6 +79,28 @@ class DesignSpecMetricBase(ApiBaseModel):
         Field(description="Absolute target value = metric_baseline*(1 + metric_pct_change)"),
     ] = None
 
+    # Cluster randomization design parameters (all must be set together, or none).
+    icc: Annotated[
+        float | None,
+        Field(description="Intracluster correlation coefficient for cluster-randomized designs."),
+    ] = None
+    avg_cluster_size: Annotated[
+        float | None,
+        Field(description="Average number of individuals per cluster."),
+    ] = None
+    cv: Annotated[
+        float | None,
+        Field(description="Coefficient of variation in cluster sizes (0 = equal sizes)."),
+    ] = None
+
+    @model_validator(mode="after")
+    def cluster_fields_check(self) -> Self:
+        """Enforce that cluster fields are either all set or all unset."""
+        cluster_fields = (self.icc, self.avg_cluster_size, self.cv)
+        if any(f is not None for f in cluster_fields) and any(f is None for f in cluster_fields):
+            raise ValueError("icc, avg_cluster_size, and cv must all be set together or all be None")
+        return self
+
 
 class DesignSpecMetric(DesignSpecMetricBase):
     """Defines a metric to measure in an experiment with its baseline stats."""
@@ -113,28 +135,6 @@ class DesignSpecMetric(DesignSpecMetricBase):
             )
         ),
     ] = None
-
-    # Cluster randomization design parameters (all must be set together, or none)
-    icc: Annotated[
-        float | None,
-        Field(description="Intracluster correlation coefficient for cluster-randomized designs."),
-    ] = None
-    avg_cluster_size: Annotated[
-        float | None,
-        Field(description="Average number of individuals per cluster."),
-    ] = None
-    cv: Annotated[
-        float | None,
-        Field(description="Coefficient of variation in cluster sizes (0 = equal sizes)."),
-    ] = None
-
-    @model_validator(mode="after")
-    def cluster_fields_check(self) -> Self:
-        """Enforce that cluster fields are either all set or all unset."""
-        cluster_fields = (self.icc, self.avg_cluster_size, self.cv)
-        if any(f is not None for f in cluster_fields) and any(f is None for f in cluster_fields):
-            raise ValueError("icc, avg_cluster_size, and cv must all be set together or all be None")
-        return self
 
     @model_validator(mode="after")
     def stddev_check(self):
@@ -873,6 +873,19 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         ),
     ]
 
+    cluster_column: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "Column name identifying clusters for cluster-randomized designs. When set, the "
+                "experiment design is treated as cluster-randomized: per-metric icc, "
+                "avg_cluster_size, and cv are either supplied on each metric or computed from "
+                "this column at power_check time. When unset, the design is individual-randomized."
+            ),
+        ),
+    ] = None
+
     filters: Annotated[
         list[Filter],
         Field(
@@ -1087,44 +1100,6 @@ class PowerRequest(ApiBaseModel):
         Field(description="Table name for ad-hoc power calculations. Fields are verified against the inspected table."),
     ]
     primary_key: Annotated[str, Field(description="Primary key field name.")]
-
-    cluster_column: Annotated[
-        str | None,
-        Field(
-            default=None,
-            description="Column name for cluster IDs. When provided, calculates ICC and CV from data "
-            "and performs cluster randomization power analysis.",
-        ),
-    ] = None
-
-    icc: Annotated[
-        float | None,
-        Field(
-            default=None,
-            ge=0.0,
-            le=1.0,
-            description="Intracluster correlation coefficient (0 to 1). If provided with avg_cluster_size, "
-            "uses these values instead of calculating from data.",
-        ),
-    ] = None
-
-    avg_cluster_size: Annotated[
-        float | None,
-        Field(
-            default=None,
-            gt=0,
-            description="Average cluster size. Required if icc is provided.",
-        ),
-    ] = None
-
-    cv: Annotated[
-        float | None,
-        Field(
-            default=None,
-            ge=0.0,
-            description="Coefficient of variation in cluster sizes. Defaults to 0 if not provided.",
-        ),
-    ] = None
 
     @model_validator(mode="after")
     def check_table_name_and_primary_key_together(self) -> Self:
