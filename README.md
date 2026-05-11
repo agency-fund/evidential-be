@@ -31,7 +31,7 @@
 | src/xngin/apiserver/routers/admin/admin\_api.py                                    |      617 |       49 |     92% |257, 356, 368, 379, 383, 392, 581, 806, 810, 869-875, 1058, 1095, 1212-1290, 1337, 1339-1342, 1382, 1504, 1568-1574, 1599, 1606, 1878 |
 | src/xngin/apiserver/routers/admin/admin\_api\_converters.py                        |       62 |        8 |     87% |29, 73-74, 84, 110-111, 123-124 |
 | src/xngin/apiserver/routers/admin/admin\_api\_types.py                             |      130 |        2 |     98% |    40, 42 |
-| src/xngin/apiserver/routers/admin/test\_admin\_api.py                              |     1573 |        7 |     99% |196-201, 431 |
+| src/xngin/apiserver/routers/admin/test\_admin\_api.py                              |     1573 |        7 |     99% |196-201, 428 |
 | src/xngin/apiserver/routers/admin\_integrations/admin\_integrations\_api.py        |      120 |       10 |     92% |225, 241-243, 249-251, 257-259 |
 | src/xngin/apiserver/routers/admin\_integrations/admin\_integrations\_api\_types.py |       14 |        1 |     93% |        26 |
 | src/xngin/apiserver/routers/auth/auth\_api.py                                      |       65 |       37 |     43% |33-36, 65-76, 82-106, 111-150 |
@@ -42,11 +42,11 @@
 | src/xngin/apiserver/routers/common\_enums.py                                       |      201 |       39 |     81% |73, 75, 98-107, 112, 149-165, 187-188, 207-211, 249, 300-303, 312, 351-352, 356, 388 |
 | src/xngin/apiserver/routers/experiments/dependencies.py                            |       60 |        3 |     95% |39, 60, 67 |
 | src/xngin/apiserver/routers/experiments/experiments\_api.py                        |       96 |        4 |     96% |140-142, 346 |
-| src/xngin/apiserver/routers/experiments/experiments\_common.py                     |      417 |       34 |     92% |209, 233, 271-272, 295, 376, 393, 422-423, 435, 544, 633-634, 655, 759, 763, 767, 824-825, 828, 869-877, 896, 911, 964-965, 981-983, 1056 |
+| src/xngin/apiserver/routers/experiments/experiments\_common.py                     |      414 |       34 |     92% |209, 233, 271-272, 295, 372, 383, 412-413, 424, 533, 622-623, 644, 748, 752, 756, 813-814, 817, 858-866, 885, 900, 953-954, 970-972, 1045 |
 | src/xngin/apiserver/routers/experiments/experiments\_common\_csv.py                |       75 |        4 |     95% |36, 90, 200-201 |
 | src/xngin/apiserver/routers/experiments/property\_filters.py                       |       96 |        8 |     92% |25, 28, 32, 95-96, 148, 160-161 |
 | src/xngin/apiserver/routers/experiments/test\_experiments\_api.py                  |      422 |        3 |     99% |63, 178-179 |
-| src/xngin/apiserver/routers/experiments/test\_experiments\_common.py               |     1001 |        8 |     99% |198-199, 1237-1239, 1617-1618, 2073 |
+| src/xngin/apiserver/routers/experiments/test\_experiments\_common.py               |      997 |        8 |     99% |198-199, 1230-1232, 1610-1611, 2066 |
 | src/xngin/apiserver/routers/experiments/test\_property\_filters.py                 |       41 |        1 |     98% |        24 |
 | src/xngin/apiserver/routers/healthchecks\_api.py                                   |       16 |        2 |     88% |     26-27 |
 | src/xngin/apiserver/routers/test\_assignment\_adapters.py                          |      204 |        1 |     99% |       103 |
@@ -54,11 +54,11 @@
 | src/xngin/apiserver/snapshots/fake\_data.py                                        |      126 |       37 |     71% |73-81, 87, 90, 92, 97, 102, 107, 199-202, 280, 301-306, 322-349 |
 | src/xngin/apiserver/snapshots/snapshotter.py                                       |       80 |        2 |     98% |  196, 207 |
 | src/xngin/apiserver/snapshots/test\_draws\_perf.py                                 |       95 |       66 |     31% |48, 54-96, 114-131, 146-163, 167, 175, 181-186, 198-221, 234-257, 270-288 |
-| src/xngin/apiserver/snapshots/test\_snapshotter.py                                 |      256 |        8 |     97% |65-70, 574-575 |
+| src/xngin/apiserver/snapshots/test\_snapshotter.py                                 |      252 |        6 |     98% |61-64, 565-566 |
 | src/xngin/apiserver/sql/queries.py                                                 |       43 |       10 |     77% | 23, 61-70 |
 | src/xngin/apiserver/sqla/tables.py                                                 |      336 |        4 |     99% |58, 223, 422, 426 |
 | src/xngin/apiserver/storage/bootstrap.py                                           |       40 |        1 |     98% |        60 |
-| src/xngin/apiserver/storage/storage\_format\_converters.py                         |      180 |       13 |     93% |58-60, 63-64, 259, 290, 326, 468, 525-528 |
+| src/xngin/apiserver/storage/storage\_format\_converters.py                         |      181 |       13 |     93% |52-54, 57-58, 264, 295, 331, 451, 508-511 |
 | src/xngin/apiserver/testing/admin\_api\_client.py                                  |      186 |       14 |     92% |158-161, 206, 223-230, 255-259, 315, 1655, 2601, 3819 |
 | src/xngin/apiserver/testing/admin\_integrations\_api\_client.py                    |       93 |       12 |     87% |114-117, 162, 179-186, 200-201, 211-215 |
 | src/xngin/apiserver/testing/assertions.py                                          |        7 |        1 |     86% |         7 |
@@ -87,7 +87,7 @@
 | src/xngin/xsecrets/secretservice.py                                                |       63 |        5 |     92% |37, 49-50, 108, 130 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                                     |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                                         |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                                          | **13237** |  **875** | **93%** |           |
+| **TOTAL**                                                                          | **13227** |  **873** | **93%** |           |
 
 78 files skipped due to complete coverage.
 
