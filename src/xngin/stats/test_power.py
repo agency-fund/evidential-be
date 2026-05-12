@@ -438,7 +438,7 @@ def test_check_power_with_desired_n():
             field_name="metric2",
             metric_type=MetricType.BINARY,
             metric_baseline=0.05,
-            metric_pct_change=0.50,
+            metric_pct_change=0.10,
             available_n=10000,
             available_nonnull_n=10000,
         ),
@@ -449,15 +449,19 @@ def test_check_power_with_desired_n():
     # Should get results for both metrics
     assert len(results) == 2
 
-    # Both should have MDE calculated
-    # Normal power check always runs — target_n is required N, not desired_n
-    for result in results:
-        assert result.target_n != 500
-        assert result.sufficient_n is True
-        assert result.target_possible is None
-        assert result.pct_change_possible is None
+    # Both with and without desired_n should calculate a min target_n sample size given the specified MDE:
+    assert results[0].target_n == 506
+    assert results[0].sufficient_n is True
+    # Currently when there's sufficient units, we don't report the tightest MDE possible if all samples were used.
+    assert results[0].target_possible is None
+    assert results[0].pct_change_possible is None
+    # If there are insufficient units, we report the smallest MDE possible if all samples were used.
+    assert results[1].target_n == 62438
+    assert results[1].sufficient_n is False
+    assert results[1].target_possible == pytest.approx(0.0385, abs=1e-4)
+    assert results[1].pct_change_possible == pytest.approx(-0.2300, abs=1e-4)
 
-    # MDE for desired_n=500 is in the new field
+    # Since desired_n=500 is set, MDE for this size is in the new field:
     assert results[0].pct_change_with_desired_n == pytest.approx(0.0502, abs=1e-4)
     # standardized effect size (Cohen's h) = 0.2505810918259752
     assert results[1].pct_change_with_desired_n == pytest.approx(-0.7998, abs=1e-4)
