@@ -511,7 +511,6 @@ async def create_bandit_snapshot_experiment(
     *,
     experiment_type: ExperimentsType,
     with_draws: bool = True,
-    desired_n: int = 2,
     prior_type: PriorTypes = PriorTypes.NORMAL,
     reward_type: LikelihoodTypes = LikelihoodTypes.BERNOULLI,
 ) -> str:
@@ -545,7 +544,6 @@ async def create_bandit_snapshot_experiment(
                 ],
                 prior_type=prior_type,
                 reward_type=reward_type,
-                desired_n=desired_n,
             )
         case ExperimentsType.CMAB_ONLINE:
             design_spec = CMABExperimentSpec(
@@ -564,7 +562,6 @@ async def create_bandit_snapshot_experiment(
                 ],
                 prior_type=prior_type,
                 reward_type=reward_type,
-                desired_n=desired_n,
             )
         case _:
             raise ValueError(f"Unsupported experiment type: {experiment_type}")
@@ -662,7 +659,6 @@ async def test_create_snapshot_cmab_matches_admin_analysis_at_mean_contexts(
         testing_datasource,
         experiment_type=ExperimentsType.CMAB_ONLINE,
         with_draws=False,
-        desired_n=3,
         reward_type=LikelihoodTypes.NORMAL,
     )
     sorted_contexts = get_sorted_cmab_contexts(aclient, testing_datasource, experiment_id)

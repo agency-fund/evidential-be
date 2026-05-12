@@ -978,15 +978,6 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
         ),
     ] = None
 
-    desired_n: Annotated[
-        int | None,
-        Field(
-            default=None,
-            ge=0,
-            description="Optional desired trial count used to initialize stored bandit n_trials.",
-        ),
-    ] = None
-
     # Experiment config
     prior_type: Annotated[
         PriorTypes,
