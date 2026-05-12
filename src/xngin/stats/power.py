@@ -132,20 +132,13 @@ def check_power(
     for metric in metrics:
         try:
             analysis = analyze_metric_power(
-                metric=metric,
-                n_arms=n_arms,
-                arm_weights=arm_weights,
-                power=power,
-                alpha=alpha)
+                metric=metric, n_arms=n_arms, arm_weights=arm_weights, power=power, alpha=alpha
+            )
 
             if desired_n is not None:
                 mde_analysis = analyze_metric_power(
-                    metric=metric,
-                    n_arms=n_arms,
-                    arm_weights=arm_weights,
-                    desired_n=desired_n,
-                    power=power,
-                    alpha=alpha)
+                    metric=metric, n_arms=n_arms, arm_weights=arm_weights, desired_n=desired_n, power=power, alpha=alpha
+                )
                 analysis.pct_change_with_desired_n = mde_analysis.pct_change_possible
 
             analyses.append(analysis)
