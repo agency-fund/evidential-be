@@ -1415,7 +1415,7 @@ async def test_lifecycle_with_db(testing_datasource, aclient: AdminAPIClient, ac
     assert created_participant_type.participant_type == participant_type
 
     # Create experiment using that participant type.
-    create_exp_dict = make_createexperimentrequest_json()
+    create_exp_dict = make_createexperimentrequest_json(desired_n=100)
     create_exp_request = CreateExperimentRequest.model_validate(create_exp_dict)
     create_exp_request.design_spec.design_url = HttpUrl("https://example.com/design")
     assert isinstance(create_exp_request.design_spec, PreassignedFrequentistExperimentSpec)
@@ -1423,9 +1423,7 @@ async def test_lifecycle_with_db(testing_datasource, aclient: AdminAPIClient, ac
         Filter(field_name="id", relation=Relation.EXCLUDES, value=[str((2 << 52) + 1), None]),
         Filter(field_name="is_engaged", relation=Relation.INCLUDES, value=[True, False]),
     ]
-    created_experiment = aclient.create_experiment(
-        datasource_id=testing_datasource.ds.id, body=create_exp_request, desired_n=100
-    ).data
+    created_experiment = aclient.create_experiment(datasource_id=testing_datasource.ds.id, body=create_exp_request).data
     parsed_experiment_id = created_experiment.experiment_id
     assert parsed_experiment_id is not None
     assert created_experiment.design_spec.design_url == HttpUrl("https://example.com/design")
@@ -1549,11 +1547,11 @@ async def test_abandon_experiment(testing_datasource, aclient: AdminAPIClient):
         metrics=[DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1)],
         strata=[],
         filters=[],
+        desired_n=1,
     )
     parsed_response = aclient.create_experiment(
         datasource_id=datasource_id,
         body=CreateExperimentRequest(design_spec=design_spec),
-        desired_n=1,
     ).data
     assert parsed_response.state == ExperimentState.ASSIGNED
     parsed_experiment_id = parsed_response.experiment_id
@@ -1711,30 +1709,30 @@ async def test_power_check_validations(testing_datasource, aclient: AdminAPIClie
 async def test_create_experiment_with_invalid_design_url(testing_datasource, aclient: AdminAPIClient):
     datasource_id = testing_datasource.ds.id
     # Work with the raw json to construct a bad request
-    request = make_createexperimentrequest_json()
+    request = make_createexperimentrequest_json(desired_n=1)
     request["design_spec"]["design_url"] = "example.com/"
 
     with expect_status_code(422, detail_contains="Input should be a valid URL, relative URL without a base"):
-        aclient.create_experiment(datasource_id=datasource_id, body=request, desired_n=1)
+        aclient.create_experiment(datasource_id=datasource_id, body=request)
 
     # Now check that a too long URL is rejected.
     request["design_spec"]["design_url"] = "http://example.com/" + "a" * 500
     with expect_status_code(422, detail_contains="URL should have at most 500 characters"):
-        aclient.create_experiment(datasource_id=datasource_id, body=request, desired_n=1)
+        aclient.create_experiment(datasource_id=datasource_id, body=request)
 
     # And we need a host.
     request["design_spec"]["design_url"] = "https://"
     with expect_status_code(422, detail_contains="Input should be a valid URL, empty host"):
-        aclient.create_experiment(datasource_id=datasource_id, body=request, desired_n=1)
+        aclient.create_experiment(datasource_id=datasource_id, body=request)
 
 
 async def test_create_experiment_with_primary_key_as_strata_fails(testing_datasource, aclient: AdminAPIClient):
     datasource_id = testing_datasource.ds.id
-    request = make_createexperimentrequest_json()
+    request = make_createexperimentrequest_json(desired_n=1)
     primary_key = request["design_spec"]["primary_key"]
     request["design_spec"]["strata"] = [Stratum(field_name=primary_key)]
     with expect_status_code(422, detail_contains=f"Primary key {primary_key} cannot be used in strata."):
-        aclient.create_experiment(datasource_id=datasource_id, body=request, desired_n=1)
+        aclient.create_experiment(datasource_id=datasource_id, body=request)
 
 
 async def test_create_and_get_freq_preassigned_experiment(
@@ -1744,11 +1742,9 @@ async def test_create_and_get_freq_preassigned_experiment(
     eclient: ExperimentsAPIClient,
 ):
     datasource_id = testing_datasource.ds.id
-    request_obj = make_create_preassigned_experiment_request()
+    request_obj = make_create_preassigned_experiment_request(desired_n=100)
 
-    created_experiment = aclient.create_experiment(
-        datasource_id=datasource_id, body=request_obj, desired_n=100, random_state=42
-    ).data
+    created_experiment = aclient.create_experiment(datasource_id=datasource_id, body=request_obj, random_state=42).data
     parsed_experiment_id = created_experiment.experiment_id
     assert parsed_experiment_id is not None
     parsed_arm_ids = {arm.arm_id for arm in created_experiment.design_spec.arms}
@@ -1869,12 +1865,13 @@ async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
                     field_name="uuid_filter", relation=Relation.EXCLUDES, value=["123e4567-e89b-12d3-a456-426614174000"]
                 ),
             ],
+            desired_n=100,
         ),
         webhooks=[],
     )
 
     created_experiment = aclient.create_experiment(
-        datasource_id=datasource_id, body=experiment_request, desired_n=100, random_state=42
+        datasource_id=datasource_id, body=experiment_request, random_state=42
     ).data
     experiment_id = created_experiment.experiment_id
 
@@ -1950,11 +1947,9 @@ async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
 def test_preassigned_experiment_assign_summary_matches_get(testing_datasource, aclient: AdminAPIClient):
     """The assign_summary from create_experiment must match the persisted experiment summary."""
     datasource_id = testing_datasource.ds.id
-    request_obj = make_create_preassigned_experiment_request()
+    request_obj = make_create_preassigned_experiment_request(desired_n=100)
 
-    created = aclient.create_experiment(
-        datasource_id=datasource_id, body=request_obj, desired_n=100, random_state=42
-    ).data
+    created = aclient.create_experiment(datasource_id=datasource_id, body=request_obj, random_state=42).data
     create_summary = created.assign_summary
     assert create_summary is not None
 
@@ -2844,13 +2839,12 @@ async def test_experiment_webhook_integration(testing_datasource, aclient: Admin
             metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
             strata=[],
             filters=[],
+            desired_n=100,
         ),
         webhooks=[webhook1_id],  # Only include the first webhook
     )
 
-    create_response = aclient.create_experiment(
-        datasource_id=datasource_id, body=experiment_request, desired_n=100
-    ).data
+    create_response = aclient.create_experiment(datasource_id=datasource_id, body=experiment_request).data
 
     # Verify the create response includes the webhook
     assert len(create_response.webhooks) == 1
@@ -2882,12 +2876,13 @@ async def test_experiment_webhook_integration(testing_datasource, aclient: Admin
             metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
             strata=[],
             filters=[],
+            desired_n=100,
         ),
         # No webhooks field - should default to empty list
     )
 
     create_response_no_webhooks = aclient.create_experiment(
-        datasource_id=datasource_id, body=experiment_request_no_webhooks, desired_n=100
+        datasource_id=datasource_id, body=experiment_request_no_webhooks
     ).data
 
     # Verify no webhooks are associated
@@ -2943,9 +2938,9 @@ def test_snapshots(aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
                 metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
                 strata=[],
                 filters=[],
+                desired_n=100,
             ),
         ),
-        desired_n=100,
     ).data.experiment_id
 
     # Experiments must be in an eligible state to be snapshotted.
@@ -3141,9 +3136,9 @@ def test_snapshot_on_ineligible_experiments(testing_datasource, aclient: AdminAP
                 metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
                 strata=[],
                 filters=[],
+                desired_n=20,
             ),
         ),
-        desired_n=20,
     ).data.experiment_id
 
     # Assert non-committed experiments cannot be snapshotted.
@@ -3176,9 +3171,9 @@ def test_snapshot_on_ineligible_experiments(testing_datasource, aclient: AdminAP
                 metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
                 strata=[],
                 filters=[],
+                desired_n=20,
             ),
         ),
-        desired_n=20,
     ).data.experiment_id
     aclient.commit_experiment(datasource_id=ds.id, experiment_id=experiment_id)
     aclient.create_snapshot(organization_id=org.id, datasource_id=ds.id, experiment_id=experiment_id)
@@ -3207,9 +3202,9 @@ def test_snapshot_with_nan(testing_datasource, aclient: AdminAPIClient):
                 strata=[],
                 # Force no variation in the primary metric => t-stat will be NaN
                 filters=[Filter(field_name="is_engaged", relation=Relation.INCLUDES, value=[False])],
+                desired_n=10,
             ),
         ),
-        desired_n=10,
     ).data.experiment_id
 
     aclient.commit_experiment(datasource_id=ds.id, experiment_id=experiment_id)
@@ -3583,13 +3578,12 @@ async def test_create_preassigned_experiment_with_table_name_and_primary_key(
     xngin_session: AsyncSession, testing_datasource, aclient: AdminAPIClient
 ):
     ds_id = testing_datasource.ds.id
-    request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_PREASSIGNED)
+    request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_PREASSIGNED, desired_n=100)
     experiment_request = CreateExperimentRequest.model_validate(request_json)
 
     created = aclient.create_experiment(
         datasource_id=ds_id,
         body=experiment_request,
-        desired_n=100,
         random_state=42,
     ).data
 
@@ -3651,9 +3645,9 @@ def test_list_snapshots_pagination(aclient: AdminAPIClient):
                 metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
                 strata=[],
                 filters=[],
+                desired_n=100,
             ),
         ),
-        desired_n=100,
     ).data.experiment_id
 
     aclient.commit_experiment(datasource_id=ds.id, experiment_id=experiment_id)
@@ -3749,9 +3743,9 @@ def test_list_organization_events_pagination(testing_datasource, aclient: AdminA
                     metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
                     strata=[],
                     filters=[],
+                    desired_n=100,
                 ),
             ),
-            desired_n=100,
         ).data
         aclient.commit_experiment(datasource_id=ds_id, experiment_id=experiment.experiment_id)
 
@@ -3827,9 +3821,9 @@ async def test_list_organization_events_pagination_with_same_timestamp_is_id_des
                     metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
                     strata=[],
                     filters=[],
+                    desired_n=100,
                 ),
             ),
-            desired_n=100,
         ).data
         aclient.commit_experiment(datasource_id=ds_id, experiment_id=experiment.experiment_id)
 

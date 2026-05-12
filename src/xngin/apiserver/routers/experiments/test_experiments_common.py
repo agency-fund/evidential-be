@@ -73,6 +73,7 @@ def make_createexperimentrequest_json(
     num_arms: int = 2,
     table_name: str | None = None,
     primary_key: str | None = None,
+    desired_n: int | None = None,
 ):
     """Make a basic CreateExperimentRequest JSON object.
 
@@ -115,6 +116,7 @@ def make_createexperimentrequest_json(
                     "power": 0.8,
                     "alpha": 0.05,
                     "fstat_thresh": 0.2,
+                    "desired_n": desired_n,
                 },
             }
         case ExperimentsType.MAB_ONLINE:
@@ -199,8 +201,8 @@ def make_createexperimentrequest_json(
             raise ValueError(f"Invalid experiment type: {experiment_type}")
 
 
-def make_create_preassigned_experiment_request() -> CreateExperimentRequest:
-    request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_PREASSIGNED)
+def make_create_preassigned_experiment_request(desired_n: int | None = None) -> CreateExperimentRequest:
+    request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_PREASSIGNED, desired_n=desired_n)
     return CreateExperimentRequest.model_validate(request)
 
 
@@ -473,7 +475,7 @@ async def test_create_preassigned_experiment_impl(
 ):
     """Test implementation of creating a preassigned experiment."""
     participants = make_sample_data(n=100)
-    request = make_create_preassigned_experiment_request()
+    request = make_create_preassigned_experiment_request(desired_n=len(participants))
     spec = cast(PreassignedFrequentistExperimentSpec, request.design_spec)
     expected_design_url = "https://example.com/"
     spec.design_url = HttpUrl(expected_design_url)
@@ -637,7 +639,7 @@ async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
     sample_table,
 ):
     """Test that create_preassigned_experiment_impl raises LateValidationError for duplicate participant IDs."""
-    request = make_create_preassigned_experiment_request()
+    request = make_create_preassigned_experiment_request(desired_n=1)
 
     # Create mock participants with a duplicate ID
     participants_with_duplicate = [
@@ -670,7 +672,7 @@ async def test_create_preassigned_experiment_impl_with_unbalanced_arms(
     sample_table,
 ):
     participants = make_sample_data(n=100)
-    request = make_create_preassigned_experiment_request()
+    request = make_create_preassigned_experiment_request(desired_n=len(participants))
     spec = cast(PreassignedFrequentistExperimentSpec, request.design_spec)
     expected_weights = [20.0, 80.0]
     spec.arms[0].arm_weight = expected_weights[0]
@@ -730,7 +732,7 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
     sample_table,
 ):
     participants = make_sample_data(n=150)
-    request = make_create_preassigned_experiment_request()
+    request = make_create_preassigned_experiment_request(desired_n=len(participants))
     spec = cast(PreassignedFrequentistExperimentSpec, request.design_spec)
     # Add a 3rd arm and then override weights
     spec.arms = [*spec.arms, Arm(arm_name="T2", arm_description="T2")]
@@ -975,7 +977,6 @@ async def test_create_experiment_impl_for_freq_online_with_unbalanced_arms(
         request=request,
         datasource=testing_datasource.ds,
         xngin_session=xngin_session,
-        desired_n=None,
         stratify_on_metrics=False,
         random_state=42,
         validated_webhooks=[],
@@ -1061,7 +1062,7 @@ async def test_create_experiment_impl_for_freq_raises_on_bad_filters(
     match: str | None,
 ):
     """Test that validate_filter_value is being called correctly during experiment creation."""
-    request = make_createexperimentrequest_json(experiment_type=experiment_type)
+    request = make_createexperimentrequest_json(experiment_type=experiment_type, desired_n=1)
     request = CreateExperimentRequest.model_validate(request)
     # Attach test filters
     assert isinstance(request.design_spec, PreassignedFrequentistExperimentSpec | OnlineFrequentistExperimentSpec)
@@ -1072,7 +1073,6 @@ async def test_create_experiment_impl_for_freq_raises_on_bad_filters(
             request=request,
             datasource=testing_datasource.ds,
             xngin_session=xngin_session,
-            desired_n=10,
             stratify_on_metrics=False,
             random_state=42,
             validated_webhooks=[],
@@ -1089,7 +1089,6 @@ async def test_create_experiment_impl_for_freq_online(xngin_session, testing_dat
         request=request.model_copy(deep=True),
         datasource=testing_datasource.ds,
         random_state=42,
-        desired_n=None,
         xngin_session=xngin_session,
         stratify_on_metrics=True,
         validated_webhooks=[],
@@ -1175,7 +1174,6 @@ async def test_create_experiment_impl_for_mab_online(xngin_session, testing_data
     request = make_create_online_bandit_experiment_request()
     response = await create_bandit_online_experiment_impl(
         request=request.model_copy(deep=True),
-        desired_n=None,
         xngin_session=xngin_session,
         organization_id=testing_datasource.org.id,
         datasource_id=testing_datasource.ds.id,
@@ -1260,7 +1258,6 @@ async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_dat
 
     response = await create_bandit_online_experiment_impl(
         request=request.model_copy(deep=True),
-        desired_n=None,
         xngin_session=xngin_session,
         organization_id=testing_datasource.org.id,
         datasource_id=testing_datasource.ds.id,
@@ -1372,7 +1369,6 @@ async def test_create_experiment_impl_for_bandit_with_arm_weights(
 
     response = await create_bandit_online_experiment_impl(
         request=request.model_copy(deep=True),
-        desired_n=None,
         xngin_session=xngin_session,
         organization_id=testing_datasource.org.id,
         datasource_id=testing_datasource.ds.id,
@@ -1444,7 +1440,7 @@ async def test_create_experiment_impl_no_metric_stratification(
 ):
     """Test implementation of creating an experiment without stratifying on metrics."""
     participants = make_sample_data(n=100)
-    request = make_create_preassigned_experiment_request()
+    request = make_create_preassigned_experiment_request(desired_n=len(participants))
 
     # Test with stratify_on_metrics=False
     response = await create_experiment_impl(
@@ -1452,7 +1448,6 @@ async def test_create_experiment_impl_no_metric_stratification(
         datasource=testing_datasource.ds,
         random_state=42,
         xngin_session=xngin_session,
-        desired_n=len(participants),
         stratify_on_metrics=False,
         validated_webhooks=[],
     )
@@ -1960,7 +1955,6 @@ async def test_create_assignment_for_participant_with_unbalanced_arms(xngin_sess
         request=CreateExperimentRequest.model_validate(request),
         datasource=testing_datasource.ds,
         xngin_session=xngin_session,
-        desired_n=None,
         stratify_on_metrics=False,
         random_state=42,
         validated_webhooks=[],
@@ -2004,7 +1998,6 @@ async def test_create_assignment_for_participant_with_three_weighted_arms(xngin_
         request=CreateExperimentRequest.model_validate(request),
         datasource=testing_datasource.ds,
         xngin_session=xngin_session,
-        desired_n=None,
         stratify_on_metrics=False,
         random_state=42,
         validated_webhooks=[],

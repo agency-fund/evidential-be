@@ -909,8 +909,11 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         int | None,
         Field(
             default=None,
-            description="Optional desired sample size for MDE calculation. "
-            "If provided, calculates minimum detectable effect instead of required sample size.",
+            ge=0,
+            description="Used in both power calculations and experiment creation. "
+            "Required for *creation* of preassigned experiments. "
+            "Optional for power calculations; if set, calculates minimum detectable effect for the "
+            "desired size in addition to the min sample size. ",
         ),
     ] = None
 

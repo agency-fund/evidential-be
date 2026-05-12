@@ -463,9 +463,9 @@ class Experiment(Base):
     updated_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now()
     )
-    n_trials: Mapped[int] = mapped_column(server_default="0")
 
     # Bandit config params
+    n_trials: Mapped[int] = mapped_column(server_default="0")
     prior_type: Mapped[str | None] = mapped_column()
     reward_type: Mapped[str | None] = mapped_column()
 

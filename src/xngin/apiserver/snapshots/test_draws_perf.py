@@ -89,7 +89,6 @@ async def _create_bandit_experiment(
     experiment_id = aclient.create_experiment(
         datasource_id=testing_datasource.ds.id,
         body=CreateExperimentRequest(design_spec=design_spec),
-        desired_n=2,
         random_state=42,
     ).data.experiment_id
     aclient.commit_experiment(datasource_id=testing_datasource.ds.id, experiment_id=experiment_id)
