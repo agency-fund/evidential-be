@@ -328,6 +328,7 @@ class ExperimentStorageConverter:
                 "prior_type": capi.PriorTypes(self.experiment.prior_type),
                 "reward_type": capi.LikelihoodTypes(self.experiment.reward_type),
                 "contexts": contexts,
+                "desired_n": self.experiment.n_trials or None,
             })
         raise ValueError(f"Unsupported experiment type: {self.experiment.experiment_type}")
 
@@ -466,7 +467,7 @@ class ExperimentStorageConverter:
                     ]
                 experiment.reward_type = design_spec.reward_type.value
                 experiment.prior_type = design_spec.prior_type.value
-                experiment.n_trials = n_trials
+                experiment.n_trials = design_spec.desired_n if design_spec.desired_n is not None else n_trials
 
                 arm_weights = design_spec.get_validated_arm_weights()
                 if arm_weights:

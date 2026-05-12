@@ -151,6 +151,7 @@ def make_createexperimentrequest_json(
                     "prior_type": prior_type,
                     "reward_type": reward_type,
                     "arms": arms,
+                    "desired_n": desired_n,
                 }
             }
         case ExperimentsType.CMAB_ONLINE:
@@ -183,6 +184,7 @@ def make_createexperimentrequest_json(
                     "prior_type": prior_type,
                     "reward_type": reward_type,
                     "arms": cmab_arms,
+                    "desired_n": desired_n,
                     "contexts": [
                         {
                             "context_name": "Context 1",
@@ -215,9 +217,10 @@ def make_create_online_bandit_experiment_request(
     experiment_type: ExperimentsType = ExperimentsType.MAB_ONLINE,
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
     prior_type: PriorTypes = PriorTypes.NORMAL,
+    desired_n: int | None = None,
 ) -> CreateExperimentRequest:
     request = make_createexperimentrequest_json(
-        experiment_type=experiment_type, prior_type=prior_type, reward_type=reward_type
+        experiment_type=experiment_type, prior_type=prior_type, reward_type=reward_type, desired_n=desired_n
     )
     return CreateExperimentRequest.model_validate(request)
 
@@ -1171,7 +1174,7 @@ async def test_create_experiment_impl_for_freq_online(xngin_session, testing_dat
 @pytest.mark.parametrize("reorder_arms", [True, False])
 async def test_create_experiment_impl_for_mab_online(xngin_session, testing_datasource, reorder_arms: bool):
     """Test implementation of creating an online experiment."""
-    request = make_create_online_bandit_experiment_request()
+    request = make_create_online_bandit_experiment_request(desired_n=37)
     response = await create_bandit_online_experiment_impl(
         request=request.model_copy(deep=True),
         xngin_session=xngin_session,
@@ -1219,6 +1222,7 @@ async def test_create_experiment_impl_for_mab_online(xngin_session, testing_data
     assert experiment.datasource_id == testing_datasource.ds.id
     assert_dates_equal(experiment.start_date, request.design_spec.start_date)
     assert_dates_equal(experiment.end_date, request.design_spec.end_date)
+    assert experiment.n_trials == request.design_spec.desired_n
 
     # Verify design_spec was stored correctly
     converter = ExperimentStorageConverter(experiment)
@@ -1254,7 +1258,7 @@ async def test_create_experiment_impl_for_mab_online(xngin_session, testing_data
 
 async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_datasource):
     """Test implementation of creating an online experiment."""
-    request = make_create_online_bandit_experiment_request(experiment_type=ExperimentsType.CMAB_ONLINE)
+    request = make_create_online_bandit_experiment_request(experiment_type=ExperimentsType.CMAB_ONLINE, desired_n=19)
 
     response = await create_bandit_online_experiment_impl(
         request=request.model_copy(deep=True),
@@ -1301,6 +1305,7 @@ async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_dat
     assert experiment.datasource_id == testing_datasource.ds.id
     assert_dates_equal(experiment.start_date, request.design_spec.start_date)
     assert_dates_equal(experiment.end_date, request.design_spec.end_date)
+    assert experiment.n_trials == request.design_spec.desired_n
 
     # Verify design_spec was stored correctly
     converter = ExperimentStorageConverter(experiment)
