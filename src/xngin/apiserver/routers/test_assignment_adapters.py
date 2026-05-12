@@ -198,7 +198,7 @@ def test_assign_treatments_with_balance_basic(sample_table, sample_rows):
     assert result.stratum_ids is not None
     assert len(result.stratum_ids) == len(sample_rows)
     assert len(result.treatment_ids) == len(sample_rows)
-    assert result.orig_stratum_cols == ["gender", "region"]
+    assert result.stratum_cols == ["gender", "region"]
     assert result.balance_result is not None
     # Use relative tolerance to accommodate BLAS/LAPACK differences between environments
     # (e.g. Apple Accelerate on macOS vs OpenBLAS on Linux)
@@ -210,14 +210,12 @@ def test_assign_treatments_with_balance_basic(sample_table, sample_rows):
     assert result.balance_result.f_pvalue == pytest.approx(0.99990, abs=1e-4)
 
 
-@pytest.mark.parametrize("stratum_id_name", [None, "stratum_id"])
 async def test_bulk_insert_arm_assignments_basic(
     xngin_session: AsyncSession,
     testing_datasource: DatasourceMetadata,
     sample_rows,
-    stratum_id_name: str | None,
 ):
-    """Test bulk inserts of arm assignments, with and without strata group ids."""
+    """Test bulk inserts of arm assignments."""
     # First create an experiment and arms in db
     experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
     arm_ids = [arm.id for arm in experiment.arms]
@@ -230,7 +228,7 @@ async def test_bulk_insert_arm_assignments_basic(
         treatment_ids=[0, 1] * (len(sample_rows) // 2),
         stratum_ids=[int(s.is_male) for s in sample_rows],
         balance_result=None,
-        orig_stratum_cols=["gender"],
+        stratum_cols=["gender"],
         arm_pop=np.bincount([0, 1] * (len(sample_rows) // 2), minlength=len(arm_ids)),
     )
 
@@ -241,8 +239,7 @@ async def test_bulk_insert_arm_assignments_basic(
         participant_type=participant_type_name,
         participant_id_col=unique_id_field.field_name,
         data=sample_rows,
-        assignment_result=fake_assignment_results,
-        stratum_id_name=stratum_id_name,
+        assignments=fake_assignment_results,
     )
 
     # Verify arm_stats populations were upserted
@@ -267,13 +264,9 @@ async def test_bulk_insert_arm_assignments_basic(
         assert assignment.arm_id in arm_ids
 
         # Verify strata are properly stored
+        assert len(assignment.strata) == 1
         assert assignment.strata[0]["field_name"] == "gender"
         assert assignment.strata[0]["strata_value"] in {"M", "F"}
-        assert len(assignment.strata) == 1 if stratum_id_name is None else 2
-        if stratum_id_name is not None:
-            assert assignment.strata[1]["field_name"] == stratum_id_name
-            # Note that all strata values are rendered as strings
-            assert assignment.strata[1]["strata_value"] in {"0", "1"}
 
 
 MAX_SAFE_INTEGER = (1 << 53) - 1  # 9007199254740991
@@ -313,7 +306,7 @@ async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
             participant_type=participant_type_name,
             participant_id_col=unique_id_field.field_name,
             data=rows,
-            assignment_result=assignment_result,
+            assignments=assignment_result,
         )
 
         # Get assignments for verification
@@ -395,7 +388,7 @@ async def test_bulk_insert_renders_decimal_and_bool_strata_correctly(
         treatment_ids=[0, 1] * (len(sample_rows) // 2),
         stratum_ids=[0, 1] * (len(sample_rows) // 2),
         balance_result=None,
-        orig_stratum_cols=["income_dec", "is_male"],
+        stratum_cols=["income_dec", "is_male"],
         arm_pop=np.bincount([0, 1] * (len(sample_rows) // 2), minlength=len(arm_ids)),
     )
 
@@ -406,7 +399,7 @@ async def test_bulk_insert_renders_decimal_and_bool_strata_correctly(
         participant_type=participant_type_name,
         participant_id_col=unique_id_field.field_name,
         data=sample_rows,
-        assignment_result=fake_assignment_results,
+        assignments=fake_assignment_results,
     )
 
     # Get assignments for verification
@@ -436,7 +429,7 @@ async def test_bulk_insert_with_no_stratification(xngin_session: AsyncSession, t
         treatment_ids=[0, 1] * (len(sample_rows) // 2),
         stratum_ids=None,
         balance_result=None,
-        orig_stratum_cols=[],
+        stratum_cols=[],
         arm_pop=np.bincount([0, 1] * (len(sample_rows) // 2), minlength=len(arm_ids)),
     )
 
@@ -447,7 +440,7 @@ async def test_bulk_insert_with_no_stratification(xngin_session: AsyncSession, t
         participant_type=participant_type_name,
         participant_id_col=unique_id_field.field_name,
         data=sample_rows,
-        assignment_result=fake_assignment_results,
+        assignments=fake_assignment_results,
     )
 
     # Get assignments for verification
@@ -478,7 +471,7 @@ async def test_bulk_insert_with_no_valid_strata(xngin_session: AsyncSession, tes
         treatment_ids=[0, 1] * (len(sample_rows) // 2),
         stratum_ids=None,
         balance_result=None,
-        orig_stratum_cols=["single_value"],
+        stratum_cols=["single_value"],
         arm_pop=np.bincount([0, 1] * (len(sample_rows) // 2), minlength=len(arm_ids)),
     )
 
@@ -489,7 +482,7 @@ async def test_bulk_insert_with_no_valid_strata(xngin_session: AsyncSession, tes
         participant_type=participant_type_name,
         participant_id_col=unique_id_field.field_name,
         data=sample_rows,
-        assignment_result=fake_assignment_results,
+        assignments=fake_assignment_results,
     )
 
     # Get assignments for verification
@@ -517,7 +510,7 @@ async def test_bulk_insert_renders_missing_strata_values_as_na(
         treatment_ids=[0, 1] * (len(rows) // 2),
         stratum_ids=None,
         balance_result=None,
-        orig_stratum_cols=["nullable_value"],
+        stratum_cols=["nullable_value"],
         arm_pop=np.bincount([0, 1] * (len(rows) // 2), minlength=len(arm_ids)),
     )
 
@@ -528,7 +521,7 @@ async def test_bulk_insert_renders_missing_strata_values_as_na(
         participant_type=participant_type_name,
         participant_id_col=unique_id_field.field_name,
         data=rows,
-        assignment_result=fake_assignment_results,
+        assignments=fake_assignment_results,
     )
 
     assignments = (await xngin_session.scalars(select(tables.ArmAssignment))).all()

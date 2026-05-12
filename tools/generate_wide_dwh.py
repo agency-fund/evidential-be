@@ -20,7 +20,7 @@ from __future__ import annotations
 import csv
 import io
 import shutil
-import subprocess
+import subprocess  # noqa: S404
 import textwrap
 from collections.abc import Callable
 from compression import zstd
@@ -1081,7 +1081,7 @@ def main(
 
     def_path.write_text(def_content)
     try:
-        subprocess.run(
+        subprocess.run(  # noqa: S603
             [(shutil.which("uv")), "run", "--project", str(REPO_ROOT), "ruff", "format", str(def_path)],
             check=True,
             env={"VIRTUAL_ENV": ""},

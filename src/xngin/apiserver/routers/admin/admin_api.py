@@ -32,11 +32,7 @@ from xngin.apiserver import constants, flags
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
-from xngin.apiserver.dwh.dwh_session import (
-    CannotFindTableError,
-    DwhSession,
-    NoDwh,
-)
+from xngin.apiserver.dwh.dwh_session import CannotFindTableError, DwhSession
 from xngin.apiserver.dwh.inspections import (
     build_proposed_and_drift,
     create_inspect_table_response_from_table,
@@ -113,9 +109,9 @@ from xngin.apiserver.routers.admin.generic_handlers import handle_delete
 from xngin.apiserver.routers.auth.auth_api_types import CallerIdentity
 from xngin.apiserver.routers.auth.auth_dependencies import require_user_from_token
 from xngin.apiserver.routers.common_api_types import (
-    BaseBanditExperimentSpec,
-    BaseFrequentistDesignSpec,
+    BayesABExperimentSpec,
     CMABContextInputRequest,
+    CMABExperimentSpec,
     ContextInput,
     ContextType,
     CreateExperimentRequest,
@@ -125,8 +121,11 @@ from xngin.apiserver.routers.common_api_types import (
     GetMetricsResponseElement,
     GetStrataResponseElement,
     ListExperimentsResponse,
+    MABExperimentSpec,
+    OnlineFrequentistExperimentSpec,
     PowerRequest,
     PowerResponse,
+    PreassignedFrequentistExperimentSpec,
 )
 from xngin.apiserver.routers.common_enums import ExperimentState, PreloadMethod
 from xngin.apiserver.routers.experiments import experiments_common, experiments_common_csv
@@ -138,6 +137,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
 from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
 from xngin.apiserver.routers.power_adapters import calculate_icc_and_cv_from_database
 from xngin.apiserver.settings import (
+    NoDwh,
     ParticipantsDef,
     RemoteDatabaseConfig,
 )
@@ -1504,11 +1504,6 @@ async def create_experiment(
     if body.design_spec.ids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
 
-    if (body.table_name is not None or body.primary_key is not None) and not isinstance(
-        body.design_spec, BaseFrequentistDesignSpec
-    ):
-        raise LateValidationError("table_name/primary_key is only supported for frequentist experiment types")
-
     # Validate webhook IDs exist and belong to organization
     organization_id = datasource.organization_id
     validated_webhooks = await validate_webhooks(
@@ -1551,10 +1546,7 @@ async def analyze_experiment(
         xngin_session,
         ds,
         experiment_id,
-        preload=[
-            tables.Experiment.draws,
-            tables.Experiment.contexts,
-        ],
+        preload=[tables.Experiment.contexts],
         nested_preload=[
             [
                 (PreloadMethod.SELECTINLOAD, tables.Experiment.experiment_fields),
@@ -1565,20 +1557,19 @@ async def analyze_experiment(
 
     design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
     match design_spec:
-        case BaseBanditExperimentSpec():
-            if experiment.experiment_type != ExperimentsType.MAB_ONLINE.value:
-                raise LateValidationError(
-                    """Invalid experiment type for bandit analysis; for CMAB experiments,
-                    use the corresponding POST endpoint.""",
-                )
-            return experiments_common.analyze_experiment_bandit_impl(experiment)
-
-        case BaseFrequentistDesignSpec():
+        case PreassignedFrequentistExperimentSpec() | OnlineFrequentistExperimentSpec():
             # Always assume the first arm is the baseline; UI can override this.
             baseline_arm_id = baseline_arm_id or design_spec.arms[0].arm_id
             assert baseline_arm_id is not None
             return await experiments_common.analyze_experiment_freq_impl(
                 xngin_session, ds.get_config(), experiment, baseline_arm_id, design_spec.metrics
+            )
+        case MABExperimentSpec():
+            return await experiments_common.analyze_experiment_bandit_impl(xngin_session, experiment)
+        case CMABExperimentSpec() | BayesABExperimentSpec():
+            raise LateValidationError(
+                """Invalid experiment type for bandit analysis; for CMAB experiments,
+                use the corresponding POST endpoint.""",
             )
         case _:
             assert_never()
@@ -1602,7 +1593,7 @@ async def analyze_cmab_experiment(
         xngin_session,
         ds,
         experiment_id,
-        preload=[tables.Experiment.draws, tables.Experiment.contexts],
+        preload=[tables.Experiment.contexts],
     )
 
     if experiment.experiment_type != ExperimentsType.CMAB_ONLINE.value:
@@ -1616,8 +1607,8 @@ async def analyze_cmab_experiment(
         raise LateValidationError("context_inputs must be provided when analyzing a CMAB experiment.")
     sorted_context_inputs = sort_contexts_by_id_or_raise(experiment.contexts, body.context_inputs)
 
-    return experiments_common.analyze_experiment_bandit_impl(
-        experiment, context_vals=[ci.context_value for ci in sorted_context_inputs]
+    return await experiments_common.analyze_experiment_bandit_impl(
+        xngin_session, experiment, context_vals=[ci.context_value for ci in sorted_context_inputs]
     )
 
 
@@ -1883,11 +1874,6 @@ async def power_check(
 ) -> PowerResponse:
     """Performs a power check for the specified datasource."""
     design_spec = body.design_spec
-    if not isinstance(design_spec, BaseFrequentistDesignSpec):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Power checks are only supported for frequentist experiments",
-        )
     ds = await get_datasource_or_raise(session, user, datasource_id)
     if isinstance(ds.config, NoDwh):
         raise HTTPException(
@@ -1897,9 +1883,9 @@ async def power_check(
     dsconfig = ds.get_config()
 
     async with DwhSession(dsconfig.dwh) as dwh:
-        sa_table = await dwh.inspect_table(body.table_name)
+        sa_table = await dwh.inspect_table(design_spec.table_name)
         # Validate the fields used in the design spec are present in the table and that filter values are valid.
-        _ = await fetch_fields_from_table_or_raise(sa_table, design_spec, body.primary_key)
+        _ = await fetch_fields_from_table_or_raise(sa_table, design_spec)
         metric_stats = await asyncio.to_thread(
             get_stats_on_metrics,
             dwh.session,

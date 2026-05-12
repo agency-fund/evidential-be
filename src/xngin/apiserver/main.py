@@ -95,7 +95,7 @@ def main_live():
     # This replicates the `fastapi run` CLI behavior and also disables Uvicorn's default logging behavior.
     uvicorn.run(
         "xngin.apiserver.main:app",
-        host="0.0.0.0",
+        host="0.0.0.0",  # noqa: S104
         port=8000,
         log_config={"version": 1, "disable_existing_loggers": False},
     )

@@ -9,6 +9,7 @@ import sqlalchemy_bigquery
 from sqlalchemy import Column, Table
 from sqlalchemy.types import BigInteger, Boolean, Date, DateTime, Double, Float, Integer, Numeric, String, Uuid
 
+from xngin.apiserver.dwh import dwh_utils
 from xngin.apiserver.dwh.dwh_test_support import (
     ROW_10,
     ROW_20,
@@ -355,10 +356,11 @@ def test_relations(testcase, queries_dwh_session, shared_sample_tables):
     assert list(sorted([r.id for r in query_results])) == list(sorted(r.id for r in testcase.matches)), testcase
 
 
-def _datatype_to_sqlalchemy_type(data_type: DataType):
+def _datatype_to_sqlalchemy_type(data_type: DataType, is_redshift: bool):
     """Maps DataType enum to generic camel-case SQLAlchemy column type. Helper to create tables for filter tests."""
-    # DDL for sqlalchemy.types.Uuid is not supported by sqlalchemy-bigquery (falls back to invalid CHAR(32)).
-    my_uuid_type: Uuid = Uuid().with_variant(String(), "bigquery")
+    # DDL for sqlalchemy.types.Uuid is not supported by sqlalchemy-bigquery (falls back to invalid CHAR(32)),
+    # nor by Redshift, which uses the "postgresql" dialect.
+    my_uuid_type: Uuid = Uuid().with_variant(String(), "bigquery" if not is_redshift else "postgresql")
     # DDL for bigquery mapped to invalid DOUBLE, so force it to FLOAT64.
     my_double_type: Double = Double().with_variant(Float(), "bigquery")
     mapping = {
@@ -397,7 +399,7 @@ def fixture_shared_filter_table(queries_dwh_engine):
     # Create table with all columns needed for filter tests.
     columns = [Column("id", String, primary_key=True)]
     for field_name, data_type in sorted(all_fields.items()):
-        col_type = _datatype_to_sqlalchemy_type(data_type)
+        col_type = _datatype_to_sqlalchemy_type(data_type, is_redshift=dwh_utils.is_redshift(queries_dwh_engine.url))
         columns.append(Column(field_name, col_type, nullable=True))
 
     metadata = sqlalchemy.MetaData()

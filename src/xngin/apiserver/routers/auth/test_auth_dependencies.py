@@ -14,7 +14,7 @@ from xngin.apiserver import flags
 from xngin.apiserver.conftest import delete_seeded_users
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.routers.admin.admin_common import DEFAULT_NO_DWH_SOURCE_NAME
-from xngin.apiserver.routers.admin.test_admin import find_ds_with_name
+from xngin.apiserver.routers.admin.test_admin_api import find_ds_with_name
 from xngin.apiserver.routers.auth.auth_dependencies import (
     PRIVILEGED_TOKEN_FOR_TESTING,
     TESTING_TOKENS,
@@ -273,7 +273,7 @@ async def test_initial_user_setup_matches_testing_dwh(xngin_session: AsyncSessio
         .select_from(tables.Experiment)
         .where(tables.Experiment.datasource_id.in_([datasource.id for datasource in datasources]))
     )
-    assert experiment_count == 7
+    assert experiment_count == 6
 
     snapshot_count_rows = (
         await xngin_session.execute(
