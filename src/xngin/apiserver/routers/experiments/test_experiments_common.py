@@ -577,6 +577,7 @@ async def test_create_preassigned_experiment_impl(
     assert experiment.power == request.design_spec.power
     assert experiment.alpha == request.design_spec.alpha
     assert experiment.fstat_thresh == request.design_spec.fstat_thresh
+    assert experiment.desired_n == request.design_spec.desired_n
     converter = ExperimentStorageConverter(experiment)
     assert converter.get_power_response() == response.power_analyses
     # Verify design_spec was stored correctly.
@@ -1081,6 +1082,8 @@ async def test_create_experiment_impl_for_freq_raises_on_bad_filters(
 async def test_create_experiment_impl_for_freq_online(xngin_session, testing_datasource):
     """Test implementation of creating an online experiment."""
     request = make_create_freq_online_experiment_request()
+    assert isinstance(request.design_spec, OnlineFrequentistExperimentSpec)
+    request.design_spec.desired_n = 500
 
     response = await create_experiment_impl(
         request=request.model_copy(deep=True),
@@ -1138,6 +1141,7 @@ async def test_create_experiment_impl_for_freq_online(xngin_session, testing_dat
     assert experiment.power == req_online_spec.power
     assert experiment.alpha == req_online_spec.alpha
     assert experiment.fstat_thresh == req_online_spec.fstat_thresh
+    assert experiment.desired_n == req_online_spec.desired_n
     # Verify design_spec was stored correctly
     converter = ExperimentStorageConverter(experiment)
     assert await converter.get_design_spec() == response.design_spec

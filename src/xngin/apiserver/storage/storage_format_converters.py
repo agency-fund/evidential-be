@@ -285,6 +285,7 @@ class ExperimentStorageConverter:
                 "power": self.experiment.power,
                 "alpha": self.experiment.alpha,
                 "fstat_thresh": self.experiment.fstat_thresh,
+                "desired_n": self.experiment.desired_n,
             })
 
         if self.experiment.experiment_type in {
@@ -429,6 +430,7 @@ class ExperimentStorageConverter:
                 experiment.power = design_spec.power
                 experiment.alpha = design_spec.alpha
                 experiment.fstat_thresh = design_spec.fstat_thresh
+                experiment.desired_n = design_spec.desired_n
 
                 experiment.arms = [
                     tables.Arm(
