@@ -1,9 +1,16 @@
+import numpy as np
 import pytest
 from pydantic import TypeAdapter
 
 from xngin.apiserver.limits import TOP_TWO_BETA, TOP_TWO_MIN_ARMS
 from xngin.apiserver.routers.common_api_types import DesignSpec
-from xngin.apiserver.routers.common_enums import ExperimentState, ExperimentsType, LikelihoodTypes, PriorTypes
+from xngin.apiserver.routers.common_enums import (
+    ExperimentState,
+    ExperimentsType,
+    LikelihoodTypes,
+    PriorTypes,
+    UpdateTypeNormal,
+)
 from xngin.apiserver.routers.experiments.test_experiments_common import make_createexperimentrequest_json
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
@@ -37,6 +44,47 @@ def make_experiment_table(
         arm.id = f"arm_{i}"
 
     return fake_experiment
+
+
+def test_update_arm_normal_matches_bayesian_linear_regression():
+    """Posterior for y ~ N(x^T w, sigma^2) with Gaussian prior: rank-one precision x x^T / sigma^2."""
+    experiment = make_experiment_table(
+        experiment_type=ExperimentsType.MAB_ONLINE,
+        prior_type=PriorTypes.NORMAL,
+        reward_type=LikelihoodTypes.NORMAL,
+    )
+    arm = experiment.arms[0]
+    arm.mu = [0.0, 0.0]
+    arm.covariance = [[1.0, 0.0], [0.0, 1.0]]
+
+    context = [1.0, 0.0]
+    updated = update_arm(
+        experiment=experiment,
+        arm_to_update=arm,
+        outcomes=[1.0],
+        context=[context],
+    )
+    assert isinstance(updated, UpdateTypeNormal)
+    context_arr = np.array(context)
+    new_mu = np.array(updated.mu)
+    new_cov = np.array(updated.covariance)
+    expect_cov = np.linalg.inv(np.eye(2) + np.outer(context_arr, context_arr))
+    expect_mu = expect_cov @ context_arr
+    np.testing.assert_allclose(new_cov, expect_cov)
+    np.testing.assert_allclose(new_mu, expect_mu)
+
+    # Non-axis-aligned context: precision is not a scaled identity
+    x2 = (np.array([1.0, 1.0]) / np.sqrt(2.0)).tolist()
+    updated2 = update_arm(
+        experiment=experiment,
+        arm_to_update=arm,
+        outcomes=[0.0],
+        context=[x2],
+    )
+    assert isinstance(updated2, UpdateTypeNormal)
+    prec = np.linalg.inv(np.array(updated2.covariance))
+    off_diag_ok = not np.allclose(prec, np.trace(prec) / 2.0 * np.eye(2))
+    assert off_diag_ok
 
 
 def test_check_arm_draw_is_reproducible():
