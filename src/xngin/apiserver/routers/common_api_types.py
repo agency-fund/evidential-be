@@ -550,7 +550,30 @@ class FreqExperimentAnalysisResponse(ApiBaseModel):
 
 
 class BanditExperimentAnalysisResponse(ApiBaseModel):
-    """Describes changes in arms for a bandit experiment"""
+    """Describes changes in arms for a bandit experiment.
+
+    ## Dashboard Field Mapping
+
+    When rendering this response in a UI, the following mapping applies:
+
+    | Response Field | Dashboard Section | Required | Notes |
+    |---|---|---|---|
+    | experiment_id | Header / audit link | Yes | Stable experiment identifier. |
+    | arm_analyses[].arm_name | Arm card title | Yes | Display name for each variant. |
+    | arm_analyses[].post_pred_mean | Primary metric value | Yes | Expected outcome; main decision cue. |
+    | arm_analyses[].post_pred_ci_lower | Uncertainty ribbon lower | Yes | 95% CI lower bound. |
+    | arm_analyses[].post_pred_ci_upper | Uncertainty ribbon upper | Yes | 95% CI upper bound. |
+    | arm_analyses[].prior_pred_mean | Prior expectation display | No | Useful for change-from-prior charts. |
+    | arm_analyses[].prior_pred_ci_lower | Prior uncertainty lower | No | Prior CI lower bound. |
+    | arm_analyses[].prior_pred_ci_upper | Prior uncertainty upper | No | Prior CI upper bound. |
+    | n_outcomes | Confidence / data-quality badge | Yes | Low n_outcomes (< 50) warrants a "needs more data" warning. |
+    | created_at | Analysis timestamp | Yes | When the analysis was generated. |
+    | contexts | Contextual analysis badge | No | Present when contextual bandit features are active. |
+
+    Fields requiring external aggregation (not in this response):
+    - assignment counts (allocation share) — from ArmAssignment logs
+    - reward counts (observed rate) — from Outcome events
+    """
 
     type: Literal[ExperimentAnalysisType.BANDIT] = ExperimentAnalysisType.BANDIT
 
@@ -560,7 +583,7 @@ class BanditExperimentAnalysisResponse(ApiBaseModel):
     ]
     arm_analyses: Annotated[
         list[BanditArmAnalysis],
-        Field(description="Contains one analysis per metric targeted by the experiment."),
+        Field(description="Contains one analysis per arm (variant) in the bandit experiment."),
     ]
     n_outcomes: Annotated[
         int,
