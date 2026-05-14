@@ -82,6 +82,7 @@ from xngin.apiserver.routers.common_api_types import (
 )
 from xngin.apiserver.routers.common_enums import (
     ExperimentState,
+    MetricPowerAnalysisMessageType,
     Relation,
     StopAssignmentReason,
     UpdateTypeBeta,
@@ -1641,8 +1642,12 @@ async def test_power_check_also_sets_pct_change_with_desired_n(testing_datasourc
         body=PowerRequest(design_spec=design_spec),
     ).data
     assert len(power_response.analyses) == 1
-    assert power_response.analyses[0].pct_change_with_desired_n == pytest.approx(0.0973, rel=1e-3)
-    assert power_response.analyses[0].target_n == 474  # min sample size
+    analysis = power_response.analyses[0]
+    assert analysis.pct_change_with_desired_n == pytest.approx(0.0973, rel=1e-3)
+    assert analysis.target_n == 474  # min sample size
+    assert analysis.msg is not None
+    assert analysis.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
+    assert "There are enough units available." in analysis.msg.msg
 
     # And when not set, we get only the default minimum sample size calculation.
     design_spec_plain = design_spec.model_copy(update={"desired_n": None})
@@ -1650,8 +1655,128 @@ async def test_power_check_also_sets_pct_change_with_desired_n(testing_datasourc
         datasource_id=testing_datasource.ds.id,
         body=PowerRequest(design_spec=design_spec_plain),
     ).data
-    assert power_response_plain.analyses[0].pct_change_with_desired_n is None
-    assert power_response_plain.analyses[0].target_n == 474
+    analysis_plain = power_response_plain.analyses[0]
+    assert analysis_plain.pct_change_with_desired_n is None
+    assert analysis_plain.target_n == 474
+    assert analysis_plain.msg is not None
+    assert analysis_plain.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
+    assert "There are enough units available." in analysis.msg.msg
+
+
+async def test_power_check_when_sample_size_insufficient_and_desired_n_should_otherwise_pass(
+    testing_datasource,
+    aclient: AdminAPIClient,
+):
+    """
+    When design_spec.desired_n set but there are insufficient units, MDE enrichment should still
+    succeed by otherwise assuming there are enough units to meet the desired_n. Simulates an
+    exploratory use of the power calculator functionality.
+    """
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test power check desired_n failure",
+        description="design_spec.desired_n should surface MDE validation errors",
+        table_name="dwh",
+        primary_key="id",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="control", arm_description="Control group"),
+            Arm(arm_name="treatment", arm_description="Treatment group"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
+        strata=[],
+        # Constrain data to force insufficient sample size for the desired metric_pct_change, but
+        # still allow for a valid MDE calculation given a desired_n.
+        filters=[Filter(field_name="id", relation=Relation.BETWEEN, value=[1, 100])],
+        desired_n=1600,  # 4x the min size should allow for an MDE that's 1/2 the original MDE.
+    )
+
+    power_response = aclient.power_check(
+        datasource_id=testing_datasource.ds.id,
+        body=PowerRequest(design_spec=design_spec),
+    ).data
+    assert len(power_response.analyses) == 1
+    analysis = power_response.analyses[0]
+    assert analysis.target_n == 400
+    assert analysis.msg is not None
+    assert analysis.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
+    # There should be no MDE calculation result because the data validation error prevented it.
+    assert analysis.pct_change_with_desired_n == pytest.approx(0.0498, rel=1e-3)
+
+
+async def test_power_check_when_sample_size_insufficient_and_desired_n_has_data_validation_error(
+    testing_datasource,
+    aclient: AdminAPIClient,
+):
+    """
+    When both the sample size and MDE calculation fail, we should still see the minimum sample size
+    result (an error message) as the primary, with no MDE calculation result.
+    """
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test power check desired_n failure",
+        description="design_spec.desired_n should surface MDE validation errors",
+        table_name="dwh",
+        primary_key="id",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="control", arm_description="Control group"),
+            Arm(arm_name="treatment", arm_description="Treatment group"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="is_onboarded_onetime", metric_pct_change=0.1)],
+        strata=[],
+        # Constrain data to 1 unit available with only a NULL to force insufficient sample size, and
+        # trigger a metric baseline error (due to zero non-nulls) in the MDE calculation.
+        filters=[Filter(field_name="id", relation=Relation.INCLUDES, value=["1"])],
+        desired_n=500,
+    )
+
+    power_response = aclient.power_check(
+        datasource_id=testing_datasource.ds.id,
+        body=PowerRequest(design_spec=design_spec),
+    ).data
+    assert len(power_response.analyses) == 1
+    analysis = power_response.analyses[0]
+    assert analysis.target_n is None
+    assert analysis.msg is not None
+    assert analysis.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
+    # There should be no MDE calculation result because the data validation error prevented it.
+    assert analysis.pct_change_with_desired_n is None
+
+
+def test_power_check_when_sample_size_sufficient_and_desired_n_fails(testing_datasource, aclient: AdminAPIClient):
+    """Although desired_n enrichment fails, we still preserve the minimum sample size result."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test power check desired_n failure",
+        description="design_spec.desired_n should surface MDE validation errors",
+        table_name="dwh",
+        primary_key="id",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="control", arm_description="Control group"),
+            Arm(arm_name="treatment", arm_description="Treatment group"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+        desired_n=0,  # This should raise a ValueError as a precheck during the MDE calculation.
+    )
+
+    power_response = aclient.power_check(
+        datasource_id=testing_datasource.ds.id,
+        body=PowerRequest(design_spec=design_spec),
+    ).data
+    assert len(power_response.analyses) == 1
+    analysis = power_response.analyses[0]
+    # Primary analysis result (min sample size) still present even though desired_n MDE failed.
+    assert analysis.target_n == 474
+    assert analysis.msg is not None
+    assert analysis.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
+    assert analysis.pct_change_with_desired_n is None
 
 
 async def test_power_check_validations(testing_datasource, aclient: AdminAPIClient):
