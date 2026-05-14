@@ -48,7 +48,7 @@ def _set_experiment_fields_from_design_spec(
 ) -> None:
     """Save the field-related components of a DesignSpec to an experiment."""
     match design_spec:
-        case capi.MABExperimentSpec() | capi.CMABExperimentSpec() | capi.BayesABExperimentSpec():
+        case capi.MABExperimentSpec() | capi.CMABExperimentSpec():
             experiment.design_spec_fields = None
             experiment.experiment_fields = []
             return
@@ -505,7 +505,5 @@ class ExperimentStorageConverter:
                 ]
 
                 return cls(experiment)
-            case capi.BayesABExperimentSpec():
-                raise ValueError(f"Unsupported design_spec type: {type(design_spec)}.")
             case _:
                 assert_never(design_spec)

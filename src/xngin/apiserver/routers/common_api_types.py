@@ -1075,16 +1075,6 @@ class CMABExperimentSpec(BaseBanditExperimentSpec):
     experiment_type: Literal[ExperimentsType.CMAB_ONLINE] = ExperimentsType.CMAB_ONLINE
 
 
-class BayesABExperimentSpec(BaseBanditExperimentSpec):
-    """Use this type to randomly assign participants into arms during live experiment execution with
-    Bayesian A/B experiments.
-
-    For example, you may wish to experiment on new users. Assignments are issued via API request.
-    """
-
-    experiment_type: Literal[ExperimentsType.BAYESAB_ONLINE] = ExperimentsType.BAYESAB_ONLINE
-
-
 type AnyFrequentistDesignSpec = Annotated[
     PreassignedFrequentistExperimentSpec | OnlineFrequentistExperimentSpec,
     Field(
@@ -1094,7 +1084,7 @@ type AnyFrequentistDesignSpec = Annotated[
 ]
 
 type AnyBanditDesignSpec = Annotated[
-    MABExperimentSpec | CMABExperimentSpec | BayesABExperimentSpec,
+    MABExperimentSpec | CMABExperimentSpec,
     Field(
         discriminator="experiment_type",
         description="The specific type of bandit experiment design.",
@@ -1279,7 +1269,6 @@ class CreateExperimentRequest(ApiBaseModel):
         return v
 
 
-# TODO: make this class work with the Bayesian experiment types and their Draw records.
 class AssignSummary(ApiBaseModel):
     """Key pieces of an AssignResponse without the assignments."""
 

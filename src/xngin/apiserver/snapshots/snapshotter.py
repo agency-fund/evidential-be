@@ -160,7 +160,7 @@ async def _query_dwh_for_snapshot_data(
 ) -> ExperimentAnalysisResponse:
     """Collect a snapshot from a customer DWH and returns the snapshot data."""
     experiment_type = ExperimentsType(experiment.experiment_type)
-    if experiment_type.is_bayesian():
+    if experiment_type.is_bandit():
         context_vals = None
 
         # TODO: If the experiment is a CMAB, we need to pass in context values.
