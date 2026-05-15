@@ -3905,6 +3905,8 @@ async def test_power_check_with_manual_icc(testing_datasource, aclient: AdminAPI
         description="test power check with manual ICC",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
         end_date=datetime.now(UTC) + timedelta(days=1),
+        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
         arms=[
             Arm(arm_name="control", arm_description="Control group"),
             Arm(arm_name="treatment", arm_description="Treatment group"),
@@ -3925,11 +3927,7 @@ async def test_power_check_with_manual_icc(testing_datasource, aclient: AdminAPI
 
     result = aclient.power_check(
         datasource_id=testing_datasource.ds.id,
-        body=PowerRequest(
-            design_spec=design_spec,
-            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
-            primary_key="id",
-        ),
+        body=PowerRequest(design_spec=design_spec),
     )
 
     assert len(result.data.analyses) == 1
@@ -3949,6 +3947,8 @@ async def test_power_check_with_calculated_icc(testing_datasource, aclient: Admi
         description="test power check calculating ICC from database",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
         end_date=datetime.now(UTC) + timedelta(days=1),
+        table_name="clustered_dwh",
+        primary_key="participant_id",
         arms=[
             Arm(arm_name="control", arm_description="Control"),
             Arm(arm_name="treatment", arm_description="Treatment"),
@@ -3961,11 +3961,7 @@ async def test_power_check_with_calculated_icc(testing_datasource, aclient: Admi
 
     result = aclient.power_check(
         datasource_id=testing_datasource.ds.id,
-        body=PowerRequest(
-            design_spec=design_spec,
-            table_name="clustered_dwh",
-            primary_key="participant_id",
-        ),
+        body=PowerRequest(design_spec=design_spec),
     )
 
     assert len(result.data.analyses) == 1
