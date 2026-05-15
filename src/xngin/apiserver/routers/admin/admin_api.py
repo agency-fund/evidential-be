@@ -1896,7 +1896,7 @@ async def power_check(
         )
 
         # Augment with cluster-level stats if this is a cluster-randomized design.
-        if design_spec.cluster_column is not None:
+        if design_spec.cluster_key is not None:
             request_metrics_by_name = {m.field_name: m for m in design_spec.metrics}
             for metric_stat in metric_stats:
                 req_metric = request_metrics_by_name[metric_stat.field_name]
@@ -1910,7 +1910,7 @@ async def power_check(
                         calculate_icc_and_cv_from_database,
                         dwh.session,
                         sa_table,
-                        design_spec.cluster_column,
+                        design_spec.cluster_key,
                         metric_stat.field_name,
                         design_spec.filters,
                     )

@@ -866,6 +866,19 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         Field(description="Column name in table_name that uniquely identifies each participant."),
     ]
 
+    cluster_key: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "Column name in table_name that identifies clusters for a cluster-randomized design. "
+                "When set, per-metric icc, avg_cluster_size, and cv are either supplied on each "
+                "metric or computed from this column at power_check time. "
+                "When None, the design is assumed to be individual-randomized."
+            ),
+        ),
+    ] = None
+
     # Frequentist config params
     strata: Annotated[
         list[Stratum],
@@ -884,19 +897,6 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
             max_length=MAX_NUMBER_OF_FIELDS,
         ),
     ]
-
-    cluster_column: Annotated[
-        str | None,
-        Field(
-            default=None,
-            description=(
-                "Column name identifying clusters for cluster-randomized designs. When set, the "
-                "experiment design is treated as cluster-randomized: per-metric icc, "
-                "avg_cluster_size, and cv are either supplied on each metric or computed from "
-                "this column at power_check time. When unset, the design is individual-randomized."
-            ),
-        ),
-    ] = None
 
     filters: Annotated[
         list[Filter],

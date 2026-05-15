@@ -3922,7 +3922,7 @@ async def test_power_check_with_manual_icc(testing_datasource, aclient: AdminAPI
         ],
         strata=[],
         filters=[],
-        cluster_column="cluster_id",
+        cluster_key="cluster_id",
     )
 
     result = aclient.power_check(
@@ -3956,7 +3956,7 @@ async def test_power_check_with_calculated_icc(testing_datasource, aclient: Admi
         metrics=[DesignSpecMetricRequest(field_name="test_score", metric_pct_change=0.1)],
         strata=[],
         filters=[],
-        cluster_column="cluster_powerlaw",
+        cluster_key="cluster_powerlaw",
     )
 
     result = aclient.power_check(
