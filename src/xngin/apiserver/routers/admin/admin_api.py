@@ -1886,6 +1886,7 @@ async def power_check(
         sa_table = await dwh.inspect_table(design_spec.table_name)
         # Validate the fields used in the design spec are present in the table and that filter values are valid.
         _ = await fetch_fields_from_table_or_raise(sa_table, design_spec)
+
         metric_stats = await asyncio.to_thread(
             get_stats_on_metrics,
             dwh.session,
@@ -1894,26 +1895,28 @@ async def power_check(
             design_spec.filters,
         )
 
-    if design_spec.cluster_column is not None:
-        request_metrics_by_name = {m.field_name: m for m in design_spec.metrics}
-        for metric_stat in metric_stats:
-            req_metric = request_metrics_by_name[metric_stat.field_name]
-            if req_metric.icc is not None:
-                metric_stat.icc = req_metric.icc
-                metric_stat.avg_cluster_size = req_metric.avg_cluster_size
-                metric_stat.cv = req_metric.cv
-            else:
-                cluster_stats = await asyncio.to_thread(
-                    calculate_icc_and_cv_from_database,
-                    dwh.session,
-                    sa_table,
-                    design_spec.cluster_column,
-                    metric_stat.field_name,
-                    design_spec.filters,
-                )
-                metric_stat.icc = cluster_stats["icc"]
-                metric_stat.avg_cluster_size = cluster_stats["avg_cluster_size"]
-                metric_stat.cv = cluster_stats["cv"]
+        # Augment with cluster-level stats if this is a cluster-randomized design.
+        if design_spec.cluster_column is not None:
+            request_metrics_by_name = {m.field_name: m for m in design_spec.metrics}
+            for metric_stat in metric_stats:
+                req_metric = request_metrics_by_name[metric_stat.field_name]
+                # If the user provided ICC, avg_cluster_size, and cv, use them instead of deriving from the dwh.
+                if req_metric.icc is not None:
+                    metric_stat.icc = req_metric.icc
+                    metric_stat.avg_cluster_size = req_metric.avg_cluster_size
+                    metric_stat.cv = req_metric.cv
+                else:
+                    cluster_stats = await asyncio.to_thread(
+                        calculate_icc_and_cv_from_database,
+                        dwh.session,
+                        sa_table,
+                        design_spec.cluster_column,
+                        metric_stat.field_name,
+                        design_spec.filters,
+                    )
+                    metric_stat.icc = cluster_stats["icc"]
+                    metric_stat.avg_cluster_size = cluster_stats["avg_cluster_size"]
+                    metric_stat.cv = cluster_stats["cv"]
 
     arm_weights = design_spec.get_validated_arm_weights()
 
