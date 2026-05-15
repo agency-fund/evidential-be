@@ -463,9 +463,9 @@ class Experiment(Base):
     updated_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now()
     )
-    n_trials: Mapped[int] = mapped_column(server_default="0")
 
     # Bandit config params
+    n_trials: Mapped[int] = mapped_column(server_default="0")
     prior_type: Mapped[str | None] = mapped_column()
     reward_type: Mapped[str | None] = mapped_column()
 
@@ -479,11 +479,10 @@ class Experiment(Base):
     # JSON serialized form of a BalanceCheck. May be null if the experiment type doesn't support
     # balance checks.
     balance_check: Mapped[dict | None] = mapped_column(postgresql.JSONB)
-
-    # Frequentist experiment types i.e. online and preassigned
     power: Mapped[float | None] = mapped_column()
     alpha: Mapped[float | None] = mapped_column()
     fstat_thresh: Mapped[float | None] = mapped_column()
+    desired_n: Mapped[int | None] = mapped_column()
 
     # Experiment Registry
     impact: Mapped[str] = mapped_column(server_default="")

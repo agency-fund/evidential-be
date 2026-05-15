@@ -644,6 +644,16 @@ class MetricPowerAnalysis(ApiBaseModel):
         ),
     ] = None
 
+    pct_change_with_desired_n: Annotated[
+        float | None,
+        Field(
+            description=(
+                "The MDE achievable given design_spec.desired_n, confidence, and power. "
+                "Only present when design_spec.desired_n is set (frequentist design specs)."
+            )
+        ),
+    ] = None
+
     msg: Annotated[
         MetricPowerAnalysisMessage | None,
         Field(description="Human friendly message about the above results."),
@@ -899,8 +909,11 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         int | None,
         Field(
             default=None,
-            description="Optional desired sample size for MDE calculation. "
-            "If provided, calculates minimum detectable effect instead of required sample size.",
+            ge=0,
+            description="Used in both power calculations and experiment creation. "
+            "Required for *creation* of preassigned experiments. "
+            "Optional for power calculations; if set, calculates minimum detectable effect for the "
+            "desired size in addition to the min sample size. ",
         ),
     ] = None
 

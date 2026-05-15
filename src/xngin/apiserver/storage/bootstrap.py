@@ -43,7 +43,6 @@ async def _create_and_commit_experiment(
         create_experiment_request,
         datasource,
         session,
-        desired_n=100,
         stratify_on_metrics=False,
         random_state=None,
         validated_webhooks=[],
@@ -108,6 +107,7 @@ async def _maybe_create_developer_samples(
                 filters=[Filter(field_name="baseline_income", relation=Relation.BETWEEN, value=[100, None])],
                 strata=[],
                 metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.10)],
+                desired_n=100,
             ),
         ),
     )
@@ -131,6 +131,7 @@ async def _maybe_create_developer_samples(
                 filters=[Filter(field_name="baseline_income", relation=Relation.BETWEEN, value=[100, None])],
                 strata=[],
                 metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.10)],
+                desired_n=100,
             ),
         ),
     )
@@ -224,6 +225,7 @@ async def _maybe_create_developer_samples(
                 filters=[Filter(field_name="household_income", relation=Relation.BETWEEN, value=[100, None])],
                 strata=[],
                 metrics=[DesignSpecMetricRequest(field_name="savings_balance", metric_pct_change=0.10)],
+                desired_n=100,
             ),
         ),
     )

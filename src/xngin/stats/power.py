@@ -125,21 +125,45 @@ def check_power(
             instead of the minimum sample size for a desired effect. Applies to all metrics.
 
     Returns:
-        List of MetricPowerAnalysis results
+        List of `MetricPowerAnalysis` results, one item per metric in the same order as the input `metrics`.
+
+        Each analysis object if successful should always include `target_n`, i.e. the minimum sample
+        size for a desired effect.  If the analysis is not successful, see its `msg` for the reason.
+
+        Optionally, if `desired_n` is provided, it will also include `pct_change_with_desired_n`,
+        i.e. the corresponding MDE as a % change from baseline for the desired sample size. This MDE
+        calculation is done in a best-effort manner and assumes there are enough units to meet the
+        desired_n, so it can still succeed despite insufficient available units. If it fails,
+        `pct_change_with_desired_n` will be None.
     """
     analyses = []
     for metric in metrics:
         try:
-            analyses.append(
-                analyze_metric_power(
-                    metric=metric,
-                    n_arms=n_arms,
-                    arm_weights=arm_weights,
-                    desired_n=desired_n,
-                    power=power,
-                    alpha=alpha,
-                )
+            analysis = analyze_metric_power(
+                metric=metric, n_arms=n_arms, arm_weights=arm_weights, power=power, alpha=alpha
             )
+
+            # Optional desired_n MDE calculation added to the min sample size analysis:
+            if desired_n is not None:
+                try:
+                    mde_analysis = analyze_metric_power(
+                        metric=metric,
+                        n_arms=n_arms,
+                        arm_weights=arm_weights,
+                        desired_n=desired_n,
+                        power=power,
+                        alpha=alpha,
+                    )
+                    # pct_change_possible may be None if there was any error created with
+                    # power_analysis_error().
+                    if mde_analysis.pct_change_possible is not None:
+                        analysis.pct_change_with_desired_n = mde_analysis.pct_change_possible
+                except ValueError:
+                    # Preserve the primary minimum-sample-size result when the optional MDE cannot
+                    # be computed.
+                    pass
+
+            analyses.append(analysis)
         except ValueError as verr:
             raise StatsPowerError(verr, metric) from verr
     return analyses

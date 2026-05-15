@@ -197,17 +197,17 @@ async def create_experiment_impl(
     request: CreateExperimentRequest,
     datasource: tables.Datasource,
     xngin_session: AsyncSession,
-    desired_n: int | None,
     stratify_on_metrics: bool,
     random_state: int | None,
     validated_webhooks: list[tables.Webhook],
 ) -> CreateExperimentResponse:
     match request.design_spec:
         case PreassignedFrequentistExperimentSpec():
+            preassigned_spec = request.design_spec
+            desired_n = preassigned_spec.desired_n
             if desired_n is None:
                 raise LateValidationError("Preassigned experiments must have a desired_n.")
 
-            preassigned_spec = request.design_spec
             table_name = preassigned_spec.table_name
             primary_key = preassigned_spec.primary_key
             field_type_map = await fetch_fields_or_raise(datasource, preassigned_spec)
@@ -264,7 +264,6 @@ async def create_experiment_impl(
                 validated_webhooks=validated_webhooks,
                 request=request,
                 datasource_id=datasource.id,
-                desired_n=desired_n,
             )
 
         case _:
@@ -400,7 +399,6 @@ async def create_bandit_online_experiment_impl(
     validated_webhooks: list[tables.Webhook],
     request: CreateExperimentRequest,
     datasource_id: str,
-    desired_n: int | None = None,
 ) -> CreateExperimentResponse:
     """Create a bandit experiment and persist it to the database."""
     design_spec = request.design_spec
@@ -415,7 +413,6 @@ async def create_bandit_online_experiment_impl(
         datasource_id=datasource_id,
         organization_id=organization_id,
         design_spec=design_spec,
-        n_trials=desired_n if desired_n is not None else 0,
     )
     experiment = experiment_converter.get_experiment()
     # Associate webhooks with the experiment

@@ -73,14 +73,10 @@ async def create_experiment(
         primary_key=primary_key,
         end_date=end_date,
         filters=filters,
+        desired_n=desired_n or 1,
     )
     request = CreateExperimentRequest.model_validate(request, from_attributes=True)
-    if experiment_type == ExperimentsType.FREQ_PREASSIGNED:
-        result = aclient.create_experiment(
-            datasource_id=datasource_metadata.ds.id, body=request, desired_n=desired_n or 1
-        )
-    else:
-        result = aclient.create_experiment(datasource_id=datasource_metadata.datasource_id, body=request)
+    result = aclient.create_experiment(datasource_id=datasource_metadata.datasource_id, body=request)
     created_experiment = result.data
     aclient.commit_experiment(
         datasource_id=datasource_metadata.datasource_id, experiment_id=created_experiment.experiment_id
@@ -104,6 +100,7 @@ def make_unvalidated_create_experiment_request(
     primary_key: str | None,
     end_date: datetime | None = None,
     filters: list[Filter] | None = None,
+    desired_n: int | None = None,
 ) -> CreateExperimentRequest:
     end_date = end_date or datetime.now(UTC) + timedelta(days=1)
     filters = filters or []
@@ -128,6 +125,7 @@ def make_unvalidated_create_experiment_request(
                 "metrics": [DesignSpecMetricRequest(field_name="is_onboarded", metric_pct_change=0.1)],
                 "strata": [Stratum(field_name="gender")],
                 "filters": filters,
+                "desired_n": desired_n,
             }
             if table_name is not None:
                 props["table_name"] = table_name
@@ -144,6 +142,7 @@ def make_unvalidated_create_experiment_request(
                 "metrics": [DesignSpecMetricRequest(field_name="is_onboarded", metric_pct_change=0.1)],
                 "strata": [Stratum(field_name="gender")],
                 "filters": filters,
+                "desired_n": desired_n,
             }
             if table_name is not None:
                 props_online["table_name"] = table_name
@@ -265,12 +264,12 @@ async def test_create_experiment_api_table_name_and_primary_key_in_design_spec(
         experiment_type=experiment_type,
         table_name=table_name,
         primary_key=primary_key,
+        desired_n=1,
     )
     result = aclient.create_experiment(
         datasource_id=testing_datasource.datasource_id,
         body=request,
         raise_if_not_default_status=False,
-        desired_n=1,
     )
 
     assert result.status == expected_status, result.data
@@ -384,6 +383,7 @@ async def test_both_get_experiment_assignments_endpoints_have_matching_strata_or
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
         table_name="dwh",
         primary_key="id",
+        desired_n=2,
     )
     request.design_spec = PreassignedFrequentistExperimentSpec(
         **request.design_spec.model_dump(exclude={"strata"}),
@@ -392,7 +392,6 @@ async def test_both_get_experiment_assignments_endpoints_have_matching_strata_or
     created_experiment = aclient.create_experiment(
         datasource_id=testing_datasource.ds.id,
         body=request,
-        desired_n=2,
     ).data
     aclient.commit_experiment(
         datasource_id=testing_datasource.datasource_id,

@@ -186,7 +186,12 @@ def solve_for_mde_cluster_impl(
         - pct_change: The minimum detectable effect as percent change from baseline
 
     """
-    assert metric.icc is not None and metric.avg_cluster_size is not None
+    if metric.icc is None:
+        raise ValueError("icc is required for cluster-randomized designs.")
+
+    if metric.avg_cluster_size is None:
+        raise ValueError("avg_cluster_size is required for cluster-randomized designs.")
+
     deff = calculate_design_effect(metric.icc, metric.avg_cluster_size, metric.cv or 0.0)
 
     effective_n = calculate_effective_sample_size(desired_n, deff)
