@@ -267,7 +267,6 @@ class ExperimentsType(enum.StrEnum):
 
     MAB_ONLINE = "mab_online"
     CMAB_ONLINE = "cmab_online"
-    BAYESAB_ONLINE = "bayes_ab_online"
     FREQ_ONLINE = "freq_online"
     FREQ_PREASSIGNED = "freq_preassigned"
 
@@ -275,9 +274,9 @@ class ExperimentsType(enum.StrEnum):
         """Returns True if the experiment type is a frequentist experiment."""
         return self in {ExperimentsType.FREQ_ONLINE, ExperimentsType.FREQ_PREASSIGNED}
 
-    def is_bayesian(self) -> bool:
+    def is_bandit(self) -> bool:
         """Returns True if the experiment type is a bandit experiment."""
-        return self in {ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE, ExperimentsType.BAYESAB_ONLINE}
+        return self in {ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE}
 
     def is_cmab(self) -> bool:
         """Returns True if the experiment type is a CMAB experiment."""

@@ -36,7 +36,6 @@ from xngin.apiserver.routers.common_api_types import (
     AssignSummary,
     BalanceCheck,
     BanditExperimentAnalysisResponse,
-    BayesABExperimentSpec,
     CMABExperimentSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
@@ -743,10 +742,6 @@ async def create_assignment_for_participant(
         # Preassigned experiments are not allowed to have new assignments added.
         return None
 
-    # TODO: Add support for Bayesian A/B experiments.
-    if experiment_type == ExperimentsType.BAYESAB_ONLINE:
-        raise ValueError("Bayesian A/B experiments are not supported for assignments")
-
     if experiment_type == ExperimentsType.CMAB_ONLINE:
         if not sorted_context_vals:
             raise ExperimentsAssignmentError(
@@ -764,10 +759,10 @@ async def create_assignment_for_participant(
         await xngin_session.commit()
         return None
 
-    # For online frequentist or Bayesian A/B experiments, create a new assignment
+    # For online frequentist, create a new assignment
     # with simple random assignment or weighted random assignment if arm_weights are specified.
     match experiment_type:
-        case ExperimentsType.FREQ_ONLINE | ExperimentsType.BAYESAB_ONLINE:
+        case ExperimentsType.FREQ_ONLINE:
             chosen_arm = choose_online_arm(experiment=experiment, random_state=random_state)
         case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
             chosen_arm = choose_bandit_arm(
@@ -857,11 +852,6 @@ async def update_bandit_arm_with_outcome_impl(
             pass
         case PreassignedFrequentistExperimentSpec() | OnlineFrequentistExperimentSpec():
             raise LateValidationError("Cannot dynamically update arms for frequentist experiments.")
-        case BayesABExperimentSpec():
-            # TODO: Add support for Bayesian A/B experiments.
-            raise LateValidationError(
-                f"Invalid experiment type for bandit outcome update: {design_spec.experiment_type.value}"
-            )
         case _:
             assert_never(design_spec)
 
