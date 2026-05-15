@@ -109,7 +109,6 @@ from xngin.apiserver.routers.admin.generic_handlers import handle_delete
 from xngin.apiserver.routers.auth.auth_api_types import CallerIdentity
 from xngin.apiserver.routers.auth.auth_dependencies import require_user_from_token
 from xngin.apiserver.routers.common_api_types import (
-    BayesABExperimentSpec,
     CMABContextInputRequest,
     CMABExperimentSpec,
     ContextInput,
@@ -1485,7 +1484,6 @@ async def create_experiment(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
     body: CreateExperimentRequest,
-    desired_n: Annotated[int | None, Query(..., description="Number of participants to assign.", ge=0)] = None,
     stratify_on_metrics: Annotated[
         bool,
         Query(description="Whether to also stratify on metrics during assignment."),
@@ -1514,7 +1512,6 @@ async def create_experiment(
         request=body,
         datasource=datasource,
         xngin_session=session,
-        desired_n=desired_n,
         stratify_on_metrics=stratify_on_metrics,
         random_state=random_state,
         validated_webhooks=validated_webhooks,
@@ -1566,7 +1563,7 @@ async def analyze_experiment(
             )
         case MABExperimentSpec():
             return await experiments_common.analyze_experiment_bandit_impl(xngin_session, experiment)
-        case CMABExperimentSpec() | BayesABExperimentSpec():
+        case CMABExperimentSpec():
             raise LateValidationError(
                 """Invalid experiment type for bandit analysis; for CMAB experiments,
                 use the corresponding POST endpoint.""",

@@ -645,6 +645,16 @@ class MetricPowerAnalysis(ApiBaseModel):
         ),
     ] = None
 
+    pct_change_with_desired_n: Annotated[
+        float | None,
+        Field(
+            description=(
+                "The MDE achievable given design_spec.desired_n, confidence, and power. "
+                "Only present when design_spec.desired_n is set (frequentist design specs)."
+            )
+        ),
+    ] = None
+
     msg: Annotated[
         MetricPowerAnalysisMessage | None,
         Field(description="Human friendly message about the above results."),
@@ -913,8 +923,11 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         int | None,
         Field(
             default=None,
-            description="Optional desired sample size for MDE calculation. "
-            "If provided, calculates minimum detectable effect instead of required sample size.",
+            ge=0,
+            description="Used in both power calculations and experiment creation. "
+            "Required for *creation* of preassigned experiments. "
+            "Optional for power calculations; if set, calculates minimum detectable effect for the "
+            "desired size in addition to the min sample size. ",
         ),
     ] = None
 
@@ -1089,16 +1102,6 @@ class CMABExperimentSpec(BaseBanditExperimentSpec):
     experiment_type: Literal[ExperimentsType.CMAB_ONLINE] = ExperimentsType.CMAB_ONLINE
 
 
-class BayesABExperimentSpec(BaseBanditExperimentSpec):
-    """Use this type to randomly assign participants into arms during live experiment execution with
-    Bayesian A/B experiments.
-
-    For example, you may wish to experiment on new users. Assignments are issued via API request.
-    """
-
-    experiment_type: Literal[ExperimentsType.BAYESAB_ONLINE] = ExperimentsType.BAYESAB_ONLINE
-
-
 type AnyFrequentistDesignSpec = Annotated[
     PreassignedFrequentistExperimentSpec | OnlineFrequentistExperimentSpec,
     Field(
@@ -1108,7 +1111,7 @@ type AnyFrequentistDesignSpec = Annotated[
 ]
 
 type AnyBanditDesignSpec = Annotated[
-    MABExperimentSpec | CMABExperimentSpec | BayesABExperimentSpec,
+    MABExperimentSpec | CMABExperimentSpec,
     Field(
         discriminator="experiment_type",
         description="The specific type of bandit experiment design.",
@@ -1293,7 +1296,6 @@ class CreateExperimentRequest(ApiBaseModel):
         return v
 
 
-# TODO: make this class work with the Bayesian experiment types and their Draw records.
 class AssignSummary(ApiBaseModel):
     """Key pieces of an AssignResponse without the assignments."""
 

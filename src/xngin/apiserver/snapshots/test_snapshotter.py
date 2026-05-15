@@ -12,7 +12,6 @@ from xngin.apiserver.routers.common_api_types import (
     Arm,
     ArmBandit,
     BanditExperimentAnalysisResponse,
-    BayesABExperimentSpec,
     CMABContextInputRequest,
     CMABExperimentSpec,
     Context,
@@ -58,7 +57,7 @@ async def make_experiment(
     match design_spec:
         case PreassignedFrequentistExperimentSpec() | OnlineFrequentistExperimentSpec():
             field_type_map = await fetch_fields_or_raise(datasource, design_spec)
-        case MABExperimentSpec() | CMABExperimentSpec() | BayesABExperimentSpec():
+        case MABExperimentSpec() | CMABExperimentSpec():
             field_type_map = None
         case _:
             assert_never(design_spec)
@@ -116,6 +115,7 @@ def make_snapshot_design_spec(
     name: str,
     *,
     end_date: datetime | None = None,
+    desired_n: int | None = None,
 ) -> PreassignedFrequentistExperimentSpec:
     return PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
@@ -132,6 +132,7 @@ def make_snapshot_design_spec(
         filters=[],
         table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
         primary_key="id",
+        desired_n=desired_n,
     )
 
 
@@ -143,10 +144,10 @@ def create_snapshot_experiment(
     desired_n: int = 2,
     end_date: datetime | None = None,
 ) -> str:
+    design_spec = make_snapshot_design_spec(name, end_date=end_date).model_copy(update={"desired_n": desired_n})
     experiment_id = aclient.create_experiment(
         datasource_id=testing_datasource.ds.id,
-        body=CreateExperimentRequest(design_spec=make_snapshot_design_spec(name, end_date=end_date)),
-        desired_n=desired_n,
+        body=CreateExperimentRequest(design_spec=design_spec),
     ).data.experiment_id
     aclient.commit_experiment(datasource_id=testing_datasource.ds.id, experiment_id=experiment_id)
     return experiment_id
@@ -509,7 +510,6 @@ async def create_bandit_snapshot_experiment(
     *,
     experiment_type: ExperimentsType,
     with_draws: bool = True,
-    desired_n: int = 2,
     prior_type: PriorTypes = PriorTypes.NORMAL,
     reward_type: LikelihoodTypes = LikelihoodTypes.BERNOULLI,
 ) -> str:
@@ -568,7 +568,6 @@ async def create_bandit_snapshot_experiment(
     experiment_id = aclient.create_experiment(
         datasource_id=testing_datasource.ds.id,
         body=CreateExperimentRequest(design_spec=design_spec),
-        desired_n=desired_n,
         random_state=42,
     ).data.experiment_id
     aclient.commit_experiment(datasource_id=testing_datasource.ds.id, experiment_id=experiment_id)
@@ -659,7 +658,6 @@ async def test_create_snapshot_cmab_matches_admin_analysis_at_mean_contexts(
         testing_datasource,
         experiment_type=ExperimentsType.CMAB_ONLINE,
         with_draws=False,
-        desired_n=3,
         reward_type=LikelihoodTypes.NORMAL,
     )
     sorted_contexts = get_sorted_cmab_contexts(aclient, testing_datasource, experiment_id)

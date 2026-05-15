@@ -265,9 +265,9 @@ def update_arm(
     ----------
     experiment: The experiment data containing arms, prior type and reward
         type information.
+    arm_to_update: The arm to update based on the reward received.
     outcomes: The rewards received from the arm.
     context: The context vector for the arm.
-    treatments: The treatments applied to the arm, for a Bayesian A/B test.
     """
     supported_types = {ExperimentsType.MAB_ONLINE.value, ExperimentsType.CMAB_ONLINE.value}
     if experiment.experiment_type not in supported_types:
