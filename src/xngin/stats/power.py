@@ -165,5 +165,5 @@ def check_power(
 
             analyses.append(analysis)
         except ValueError as verr:
-            raise StatsPowerError(verr, metric) from verr
+            raise StatsPowerError(verr, metric.field_name) from verr
     return analyses

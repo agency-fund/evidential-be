@@ -79,6 +79,28 @@ class DesignSpecMetricBase(ApiBaseModel):
         Field(description="Absolute target value = metric_baseline*(1 + metric_pct_change)"),
     ] = None
 
+    # Cluster randomization design parameters (all must be set together, or none).
+    icc: Annotated[
+        float | None,
+        Field(description="Intracluster correlation coefficient for cluster-randomized designs."),
+    ] = None
+    avg_cluster_size: Annotated[
+        float | None,
+        Field(description="Average number of individuals per cluster."),
+    ] = None
+    cv: Annotated[
+        float | None,
+        Field(description="Coefficient of variation in cluster sizes (0 = equal sizes)."),
+    ] = None
+
+    @model_validator(mode="after")
+    def cluster_fields_check(self) -> Self:
+        """Enforce that cluster fields are either all set or all unset."""
+        cluster_fields = (self.icc, self.avg_cluster_size, self.cv)
+        if any(f is not None for f in cluster_fields) and any(f is None for f in cluster_fields):
+            raise ValueError("icc, avg_cluster_size, and cv must all be set together or all be None")
+        return self
+
 
 class DesignSpecMetric(DesignSpecMetricBase):
     """Defines a metric to measure in an experiment with its baseline stats."""
@@ -113,28 +135,6 @@ class DesignSpecMetric(DesignSpecMetricBase):
             )
         ),
     ] = None
-
-    # Cluster randomization design parameters (all must be set together, or none)
-    icc: Annotated[
-        float | None,
-        Field(description="Intracluster correlation coefficient for cluster-randomized designs."),
-    ] = None
-    avg_cluster_size: Annotated[
-        float | None,
-        Field(description="Average number of individuals per cluster."),
-    ] = None
-    cv: Annotated[
-        float | None,
-        Field(description="Coefficient of variation in cluster sizes (0 = equal sizes)."),
-    ] = None
-
-    @model_validator(mode="after")
-    def cluster_fields_check(self) -> Self:
-        """Enforce that cluster fields are either all set or all unset."""
-        cluster_fields = (self.icc, self.avg_cluster_size, self.cv)
-        if any(f is not None for f in cluster_fields) and any(f is None for f in cluster_fields):
-            raise ValueError("icc, avg_cluster_size, and cv must all be set together or all be None")
-        return self
 
     @model_validator(mode="after")
     def stddev_check(self):
@@ -603,6 +603,7 @@ class MetricPowerAnalysisMessage(ApiBaseModel):
         ),
     ]
     values: dict[str, float | int] | None = None
+    high_cluster_variation: bool = False
 
 
 class MetricPowerAnalysis(ApiBaseModel):
@@ -874,6 +875,19 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         FieldName,
         Field(description="Column name in table_name that uniquely identifies each participant."),
     ]
+
+    cluster_key: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "Column name in table_name that identifies clusters for a cluster-randomized design. "
+                "When set, per-metric icc, avg_cluster_size, and cv are either supplied on each "
+                "metric or computed from this column at power_check time. "
+                "When None, the design is assumed to be individual-randomized."
+            ),
+        ),
+    ] = None
 
     # Frequentist config params
     strata: Annotated[
