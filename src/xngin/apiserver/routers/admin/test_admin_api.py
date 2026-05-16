@@ -4133,3 +4133,83 @@ async def test_power_check_with_calculated_icc(testing_datasource, aclient: Admi
     assert analysis.design_effect > 1.0
     assert analysis.num_clusters_total is not None
     assert analysis.num_clusters_total > 0
+
+
+async def test_power_check_cluster_with_manual_and_db_derived_metrics(testing_datasource, aclient: AdminAPIClient):
+    """Per-metric ICC: user-provided overrides apply only when icc is set; other metrics use the DWH."""
+    manual_icc = 0.01
+    manual_avg_cluster_size = 42.0
+    manual_cv = 3.14
+
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test mixed cluster metrics",
+        description="manual ICC for one metric, calculated for another",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        table_name="clustered_dwh",
+        primary_key="participant_id",
+        arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
+        metrics=[
+            DesignSpecMetricRequest(
+                field_name="test_score",
+                metric_pct_change=0.1,
+                icc=manual_icc,
+                avg_cluster_size=manual_avg_cluster_size,
+                cv=manual_cv,
+            ),
+            DesignSpecMetricRequest(field_name="converted", metric_pct_change=0.1),
+        ],
+        strata=[],
+        filters=[],
+        cluster_key="cluster_moderate",
+    )
+
+    result = aclient.power_check(datasource_id=testing_datasource.ds.id, body=PowerRequest(design_spec=design_spec))
+
+    assert len(result.data.analyses) == 2
+    analyses_by_field = {a.metric_spec.field_name: a for a in result.data.analyses}
+    user_analysis = analyses_by_field["test_score"]
+    dwh_analysis = analyses_by_field["converted"]
+
+    # For this metric, check that we used the user-provided values:
+    assert user_analysis.metric_spec.icc == manual_icc
+    assert user_analysis.metric_spec.avg_cluster_size == manual_avg_cluster_size
+    assert user_analysis.metric_spec.cv == manual_cv
+    # Now check a few other properties of the response:
+    assert user_analysis.msg is not None
+    assert user_analysis.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
+    assert user_analysis.design_effect is not None
+    assert user_analysis.design_effect == pytest.approx(5.551, abs=1e-3)
+    assert user_analysis.effective_sample_size is not None and user_analysis.target_n is not None
+    assert user_analysis.effective_sample_size == pytest.approx(
+        math.floor(user_analysis.target_n / user_analysis.design_effect)
+    )
+    assert user_analysis.num_clusters_total is not None
+    assert user_analysis.num_clusters_total == math.ceil(
+        user_analysis.target_n / user_analysis.metric_spec.avg_cluster_size
+    )
+    assert user_analysis.clusters_per_arm == [8, 8]
+
+    # Check derived values are about what we would expect for the <cluster_moderate, converted>
+    # grouping and metric as generated with:
+    #    uv run python tools/generate_clustered_data.py --n-participants 10000 --n-clusters 1000
+    assert dwh_analysis.metric_spec.icc is not None
+    assert dwh_analysis.metric_spec.icc == pytest.approx(0.023, abs=1e-3)
+    assert dwh_analysis.metric_spec.avg_cluster_size is not None
+    assert dwh_analysis.metric_spec.avg_cluster_size == pytest.approx(10.0, abs=1e-3)
+    assert dwh_analysis.metric_spec.cv == pytest.approx(0.347, abs=1e-3)
+    # Now check a few other properties of the response:
+    assert dwh_analysis.msg is not None
+    assert dwh_analysis.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
+    assert dwh_analysis.design_effect is not None
+    assert dwh_analysis.design_effect == pytest.approx(1.231, abs=1e-3)
+    assert dwh_analysis.effective_sample_size is not None and dwh_analysis.target_n is not None
+    assert dwh_analysis.effective_sample_size == pytest.approx(
+        math.floor(dwh_analysis.target_n / dwh_analysis.design_effect)
+    )
+    assert dwh_analysis.num_clusters_total is not None
+    assert dwh_analysis.num_clusters_total == math.ceil(
+        dwh_analysis.target_n / dwh_analysis.metric_spec.avg_cluster_size
+    )
+    assert dwh_analysis.clusters_per_arm == [602, 602]
