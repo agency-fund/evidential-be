@@ -500,3 +500,11 @@ def test_check_balance_with_unbalanced_clusters():
     assert result.f_pvalue == pytest.approx(2.83e-36, abs=1e-37)
     assert result.f_statistic == pytest.approx(87574.78, abs=0.01)
     assert result.f_pvalue < 0.05
+
+
+def test_check_balance_with_missing_cluster_col_raises_stats_balance_error():
+    """A missing cluster column should raise a domain error instead of a raw KeyError."""
+    data = pd.DataFrame({"treat": [0, 1, 0, 1], "age": [20, 21, 22, 23]})
+
+    with pytest.raises(StatsBalanceError, match=r"Cluster column 'cluster' not found in balance-check data."):
+        check_balance_of_preprocessed_df(data, treatment_col="treat", cluster_col="cluster")
