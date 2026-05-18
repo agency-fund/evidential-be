@@ -1,11 +1,18 @@
 """Tests for queries.py."""
 
-import pytest
+import asyncio
 
+import pytest
+from sqlalchemy import text
+from sqlalchemy.exc import DataError
+
+from xngin.apiserver.conftest import DbType, get_queries_test_uri
+from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.queries import get_stats_on_metrics
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import DesignSpecMetric, DesignSpecMetricRequest
 from xngin.apiserver.routers.common_enums import MetricType
+from xngin.apiserver.settings import Dsn
 
 pytest_plugins = ("xngin.apiserver.dwh.dwh_test_support",)
 
@@ -140,3 +147,49 @@ def test_get_stats_on_numeric_metric(queries_dwh_session, shared_sample_tables):
     assert actual.metric_type == expected.metric_type
     # pytest.approx does a reasonable fuzzy comparison of floats for non-nested dictionaries.
     assert actual.model_dump(include=numeric_fields) == pytest.approx(expected.model_dump(include=numeric_fields))
+
+
+def _pg_dsn(search_path: str) -> Dsn:
+    """Builds a Dsn from the test URI with the given search_path. Skips the test if not PG.
+
+    Connects to the 'postgres' system database rather than the test URI db so we don't interfere
+    with the module-scoped queries_dwh_engine fixture.
+    """
+    test_db = get_queries_test_uri()
+    if test_db.db_type != DbType.PG:
+        pytest.skip("search_path is only supported for PostgreSQL")
+
+    url = test_db.connect_url
+    return Dsn(
+        driver=url.drivername,
+        host=url.host,
+        port=url.port,
+        user=url.username,
+        password=url.password,
+        dbname="postgres",
+        sslmode="disable",
+        search_path=search_path,
+    )
+
+
+@pytest.mark.parametrize(
+    "search_path",
+    [
+        "public",
+        'foo"bar',
+        "public, myschema",
+    ],
+)
+async def test_search_path_is_set_on_session(search_path):
+    """Verify that DwhSession sets search_path for every new PostgreSQL connection."""
+    async with DwhSession(_pg_dsn(search_path)) as dwh:
+        result = await asyncio.to_thread(dwh.session.execute, text("SELECT current_setting('search_path')"))
+    assert result.scalar() == search_path
+
+
+async def test_search_path_injection_attempt_is_rejected():
+    """Check that a malicious search_path string is safely passed as a value, not interpreted as SQL."""
+    # Postgres rejects the value as invalid search_path list syntax, rather than interpolating.
+    with pytest.raises(DataError, match="invalid value for parameter"):
+        async with DwhSession(_pg_dsn('public"; DROP TABLE users; --')) as dwh:
+            await asyncio.to_thread(dwh.session.execute, text("SELECT 1"))

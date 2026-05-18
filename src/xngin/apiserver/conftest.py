@@ -28,6 +28,7 @@ from xngin.apiserver.dependencies import (
     random_seed_dependency,
 )
 from xngin.apiserver.dns import safe_resolve
+from xngin.apiserver.dwh import dwh_utils
 from xngin.apiserver.exceptionhandlers import XHTTPValidationError
 from xngin.apiserver.main import app
 from xngin.apiserver.routers.admin import admin_api_types as aapi
@@ -45,9 +46,15 @@ from xngin.apiserver.settings import (
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing import (
     admin_api_client,
+    admin_integrations_api_client,
     experiments_api_client,
+    integrations_api_client,
 )
 from xngin.apiserver.testing.admin_api_client import AdminAPIClientNotDefaultStatusError
+from xngin.apiserver.testing.admin_integrations_api_client import (
+    AdminIntegrationsAPIClientNotDefaultStatusError,
+)
+from xngin.apiserver.testing.integrations_api_client import IntegrationsAPIClientNotDefaultStatusError
 from xngin.apiserver.testing.pg_helpers import create_database_if_not_exists_pg
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 from xngin.db_extensions import custom_functions
@@ -159,17 +166,22 @@ def disable_safe_resolve_check():
 
 def get_test_uri_info(connection_uri: str) -> TestUriInfo:
     """Returns a TestUriInfo dataclass about a test database given its connection_uri."""
-    if connection_uri.startswith("bigquery"):
+    if not connection_uri:
+        raise ValueError("connection_uri is empty")
+
+    parsed_url = make_url(connection_uri)
+    if dwh_utils.is_bigquery(parsed_url):
         dbtype = DbType.BQ
-    elif "redshift.amazonaws.com" in connection_uri:
+    elif dwh_utils.is_redshift(parsed_url):
         dbtype = DbType.RS
-    elif connection_uri.startswith("postgres"):
+    elif dwh_utils.is_postgres(parsed_url):
         dbtype = DbType.PG
     else:
         raise ValueError(
             f"connection_uri is not recognized as a BigQuery, Redshift, or Postgres database: {connection_uri}"
         )
-    return TestUriInfo(connect_url=make_url(connection_uri), db_type=dbtype)
+
+    return TestUriInfo(connect_url=parsed_url, db_type=dbtype)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -218,6 +230,20 @@ def fixture_admin_api_client_unpriv(xngin_session):
     """Returns a generated API client for unprivileged Admin API requests."""
     with TestClient(app, headers={"Authorization": f"Bearer {UNPRIVILEGED_TOKEN_FOR_TESTING}"}) as client:
         yield admin_api_client.AdminAPIClient(client)
+
+
+@pytest.fixture(name="iaclient")
+def fixture_integrations_admin_api_client(xngin_session):
+    """Returns a generated API client for privileged Admin API requests."""
+    with TestClient(app, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"}) as client:
+        yield admin_integrations_api_client.AdminIntegrationsAPIClient(client)
+
+
+@pytest.fixture(name="iclient")
+def fixture_integrations_api_client(xngin_session):
+    """Returns a generated API client for privileged Integrations API requests."""
+    with TestClient(app, headers={"Authorization": f"Bearer {PRIVILEGED_TOKEN_FOR_TESTING}"}) as client:
+        yield integrations_api_client.IntegrationsAPIClient(client)
 
 
 @pytest.fixture(scope="session")
@@ -416,7 +442,12 @@ def _convert_dwh_to_create_api_dsn(dwh: settings.Dwh) -> aapi.Dsn:
 
 @dataclass
 class StatusCodeMatcher:
-    exc: AdminAPIClientNotDefaultStatusError | None = None
+    exc: (
+        AdminAPIClientNotDefaultStatusError
+        | AdminIntegrationsAPIClientNotDefaultStatusError
+        | IntegrationsAPIClientNotDefaultStatusError
+        | None
+    ) = None
 
     def http_response(self):
         """Returns the httpx Response."""
@@ -459,9 +490,18 @@ def expect_status_code(
 ) -> Iterator[StatusCodeMatcher]:
     """Like pytest.raises(), but for checking the non-default response codes of an AdminAPIClient request."""
     match = StatusCodeMatcher()
-    with pytest.raises(AdminAPIClientNotDefaultStatusError) as exc:
+    with pytest.raises((
+        AdminAPIClientNotDefaultStatusError,
+        AdminIntegrationsAPIClientNotDefaultStatusError,
+        IntegrationsAPIClientNotDefaultStatusError,
+    )) as exc:
         yield match
-    match.exc = exc.value
+    match.exc = cast(
+        "AdminAPIClientNotDefaultStatusError"
+        " | AdminIntegrationsAPIClientNotDefaultStatusError"
+        " | IntegrationsAPIClientNotDefaultStatusError",
+        exc.value,
+    )
     http_response = match.http_response()
     assert http_response.status_code == status_code, (
         f"Expected '{status_code}' response code but got {http_response.status_code}: {http_response.content}"
@@ -479,8 +519,10 @@ def expect_status_code(
             f"Expected '{detail_eq}' to be one of the .msg fields in the response: {http_response.content}"
         )
     if detail_contains is not None:
-        assert any(detail_contains in msg for msg in match._detail_messages()), (
-            f"Expected '{detail_eq}' to be in one of the .msg fields in the response: {http_response.content}"
+        messages = match._detail_messages()
+        assert any(detail_contains in msg for msg in messages), (
+            f"Expected '{detail_contains}' to be in one of the .msg fields in the response: {http_response.content}"
+            f"\nmsg list (length {len(messages)}): \n\t{'\n\t'.join(messages)}"
         )
     if text is not None:
         assert match._has_text(text), f"Expected '{text}' to be in the response: {http_response.content}"

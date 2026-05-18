@@ -10,7 +10,7 @@
 #
 # Note: this script generated mostly by Anthropic Claude.
 #
-import subprocess
+import subprocess  # noqa: S404
 import time
 
 import psycopg
@@ -151,8 +151,8 @@ def run(
 
     try:
         # Check if container already exists
-        result = subprocess.run(
-            [
+        result = subprocess.run(  # noqa: S603
+            [  # noqa: S607
                 "docker",
                 "ps",
                 "-a",
@@ -180,7 +180,7 @@ def run(
             if not daemon:
                 console.print("\n💡 [info]Press Ctrl+C to stop the container when done[/]\n")
 
-            subprocess.run(cmd, check=True)
+            subprocess.run(cmd, check=True)  # noqa: S603
 
             if daemon:
                 if wait:

@@ -6,6 +6,6 @@ HEADER_API_KEY = "X-API-Key"
 
 # The HTTP request header on outbound webhooks containing a randomly generated token for the purpose of allowing
 # the receiver to verify the source of the request.
-HEADER_WEBHOOK_TOKEN = "Webhook-Token"
+HEADER_WEBHOOK_TOKEN = "Webhook-Token"  # noqa: S105
 
 API_PREFIX_V1 = "/v1"

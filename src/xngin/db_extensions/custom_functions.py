@@ -1,27 +1,15 @@
 from typing import Any
 
-from sqlalchemy import Numeric, inspect
+from sqlalchemy import inspect
 from sqlalchemy.ext import compiler
 from sqlalchemy.sql._typing import _ColumnExpressionOrLiteralArgument
 from sqlalchemy.sql.functions import (
     FunctionElement,
-    GenericFunction,
     func,
 )
 
 # Set this to True to override the our_random() behavior to return a deterministic value instead.
 USE_DETERMINISTIC_RANDOM = False
-
-
-class stddev_pop(GenericFunction):  # noqa: N801
-    """Returns the population standard deviation of the expression.
-    This is a wrapper around the SQL standard function STDDEV_POP().
-    In some databases, this is called STDEVP().
-    """
-
-    name = "stddev_pop"
-    inherit_cache = True
-    type = Numeric()
 
 
 class Random(FunctionElement):
@@ -66,14 +54,3 @@ def _bq_random(element, _compiler, **_kw):
         return deterministic_random(element)
     # https://cloud.google.com/bigquery/docs/reference/standard-sql/mathematical_functions#rand
     return "rand()"
-
-
-@compiler.compiles(stddev_pop, "mysql")
-@compiler.compiles(stddev_pop, "postgresql")
-def _std_default(element, compiler, **_kw):
-    return f"STDDEV_POP({compiler.process(element.clauses)})"
-
-
-@compiler.compiles(stddev_pop, "mssql")
-def _std_mssql(element, compiler, **_kw):
-    return f"STDEVP({compiler.process(element.clauses)})"

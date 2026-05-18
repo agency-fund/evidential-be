@@ -60,6 +60,20 @@ def custom_openapi(app: FastAPI):
                 "description": "Methods supporting the Evidential UI.",
             },
         ),
+        TagDocumentation(
+            visible=PUBLISH_ALL_DOCS,
+            definition={
+                "name": "Admin: Third-Party Tools Integrations",
+                "description": "Methods for configuring third-party tool integrations on Evidential UI.",
+            },
+        ),
+        TagDocumentation(
+            visible=PUBLISH_ALL_DOCS,
+            definition={
+                "name": "Third-Party Tools Integrations",
+                "description": "Methods for specific third-party tools to integrate with Evidential.",
+            },
+        ),
     ]
     openapi_schema = get_openapi(
         title="Evidential Experiments API",

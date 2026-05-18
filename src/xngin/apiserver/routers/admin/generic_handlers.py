@@ -1,5 +1,4 @@
 from collections.abc import Awaitable, Callable
-from typing import TypeVar
 
 import sqlalchemy
 from fastapi import HTTPException, Response
@@ -9,10 +8,7 @@ from starlette import status
 GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-T = TypeVar("T")
-
-
-async def handle_delete(
+async def handle_delete[T](
     session: AsyncSession,
     allow_missing: bool,
     is_authorized: sqlalchemy.Select,

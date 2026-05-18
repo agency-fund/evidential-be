@@ -9,6 +9,7 @@ from sqlalchemy.orm import DeclarativeBase, Session, mapped_column
 from sqlalchemy.types import Boolean, Date, DateTime, Float, Integer, String
 
 from xngin.apiserver.conftest import DbType, get_queries_test_uri
+from xngin.apiserver.dwh.dwh_utils import extra_engine_setup
 from xngin.apiserver.settings import SA_LOGGER_NAME_FOR_DWH
 
 
@@ -170,10 +171,8 @@ def fixture_queries_dwh_engine():
         logging_name=SA_LOGGER_NAME_FOR_DWH,
         execution_options={"logging_token": "dwh"},
     )
+    extra_engine_setup(engine)
     try:
-        if test_db.db_type is DbType.RS and hasattr(engine.dialect, "_set_backslash_escapes"):
-            engine.dialect._set_backslash_escapes = lambda _: None
-
         yield engine
     finally:
         engine.dispose()

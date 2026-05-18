@@ -10,7 +10,6 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, assert_never
 
-import pandas as pd
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -33,19 +32,13 @@ from xngin.apiserver import constants, flags
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
-from xngin.apiserver.dwh.dwh_session import (
-    CannotFindTableError,
-    DwhSession,
-    NoDwh,
-)
+from xngin.apiserver.dwh.dwh_session import CannotFindTableError, DwhSession
 from xngin.apiserver.dwh.inspections import (
     build_proposed_and_drift,
     create_inspect_table_response_from_table,
     dehydrate_participants,
 )
 from xngin.apiserver.dwh.queries import (
-    get_cluster_outcome_data,
-    get_cluster_size_stats,
     get_stats_on_filters,
     get_stats_on_metrics,
 )
@@ -116,21 +109,22 @@ from xngin.apiserver.routers.admin.generic_handlers import handle_delete
 from xngin.apiserver.routers.auth.auth_api_types import CallerIdentity
 from xngin.apiserver.routers.auth.auth_dependencies import require_user_from_token
 from xngin.apiserver.routers.common_api_types import (
-    BaseBanditExperimentSpec,
-    BaseFrequentistDesignSpec,
     CMABContextInputRequest,
+    CMABExperimentSpec,
     ContextInput,
     ContextType,
     CreateExperimentRequest,
     CreateExperimentResponse,
     ExperimentAnalysisResponse,
     ExperimentsType,
-    Filter,
     GetMetricsResponseElement,
     GetStrataResponseElement,
     ListExperimentsResponse,
+    MABExperimentSpec,
+    OnlineFrequentistExperimentSpec,
     PowerRequest,
     PowerResponse,
+    PreassignedFrequentistExperimentSpec,
 )
 from xngin.apiserver.routers.common_enums import ExperimentState, PreloadMethod
 from xngin.apiserver.routers.experiments import experiments_common, experiments_common_csv
@@ -140,7 +134,9 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     make_participants_def_from_experiment,
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
+from xngin.apiserver.routers.power_adapters import calculate_icc_and_cv_from_database
 from xngin.apiserver.settings import (
+    NoDwh,
     ParticipantsDef,
     RemoteDatabaseConfig,
 )
@@ -148,7 +144,6 @@ from xngin.apiserver.snapshots import snapshotter
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.stats import check_power
-from xngin.stats.cluster_icc import calculate_icc_from_dataframe
 
 GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
 RESPONSE_CACHE_MAX_AGE_SECONDS = timedelta(minutes=15).seconds
@@ -221,56 +216,6 @@ DWH_CONNECTION_AND_NOT_FOUND_RESPONSES: dict[str | int, dict[str, Any]] = {
 
 def cache_is_fresh(updated: datetime | None):
     return updated is not None and datetime.now(UTC) - updated < timedelta(minutes=5)
-
-
-def calculate_icc_and_cv_from_database(
-    session,
-    sa_table,
-    cluster_column: str,
-    outcome_column: str,
-    filters: list[Filter],
-) -> dict[str, float]:
-    """
-    Calculate ICC and cluster statistics from database.
-
-    This is a convenience function that orchestrates DWH queries with stats calculations.
-    It belongs in the API layer since it combines database access and stats functions.
-
-    Args:
-        session: SQLAlchemy session for DWH
-        sa_table: SQLAlchemy Table object
-        cluster_column: Column name containing cluster IDs
-        outcome_column: Column name containing outcome values
-        filters: List of filters to apply
-
-    Returns:
-        dict with keys: icc, avg_cluster_size, cv
-    """
-    # Get cluster size statistics from database (queries.py)
-    cluster_stats = get_cluster_size_stats(
-        session,
-        sa_table,
-        cluster_column,
-        filters,
-    )
-
-    # Get cluster-outcome data for ICC calculation (queries.py)
-    data = get_cluster_outcome_data(
-        session,
-        sa_table,
-        cluster_column,
-        outcome_column,
-        filters,
-    )
-
-    df = pd.DataFrame(data)
-    icc = calculate_icc_from_dataframe(df, cluster_column=cluster_column, outcome_column=outcome_column)
-
-    return {
-        "icc": icc,
-        "avg_cluster_size": cluster_stats["avg_cluster_size"],
-        "cv": cluster_stats["cv"],
-    }
 
 
 @asynccontextmanager
@@ -1539,7 +1484,6 @@ async def create_experiment(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
     body: CreateExperimentRequest,
-    desired_n: Annotated[int | None, Query(..., description="Number of participants to assign.", ge=0)] = None,
     stratify_on_metrics: Annotated[
         bool,
         Query(description="Whether to also stratify on metrics during assignment."),
@@ -1558,11 +1502,6 @@ async def create_experiment(
     if body.design_spec.ids_are_present():
         raise LateValidationError("Invalid DesignSpec: UUIDs must not be set.")
 
-    if (body.table_name is not None or body.primary_key is not None) and not isinstance(
-        body.design_spec, BaseFrequentistDesignSpec
-    ):
-        raise LateValidationError("table_name/primary_key is only supported for frequentist experiment types")
-
     # Validate webhook IDs exist and belong to organization
     organization_id = datasource.organization_id
     validated_webhooks = await validate_webhooks(
@@ -1573,7 +1512,6 @@ async def create_experiment(
         request=body,
         datasource=datasource,
         xngin_session=session,
-        desired_n=desired_n,
         stratify_on_metrics=stratify_on_metrics,
         random_state=random_state,
         validated_webhooks=validated_webhooks,
@@ -1605,10 +1543,7 @@ async def analyze_experiment(
         xngin_session,
         ds,
         experiment_id,
-        preload=[
-            tables.Experiment.draws,
-            tables.Experiment.contexts,
-        ],
+        preload=[tables.Experiment.contexts],
         nested_preload=[
             [
                 (PreloadMethod.SELECTINLOAD, tables.Experiment.experiment_fields),
@@ -1619,20 +1554,19 @@ async def analyze_experiment(
 
     design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
     match design_spec:
-        case BaseBanditExperimentSpec():
-            if experiment.experiment_type != ExperimentsType.MAB_ONLINE.value:
-                raise LateValidationError(
-                    """Invalid experiment type for bandit analysis; for CMAB experiments,
-                    use the corresponding POST endpoint.""",
-                )
-            return experiments_common.analyze_experiment_bandit_impl(experiment)
-
-        case BaseFrequentistDesignSpec():
+        case PreassignedFrequentistExperimentSpec() | OnlineFrequentistExperimentSpec():
             # Always assume the first arm is the baseline; UI can override this.
             baseline_arm_id = baseline_arm_id or design_spec.arms[0].arm_id
             assert baseline_arm_id is not None
             return await experiments_common.analyze_experiment_freq_impl(
                 xngin_session, ds.get_config(), experiment, baseline_arm_id, design_spec.metrics
+            )
+        case MABExperimentSpec():
+            return await experiments_common.analyze_experiment_bandit_impl(xngin_session, experiment)
+        case CMABExperimentSpec():
+            raise LateValidationError(
+                """Invalid experiment type for bandit analysis; for CMAB experiments,
+                use the corresponding POST endpoint.""",
             )
         case _:
             assert_never()
@@ -1656,7 +1590,7 @@ async def analyze_cmab_experiment(
         xngin_session,
         ds,
         experiment_id,
-        preload=[tables.Experiment.draws, tables.Experiment.contexts],
+        preload=[tables.Experiment.contexts],
     )
 
     if experiment.experiment_type != ExperimentsType.CMAB_ONLINE.value:
@@ -1670,8 +1604,8 @@ async def analyze_cmab_experiment(
         raise LateValidationError("context_inputs must be provided when analyzing a CMAB experiment.")
     sorted_context_inputs = sort_contexts_by_id_or_raise(experiment.contexts, body.context_inputs)
 
-    return experiments_common.analyze_experiment_bandit_impl(
-        experiment, context_vals=[ci.context_value for ci in sorted_context_inputs]
+    return await experiments_common.analyze_experiment_bandit_impl(
+        xngin_session, experiment, context_vals=[ci.context_value for ci in sorted_context_inputs]
     )
 
 
@@ -1937,11 +1871,6 @@ async def power_check(
 ) -> PowerResponse:
     """Performs a power check for the specified datasource."""
     design_spec = body.design_spec
-    if not isinstance(design_spec, BaseFrequentistDesignSpec):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Power checks are only supported for frequentist experiments",
-        )
     ds = await get_datasource_or_raise(session, user, datasource_id)
     if isinstance(ds.config, NoDwh):
         raise HTTPException(
@@ -1951,9 +1880,10 @@ async def power_check(
     dsconfig = ds.get_config()
 
     async with DwhSession(dsconfig.dwh) as dwh:
-        sa_table = await dwh.inspect_table(body.table_name)
+        sa_table = await dwh.inspect_table(design_spec.table_name)
         # Validate the fields used in the design spec are present in the table and that filter values are valid.
-        _ = await fetch_fields_from_table_or_raise(sa_table, design_spec, body.primary_key)
+        _ = await fetch_fields_from_table_or_raise(sa_table, design_spec)
+
         metric_stats = await asyncio.to_thread(
             get_stats_on_metrics,
             dwh.session,
@@ -1961,6 +1891,29 @@ async def power_check(
             design_spec.metrics,
             design_spec.filters,
         )
+
+        # Augment with cluster-level stats if this is a cluster-randomized design.
+        if design_spec.cluster_key is not None:
+            request_metrics_by_name = {m.field_name: m for m in design_spec.metrics}
+            for metric_stat in metric_stats:
+                req_metric = request_metrics_by_name[metric_stat.field_name]
+                # If the user provided ICC, avg_cluster_size, and cv, use them instead of deriving from the dwh.
+                if req_metric.icc is not None:
+                    metric_stat.icc = req_metric.icc
+                    metric_stat.avg_cluster_size = req_metric.avg_cluster_size
+                    metric_stat.cv = req_metric.cv
+                else:
+                    cluster_stats = await asyncio.to_thread(
+                        calculate_icc_and_cv_from_database,
+                        dwh.session,
+                        sa_table,
+                        design_spec.cluster_key,
+                        metric_stat.field_name,
+                        design_spec.filters,
+                    )
+                    metric_stat.icc = cluster_stats["icc"]
+                    metric_stat.avg_cluster_size = cluster_stats["avg_cluster_size"]
+                    metric_stat.cv = cluster_stats["cv"]
 
     arm_weights = design_spec.get_validated_arm_weights()
 

@@ -24,13 +24,13 @@ from xngin.xsecrets import chafernet
 
 # The length of time that a session token is considered valid.
 SESSION_TOKEN_LIFETIME = datetime.timedelta(hours=12).seconds
-SESSION_TOKEN_LOCAL_KEYSET_FILE = ".xngin_session_token_keyset"
-SESSION_TOKEN_PREFIX = "xa_"
+SESSION_TOKEN_LOCAL_KEYSET_FILE = ".xngin_session_token_keyset"  # noqa: S105
+SESSION_TOKEN_PREFIX = "xa_"  # noqa: S105
 
 GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
 
 # Set TESTING_TOKENS_ENABLED to allow statically defined bearer tokens to skip the JWT validation.
-AIRPLANE_TOKEN = "airplane-mode-token"
+AIRPLANE_TOKEN = "airplane-mode-token"  # noqa: S105
 PRIVILEGED_EMAIL = "testing-privileged@example.com"
 PRIVILEGED_TOKEN_FOR_TESTING = secrets.token_urlsafe(32)
 TESTING_TOKENS_ENABLED = False

@@ -130,9 +130,6 @@ def analyze_experiment(
         context_vals: Optional context values for CMAB experiments.
         random_state: Use a fixed int for deterministic behavior in tests.
     """
-    # TODO: Does not support Bayes A/B experiments
-    if experiment.experiment_type == ExperimentsType.BAYESAB_ONLINE.value:
-        raise ValueError(f"Invalid experiment type: {experiment.experiment_type}.")
     if not experiment.prior_type or not experiment.reward_type:
         raise ValueError("Experiment must have prior and reward types defined.")
     if (experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value) and (context_vals is None):

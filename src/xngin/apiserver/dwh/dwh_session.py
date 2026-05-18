@@ -8,22 +8,17 @@ import google.api_core.exceptions
 import sqlalchemy
 from loguru import logger
 from sqlalchemy import Engine, Inspector, event, text
+from sqlalchemy.engine.interfaces import DBAPIConnection
 from sqlalchemy.exc import NoSuchTableError, OperationalError
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.dns.safe_resolve import safe_resolve
-from xngin.apiserver.dwh import query_constructors
+from xngin.apiserver.dwh import dwh_utils, query_constructors
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor
 from xngin.apiserver.dwh.inspections import generate_field_descriptors
 from xngin.apiserver.exceptions_common import DwhConnectionError, DwhDatabaseDoesNotExistError
 from xngin.apiserver.routers.common_api_types import Filter
-from xngin.apiserver.settings import (
-    SA_LOGGER_NAME_FOR_DWH,
-    TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES,
-    Dsn,
-    Dwh,
-    NoDwh,
-)
+from xngin.apiserver.settings import SA_LOGGER_NAME_FOR_DWH, TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES, Dsn, Dwh
 
 
 def _is_postgres_database_not_found_error(exc: OperationalError) -> bool:
@@ -38,7 +33,7 @@ def _is_postgres_database_not_found_error(exc: OperationalError) -> bool:
 
 def _safe_url(url: sqlalchemy.engine.url.URL) -> sqlalchemy.engine.url.URL:
     """Prepares a URL for presentation or capture in logs by stripping sensitive values."""
-    cleaned = url.set(password="redacted")
+    cleaned = url.set(password="redacted")  # noqa: S106
     for qp in ("credentials_base64", "credentials_info"):
         if cleaned.query.get(qp):
             cleaned = cleaned.update_query_dict({qp: "redacted"})
@@ -147,7 +142,7 @@ class DwhSession:
             raise RuntimeError("DwhSession not entered - use 'async with DwhSession(...) as dwh:'")
         return self._engine
 
-    def _inspect_table_blocking(self, table_name: str, use_sa_autoload: bool | None = None) -> sqlalchemy.Table:
+    def _inspect_table_blocking(self, table_name: str, *, use_sa_autoload: bool | None = None) -> sqlalchemy.Table:
         if use_sa_autoload is None:
             use_sa_autoload = self.dwh_config.supports_sa_autoload()
         metadata = sqlalchemy.MetaData()
@@ -173,9 +168,7 @@ class DwhSession:
         metadata = sqlalchemy.MetaData()
         try:
             with engine.begin() as connection:
-                safe_table = sqlalchemy.quoted_name(table_name, quote=True)
-                # Create a select statement - this is safe from SQL injection
-                query = sqlalchemy.select(text("*")).select_from(text(safe_table)).limit(0)
+                query = query_constructors.create_inspect_table_from_cursor_query(table_name)
                 result = connection.execute(query)
                 description = result.cursor.description
                 for col in description:
@@ -235,18 +228,22 @@ class DwhSession:
         .name, .type, and .nullable.
 
         Args:
-            table_name: Name of the table to inspect
+            table_name: Name of the table to inspect. Only unqualified table names are supported.
             use_sa_autoload: Whether to use SQLAlchemy reflection. If None, uses config default.
 
         Returns:
             SQLAlchemy Table object
         """
-        return await asyncio.to_thread(self._inspect_table_blocking, table_name, use_sa_autoload)
+        return await asyncio.to_thread(
+            self._inspect_table_blocking,
+            table_name,
+            use_sa_autoload=use_sa_autoload,
+        )
 
     def _inspect_table_with_descriptors_blocking(
         self, table_name: str, unique_id_field: str, use_sa_autoload: bool | None = None
     ) -> InspectTableWithDescriptorsResult:
-        sa_table = self._inspect_table_blocking(table_name, use_sa_autoload)
+        sa_table = self._inspect_table_blocking(table_name, use_sa_autoload=use_sa_autoload)
         db_schema = generate_field_descriptors(sa_table, unique_id_field)
         return InspectTableWithDescriptorsResult(sa_table=sa_table, db_schema=db_schema)
 
@@ -290,7 +287,7 @@ class DwhSession:
         n: int,
         use_sa_autoload: bool | None = None,
     ) -> GetParticipantsResult:
-        sa_table = self._inspect_table_blocking(table_name, use_sa_autoload)
+        sa_table = self._inspect_table_blocking(table_name, use_sa_autoload=use_sa_autoload)
         participants = self._query_for_participants_blocking(sa_table, select_columns, filters, n)
         return GetParticipantsResult(sa_table=sa_table, participants=participants)
 
@@ -331,9 +328,11 @@ class DwhSession:
             if isinstance(self.dwh_config, Dsn) and self.dwh_config.is_redshift():
                 query = text(
                     "SELECT table_name FROM information_schema.tables "
-                    "WHERE table_schema IN (:search_path) ORDER BY table_name"
+                    "WHERE table_schema = ANY(current_schemas(false)) "
+                    "AND table_type IN ('BASE TABLE', 'VIEW') "
+                    "ORDER BY table_name"
                 )
-                result = self.session.execute(query, {"search_path": self.dwh_config.search_path or "public"})
+                result = self.session.execute(query)
                 return list(result.scalars().all())
             inspected = sqlalchemy.inspect(self._safe_engine())
 
@@ -384,7 +383,7 @@ class DwhSession:
 
         connect_args: dict = {}
 
-        if url.get_backend_name() == "postgresql":
+        if dwh_utils.is_postgres(url):
             connect_args["connect_timeout"] = TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES
             # Replace the Postgres' client default DNS lookup with one that applies security checks first
             connect_args["hostaddr"] = safe_resolve(url.host)
@@ -408,26 +407,25 @@ class DwhSession:
         return engine
 
     def _extra_engine_setup(self, engine: Engine):
-        """Do any extra configuration if needed before a connection is made.
-
-        This method replicates the logic from RemoteDatabaseConfig._extra_engine_setup().
-        """
-        # Handle search_path for PostgreSQL
+        """Do any extra configuration if needed before a connection is made."""
+        # Handle search_path for PostgreSQL & Redshift
         if isinstance(self.dwh_config, Dsn) and self.dwh_config.search_path:
+            search_path_sql_arg = self.dwh_config.search_path
 
             @event.listens_for(engine, "connect", insert=True)
-            def set_search_path(dbapi_connection, _connection_record):
+            def set_search_path(dbapi_connection: DBAPIConnection, _connection_record):
                 existing_autocommit = dbapi_connection.autocommit
                 dbapi_connection.autocommit = True
                 cursor = dbapi_connection.cursor()
-                cursor.execute(f"SET SESSION search_path={self.dwh_config.search_path}")  # type: ignore[union-attr]
-                cursor.close()
-                dbapi_connection.autocommit = existing_autocommit
+                try:
+                    # Postgres-compatible SQL via DBAPI parameterized query to set the search path with
+                    # a user-specified, possibly comma-separated string.
+                    cursor.execute(
+                        "SELECT set_config('search_path', %(schemas)s, false)",
+                        {"schemas": search_path_sql_arg},
+                    )
+                finally:
+                    cursor.close()
+                    dbapi_connection.autocommit = existing_autocommit
 
-        # Handle Redshift incompatibilities
-        if (
-            not isinstance(self.dwh_config, NoDwh)
-            and self.dwh_config.is_redshift()
-            and hasattr(engine.dialect, "_set_backslash_escapes")
-        ):
-            engine.dialect._set_backslash_escapes = lambda _: None
+        dwh_utils.extra_engine_setup(engine)

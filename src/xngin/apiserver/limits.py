@@ -19,6 +19,14 @@ MAX_LENGTH_OF_PARTICIPANT_ID_VALUE = 64
 # Maximum number of arms allowed in an experiment.
 MAX_NUMBER_OF_ARMS = 20
 
+# Top-Two Thompson Sampling: minimum number of arms to activate Top-Two selection.
+# With fewer arms, regular Thompson Sampling is used.
+TOP_TWO_MIN_ARMS = 5
+
+# Top-Two Thompson Sampling: probability of playing the leader vs the challenger.
+# β=0.9 means 90% of draws go to the likely best arm.
+TOP_TWO_BETA = 0.9
+
 # Maximum number of contexts allowed for bandits.
 MAX_NUMBER_OF_CONTEXTS = 10
 
@@ -31,3 +39,7 @@ MAX_NUMBER_OF_FILTERS = 20
 
 # Maximum length of GCP service account info JSON.
 MAX_GCP_SERVICE_ACCOUNT_LEN = 8000
+
+# Turn.io related limits
+TURN_REQUEST_TIMEOUT_SECONDS = 10
+TURN_JOURNEYS_CACHE_TTL_SECONDS = 600

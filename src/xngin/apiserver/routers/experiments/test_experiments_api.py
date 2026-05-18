@@ -8,10 +8,10 @@ import pytest
 from pydantic import TypeAdapter
 
 from xngin.apiserver.routers.common_api_types import (
+    AnyFrequentistDesignSpec,
     Arm,
     ArmBandit,
     BaseDesignSpec,
-    BaseFrequentistDesignSpec,
     CMABContextInputRequest,
     CMABExperimentSpec,
     Context,
@@ -73,14 +73,10 @@ async def create_experiment(
         primary_key=primary_key,
         end_date=end_date,
         filters=filters,
+        desired_n=desired_n or 1,
     )
     request = CreateExperimentRequest.model_validate(request, from_attributes=True)
-    if experiment_type == ExperimentsType.FREQ_PREASSIGNED:
-        result = aclient.create_experiment(
-            datasource_id=datasource_metadata.ds.id, body=request, desired_n=desired_n or 1
-        )
-    else:
-        result = aclient.create_experiment(datasource_id=datasource_metadata.datasource_id, body=request)
+    result = aclient.create_experiment(datasource_id=datasource_metadata.datasource_id, body=request)
     created_experiment = result.data
     aclient.commit_experiment(
         datasource_id=datasource_metadata.datasource_id, experiment_id=created_experiment.experiment_id
@@ -104,6 +100,7 @@ def make_unvalidated_create_experiment_request(
     primary_key: str | None,
     end_date: datetime | None = None,
     filters: list[Filter] | None = None,
+    desired_n: int | None = None,
 ) -> CreateExperimentRequest:
     end_date = end_date or datetime.now(UTC) + timedelta(days=1)
     filters = filters or []
@@ -116,30 +113,42 @@ def make_unvalidated_create_experiment_request(
         arms=[Arm(arm_name="overwritten1", arm_description=""), Arm(arm_name="overwritten2", arm_description="")],
     ).model_dump(exclude={"arms"})
 
-    design_spec: BaseFrequentistDesignSpec | MABExperimentSpec | CMABExperimentSpec
+    design_spec: AnyFrequentistDesignSpec | MABExperimentSpec | CMABExperimentSpec
     match experiment_type:
         case ExperimentsType.FREQ_PREASSIGNED:
-            design_spec = PreassignedFrequentistExperimentSpec(
+            props: dict = {
                 **base_kwargs,
-                arms=[
+                "arms": [
                     Arm(arm_name="control", arm_description="Control group"),
                     Arm(arm_name="treatment", arm_description="Treatment group"),
                 ],
-                metrics=[DesignSpecMetricRequest(field_name="is_onboarded", metric_pct_change=0.1)],
-                strata=[Stratum(field_name="gender")],
-                filters=filters,
-            )
+                "metrics": [DesignSpecMetricRequest(field_name="is_onboarded", metric_pct_change=0.1)],
+                "strata": [Stratum(field_name="gender")],
+                "filters": filters,
+                "desired_n": desired_n,
+            }
+            if table_name is not None:
+                props["table_name"] = table_name
+            if primary_key is not None:
+                props["primary_key"] = primary_key
+            design_spec = PreassignedFrequentistExperimentSpec.model_construct(**props)
         case ExperimentsType.FREQ_ONLINE:
-            design_spec = OnlineFrequentistExperimentSpec(
+            props_online: dict = {
                 **base_kwargs,
-                arms=[
+                "arms": [
                     Arm(arm_name="control", arm_description="Control group"),
                     Arm(arm_name="treatment", arm_description="Treatment group"),
                 ],
-                metrics=[DesignSpecMetricRequest(field_name="is_onboarded", metric_pct_change=0.1)],
-                strata=[Stratum(field_name="gender")],
-                filters=filters,
-            )
+                "metrics": [DesignSpecMetricRequest(field_name="is_onboarded", metric_pct_change=0.1)],
+                "strata": [Stratum(field_name="gender")],
+                "filters": filters,
+                "desired_n": desired_n,
+            }
+            if table_name is not None:
+                props_online["table_name"] = table_name
+            if primary_key is not None:
+                props_online["primary_key"] = primary_key
+            design_spec = OnlineFrequentistExperimentSpec.model_construct(**props_online)
         case ExperimentsType.MAB_ONLINE:
             design_spec = MABExperimentSpec(
                 **base_kwargs,
@@ -168,11 +177,7 @@ def make_unvalidated_create_experiment_request(
         case _:
             raise ValueError(f"Invalid experiment type: {experiment_type}")
 
-    return CreateExperimentRequest.model_construct(
-        design_spec=design_spec,
-        table_name=table_name,
-        primary_key=primary_key,
-    )
+    return CreateExperimentRequest.model_construct(design_spec=design_spec)
 
 
 @pytest.mark.parametrize(
@@ -232,48 +237,48 @@ async def test_get_experiment(testing_datasource, aclient: AdminAPIClient, eclie
 
 
 @pytest.mark.parametrize(
-    "experiment_type, table_name, primary_key, expected_status, expected_message",
+    "experiment_type, table_name, primary_key, expected_status, expected_in_loc",
     [
-        (ExperimentsType.FREQ_PREASSIGNED, None, None, 422, "table_name and primary_key must be provided"),
-        (ExperimentsType.FREQ_PREASSIGNED, "dwh", None, 422, "table_name and primary_key must be provided"),
-        (ExperimentsType.FREQ_PREASSIGNED, None, "id", 422, "table_name and primary_key must be provided"),
+        (ExperimentsType.FREQ_PREASSIGNED, None, None, 422, "table_name"),
+        (ExperimentsType.FREQ_PREASSIGNED, "dwh", None, 422, "primary_key"),
+        (ExperimentsType.FREQ_PREASSIGNED, None, "id", 422, "table_name"),
         (ExperimentsType.FREQ_PREASSIGNED, "dwh", "id", 200, None),
-        (ExperimentsType.FREQ_ONLINE, None, None, 422, "table_name and primary_key must be provided"),
-        (ExperimentsType.FREQ_ONLINE, "dwh", None, 422, "table_name and primary_key must be provided"),
-        (ExperimentsType.FREQ_ONLINE, None, "id", 422, "table_name and primary_key must be provided"),
+        (ExperimentsType.FREQ_ONLINE, None, None, 422, "table_name"),
+        (ExperimentsType.FREQ_ONLINE, "dwh", None, 422, "primary_key"),
+        (ExperimentsType.FREQ_ONLINE, None, "id", 422, "table_name"),
         (ExperimentsType.FREQ_ONLINE, "dwh", "id", 200, None),
-        (ExperimentsType.MAB_ONLINE, "dwh", "id", 422, "table_name and primary_key are not supported"),
-        (ExperimentsType.MAB_ONLINE, None, "id", 422, "table_name and primary_key are not supported"),
-        (ExperimentsType.CMAB_ONLINE, "dwh", "id", 422, "table_name and primary_key are not supported"),
-        (ExperimentsType.CMAB_ONLINE, "dwh", None, 422, "table_name and primary_key are not supported"),
     ],
 )
-async def test_create_experiment_api_table_name_and_primary_key_presence(
+# model_construct bypasses validation intentionally, so suppress expected PydanticSerializationUnexpectedValue noise
+@pytest.mark.filterwarnings("ignore:Pydantic serializer warnings:UserWarning:pydantic")
+async def test_create_experiment_api_table_name_and_primary_key_in_design_spec(
     testing_datasource,
     aclient: AdminAPIClient,
     experiment_type: ExperimentsType,
     table_name: str | None,
     primary_key: str | None,
     expected_status: HTTPStatus,
-    expected_message: str | None,
+    expected_in_loc: str | None,
 ):
     request = make_unvalidated_create_experiment_request(
         experiment_type=experiment_type,
         table_name=table_name,
         primary_key=primary_key,
+        desired_n=1,
     )
     result = aclient.create_experiment(
         datasource_id=testing_datasource.datasource_id,
         body=request,
         raise_if_not_default_status=False,
-        desired_n=1,
     )
 
     assert result.status == expected_status, result.data
-    if expected_message is not None:
+    if expected_in_loc is not None:
         assert isinstance(result.data, AdminAPIClientHTTPValidationError)
-        print(result.data.detail[0])
-        assert expected_message in result.data.detail[0].msg
+        msgs = [d.msg for d in result.data.detail]
+        assert any("Field required" in m for m in msgs), msgs
+        locs = [loc for d in result.data.detail for loc in d.loc]
+        assert any(expected_in_loc in str(loc) for loc in locs), locs
 
 
 def test_get_experiment_assignments_not_found(testing_datasource, eclient: ExperimentsAPIClient):
@@ -378,6 +383,7 @@ async def test_both_get_experiment_assignments_endpoints_have_matching_strata_or
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
         table_name="dwh",
         primary_key="id",
+        desired_n=2,
     )
     request.design_spec = PreassignedFrequentistExperimentSpec(
         **request.design_spec.model_dump(exclude={"strata"}),
@@ -386,7 +392,6 @@ async def test_both_get_experiment_assignments_endpoints_have_matching_strata_or
     created_experiment = aclient.create_experiment(
         datasource_id=testing_datasource.ds.id,
         body=request,
-        desired_n=2,
     ).data
     aclient.commit_experiment(
         datasource_id=testing_datasource.datasource_id,

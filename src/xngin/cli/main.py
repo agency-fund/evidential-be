@@ -7,7 +7,7 @@ import logging
 import os
 import re
 import shutil
-import subprocess
+import subprocess  # noqa: S404
 import sys
 import uuid
 from compression import zstd
@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.compiler import IdentifierPreparer
 
+from xngin.apiserver.dwh import dwh_utils
 from xngin.xsecrets import secretservice
 
 if TYPE_CHECKING:
@@ -36,7 +37,6 @@ if TYPE_CHECKING:
 SA_LOGGER_NAME_FOR_CLI = "cli_dwh"
 CLI_DB_APPLICATION_NAME = f"cli-{os.getpid()}"
 
-REDSHIFT_HOSTNAME_SUFFIX = "redshift.amazonaws.com"
 TESTING_DWH_RAW_DATA = Path(__file__).resolve().parent.parent / "apiserver/testdata/testing_dwh.csv.zst"
 
 err_console = Console(stderr=True)
@@ -69,12 +69,14 @@ def create_engine_and_database(url: sqlalchemy.URL, *, connect_args: dict | None
     Only implemented for psycopg/psycopg2.
     """
     connect_args = connect_args or {}
+
     try:
         engine = create_engine(url, connect_args=connect_args, logging_name=SA_LOGGER_NAME_FOR_CLI)
+        dwh_utils.extra_engine_setup(engine)
         with engine.connect():
             print("Connected.")
     except OperationalError as exc:
-        if "postgres" not in url.drivername or (
+        if not dwh_utils.is_postgres(url) or (
             # 1st case: psycopg2 driver
             "does not exist" not in str(exc)
             # 2nd case: psycopg driver
@@ -85,6 +87,7 @@ def create_engine_and_database(url: sqlalchemy.URL, *, connect_args: dict | None
         engine = create_engine(
             url.set(database="postgres"), connect_args=connect_args, logging_name=SA_LOGGER_NAME_FOR_CLI
         )
+        dwh_utils.extra_engine_setup(engine)
         with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
             conn.execute(sqlalchemy.text(f"CREATE DATABASE {url.database}"))
         print("Reconnecting.")
@@ -201,8 +204,9 @@ def create_testing_dwh(
     bucket: Annotated[
         str | None,
         typer.Option(
-            help="Name of the temporary S3 bucket that is readable by Redshift when --iam-role is assumed. Required "
-            "when connecting to Redshift."
+            help="Name of the temporary S3 bucket that is readable by Redshift when --iam-role is "
+            "assumed, and writable with your own AWS credentials to upload & delete the temp data. "
+            "Required when connecting to Redshift."
         ),
     ] = None,
     iam_role: Annotated[
@@ -215,7 +219,7 @@ def create_testing_dwh(
     password: Annotated[str | None, typer.Option(envvar="PGPASSWORD", help="The database password.")] = None,
     create_db: Annotated[
         bool,
-        typer.Option(help="Create the database if it does not yet exist (Postgres only)."),
+        typer.Option(help="Create the database if it does not yet exist (Postgres and Redshift only)."),
     ] = False,
     allow_existing: Annotated[
         bool,
@@ -245,6 +249,8 @@ def create_testing_dwh(
 
     Due to variations in all of the above, the loaded data may vary in small ways when loaded with different data
     stores. E.g. floats may not roundtrip.
+
+    This command does not support schemas or non-trivial database names or table names consistently.
     """
 
     create_schema_ddl = f"CREATE SCHEMA IF NOT EXISTS {schema_name}" if schema_name else ""
@@ -267,9 +273,9 @@ def create_testing_dwh(
         return pd_read_csv(src, nrows=nrows)
 
     def drop_and_create(cur, create_table_ddl: str):
-        cur.execute(drop_table_ddl)
         if schema_name is not None:
             cur.execute(create_schema_ddl)
+        cur.execute(drop_table_ddl)
         print(f"Creating table:\n{truncate_with_ellipsis(create_table_ddl)}")
         cur.execute(create_table_ddl)
 
@@ -290,10 +296,10 @@ def create_testing_dwh(
         return ddl
 
     def count(cur):
-        if url.drivername == "bigquery":
-            cur.execute(f"SELECT COUNT(*) FROM `{url.database}.{table_name}`")
+        if dwh_utils.is_bigquery(url):
+            cur.execute(f"SELECT COUNT(*) FROM `{url.database}.{table_name}`")  # noqa: S608
         else:
-            cur.execute(f"SELECT COUNT(*) FROM {full_table_name}")
+            cur.execute(f"SELECT COUNT(*) FROM {full_table_name}")  # noqa: S608
         ct = cur.fetchone()[0]
         print(f"{full_table_name} has {ct} rows.")
         return ct
@@ -304,7 +310,9 @@ def create_testing_dwh(
         for view_name in views.split(","):
             qualified_view_name = f"{schema_name}.{view_name}" if schema_name else view_name
             print(f"Creating view {qualified_view_name}...")
-            cur.execute(f"CREATE OR REPLACE VIEW {qualified_view_name} AS SELECT * FROM {full_table_name}")
+            cur.execute(
+                f"CREATE OR REPLACE VIEW {qualified_view_name} AS SELECT * FROM {full_table_name}"  # noqa: S608
+            )
 
     if allow_existing:
         if create_db:
@@ -327,7 +335,7 @@ def create_testing_dwh(
         conn.close()
         engine.dispose()
 
-    if url.host and url.host.endswith(REDSHIFT_HOSTNAME_SUFFIX):
+    if dwh_utils.is_redshift(url):
         import boto3  # noqa: PLC0415
 
         if not bucket:
@@ -368,14 +376,14 @@ def create_testing_dwh(
                 print("Deleting temporary file...")
                 s3.delete_object(Bucket=bucket, Key=key)
             maybe_create_views(cur)
-    elif url.drivername == "bigquery":
+    elif dwh_utils.is_bigquery(url):
         import pandas_gbq  # noqa: PLC0415
 
         df = read_csv()
         destination_table = f"{url.database}.{table_name}"
         print("Loading using an inferred schema (warning: may lose fidelity!)...")
         pandas_gbq.to_gbq(df, destination_table, project_id=url.host, if_exists="replace")
-    elif url.get_driver_name() in {"psycopg", "psycopg2"}:
+    elif dwh_utils.is_postgres(url):
         engine = create_engine_and_database(url)
         ddl = get_ddl_magic(engine.dialect.identifier_preparer, "postgres")
         with engine.begin() as conn:
@@ -668,6 +676,8 @@ def generate_typed_clients():
     root = Path("src/xngin/apiserver/testing")
     eapi_path = root / "experiments_api_client.py"
     aapi_path = root / "admin_api_client.py"
+    iadminapi_path = root / "admin_integrations_api_client.py"
+    iapi_path = root / "integrations_api_client.py"
 
     print(f"Generating ExperimentsAPIClient: {eapi_path}")
     fastapi_typed_client.generate_fastapi_typed_client(
@@ -684,6 +694,22 @@ def generate_typed_clients():
         raise_if_not_default_status=True,
         title="AdminAPIClient",
     )
+    print(f"Generating AdminIntegrationsAPIClient: {iadminapi_path}")
+    fastapi_typed_client.generate_fastapi_typed_client(
+        "xngin.apiserver.routers.admin_integrations.admin_integrations_api:router",
+        output_path=iadminapi_path,
+        raise_if_not_default_status=True,
+        title="AdminIntegrationsAPIClient",
+    )
+
+    print(f"Generating IntegrationsAPIClient: {iapi_path}")
+    fastapi_typed_client.generate_fastapi_typed_client(
+        "xngin.apiserver.routers.integrations.integrations_api:router",
+        include_security_params=True,
+        output_path=iapi_path,
+        raise_if_not_default_status=True,
+        title="IntegrationsAPIClient",
+    )
 
     ruff_bin = shutil.which("ruff")
     if ruff_bin is None:
@@ -691,12 +717,14 @@ def generate_typed_clients():
 
     print("Formatting generated files...")
     try:
-        subprocess.run(
+        subprocess.run(  # noqa: S603
             [
                 ruff_bin,
                 "format",
                 eapi_path,
                 aapi_path,
+                iadminapi_path,
+                iapi_path,
             ],
             check=True,
         )

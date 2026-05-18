@@ -22,6 +22,7 @@ from pydantic import (
 from sqlalchemy import make_url
 
 from xngin.apiserver.certs import get_amazon_trust_ca_bundle_path
+from xngin.apiserver.dwh import dwh_utils
 from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.routers.common_api_types import (
     validate_gcp_service_account_info_json,
@@ -298,9 +299,9 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
         the GOOGLE_APPLICATION_CREDENTIALS environment variable.
         """
 
-        if url.startswith("bigquery"):
+        parsed_url = make_url(url)
+        if dwh_utils.is_bigquery(parsed_url):
             # This ignores URL-encoded bigquery credentials from the query string
-            parsed_url = make_url(url)
             credentials = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", None)
             if credentials is None:
                 raise ValueError("GOOGLE_APPLICATION_CREDENTIALS must be set when using Dsn.from_url.")
@@ -311,8 +312,7 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
                 credentials=GcpServiceAccountFile(type="serviceaccountfile", path=credentials),
             )
 
-        if url.startswith("postgres"):
-            parsed_url = make_url(url)
+        if dwh_utils.is_postgres(parsed_url):
             return Dsn(
                 driver=f"postgresql+{parsed_url.get_driver_name()}",
                 host=parsed_url.host,
@@ -323,10 +323,11 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
                 sslmode=parsed_url.query.get("sslmode", "verify-ca"),
                 search_path=parsed_url.query.get("search_path", None),
             )
-        raise NotImplementedError(f"Dsn.from_url() only supports postgres databases: {url}")
+
+        raise NotImplementedError(f"Dsn.from_url() only supports Postgres and BigQuery databases: {url}")
 
     def is_redshift(self):
-        return self.host.endswith("redshift.amazonaws.com")
+        return dwh_utils.is_redshift(self.host)
 
     def to_sqlalchemy_url(self):
         url = sqlalchemy.URL.create(

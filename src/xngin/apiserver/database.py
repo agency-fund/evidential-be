@@ -35,7 +35,7 @@ def get_server_database_url():
     """Gets a SQLAlchemy-compatible URL string from the environment."""
     if database_url := flags.DATABASE_URL:
         with_dialect = generic_url_to_sa_url(database_url)
-        safe_url = make_url(with_dialect).set(password="redacted")
+        safe_url = make_url(with_dialect).set(password="redacted")  # noqa: S106
         logger.info(f"Using application database DSN: {safe_url}")
         return with_dialect
     raise ValueError("DATABASE_URL is not set")

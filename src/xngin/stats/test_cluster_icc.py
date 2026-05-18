@@ -1,6 +1,4 @@
-"""
-Tests for ICC calculation from dataframes.
-"""
+"""Tests for ICC calculations from dataframes."""
 
 import numpy as np
 import pandas as pd

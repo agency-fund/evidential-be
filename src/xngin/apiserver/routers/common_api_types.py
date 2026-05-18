@@ -79,6 +79,28 @@ class DesignSpecMetricBase(ApiBaseModel):
         Field(description="Absolute target value = metric_baseline*(1 + metric_pct_change)"),
     ] = None
 
+    # Cluster randomization design parameters (all must be set together, or none).
+    icc: Annotated[
+        float | None,
+        Field(description="Intracluster correlation coefficient for cluster-randomized designs."),
+    ] = None
+    avg_cluster_size: Annotated[
+        float | None,
+        Field(description="Average number of individuals per cluster."),
+    ] = None
+    cv: Annotated[
+        float | None,
+        Field(description="Coefficient of variation in cluster sizes (0 = equal sizes)."),
+    ] = None
+
+    @model_validator(mode="after")
+    def cluster_fields_check(self) -> Self:
+        """Enforce that cluster fields are either all set or all unset."""
+        cluster_fields = (self.icc, self.avg_cluster_size, self.cv)
+        if any(f is not None for f in cluster_fields) and any(f is None for f in cluster_fields):
+            raise ValueError("icc, avg_cluster_size, and cv must all be set together or all be None")
+        return self
+
 
 class DesignSpecMetric(DesignSpecMetricBase):
     """Defines a metric to measure in an experiment with its baseline stats."""
@@ -453,11 +475,11 @@ class BanditArmAnalysis(ArmBandit):
 
     post_pred_mean: Annotated[
         float,
-        Field(description="Prior predictive mean for this arm."),
+        Field(description="Posterior predictive mean for this arm."),
     ]
     post_pred_stdev: Annotated[
         float,
-        Field(description="Prior predictive standard deviation for this arm."),
+        Field(description="Posterior predictive standard deviation for this arm."),
     ]
     post_pred_ci_upper: Annotated[
         float,
@@ -581,6 +603,7 @@ class MetricPowerAnalysisMessage(ApiBaseModel):
         ),
     ]
     values: dict[str, float | int] | None = None
+    high_cluster_variation: bool = False
 
 
 class MetricPowerAnalysis(ApiBaseModel):
@@ -622,61 +645,38 @@ class MetricPowerAnalysis(ApiBaseModel):
         ),
     ] = None
 
+    pct_change_with_desired_n: Annotated[
+        float | None,
+        Field(
+            description=(
+                "The MDE achievable given design_spec.desired_n, confidence, and power. "
+                "Only present when design_spec.desired_n is set (frequentist design specs)."
+            )
+        ),
+    ] = None
+
     msg: Annotated[
         MetricPowerAnalysisMessage | None,
         Field(description="Human friendly message about the above results."),
     ] = None
 
-
-class ClusterMetricPowerAnalysis(MetricPowerAnalysis):
-    """
-    Power analysis results for cluster-randomized designs.
-
-    Extends MetricPowerAnalysis with cluster-specific information
-    for designs where randomization occurs at the cluster level
-    (e.g., schools, hospitals, clinics) rather than individual level.
-
-    Note: Cluster-specific fields will be None if the power analysis failed
-    (e.g., missing baseline, zero variance, insufficient data).
-    """
-
-    # Design parameters (always present - user provides these)
-    icc: Annotated[
-        float,
-        Field(description="Intracluster correlation coefficient used in calculation"),
-    ]
-
-    avg_cluster_size: Annotated[
-        float,
-        Field(description="Average number of individuals per cluster"),
-    ]
-
-    cv: Annotated[
-        float,
-        Field(description="Coefficient of variation in cluster sizes (0 = equal sizes)"),
-    ] = 0.0
-
-    # Results (None if analysis failed)
+    # Cluster randomization results (None for non-cluster designs)
     num_clusters_total: Annotated[
         int | None,
         Field(description="Total number of clusters needed across all arms"),
     ] = None
-
     clusters_per_arm: Annotated[
         list[int] | None,
         Field(description="Number of clusters needed for each arm (one entry per arm)"),
     ] = None
-
     n_per_arm: Annotated[
         list[int] | None,
         Field(description="Number of participants for each arm (one entry per arm)"),
     ] = None
-
     design_effect: Annotated[
         float | None,
         Field(description="Design effect (DEFF) - clustering penalty multiplier"),
     ] = None
-
     effective_sample_size: Annotated[
         int | None,
         Field(description="Effective sample size accounting for clustering (total_n / DEFF)"),
@@ -864,6 +864,31 @@ class BaseDesignSpec(ApiBaseModel):
 class BaseFrequentistDesignSpec(BaseDesignSpec):
     """Experiment design parameters for frequentist experiments."""
 
+    table_name: Annotated[
+        str,
+        Field(
+            max_length=MAX_LENGTH_OF_NAME_VALUE,
+            description="Datasource table used to resolve participant field metadata.",
+        ),
+    ]
+    primary_key: Annotated[
+        FieldName,
+        Field(description="Column name in table_name that uniquely identifies each participant."),
+    ]
+
+    cluster_key: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "Column name in table_name that identifies clusters for a cluster-randomized design. "
+                "When set, per-metric icc, avg_cluster_size, and cv are either supplied on each "
+                "metric or computed from this column at power_check time. "
+                "When None, the design is assumed to be individual-randomized."
+            ),
+        ),
+    ] = None
+
     # Frequentist config params
     strata: Annotated[
         list[Stratum],
@@ -898,8 +923,11 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         int | None,
         Field(
             default=None,
-            description="Optional desired sample size for MDE calculation. "
-            "If provided, calculates minimum detectable effect instead of required sample size.",
+            ge=0,
+            description="Used in both power calculations and experiment creation. "
+            "Required for *creation* of preassigned experiments. "
+            "Optional for power calculations; if set, calculates minimum detectable effect for the "
+            "desired size in addition to the min sample size. ",
         ),
     ] = None
 
@@ -939,6 +967,13 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
     def serialize_dt(self, dt: datetime.datetime, _info):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
         return dt.isoformat()
+
+    @model_validator(mode="after")
+    def validate_strata(self) -> Self:
+        """Validate that the strata are valid."""
+        if any(stratum.field_name == self.primary_key for stratum in self.strata):
+            raise ValueError(f"Primary key {self.primary_key} cannot be used in strata.")
+        return self
 
 
 class BaseBanditExperimentSpec(BaseDesignSpec):
@@ -1067,22 +1102,24 @@ class CMABExperimentSpec(BaseBanditExperimentSpec):
     experiment_type: Literal[ExperimentsType.CMAB_ONLINE] = ExperimentsType.CMAB_ONLINE
 
 
-class BayesABExperimentSpec(BaseBanditExperimentSpec):
-    """Use this type to randomly assign participants into arms during live experiment execution with
-    Bayesian A/B experiments.
+type AnyFrequentistDesignSpec = Annotated[
+    PreassignedFrequentistExperimentSpec | OnlineFrequentistExperimentSpec,
+    Field(
+        discriminator="experiment_type",
+        description="The specific type of frequentist experiment design.",
+    ),
+]
 
-    For example, you may wish to experiment on new users. Assignments are issued via API request.
-    """
-
-    experiment_type: Literal[ExperimentsType.BAYESAB_ONLINE] = ExperimentsType.BAYESAB_ONLINE
-
+type AnyBanditDesignSpec = Annotated[
+    MABExperimentSpec | CMABExperimentSpec,
+    Field(
+        discriminator="experiment_type",
+        description="The specific type of bandit experiment design.",
+    ),
+]
 
 type DesignSpec = Annotated[
-    PreassignedFrequentistExperimentSpec
-    | OnlineFrequentistExperimentSpec
-    | MABExperimentSpec
-    | CMABExperimentSpec
-    | BayesABExperimentSpec,
+    AnyFrequentistDesignSpec | AnyBanditDesignSpec,
     Field(
         discriminator="experiment_type",
         description="The type of assignment and experiment design.",
@@ -1091,18 +1128,7 @@ type DesignSpec = Annotated[
 
 
 class PowerRequest(ApiBaseModel):
-    design_spec: DesignSpec
-    table_name: Annotated[
-        str,
-        Field(description="Table name for ad-hoc power calculations. Fields are verified against the inspected table."),
-    ]
-    primary_key: Annotated[str, Field(description="Primary key field name.")]
-
-    @model_validator(mode="after")
-    def check_table_name_and_primary_key_together(self) -> Self:
-        if (self.table_name is None) != (self.primary_key is None):
-            raise ValueError("table_name and primary_key must be provided together or both omitted")
-        return self
+    design_spec: AnyFrequentistDesignSpec
 
 
 class PowerResponse(ApiBaseModel):
@@ -1260,21 +1286,6 @@ class CreateExperimentRequest(ApiBaseModel):
             ),
         ),
     ] = []
-    table_name: Annotated[
-        str | None,
-        Field(
-            default=None,
-            description="Optional table name for creating experiments without a pre-registered participant type. "
-            "When provided with primary_key, inspects the datasource table to derive experiment field metadata.",
-        ),
-    ] = None
-    primary_key: Annotated[
-        str | None,
-        Field(
-            default=None,
-            description="Optional primary key field name. Must be provided together with table_name.",
-        ),
-    ] = None
 
     @field_validator("webhooks")
     @classmethod
@@ -1284,17 +1295,7 @@ class CreateExperimentRequest(ApiBaseModel):
             raise ValueError("Webhook IDs must be unique")
         return v
 
-    @model_validator(mode="after")
-    def check_table_name_and_primary_key_exist_for_frequentist_only(self) -> Self:
-        if self.design_spec.experiment_type in {ExperimentsType.FREQ_ONLINE, ExperimentsType.FREQ_PREASSIGNED}:
-            if self.table_name is None or self.primary_key is None:
-                raise ValueError("table_name and primary_key must be provided together for frequentist experiments.")
-        elif self.table_name is not None or self.primary_key is not None:
-            raise ValueError("table_name and primary_key are not supported for non-frequentist experiments.")
-        return self
 
-
-# TODO: make this class work with the Bayesian experiment types and their Draw records.
 class AssignSummary(ApiBaseModel):
     """Key pieces of an AssignResponse without the assignments."""
 
@@ -1439,6 +1440,14 @@ class UpdateBanditArmOutcomeRequest(ApiBaseModel):
     """Describes the outcome of a bandit experiment."""
 
     outcome: float
+
+
+class TurnConfigResponse(ApiBaseModel):
+    """Describes the configuration for Turn.io Evidential App."""
+
+    experiment_id: str
+    experiment_name: str
+    arm_journey_map: dict[str, str]
 
 
 def validate_gcp_service_account_info_json(serviceaccount_json):
