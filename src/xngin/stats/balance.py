@@ -176,17 +176,14 @@ def check_balance_of_preprocessed_df(
     exog = exog.astype(np.float64)
     endog = df_analysis[treatment_col].astype(np.float64)
 
+    # While HC3 may be better at low sample sizes (Long & Ervin 2000), it is sensitive to high
+    # leverage points, so use HC1 for now. Future work should consider:
+    # https://blog.stata.com/2022/10/06/heteroskedasticity-robust-standard-errors-some-practical-considerations/
+    fit_kwargs: dict[str, str | dict] = dict(method="pinv", cov_type="HC1")
     if cluster_col is not None:
-        model = sm.OLS(endog, exog).fit(
-            method="pinv",
-            cov_type="cluster",
-            cov_kwds={"groups": df_analysis[cluster_col]},
-        )
-    else:
-        # While HC3 may be better at low sample sizes (Long & Ervin 2000), it is sensitive to high
-        # leverage points, so use HC1 for now. Future work should consider:
-        # https://blog.stata.com/2022/10/06/heteroskedasticity-robust-standard-errors-some-practical-considerations/
-        model = sm.OLS(endog, exog).fit(method="pinv", cov_type="HC1")
+        fit_kwargs.update(cov_type="cluster", cov_kwds={"groups": df_analysis[cluster_col]})
+
+    model = sm.OLS(endog, exog).fit(**fit_kwargs)
 
     return BalanceResult(
         f_statistic=model.fvalue,

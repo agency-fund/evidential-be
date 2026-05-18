@@ -15,6 +15,7 @@ from xngin.stats.stats_errors import StatsAssignmentError, StatsBalanceError
 
 STOCHATREAT_STRATUM_ID_NAME = "stratum_id"
 STOCHATREAT_TREAT_NAME = "treat"
+CLUSTER_SIZE_COL_NAME = "_xngin_cluster_size"
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -148,12 +149,7 @@ def _assign_individuals_to_arms(
         )
 
     # Do stratified random assignment
-    # Calculate probabilities from weights or use equal allocation
-    if arm_weights is not None:
-        total_weight = sum(arm_weights)
-        probs = [w / total_weight for w in arm_weights]
-    else:
-        probs = [1 / n_arms] * n_arms
+    probs = _arm_weights_to_probs(arm_weights, n_arms)
 
     treatment_status = stochatreat(
         data=df_cleaned,
@@ -231,14 +227,9 @@ def _assign_clusters_to_arms(
         caller-provided stratification dimensions.
     """
     # Build a cluster-level DataFrame with one row per cluster and its size.
-    cluster_df = df.groupby(cluster_col).size().reset_index(name="cluster_size")
+    cluster_df = df.groupby(cluster_col).size().reset_index(name=CLUSTER_SIZE_COL_NAME)
 
-    # Calculate probabilities from weights or use equal allocation.
-    if arm_weights is not None:
-        total_weight = sum(arm_weights)
-        probs = [w / total_weight for w in arm_weights]
-    else:
-        probs = [1 / n_arms] * n_arms
+    probs = _arm_weights_to_probs(arm_weights, n_arms)
 
     # Preprocess cluster sizes into buckets for stratification.
     cluster_df_cleaned, exclude_cols_set, numeric_notnull_set = preprocess_for_balance_and_stratification(
@@ -251,7 +242,7 @@ def _assign_clusters_to_arms(
     treatment_status = stochatreat(
         data=cluster_df_cleaned,
         idx_col=cluster_col,
-        stratum_cols=["cluster_size"],
+        stratum_cols=[CLUSTER_SIZE_COL_NAME],
         treats=n_arms,
         probs=probs,
         random_state=random_state,  # type: ignore[arg-type]
@@ -283,7 +274,7 @@ def _assign_clusters_to_arms(
         df_cleaned=cluster_df_cleaned.merge(treatment_status, on=cluster_col),
         numeric_notnull_set=numeric_notnull_set,
     )
-    balance_check_cols = ["cluster_size", STOCHATREAT_TREAT_NAME]
+    balance_check_cols = [CLUSTER_SIZE_COL_NAME, STOCHATREAT_TREAT_NAME]
     try:
         balance_result = check_balance_of_preprocessed_df(
             cluster_df_for_balance[balance_check_cols],
@@ -300,6 +291,15 @@ def _assign_clusters_to_arms(
         stratum_cols=[],
         arm_pop=np.bincount(treatment_ids, minlength=n_arms),
     )
+
+
+def _arm_weights_to_probs(arm_weights: list[float] | None, n_arms: int) -> list[float]:
+    """Convert optional arm weights into assignment probabilities else use equal allocation."""
+    if arm_weights is None:
+        return [1 / n_arms] * n_arms
+
+    total_weight = sum(arm_weights)
+    return [w / total_weight for w in arm_weights]
 
 
 def simple_random_assignment(
