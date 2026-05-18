@@ -69,8 +69,8 @@
 | src/xngin/events/common.py                                                         |        7 |        1 |     86% |        14 |
 | src/xngin/events/experiment\_created.py                                            |       13 |        1 |     92% |        24 |
 | src/xngin/ops/sentry.py                                                            |       13 |        6 |     54% |     18-40 |
-| src/xngin/stats/assignment.py                                                      |       61 |        1 |     98% |       131 |
-| src/xngin/stats/balance.py                                                         |       67 |        2 |     97% |  110, 138 |
+| src/xngin/stats/assignment.py                                                      |       86 |        2 |     98% |  168, 260 |
+| src/xngin/stats/balance.py                                                         |       74 |        2 |     97% |  110, 141 |
 | src/xngin/stats/bandit\_analysis.py                                                |       73 |        4 |     95% |134, 136, 199-200 |
 | src/xngin/stats/bandit\_sampling.py                                                |       86 |        7 |     92% |184, 215, 222, 250, 274, 276, 308 |
 | src/xngin/stats/bandit\_weights\_to\_prior.py                                      |       50 |        2 |     96% |   75, 138 |
@@ -87,7 +87,7 @@
 | src/xngin/xsecrets/secretservice.py                                                |       63 |        5 |     92% |37, 49-50, 108, 130 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                                     |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                                         |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                                          | **13394** |  **868** | **94%** |           |
+| **TOTAL**                                                                          | **13513** |  **869** | **94%** |           |
 
 78 files skipped due to complete coverage.
 
