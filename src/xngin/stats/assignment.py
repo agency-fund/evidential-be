@@ -11,10 +11,11 @@ from xngin.stats.balance import (
     preprocess_for_balance_and_stratification,
     restore_original_numeric_columns,
 )
-from xngin.stats.stats_errors import StatsAssignmentError
+from xngin.stats.stats_errors import StatsAssignmentError, StatsBalanceError
 
 STOCHATREAT_STRATUM_ID_NAME = "stratum_id"
 STOCHATREAT_TREAT_NAME = "treat"
+CLUSTER_SIZE_COL_NAME = "_xngin_cluster_size"
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -34,28 +35,36 @@ class AssignmentResult:
 
 def assign_treatment_and_check_balance(
     df: pd.DataFrame,
+    *,
     stratum_cols: list[str],
     id_col: str,
     n_arms: int,
     quantiles: int = 4,
     random_state: int | None = None,
     arm_weights: list[float] | None = None,
+    cluster_col: str | None = None,
 ) -> AssignmentResult:
     """
-    Perform stratified random assignment and do a balance check of the arm assignments.
+    Perform random assignment and do a balance check of the arm assignments.
 
     Note: Python Decimal types must be converted to float before calling this function, else will be
     treated as a Categorical variable.
 
     Args:
         df: pandas DataFrame containing the data (Decimal types should be converted to float)
-        stratum_cols: List of column names to stratify on
+        stratum_cols: List of column names to stratify on for non-clustered assignment.
         id_col: Name of column containing unit identifiers
         n_arms: Number of arms in your experiment
         quantiles: number of buckets to use for stratification of numerics
         random_state: Random seed for reproducibility
         arm_weights: Optional list of weights (summing to 100) for unbalanced arm allocation.
-                     If None, uses equal allocation.
+                     If None, uses equal allocation. When ``cluster_col`` is provided, these
+                     weights are applied at the cluster level rather than the participant level.
+        cluster_col: Optional cluster identifier column. When provided, assignments happen at the
+                     cluster level and are broadcast back to individual rows. In this mode we do
+                     NOT support additional caller-provided strata beyond internal cluster-size
+                     bucketing, so ``stratum_cols`` is ignored and the returned ``stratum_cols``
+                     will be empty.
 
     Returns:
         AssignmentResult containing:
@@ -63,9 +72,42 @@ def assign_treatment_and_check_balance(
             stratum_ids - list of stratum ids starting from 0, one per row in the dataframe.
                 May be useful if you wish to do any post-hoc analyses by stratum.
             balance_result - BalanceResult object containing the balance check results.
-            stratum_cols - deduplicated and sorted list of stratum_cols.
-                May be useful for referencing original db values used in your df.
+            stratum_cols - deduplicated and sorted list of stratum_cols for *individual*
+                assignment. Empty for clustered assignment.
     """
+    if cluster_col is not None:
+        return _assign_clusters_to_arms(
+            df=df,
+            id_col=id_col,
+            cluster_col=cluster_col,
+            n_arms=n_arms,
+            quantiles=quantiles,
+            random_state=random_state,
+            arm_weights=arm_weights,
+        )
+
+    return _assign_individuals_to_arms(
+        df=df,
+        id_col=id_col,
+        stratum_cols=stratum_cols,
+        n_arms=n_arms,
+        quantiles=quantiles,
+        random_state=random_state,
+        arm_weights=arm_weights,
+    )
+
+
+def _assign_individuals_to_arms(
+    df: pd.DataFrame,
+    *,
+    id_col: str,
+    stratum_cols: list[str],
+    n_arms: int,
+    quantiles: int = 4,
+    random_state: int | None = None,
+    arm_weights: list[float] | None = None,
+) -> AssignmentResult:
+    """Helper to assign individuals to arms using stratified random assignment and do a balance check."""
     if id_col in stratum_cols:
         raise StatsAssignmentError(f"Columns with only unique values should not be used as strata: {id_col}")
 
@@ -107,12 +149,7 @@ def assign_treatment_and_check_balance(
         )
 
     # Do stratified random assignment
-    # Calculate probabilities from weights or use equal allocation
-    if arm_weights is not None:
-        total_weight = sum(arm_weights)
-        probs = [w / total_weight for w in arm_weights]
-    else:
-        probs = [1 / n_arms] * n_arms
+    probs = _arm_weights_to_probs(arm_weights, n_arms)
 
     treatment_status = stochatreat(
         data=df_cleaned,
@@ -159,6 +196,110 @@ def assign_treatment_and_check_balance(
         stratum_cols=orig_stratum_cols,
         arm_pop=np.bincount(treatment_ids, minlength=n_arms),
     )
+
+
+def _assign_clusters_to_arms(
+    df: pd.DataFrame,
+    id_col: str,
+    cluster_col: str,
+    n_arms: int,
+    quantiles: int = 4,
+    random_state: int | None = None,
+    arm_weights: list[float] | None = None,
+) -> AssignmentResult:
+    """
+    Assign clusters to arms as a unit using cluster-size bucketing, and run a balance check.
+
+    Args:
+        df: pandas DataFrame containing the data
+        id_col: Name of column containing unit identifiers
+        cluster_col: Name of column containing cluster identifiers
+        n_arms: Number of arms in your experiment
+        quantiles: number of buckets to use for stratification of cluster sizes
+        random_state: Random seed for reproducibility
+        arm_weights: Optional list of weights (summing to 100) for unbalanced arm allocation.
+                     If None, uses equal allocation. These weights are applied over clusters,
+                     not participants.
+
+    Returns:
+        AssignmentResult containing treatment_ids, stratum_ids, balance_result, and arm_pop.
+        ``stratum_cols`` is always empty because cluster assignment does not support
+        caller-provided stratification dimensions.
+    """
+    # Build a cluster-level DataFrame with one row per cluster and its size.
+    cluster_df = df.groupby(cluster_col).size().reset_index(name=CLUSTER_SIZE_COL_NAME)
+
+    probs = _arm_weights_to_probs(arm_weights, n_arms)
+
+    # Preprocess cluster sizes into buckets for stratification.
+    cluster_df_cleaned, exclude_cols_set, numeric_notnull_set = preprocess_for_balance_and_stratification(
+        data=cluster_df,
+        exclude_cols=[cluster_col],
+        quantiles=quantiles,
+    )
+
+    # Assign clusters to arms stratified by cluster size buckets.
+    treatment_status = stochatreat(
+        data=cluster_df_cleaned,
+        idx_col=cluster_col,
+        stratum_cols=[CLUSTER_SIZE_COL_NAME],
+        treats=n_arms,
+        probs=probs,
+        random_state=random_state,  # type: ignore[arg-type]
+    )
+
+    # Merge arm and stratum assignments back to cluster level.
+    cluster_df = cluster_df.merge(treatment_status, on=cluster_col)
+
+    # Broadcast cluster-level assignments to individual level.
+    df_with_assignments = df.merge(
+        cluster_df[[cluster_col, STOCHATREAT_TREAT_NAME, STOCHATREAT_STRATUM_ID_NAME]], on=cluster_col
+    )
+
+    if len(df) != len(df_with_assignments):
+        raise StatsAssignmentError(
+            f"Expected {len(df)} assignments but only have {len(df_with_assignments)}. "
+            f"Check if your {cluster_col} values could be causing problems."
+        )
+
+    treatment_ids = df_with_assignments[STOCHATREAT_TREAT_NAME]
+    stratum_ids = df_with_assignments[STOCHATREAT_STRATUM_ID_NAME]
+
+    # Run balance check at the cluster level. If cluster sizes are all equal,
+    # cluster_size is excluded as a constant column and no balance check is possible.
+    # This is consistent with the individual path which returns balance_result=None
+    # when no usable stratification columns exist.
+    cluster_df_for_balance = restore_original_numeric_columns(
+        df_orig=cluster_df,
+        df_cleaned=cluster_df_cleaned.merge(treatment_status, on=cluster_col),
+        numeric_notnull_set=numeric_notnull_set,
+    )
+    balance_check_cols = [CLUSTER_SIZE_COL_NAME, STOCHATREAT_TREAT_NAME]
+    try:
+        balance_result = check_balance_of_preprocessed_df(
+            cluster_df_for_balance[balance_check_cols],
+            treatment_col=STOCHATREAT_TREAT_NAME,
+            exclude_col_set=exclude_cols_set,
+        )
+    except StatsBalanceError:
+        balance_result = None
+
+    return AssignmentResult(
+        treatment_ids=list(treatment_ids),
+        stratum_ids=list(stratum_ids),
+        balance_result=balance_result,
+        stratum_cols=[],
+        arm_pop=np.bincount(treatment_ids, minlength=n_arms),
+    )
+
+
+def _arm_weights_to_probs(arm_weights: list[float] | None, n_arms: int) -> list[float]:
+    """Convert optional arm weights into assignment probabilities else use equal allocation."""
+    if arm_weights is None:
+        return [1 / n_arms] * n_arms
+
+    total_weight = sum(arm_weights)
+    return [w / total_weight for w in arm_weights]
 
 
 def simple_random_assignment(
