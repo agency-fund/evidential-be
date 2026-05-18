@@ -73,6 +73,18 @@ def _set_experiment_fields_from_design_spec(
         experiment_filters=[],
     )
 
+    if design_spec.cluster_key:
+        cluster_key_name = design_spec.cluster_key
+        field = fields_used_map.get(cluster_key_name)
+        if field is None:
+            field = tables.ExperimentField(
+                field_name=cluster_key_name,
+                data_type=field_type_map.get(cluster_key_name, DataType.UNKNOWN).value,
+                experiment_filters=[],
+            )
+            fields_used_map[cluster_key_name] = field
+        field.is_cluster_key = True
+
     # Add filters. Fields used as filters technically could be reused with different filter values.
     for idx, filter_item in enumerate(design_spec.filters):
         field = fields_used_map.get(filter_item.field_name)
@@ -265,11 +277,13 @@ class ExperimentStorageConverter:
                     f"Frequentist experiment {self.experiment.id} "
                     "is missing datasource_table or unique participant key field."
                 )
+            cluster_key_field = self.experiment.cluster_key_field()
 
             return TypeAdapter(capi.DesignSpec).validate_python({
                 **base_experiment_dict,
                 "table_name": self.experiment.datasource_table,
                 "primary_key": primary_key_field.field_name,
+                "cluster_key": cluster_key_field.field_name if cluster_key_field else None,
                 "arms": [
                     {
                         "arm_id": arm.id,

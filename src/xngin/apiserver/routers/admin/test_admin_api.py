@@ -4213,3 +4213,40 @@ async def test_power_check_cluster_with_manual_and_db_derived_metrics(testing_da
         dwh_analysis.target_n / dwh_analysis.metric_spec.avg_cluster_size
     )
     assert dwh_analysis.clusters_per_arm == [602, 602]
+
+
+async def test_create_freq_preassigned_experiment_with_cluster_key_roundtrips(
+    testing_datasource,
+    aclient: AdminAPIClient,
+):
+    """cluster_key set on the design spec should survive save and reload."""
+    datasource_id = testing_datasource.ds.id
+    experiment_request = CreateExperimentRequest(
+        design_spec=PreassignedFrequentistExperimentSpec(
+            experiment_type="freq_preassigned",
+            experiment_name="Cluster key roundtrip",
+            description="Verify cluster_key is persisted and read back.",
+            table_name="clustered_dwh",
+            primary_key="participant_id",
+            cluster_key="cluster_powerlaw",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
+            arms=[
+                Arm(arm_name="control", arm_description="Control"),
+                Arm(arm_name="treatment", arm_description="Treatment"),
+            ],
+            metrics=[DesignSpecMetricRequest(field_name="test_score", metric_pct_change=5)],
+            strata=[],
+            filters=[],
+            desired_n=100,
+        ),
+        webhooks=[],
+    )
+
+    created = aclient.create_experiment(datasource_id=datasource_id, body=experiment_request, random_state=42).data
+    assert isinstance(created.design_spec, PreassignedFrequentistExperimentSpec)
+    assert created.design_spec.cluster_key == "cluster_powerlaw"
+
+    fetched = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=created.experiment_id).data
+    assert isinstance(fetched.config.design_spec, PreassignedFrequentistExperimentSpec)
+    assert fetched.config.design_spec.cluster_key == "cluster_powerlaw"

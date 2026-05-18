@@ -531,6 +531,9 @@ class Experiment(Base):
     def unique_id_field(self) -> ExperimentField | None:
         return next((f for f in self.experiment_fields if f.is_unique_id), None)
 
+    def cluster_key_field(self) -> ExperimentField | None:
+        return next((f for f in self.experiment_fields if f.is_cluster_key), None)
+
 
 class Arm(Base):
     """Representation of arms of an experiment."""
@@ -655,6 +658,10 @@ class ExperimentField(Base):
     # Unique ID metadata:
     # is_unique_id is true when this field is used as the experiment's unique ID.
     is_unique_id: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
+    # Cluster key metadata:
+    # is_cluster_key is true when this field is used as the cluster identifier for
+    # cluster-randomized experiments.
+    is_cluster_key: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
     # Strata metadata
     is_strata: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
     # Metrics metadata:
