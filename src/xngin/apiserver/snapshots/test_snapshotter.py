@@ -62,7 +62,7 @@ async def make_experiment(
         case _:
             assert_never(design_spec)
 
-    experiment_converter = ExperimentStorageConverter.init_from_components(
+    experiment_converter = await ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
         organization_id=datasource.organization_id,
         design_spec=design_spec,

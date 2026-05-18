@@ -321,7 +321,7 @@ async def create_preassigned_experiment_impl(
     )
     balance_check = make_balance_check(assignment_result.balance_result, design_spec.fstat_thresh)
 
-    experiment_converter = ExperimentStorageConverter.init_from_components(
+    experiment_converter = await ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
         design_spec=design_spec,
@@ -369,7 +369,7 @@ async def create_freq_online_experiment_impl(
     if not isinstance(design_spec, OnlineFrequentistExperimentSpec):
         raise MismatchedExperimentTypeError(f"Can't create freq online exp of type: {design_spec.experiment_type}")
 
-    experiment_converter = ExperimentStorageConverter.init_from_components(
+    experiment_converter = await ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
         design_spec=design_spec,
@@ -409,7 +409,7 @@ async def create_bandit_online_experiment_impl(
         case _:
             raise MismatchedExperimentTypeError(f"can't create bandit exp of type: {design_spec.experiment_type}")
 
-    experiment_converter = ExperimentStorageConverter.init_from_components(
+    experiment_converter = await ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
         design_spec=design_spec,

@@ -263,7 +263,7 @@ async def make_insertable_experiment(
         assert isinstance(design_spec, PreassignedFrequentistExperimentSpec | OnlineFrequentistExperimentSpec)
         field_type_map = await fetch_fields_or_raise(datasource, design_spec)
 
-    experiment_converter = ExperimentStorageConverter.init_from_components(
+    experiment_converter = await ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
         organization_id=datasource.organization_id,
         design_spec=design_spec,
