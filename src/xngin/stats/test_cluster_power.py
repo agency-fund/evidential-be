@@ -13,6 +13,7 @@ from xngin.stats.cluster_power import (
     calculate_design_effect,
     calculate_effective_sample_size,
     calculate_num_clusters_needed,
+    solve_for_mde_cluster,
     solve_for_mde_cluster_impl,
     solve_for_sample_size_cluster,
 )
@@ -346,6 +347,65 @@ def test_solve_for_mde_cluster_impl_with_cv():
     assert target_no_cv == pytest.approx(110.3, rel=0.01)
     assert target_high_cv == pytest.approx(116.89, rel=0.01)
     assert pct_high_cv > pct_no_cv
+
+
+def test_solve_for_mde_cluster_populates_all_fields():
+    """In MDE mode, the wrapper populates per-arm cluster counts, DEFF, and effective_n
+    so the FE doesn't fall back to stale values from a prior power check."""
+    metric = DesignSpecMetric(
+        field_name="reading_score",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_stddev=20,
+        icc=0.15,
+        avg_cluster_size=30,
+        cv=0.0,
+    )
+
+    analysis = solve_for_mde_cluster(metric=metric, desired_n=600, n_arms=2)
+
+    # MDE math itself is unchanged from the existing _impl tests.
+    assert analysis.target_n == 600
+    assert analysis.target_possible == pytest.approx(110.68, rel=0.01)
+    assert analysis.pct_change_possible == pytest.approx(0.1068, rel=0.01)
+    assert analysis.sufficient_n is None  # not applicable in MDE mode
+
+    # The new fields.
+    expected_deff = calculate_design_effect(icc=0.15, avg_cluster_size=30, cv=0.0)
+    assert analysis.design_effect == pytest.approx(expected_deff)
+    assert analysis.effective_sample_size == calculate_effective_sample_size(600, expected_deff)
+
+    # Equal split across 2 arms: 300 each, rounded up to whole clusters of size 30 → 10 per arm.
+    assert analysis.clusters_per_arm == [10, 10]
+    assert analysis.n_per_arm == [300, 300]
+    assert analysis.num_clusters_total == 20
+    assert sum(analysis.clusters_per_arm) == analysis.num_clusters_total
+
+    # The user-facing message should mention the cluster count.
+    assert analysis.msg is not None
+    assert "20 clusters" in analysis.msg.msg
+
+
+def test_solve_for_mde_cluster_respects_arm_weights():
+    """Unequal arm weights produce proportional per-arm cluster splits."""
+    metric = DesignSpecMetric(
+        field_name="reading_score",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_stddev=20,
+        icc=0.15,
+        avg_cluster_size=30,
+        cv=0.0,
+    )
+
+    # 3:1 weighting on 800 participants → 600 in arm 0, 200 in arm 1.
+    analysis = solve_for_mde_cluster(metric=metric, desired_n=800, n_arms=2, arm_weights=[3.0, 1.0])
+
+    assert analysis.target_n == 800
+    assert analysis.n_per_arm == [600, 200]
+    # 600 / 30 = 20 clusters, 200 / 30 = 6.67 → ceil to 7.
+    assert analysis.clusters_per_arm == [20, 7]
+    assert analysis.num_clusters_total == 27
 
 
 def test_solve_for_sample_size_cluster_missing_baseline():

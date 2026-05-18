@@ -218,6 +218,8 @@ def solve_for_mde_cluster(
 ) -> MetricPowerAnalysis:
     """Calculate the minimum detectable effect (MDE) for a cluster-randomized design."""
 
+    assert metric.icc is not None and metric.avg_cluster_size is not None and metric.cv is not None
+
     target_possible, pct_change_possible = solve_for_mde_cluster_impl(
         metric=metric,
         desired_n=desired_n,
@@ -227,12 +229,39 @@ def solve_for_mde_cluster(
         power=power,
     )
 
+    # Compute DEFF, effective_n and numbers of clusters to add to MetricPowerAnalysis.
+    if arm_weights is None:
+        arm_probs = [1.0 / n_arms] * n_arms
+    else:
+        total_weight = sum(arm_weights)
+        arm_probs = [w / total_weight for w in arm_weights]
+
+    deff = calculate_design_effect(metric.icc, metric.avg_cluster_size, metric.cv)
+
+    clusters_per_arm_list: list[int] = []
+    n_per_arm_list: list[int] = []
+    for prob in arm_probs:
+        n_this_arm = desired_n * prob
+        clusters_this_arm = math.ceil(n_this_arm / metric.avg_cluster_size)
+        clusters_per_arm_list.append(clusters_this_arm)
+        n_per_arm_list.append(round(n_this_arm))
+
+    clusters_total = sum(clusters_per_arm_list)
+    effective_n = calculate_effective_sample_size(desired_n, deff)
+
     # Build response object for MDE calculation
-    analysis = MetricPowerAnalysis(metric_spec=metric)
-    analysis.target_n = desired_n
-    analysis.target_possible = target_possible
-    analysis.pct_change_possible = pct_change_possible
-    analysis.sufficient_n = None  # Not applicable in MDE mode
+    analysis = MetricPowerAnalysis(
+        metric_spec=metric,
+        target_n=desired_n,
+        target_possible=target_possible,
+        pct_change_possible=pct_change_possible,
+        sufficient_n=None,  # Not applicable in MDE mode
+        num_clusters_total=clusters_total,
+        clusters_per_arm=clusters_per_arm_list,
+        n_per_arm=n_per_arm_list,
+        design_effect=deff,
+        effective_sample_size=effective_n,
+    )
 
     # Create message
     assert metric.metric_baseline is not None
@@ -240,11 +269,13 @@ def solve_for_mde_cluster(
         "desired_n": desired_n,
         "metric_baseline": round(metric.metric_baseline, 4),
         "target_possible": round(target_possible, 4),
+        "num_clusters_total": clusters_total,
     }
     msg_type = MetricPowerAnalysisMessageType.SUFFICIENT
     msg_body = (
-        "With a desired sample size of {desired_n} units and a metric baseline of "  # noqa: RUF027
-        "{metric_baseline}, the minimum detectable effect (MDE) is {target_possible}."
+        "With a desired sample size of {desired_n} units across {num_clusters_total} "
+        "clusters and a metric baseline of {metric_baseline}, the minimum detectable "
+        "effect (MDE) is {target_possible}."  # noqa: RUF027
     )
     analysis.msg = MetricPowerAnalysisMessage(
         type=msg_type,
