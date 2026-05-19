@@ -147,6 +147,42 @@ async def fetch_fields_or_raise(
         return await fetch_fields_from_table_or_raise(sa_table, design_spec)
 
 
+async def fetch_mab_dwh_fields_or_raise(
+    datasource: tables.Datasource,
+    design_spec: MABDwhExperimentSpec,
+) -> dict[str, DataType]:
+    """Inspect the DWH table referenced by a MAB-DWH design spec and return field metadata
+    for the primary_key and target_field_name columns.
+
+    Returns: Field name => datatype map (covering primary_key and target_field_name only).
+    Raises: LateValidationError if either column is missing from the table.
+    """
+    async with DwhSession(datasource.get_config().dwh) as dwh:
+        sa_table = await dwh.inspect_table(design_spec.table_name)
+
+    schema_supported_fields_map: dict[str, DataType] = {}
+    for column in sa_table.columns.values():
+        data_type = DataType.match(column.type)
+        if data_type.is_supported():
+            schema_supported_fields_map[column.name] = data_type
+
+    referenced_fields = {design_spec.primary_key, design_spec.target_field_name}
+    referenced_fields_and_types = {
+        field_name: schema_supported_fields_map[field_name]
+        for field_name in referenced_fields
+        if field_name in schema_supported_fields_map
+    }
+
+    missing_fields = referenced_fields - referenced_fields_and_types.keys()
+    if missing_fields:
+        raise LateValidationError(
+            "The .design_spec field refers to columns that do not exist in the table: "
+            f"{', '.join(sorted(missing_fields))}"
+        )
+
+    return referenced_fields_and_types
+
+
 async def fetch_fields_from_table_or_raise(table: Table, design_spec: AnyFrequentistDesignSpec) -> dict[str, DataType]:
     """Helper to fetch_fields_or_raise that operates on a pre-inspected SQLAlchemy table."""
     schema_supported_fields_map: dict[str, DataType] = {}
