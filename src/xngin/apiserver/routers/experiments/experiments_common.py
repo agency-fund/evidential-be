@@ -44,6 +44,7 @@ from xngin.apiserver.routers.common_api_types import (
     GetExperimentResponse,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
+    MABDwhExperimentSpec,
     MABExperimentSpec,
     MetricAnalysis,
     OnlineFrequentistExperimentSpec,
@@ -257,7 +258,7 @@ async def create_experiment_impl(
                 field_type_map=field_type_map,
             )
 
-        case MABExperimentSpec() | CMABExperimentSpec():
+        case MABExperimentSpec() | MABDwhExperimentSpec() | CMABExperimentSpec():
             return await create_bandit_online_experiment_impl(
                 xngin_session=xngin_session,
                 organization_id=datasource.organization_id,
@@ -404,7 +405,7 @@ async def create_bandit_online_experiment_impl(
     design_spec = request.design_spec
 
     match design_spec:
-        case MABExperimentSpec() | CMABExperimentSpec():
+        case MABExperimentSpec() | MABDwhExperimentSpec() | CMABExperimentSpec():
             pass
         case _:
             raise MismatchedExperimentTypeError(f"can't create bandit exp of type: {design_spec.experiment_type}")
@@ -595,7 +596,7 @@ async def get_existing_assignment_for_participant(
                     tables.ArmAssignment.participant_id == participant_id,
                 )
             )
-        case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
+        case ExperimentsType.MAB_ONLINE | ExperimentsType.MAB_ONLINE_DWH | ExperimentsType.CMAB_ONLINE:
             stmt = (
                 select(
                     tables.Draw.participant_id,
@@ -761,7 +762,7 @@ async def create_assignment_for_participant(
     match experiment_type:
         case ExperimentsType.FREQ_ONLINE:
             chosen_arm = choose_online_arm(experiment=experiment, random_state=random_state)
-        case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
+        case ExperimentsType.MAB_ONLINE | ExperimentsType.MAB_ONLINE_DWH | ExperimentsType.CMAB_ONLINE:
             chosen_arm = choose_bandit_arm(
                 experiment=experiment,
                 sorted_context_vals=sorted_context_vals,
@@ -788,7 +789,7 @@ async def create_assignment_for_participant(
                         .returning(tables.ArmAssignment.created_at)
                     )
                 ).fetchone()
-            case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
+            case ExperimentsType.MAB_ONLINE | ExperimentsType.MAB_ONLINE_DWH | ExperimentsType.CMAB_ONLINE:
                 result = (
                     await xngin_session.execute(
                         insert(tables.Draw)
@@ -845,7 +846,7 @@ async def update_bandit_arm_with_outcome_impl(
     design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
 
     match design_spec:
-        case MABExperimentSpec() | CMABExperimentSpec():
+        case MABExperimentSpec() | MABDwhExperimentSpec() | CMABExperimentSpec():
             pass
         case PreassignedFrequentistExperimentSpec() | OnlineFrequentistExperimentSpec():
             raise LateValidationError("Cannot dynamically update arms for frequentist experiments.")
@@ -1009,7 +1010,7 @@ async def get_assign_summary(
         for arm_id, name, count in result
     ]
 
-    if experiment_type in {ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE}:
+    if experiment_type in {ExperimentsType.MAB_ONLINE, ExperimentsType.MAB_ONLINE_DWH, ExperimentsType.CMAB_ONLINE}:
         balance_check = None
     return AssignSummary(
         balance_check=balance_check,

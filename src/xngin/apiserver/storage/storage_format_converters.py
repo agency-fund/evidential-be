@@ -48,7 +48,7 @@ def _set_experiment_fields_from_design_spec(
 ) -> None:
     """Save the field-related components of a DesignSpec to an experiment."""
     match design_spec:
-        case capi.MABExperimentSpec() | capi.CMABExperimentSpec():
+        case capi.MABExperimentSpec() | capi.MABDwhExperimentSpec() | capi.CMABExperimentSpec():
             experiment.design_spec_fields = None
             experiment.experiment_fields = []
             return
@@ -462,7 +462,7 @@ class ExperimentStorageConverter:
                 _set_power_response_json(experiment, power_analyses)
                 return cls(experiment)
 
-            case capi.MABExperimentSpec() | capi.CMABExperimentSpec():
+            case capi.MABExperimentSpec() | capi.MABDwhExperimentSpec() | capi.CMABExperimentSpec():
                 if isinstance(design_spec, capi.CMABExperimentSpec) and not design_spec.contexts:
                     raise ValueError(f"CMAB experiment {experiment.id} must have contexts set.")
 

@@ -23,6 +23,7 @@ from xngin.apiserver.routers.common_api_types import (
     ExperimentsType,
     FreqExperimentAnalysisResponse,
     LikelihoodTypes,
+    MABDwhExperimentSpec,
     MABExperimentSpec,
     OnlineFrequentistExperimentSpec,
     PreassignedFrequentistExperimentSpec,
@@ -57,7 +58,7 @@ async def make_experiment(
     match design_spec:
         case PreassignedFrequentistExperimentSpec() | OnlineFrequentistExperimentSpec():
             field_type_map = await fetch_fields_or_raise(datasource, design_spec)
-        case MABExperimentSpec() | CMABExperimentSpec():
+        case MABExperimentSpec() | MABDwhExperimentSpec() | CMABExperimentSpec():
             field_type_map = None
         case _:
             assert_never(design_spec)

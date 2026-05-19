@@ -86,7 +86,11 @@ def _build_bandit_experiment_assignments_select_query(
     include_observed_at: bool = False,
     include_context_vals: bool = False,
 ):
-    if experiment_type not in {ExperimentsType.MAB_ONLINE.value, ExperimentsType.CMAB_ONLINE.value}:
+    if experiment_type not in {
+        ExperimentsType.MAB_ONLINE.value,
+        ExperimentsType.MAB_ONLINE_DWH.value,
+        ExperimentsType.CMAB_ONLINE.value,
+    }:
         raise LateValidationError(f"unsupported experiment type for bandit export: {experiment_type}")
 
     created_at_column = sql.SQL(
@@ -177,7 +181,9 @@ async def get_experiment_assignments_impl(
                     "outcome": None,
                     "context_values": None,
                 }
-        case ExperimentsType.MAB_ONLINE.value | ExperimentsType.CMAB_ONLINE.value:
+        case (
+            ExperimentsType.MAB_ONLINE.value | ExperimentsType.MAB_ONLINE_DWH.value | ExperimentsType.CMAB_ONLINE.value
+        ):
             select_query = _build_bandit_experiment_assignments_select_query(
                 experiment.id,
                 experiment.experiment_type,

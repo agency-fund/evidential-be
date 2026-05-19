@@ -250,7 +250,7 @@ async def get_assignment(
             ExperimentsType.FREQ_ONLINE,
         }
         is_bandit_with_outcome = (
-            exp_type in {ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE}
+            exp_type in {ExperimentsType.MAB_ONLINE, ExperimentsType.MAB_ONLINE_DWH, ExperimentsType.CMAB_ONLINE}
             and assignment_response.assignment.outcome is not None
         )
         if is_stable_frequentist or is_bandit_with_outcome:
