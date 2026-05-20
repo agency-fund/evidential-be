@@ -209,3 +209,26 @@ def test_arm_weights_validation():
         match=r"(?s)Input should be a finite number.*Input should be a finite number",
     ):
         PreassignedFrequentistExperimentSpec.model_validate(invalid_inf)
+
+
+def test_cluster_key_and_strata_are_mutually_exclusive():
+    valid_spec = {
+        "experiment_type": "freq_preassigned",
+        "experiment_name": "test",
+        "description": "test",
+        "table_name": "dwh",
+        "primary_key": "id",
+        "cluster_key": "school_id",
+        "start_date": "2024-01-01T00:00:00+00:00",
+        "end_date": "2024-12-31T00:00:00+00:00",
+        "arms": [
+            {"arm_name": "C", "arm_description": "C"},
+            {"arm_name": "T", "arm_description": "T"},
+        ],
+        "strata": [{"field_name": "country"}],
+        "metrics": [{"field_name": "metric1", "metric_pct_change": 0.1}],
+        "filters": [],
+    }
+
+    with pytest.raises(ValidationError, match="Cluster-randomized frequentist designs cannot also set strata"):
+        PreassignedFrequentistExperimentSpec.model_validate(valid_spec)
