@@ -255,36 +255,25 @@ def test_analysis_with_cluster_col():
     hc1_treatment = result_hc1["revenue"]["treatment"]
     clustered_treatment = result_clustered["revenue"]["treatment"]
 
+    # Point estimates are the same
     assert pytest.approx(hc1_treatment.estimate, abs=1e-4) == clustered_treatment.estimate
     assert pytest.approx(clustered_treatment.estimate, abs=1e-4) == 2.9898
+    # But clustered SE & p-value are greater than HC1's
     assert pytest.approx(hc1_treatment.std_error, abs=1e-4) == 0.1141
     assert pytest.approx(clustered_treatment.std_error, abs=1e-4) == 0.4327
-    assert clustered_treatment.std_error > hc1_treatment.std_error
+    assert hc1_treatment.p_value == pytest.approx(0.0, abs=1e-150)
     assert clustered_treatment.p_value == pytest.approx(4.845e-12, abs=1e-13)
-    assert clustered_treatment.p_value > hc1_treatment.p_value
 
 
-def test_analysis_cluster_col_accepts_valid_assignments():
-    """analyze_experiment accepts assignments_df with cluster_col present."""
-    rng = np.random.default_rng(42)
-    cluster_ids = np.repeat(range(10), 10)
-    treatment = rng.binomial(1, 0.5, 10)[cluster_ids]
+def test_analysis_with_cluster_col_missing_from_df_raises():
+    """analyze_experiment raises ValueError if cluster_col is missing from assignments_df."""
     assignments_df = pd.DataFrame({
         "participant_id": [str(i) for i in range(100)],
-        "arm_id": ["control" if t == 0 else "treatment" for t in treatment],
-        "cluster": cluster_ids,
+        "arm_id": ["arm1", "arm2"] * 50,
     })
-    participant_outcomes = [
-        ParticipantOutcome(
-            participant_id=str(i),
-            metric_values=[MetricValue(metric_name="revenue", metric_value=float(rng.normal(10, 1)))],
-        )
-        for i in range(100)
-    ]
-
-    result = analyze_experiment(assignments_df, participant_outcomes, cluster_col="cluster")
-    assert "revenue" in result
-    assert set(result["revenue"].keys()) == {"control", "treatment"}
+    unused_participant_outcomes: list[ParticipantOutcome] = []
+    with pytest.raises(ValueError, match=r"assignments_df shape is wrong: expected=.*missing_cluster_column"):
+        analyze_experiment(assignments_df, unused_participant_outcomes, cluster_col="missing_cluster_column")
 
 
 def test_analysis_with_cluster_col_unequal_sizes():
@@ -312,6 +301,7 @@ def test_analysis_with_cluster_col_unequal_sizes():
     result = analyze_experiment(assignments_df, participant_outcomes, cluster_col="cluster")
     treatment_result = result["revenue"]["treatment"]
 
+    assert treatment_result.is_baseline is False
     assert pytest.approx(treatment_result.estimate, abs=1e-4) == 1.6612
     assert pytest.approx(treatment_result.std_error, abs=1e-4) == 0.5535
     assert pytest.approx(treatment_result.p_value, abs=1e-4) == 0.0027
@@ -320,41 +310,54 @@ def test_analysis_with_cluster_col_unequal_sizes():
 def test_analysis_with_cluster_col_missing_values():
     """Clustered analysis correctly handles missing outcome values."""
     rng = np.random.default_rng(42)
-    cluster_ids = np.repeat(range(20), 10)
-    treatment = rng.binomial(1, 0.5, 20)[cluster_ids]
-    outcome = 10 + 3 * treatment + rng.normal(0, 2, 20)[cluster_ids] + rng.normal(0, 1, 200)
+    n_clusters = 50
+    cluster_ids = np.repeat(range(n_clusters), 20)
+    treatment = rng.binomial(1, 0.5, n_clusters)[cluster_ids]
+    n_indv = len(cluster_ids)
+    outcome = 10 + 3 * treatment + rng.normal(0, 2, n_clusters)[cluster_ids] + rng.normal(0, 1, n_indv)
 
     assignments_df = pd.DataFrame({
-        "participant_id": [str(i) for i in range(200)],
+        "participant_id": [str(i) for i in range(n_indv)],
         "arm_id": ["control" if t == 0 else "treatment" for t in treatment],
         "cluster": cluster_ids,
     })
+    # Add an extra 100 participants with missing outcomes
+    none_df = pd.DataFrame({
+        "participant_id": [str(i) for i in range(n_indv, n_indv + 100)],
+        "arm_id": ["control"] * 50 + ["treatment"] * 50,
+        "cluster": np.repeat(range(n_clusters), 2),
+    })
+    assignments__with_none_df = pd.concat([assignments_df, none_df])
     none: Any = None
     participant_outcomes = [
         ParticipantOutcome(
             participant_id=str(i),
-            metric_values=[MetricValue(metric_name="revenue", metric_value=none if i < 30 else float(outcome[i]))],
+            metric_values=[MetricValue(metric_name="revenue", metric_value=none if i >= n_indv else float(outcome[i]))],
         )
-        for i in range(200)
+        for i in range(len(assignments__with_none_df))
     ]
 
-    result = analyze_experiment(assignments_df, participant_outcomes, cluster_col="cluster")
+    result = analyze_experiment(assignments__with_none_df, participant_outcomes, cluster_col="cluster")
     treatment_result = result["revenue"]["treatment"]
 
-    assert pytest.approx(treatment_result.estimate, abs=1e-4) == 1.4488
-    assert pytest.approx(treatment_result.std_error, abs=1e-4) == 0.7468
-    assert sum(r.num_missing_values for r in result["revenue"].values()) == 30
+    # Estimate & SE should match values in test_analysis_with_cluster_col since rows with missing outcomes are dropped.
+    assert treatment_result.is_baseline is False
+    assert pytest.approx(treatment_result.estimate, abs=1e-4) == 2.9898
+    assert pytest.approx(treatment_result.std_error, abs=1e-4) == 0.4327
+    assert sum(r.num_missing_values for r in result["revenue"].values()) == len(none_df)
 
 
 def test_analysis_with_cluster_col_three_arms():
     """Clustered analysis works correctly with three arms."""
     rng = np.random.default_rng(42)
-    cluster_ids = np.repeat(range(30), 10)
-    arm_assignment = rng.integers(0, 3, 30)[cluster_ids]
-    outcome = 10 + arm_assignment * 2 + rng.normal(0, 2, 30)[cluster_ids] + rng.normal(0, 1, 300)
+    n_clusters = 100
+    cluster_ids = np.repeat(range(n_clusters), 10)
+    arm_assignment = rng.integers(0, 3, n_clusters)[cluster_ids]
+    n_indv = len(cluster_ids)
+    outcome = 10 + arm_assignment * 2 + rng.normal(0, 2, n_clusters)[cluster_ids] + rng.normal(0, 1, n_indv)
 
     assignments_df = pd.DataFrame({
-        "participant_id": [str(i) for i in range(300)],
+        "participant_id": [str(i) for i in range(n_indv)],
         "arm_id": ["control" if a == 0 else f"treatment_{a}" for a in arm_assignment],
         "cluster": cluster_ids,
     })
@@ -363,11 +366,16 @@ def test_analysis_with_cluster_col_three_arms():
             participant_id=str(i),
             metric_values=[MetricValue(metric_name="revenue", metric_value=float(outcome[i]))],
         )
-        for i in range(300)
+        for i in range(n_indv)
     ]
 
     result = analyze_experiment(assignments_df, participant_outcomes, cluster_col="cluster")
-    assert set(result["revenue"].keys()) == {"control", "treatment_1", "treatment_2"}
-    assert pytest.approx(result["revenue"]["control"].estimate, abs=1e-4) == 8.8591
-    assert pytest.approx(result["revenue"]["treatment_1"].std_error, abs=1e-4) == 0.4235
-    assert pytest.approx(result["revenue"]["treatment_2"].std_error, abs=1e-4) == 0.5205
+
+    revenue_results = result["revenue"]
+    assert set(revenue_results.keys()) == {"control", "treatment_1", "treatment_2"}
+    assert pytest.approx(revenue_results["control"].estimate, abs=1e-4) == 9.6418
+    # Estimates reflect the arm_assignment*2 effect + cluster-level & individual-level noise
+    assert pytest.approx(revenue_results["treatment_1"].estimate, abs=1e-4) == 2.3073
+    assert pytest.approx(revenue_results["treatment_2"].estimate, abs=1e-4) == 3.9717
+    assert pytest.approx(revenue_results["treatment_1"].std_error, abs=1e-4) == 0.4464
+    assert pytest.approx(revenue_results["treatment_2"].std_error, abs=1e-4) == 0.4300
