@@ -242,7 +242,7 @@ def test_get_user_returns_organizations_with_counts(aclient: AdminAPIClient):
     matching = next(o for o in response.organizations if o.id == org_id)
     # The organization has at least one user (the unprivileged user we just added). The privileged
     # user was implicitly added when they created the org.
-    assert matching.user_count >= 1
+    assert matching.user_count is not None and matching.user_count >= 1
     assert matching.experiment_count == 0
     assert matching.created_at is not None
     # joined_at is populated in the user-scoped context (and is >= the org's created_at since the
@@ -431,7 +431,7 @@ def test_list_organizations_pagination(aclient: AdminAPIClient):
 
 
 def test_list_organizations_includes_created_at_and_counts(aclient: AdminAPIClient):
-    """list_organizations returns created_at and aggregated user_count and experiment_count."""
+    """list_organizations with include_stats returns aggregated user_count and experiment_count."""
     org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="counts-test")).data.id
     aclient.add_member_to_organization(
         organization_id=org_id, body=AddMemberToOrganizationRequest(email="extra1@example.com")
@@ -440,11 +440,21 @@ def test_list_organizations_includes_created_at_and_counts(aclient: AdminAPIClie
         organization_id=org_id, body=AddMemberToOrganizationRequest(email="extra2@example.com")
     )
 
-    found = next(o for o in aclient.list_organizations().data.items if o.id == org_id)
+    found = next(o for o in aclient.list_organizations(include_stats=True).data.items if o.id == org_id)
     assert found.created_at is not None
     # Creator (PRIVILEGED_EMAIL) is auto-added; plus the two extras = 3.
     assert found.user_count == 3
     assert found.experiment_count == 0
+
+
+def test_list_organizations_omits_counts_by_default(aclient: AdminAPIClient):
+    """Without include_stats, user_count and experiment_count are null."""
+    aclient.create_organizations(body=CreateOrganizationRequest(name="no-stats-test"))
+
+    items = aclient.list_organizations().data.items
+    assert items
+    assert all(o.user_count is None for o in items)
+    assert all(o.experiment_count is None for o in items)
 
 
 def test_list_organizations_sorted_by_name_asc(aclient: AdminAPIClient):

@@ -817,6 +817,15 @@ async def list_organizations(
             description="Optional case-insensitive substring filter on the organization's name.",
         ),
     ] = None,
+    include_stats: Annotated[
+        bool,
+        Query(
+            description=(
+                "When true, populate `user_count` and `experiment_count` on each item. When false "
+                "(the default), those fields are returned as null."
+            )
+        ),
+    ] = False,
 ) -> ListOrganizationsResponse:
     """Returns the list of organizations the caller can see, scoped by the `scope` query param.
 
@@ -839,10 +848,10 @@ async def list_organizations(
     rows = list(await session.scalars(stmt))
     rows, next_page_token = build_next_page_token(rows, pagination.page_size, ordering)
 
-    org_ids = [o.id for o in rows]
     user_counts: dict[str, int] = {}
     experiment_counts: dict[str, int] = {}
-    if org_ids:
+    if include_stats and rows:
+        org_ids = [o.id for o in rows]
         user_count_rows = await session.execute(
             select(tables.UserOrganization.organization_id, func.count())
             .where(tables.UserOrganization.organization_id.in_(org_ids))
@@ -864,8 +873,8 @@ async def list_organizations(
                 id=org.id,
                 name=org.name,
                 created_at=org.created_at,
-                user_count=user_counts.get(org.id, 0),
-                experiment_count=experiment_counts.get(org.id, 0),
+                user_count=user_counts.get(org.id, 0) if include_stats else None,
+                experiment_count=experiment_counts.get(org.id, 0) if include_stats else None,
             )
             for org in rows
         ],

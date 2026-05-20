@@ -189,11 +189,23 @@ class OrganizationListItem(AdminApiBaseModel):
     id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE, description="The unique ID of the organization.")]
     name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE, description="The organization's name.")]
     created_at: Annotated[datetime, Field(description="The time the organization was created.")]
-    user_count: Annotated[int, Field(description="Number of users that are members of this organization.")]
+    user_count: Annotated[
+        int | None,
+        Field(
+            description=(
+                "Number of users that are members of this organization. Null when the caller did not request stats."
+            )
+        ),
+    ] = None
     experiment_count: Annotated[
-        int,
-        Field(description="Number of experiments across all datasources in this organization."),
-    ]
+        int | None,
+        Field(
+            description=(
+                "Number of experiments across all datasources in this organization. Null when the "
+                "caller did not request stats."
+            )
+        ),
+    ] = None
     joined_at: Annotated[
         datetime | None,
         Field(
