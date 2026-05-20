@@ -1,3 +1,4 @@
+from collections import defaultdict
 from contextlib import AbstractContextManager
 from contextlib import nullcontext as does_not_raise
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.schema import CreateTable
 
 from xngin.apiserver.conftest import RowProtocolMixin
+from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import (
     Arm,
@@ -199,6 +201,27 @@ def make_createexperimentrequest_json(
             }
         case _:
             raise ValueError(f"Invalid experiment type: {experiment_type}")
+
+
+def make_design_spec_clustered(*, cluster_key: str | None = "cluster_equal") -> PreassignedFrequentistExperimentSpec:
+    return PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="cluster analyze test",
+        description="test",
+        table_name="clustered_dwh",
+        primary_key="participant_id",
+        cluster_key=cluster_key,
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime(2024, 12, 31, 23, 59, 59, tzinfo=UTC),
+        arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
+        strata=[],
+        metrics=[DesignSpecMetricRequest(field_name="test_score", metric_pct_change=0.1)],
+        filters=[],
+        desired_n=100,
+        power=0.8,
+        alpha=0.05,
+        fstat_thresh=0.2,
+    )
 
 
 def make_create_preassigned_experiment_request(desired_n: int | None = None) -> CreateExperimentRequest:
@@ -631,6 +654,56 @@ async def test_create_preassigned_experiment_impl(
     num_treat = sum(1 for a in assignments if a.arm_id == arm2_id)
     # Allow for group sizes to be unequal by up to 2.
     assert abs(num_control - num_treat) <= 2
+
+
+async def test_create_preassigned_experiment_impl_cluster_assignment(xngin_session, testing_datasource):
+    """Preassigned create with cluster_key assigns all members of a cluster to the same arm."""
+    design_spec = make_design_spec_clustered()
+    request = CreateExperimentRequest(design_spec=design_spec)
+    field_type_map = await fetch_fields_or_raise(testing_datasource.ds, design_spec)
+    assert design_spec.desired_n is not None
+    assert design_spec.cluster_key is not None
+
+    async with DwhSession(testing_datasource.ds.get_config().dwh) as dwh:
+        participant_result = await dwh.get_participants(
+            design_spec.table_name,
+            select_columns={design_spec.primary_key, design_spec.cluster_key, "test_score"},
+            filters=design_spec.filters,
+            n=design_spec.desired_n,
+        )
+        sa_table = participant_result.sa_table
+        dwh_participants = participant_result.participants
+
+    assert dwh_participants is not None
+    response = await create_preassigned_experiment_impl(
+        request=request,
+        datasource_id=testing_datasource.ds.id,
+        organization_id=testing_datasource.ds.organization_id,
+        dwh_sa_table=sa_table,
+        dwh_participants=dwh_participants,
+        random_state=42,
+        xngin_session=xngin_session,
+        stratify_on_metrics=False,
+        validated_webhooks=[],
+        field_type_map=field_type_map,
+    )
+
+    # Verify that each participant in a cluster was assigned to the same arm.
+    assignment_rows = (
+        await xngin_session.scalars(
+            select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == response.experiment_id)
+        )
+    ).all()
+    arm_by_participant = {row.participant_id: row.arm_id for row in assignment_rows}
+    arms_by_cluster: dict[str, set[str]] = defaultdict(set)
+    for participant in dwh_participants:
+        participant_id = str(getattr(participant, design_spec.primary_key))
+        cluster_id = str(getattr(participant, design_spec.cluster_key))
+        arms_by_cluster[cluster_id].add(arm_by_participant[participant_id])
+
+    assert len(arms_by_cluster) > 1
+    assert all(len(arm_ids) == 1 for arm_ids in arms_by_cluster.values())
+    assert len(set.union(*arms_by_cluster.values())) == 2
 
 
 async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(

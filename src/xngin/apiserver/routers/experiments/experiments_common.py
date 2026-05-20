@@ -217,12 +217,15 @@ async def create_experiment_impl(
             metric_names = [m.field_name for m in request.design_spec.metrics]
             strata_names = [s.field_name for s in request.design_spec.strata]
             stratum_cols = strata_names + metric_names if stratify_on_metrics else strata_names
+            select_columns = {*stratum_cols, primary_key}
+            if preassigned_spec.cluster_key is not None:
+                select_columns.add(preassigned_spec.cluster_key)
 
             ds_config = datasource.get_config()
             async with DwhSession(ds_config.dwh) as dwh:
                 result = await dwh.get_participants(
                     table_name,
-                    select_columns={*stratum_cols, primary_key},
+                    select_columns=select_columns,
                     filters=request.design_spec.filters,
                     n=desired_n,
                 )
@@ -318,6 +321,7 @@ async def create_preassigned_experiment_impl(
         quantiles=4,
         random_state=random_state,
         arm_weights=arm_weights,
+        cluster_col=design_spec.cluster_key,
     )
     balance_check = make_balance_check(assignment_result.balance_result, design_spec.fstat_thresh)
 
