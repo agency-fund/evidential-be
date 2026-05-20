@@ -327,17 +327,17 @@ def test_analysis_with_cluster_col_missing_values():
         "arm_id": ["control"] * 50 + ["treatment"] * 50,
         "cluster": np.repeat(range(n_clusters), 2),
     })
-    assignments__with_none_df = pd.concat([assignments_df, none_df])
+    assignments_with_none_df = pd.concat([assignments_df, none_df])
     none: Any = None
     participant_outcomes = [
         ParticipantOutcome(
             participant_id=str(i),
             metric_values=[MetricValue(metric_name="revenue", metric_value=none if i >= n_indv else float(outcome[i]))],
         )
-        for i in range(len(assignments__with_none_df))
+        for i in range(len(assignments_with_none_df))
     ]
 
-    result = analyze_experiment(assignments__with_none_df, participant_outcomes, cluster_col="cluster")
+    result = analyze_experiment(assignments_with_none_df, participant_outcomes, cluster_col="cluster")
     treatment_result = result["revenue"]["treatment"]
 
     # Estimate & SE should match values in test_analysis_with_cluster_col since rows with missing outcomes are dropped.
