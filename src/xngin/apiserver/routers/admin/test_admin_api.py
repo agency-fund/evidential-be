@@ -4021,9 +4021,9 @@ async def test_list_experiments(
     aclient.abandon_experiment(datasource_id=ds_id, experiment_id=exp3.experiment_id)
 
     # Create an experiment on a *different* organization's datasource to verify isolation.
-    other_ds_id = testing_datasource_other.ds.id
+    other_ds_id = testing_datasource_other.datasource_id
     aclient.add_member_to_organization(
-        organization_id=testing_datasource_other.org.id,
+        organization_id=testing_datasource_other.organization_id,
         body=AddMemberToOrganizationRequest(email=PRIVILEGED_EMAIL),
     )
     aclient.create_experiment(
