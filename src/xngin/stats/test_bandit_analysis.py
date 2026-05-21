@@ -105,7 +105,7 @@ def test_analyze_normal_ci_correctness():
 
     mean, stddev, ci_upper, ci_lower = _analyze_normal(mu, covariance, outcome_std_dev, context)
 
-    assert mean == 10.0
+    assert np.isclose(mean, 10.0)
 
     # If we incorrectly used stddev for our CI, SEM = sqrt(1+100), much wider than the real
     # standard error of the mean = sqrt(1.0). So the correct 95% CI half-width is:
