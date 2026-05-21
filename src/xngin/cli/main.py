@@ -5,45 +5,34 @@ import functools
 import json
 import logging
 import os
-import re
 import shutil
 import subprocess  # noqa: S404
 import sys
-import uuid
-from compression import zstd
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 
-import psycopg
-import psycopg2
-import sqlalchemy
 import typer
 from email_validator import EmailNotValidError, validate_email
 from rich.console import Console
 from sqlalchemy import create_engine, make_url
-from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import Session
-from sqlalchemy.sql.compiler import IdentifierPreparer
 
-from xngin.apiserver.dwh import dwh_utils
+from xngin.cli.commands import create_testing_dwh as _create_testing_dwh_cmd
+from xngin.cli.common import create_engine_and_database
 from xngin.xsecrets import secretservice
 
-if TYPE_CHECKING:
-    from pandas import DataFrame
-
-SA_LOGGER_NAME_FOR_CLI = "cli_dwh"
 CLI_DB_APPLICATION_NAME = f"cli-{os.getpid()}"
-
-TESTING_DWH_RAW_DATA = Path(__file__).resolve().parent.parent / "apiserver/testdata/testing_dwh.csv.zst"
 
 err_console = Console(stderr=True)
 console = Console(stderr=False)
 app = typer.Typer(help=__doc__)
 snapshots_app = typer.Typer(help="Create and modify fake historical snapshots for development.")
 app.add_typer(snapshots_app, name="snapshots")
+_create_testing_dwh_cmd.register(app)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
 
@@ -55,95 +44,6 @@ async_command = lambda f: functools.wraps(f)(lambda *args, **kwargs: asyncio.run
 class Base64OrJson(StrEnum):
     base64 = "base64"
     json = "json"
-
-
-def truncate_with_ellipsis(value: str) -> str:
-    if len(value) > 250:
-        return value[:247] + "..."
-    return value
-
-
-def create_engine_and_database(url: sqlalchemy.URL, *, connect_args: dict | None = None):
-    """Connects to a SQLAlchemy URL and creates the database if it doesn't exist.
-
-    Only implemented for psycopg/psycopg2.
-    """
-    connect_args = connect_args or {}
-
-    try:
-        engine = create_engine(url, connect_args=connect_args, logging_name=SA_LOGGER_NAME_FOR_CLI)
-        dwh_utils.extra_engine_setup(engine)
-        with engine.connect():
-            print("Connected.")
-    except OperationalError as exc:
-        if not dwh_utils.is_postgres(url) or (
-            # 1st case: psycopg2 driver
-            "does not exist" not in str(exc)
-            # 2nd case: psycopg driver
-            and "Connection refused" not in str(exc)
-        ):
-            raise
-        print(f"Creating database {url.database}...")
-        engine = create_engine(
-            url.set(database="postgres"), connect_args=connect_args, logging_name=SA_LOGGER_NAME_FOR_CLI
-        )
-        dwh_utils.extra_engine_setup(engine)
-        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
-            conn.execute(sqlalchemy.text(f"CREATE DATABASE {url.database}"))
-        print("Reconnecting.")
-        return create_engine(url, connect_args=connect_args, logging_name=SA_LOGGER_NAME_FOR_CLI)
-    else:
-        return engine
-
-
-def df_to_ddl(
-    df: DataFrame,
-    *,
-    table_name: str,
-    quoter: IdentifierPreparer,
-):
-    """Helper to transform a DataFrame into a CREATE TABLE statement."""
-    # TODO: replace these types with more generic/widely supported defaults.
-    default_sql_type = "VARCHAR(255)"
-    type_map = {
-        "int64": "INTEGER",
-        "float64": "DECIMAL",
-        "object": "VARCHAR(255)",
-        "datetime64[ns]": "TIMESTAMP",
-        "bool": "BOOLEAN",
-        "uuid": "UUID",  # Special case for UUIDs; not a real Pandas type.
-    }
-    # Check for UUID columns by trying to parse the first non-null value of string columns as UUID
-    df_dtypes = {col: dtype for col, dtype in df.dtypes.items()}
-    for col, dtype in df_dtypes.items():
-        if dtype.name not in type_map:
-            logging.warning(
-                "Column '%s' has unknown SQL type for Pandas dtype '%s'. Using default: %s",
-                col,
-                dtype,
-                default_sql_type,
-            )
-        if dtype == "object":
-            nonnulls = df[col].dropna()
-            first_val = nonnulls.iloc[0] if not nonnulls.empty else None
-            try:
-                uuid.UUID(first_val)
-                df_dtypes[col] = "uuid"  # override with our special case
-            except ValueError, AttributeError, TypeError:
-                pass  # Not a UUID
-    # Now generate the DDL.
-    columns = [
-        f"{quoter.quote(str(col))} {type_map.get(str(dtype), default_sql_type)}" for col, dtype in df_dtypes.items()
-    ]
-    return f"""CREATE TABLE {table_name} ({",\n    ".join(columns)});"""
-
-
-def validate_create_testing_dwh_src(v: Path):
-    allowed_extensions = (".csv", ".csv.zst")
-    for ext in allowed_extensions:
-        if str(v).endswith(ext):
-            return v
-    raise typer.BadParameter("--src must end in .csv or .csv.zst")
 
 
 def parse_iso_datetime(value: str | None) -> datetime | None:
@@ -167,252 +67,6 @@ def create_apiserver_db(
     console.print(f"DSN: [cyan]{dsn}[/cyan]")
     engine = create_engine_and_database(make_url(dsn), connect_args={"application_name": CLI_DB_APPLICATION_NAME})
     tables.Base.metadata.create_all(bind=engine)
-
-
-@app.command()
-def create_testing_dwh(
-    dsn: Annotated[str, typer.Option(help="The SQLAlchemy URL for the database.")],
-    src: Annotated[
-        Path,
-        typer.Option(
-            help="Local path to the testing data warehouse CSV. This may be zstd-compressed and "
-            "must end in .csv or .csv.zst.",
-            callback=validate_create_testing_dwh_src,
-        ),
-    ] = TESTING_DWH_RAW_DATA,
-    nrows: Annotated[
-        int | None,
-        typer.Option(
-            help="Limits the number of rows to load from the CSV. Does not apply to the data load "
-            "of Redshift or Postgres connections, but will be applied to schema inference."
-        ),
-    ] = None,
-    schema_name: Annotated[
-        str | None,
-        typer.Option(
-            help="Desired schema to use with the table, else uses your warehouse's default schema. Only applies to "
-            "Postgres-like databases."
-        ),
-    ] = None,
-    table_name: Annotated[
-        str,
-        typer.Option(
-            envvar="XNGIN_CLI_TABLE_NAME",
-            help="Desired name of the data warehouse table. This will be replaced if it already exists.",
-        ),
-    ] = "dwh",
-    bucket: Annotated[
-        str | None,
-        typer.Option(
-            help="Name of the temporary S3 bucket that is readable by Redshift when --iam-role is "
-            "assumed, and writable with your own AWS credentials to upload & delete the temp data. "
-            "Required when connecting to Redshift."
-        ),
-    ] = None,
-    iam_role: Annotated[
-        str | None,
-        typer.Option(
-            help="ARN of an IAM Role for Redshift to assume when reading from the bucket specified by --bucket. "
-            "Required when connecting to Redshift."
-        ),
-    ] = None,
-    password: Annotated[str | None, typer.Option(envvar="PGPASSWORD", help="The database password.")] = None,
-    create_db: Annotated[
-        bool,
-        typer.Option(help="Create the database if it does not yet exist (Postgres and Redshift only)."),
-    ] = False,
-    allow_existing: Annotated[
-        bool,
-        typer.Option(help="True if you only want to create the table if it does not exist."),
-    ] = False,
-    views: Annotated[
-        str | None,
-        typer.Option(
-            help="Comma-separated view names to create as aliases for the dwh table. "
-            "Only supported on Postgres and Redshift."
-        ),
-    ] = None,
-):
-    """Loads the testing data warehouse CSV into a database.
-
-    Any existing table will be replaced unless --allow-existing is used.
-
-    For Postgres and Redshift (psycopg or psycopg2) connections, the table DDL will be read from a
-    .{postgres|redshift}.ddl file in the same directory as the source CSV, or inferred via Pandas if
-    that file does not exist.  The CSV file is parsed using their native server-side CSV parsers.
-
-    Postgres connections may be specified with postgresql://, postgresql+psycopg://, or postgresql+psycopg2:// prefixes.
-
-    Redshift connections must be specified with postgresql+psycopg2:// prefix.
-
-    On BigQuery: CSV is parsed by Pandas. Table DDL is derived by pandas-gbq and written via to_gbq().
-
-    Due to variations in all of the above, the loaded data may vary in small ways when loaded with different data
-    stores. E.g. floats may not roundtrip.
-
-    This command does not support schemas or non-trivial database names or table names consistently.
-    """
-
-    create_schema_ddl = f"CREATE SCHEMA IF NOT EXISTS {schema_name}" if schema_name else ""
-    full_table_name = f"{schema_name}.{table_name}" if schema_name else table_name
-    drop_table_ddl = f"DROP TABLE IF EXISTS {full_table_name}"
-    is_compressed = src.suffix == ".zst"
-
-    url = make_url(dsn)
-    print(f"create_testing_dwh for: {url.set(password=None)}")
-    print(f"\tBackend Name: {url.get_backend_name()}")
-    print(f"\tDriver Name: {url.get_driver_name()}")
-    print(f"\tDialect: {url.get_dialect()}")
-
-    if password is not None and url.username is not None:
-        url = url.set(password=password)
-
-    def read_csv():
-        from pandas import read_csv as pd_read_csv  # noqa: PLC0415
-
-        return pd_read_csv(src, nrows=nrows)
-
-    def drop_and_create(cur, create_table_ddl: str):
-        if schema_name is not None:
-            cur.execute(create_schema_ddl)
-        cur.execute(drop_table_ddl)
-        print(f"Creating table:\n{truncate_with_ellipsis(create_table_ddl)}")
-        cur.execute(create_table_ddl)
-
-    def get_ddl_magic(quoter: IdentifierPreparer, flavor: str):
-        """Gets the hard-coded DDL if available, or infers it using Pandas."""
-        ddl_file = re.sub(r"[.]csv([.]zst)?$", f".{flavor}.ddl", str(src))
-        if Path(ddl_file).exists():
-            print(f"Using provided DDL from {ddl_file}")
-            with open(ddl_file) as inp:
-                ddl = inp.read().replace("{{table_name}}", full_table_name)
-        else:
-            print("Using inferred DDL (warning: may lose fidelity!)")
-            ddl = df_to_ddl(
-                read_csv(),
-                table_name=full_table_name,
-                quoter=quoter,
-            )
-        return ddl
-
-    def count(cur):
-        if dwh_utils.is_bigquery(url):
-            cur.execute(f"SELECT COUNT(*) FROM `{url.database}.{table_name}`")  # noqa: S608
-        else:
-            cur.execute(f"SELECT COUNT(*) FROM {full_table_name}")  # noqa: S608
-        ct = cur.fetchone()[0]
-        print(f"{full_table_name} has {ct} rows.")
-        return ct
-
-    def maybe_create_views(cur):
-        if not views:
-            return
-        for view_name in views.split(","):
-            qualified_view_name = f"{schema_name}.{view_name}" if schema_name else view_name
-            print(f"Creating view {qualified_view_name}...")
-            cur.execute(
-                f"CREATE OR REPLACE VIEW {qualified_view_name} AS SELECT * FROM {full_table_name}"  # noqa: S608
-            )
-
-    if allow_existing:
-        if create_db:
-            engine = create_engine_and_database(url)
-        else:
-            engine = create_engine(url, logging_name=SA_LOGGER_NAME_FOR_CLI)
-        conn = engine.raw_connection()
-        with conn.cursor() as cur:
-            try:
-                count(cur)
-            except (
-                psycopg.errors.UndefinedTable,
-                psycopg2.errors.UndefinedTable,
-                sqlalchemy.exc.OperationalError,
-            ):
-                print("🛠️ Table does not exist; creating...\n")
-            else:
-                print("📣 Table already exists; nothing to do.\n")
-                return
-        conn.close()
-        engine.dispose()
-
-    if dwh_utils.is_redshift(url):
-        import boto3  # noqa: PLC0415
-
-        if not bucket:
-            print("--bucket is required when importing into Redshift.")
-            raise typer.Exit(2)
-        if not iam_role:
-            print("--iam-role is required when importing into Redshift.")
-            raise typer.Exit(2)
-        # Workaround: Despite using a direct psycopg2 connection for Redshift, we use SQLAlchemy's quoter.
-        engine = create_engine(url, logging_name=SA_LOGGER_NAME_FOR_CLI)
-        quoter = engine.dialect.identifier_preparer
-        engine.dispose()
-        with (
-            psycopg2.connect(
-                database=url.database,
-                host=url.host,
-                password=url.password,
-                port=url.port,
-                user=url.username,
-            ) as conn,
-            conn.cursor() as cur,
-        ):
-            ddl = get_ddl_magic(quoter, "redshift")
-            drop_and_create(cur, ddl)
-            key = src.name
-            print(f"Uploading to s3://{bucket}/{key}...")
-            s3 = boto3.client("s3")
-            s3.upload_file(src, bucket, f"{key}")
-            try:
-                print("Loading...")
-                compression_hint = "ZSTD" if is_compressed else ""
-                cur.execute(
-                    f"COPY {full_table_name} FROM 's3://{bucket}/{key}' "
-                    f"IAM_ROLE '{iam_role}' FORMAT CSV IGNOREHEADER 1 {compression_hint};"
-                )
-                count(cur)
-            finally:
-                print("Deleting temporary file...")
-                s3.delete_object(Bucket=bucket, Key=key)
-            maybe_create_views(cur)
-    elif dwh_utils.is_bigquery(url):
-        import pandas_gbq  # noqa: PLC0415
-
-        df = read_csv()
-        destination_table = f"{url.database}.{table_name}"
-        print("Loading using an inferred schema (warning: may lose fidelity!)...")
-        pandas_gbq.to_gbq(df, destination_table, project_id=url.host, if_exists="replace")
-    elif dwh_utils.is_postgres(url):
-        engine = create_engine_and_database(url)
-        ddl = get_ddl_magic(engine.dialect.identifier_preparer, "postgres")
-        with engine.begin() as conn:
-            cursor = conn.connection.cursor()
-            drop_and_create(cursor, ddl)
-            opener = (lambda x: zstd.open(x, "rt")) if is_compressed else open
-            if url.get_driver_name() == "psycopg":
-                print("Loading via psycopg3 COPY FROM STDIN...")
-                with opener(src) as reader:
-                    cols = [h.strip() for h in reader.readline().split(",")]
-                    sql = f"COPY {full_table_name} ({', '.join(cols)}) FROM STDIN (FORMAT CSV, DELIMITER ',')"
-                    print(f"SQL: {truncate_with_ellipsis(sql)}")
-                    with cursor.copy(sql) as copy:
-                        while data := reader.read(1 << 20):
-                            copy.write(data)
-            else:
-                print("Loading via psycopg2 copy_expert...")
-                with opener(src) as reader:
-                    cols = [h.strip() for h in reader.readline().split(",")]
-                    sql = f"COPY {full_table_name} ({', '.join(cols)}) FROM STDIN (FORMAT CSV, DELIMITER ',')"
-                    print(f"SQL: {truncate_with_ellipsis(sql)}")
-                    cursor.copy_expert(sql, reader)
-
-            count(cursor)
-            maybe_create_views(cursor)
-
-    else:
-        err_console.print("Unrecognized database driver.")
-        raise typer.Exit(2)
 
 
 @app.command()
