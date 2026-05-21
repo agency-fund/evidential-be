@@ -87,11 +87,11 @@ async def _create_bandit_experiment(
         case _:
             raise ValueError(f"Unsupported: {experiment_type}")
     experiment_id = aclient.create_experiment(
-        datasource_id=testing_datasource.ds.id,
+        datasource_id=testing_datasource.datasource_id,
         body=CreateExperimentRequest(design_spec=design_spec),
         random_state=42,
     ).data.experiment_id
-    aclient.commit_experiment(datasource_id=testing_datasource.ds.id, experiment_id=experiment_id)
+    aclient.commit_experiment(datasource_id=testing_datasource.datasource_id, experiment_id=experiment_id)
     return experiment_id
 
 
@@ -241,13 +241,13 @@ async def test_analyze_endpoint_perf(
         if is_cmab:
             assert context_inputs is not None
             resp = aclient.analyze_cmab_experiment(
-                datasource_id=testing_datasource.ds.id,
+                datasource_id=testing_datasource.datasource_id,
                 experiment_id=experiment_id,
                 body=CMABContextInputRequest(context_inputs=context_inputs),
             )
         else:
             resp = aclient.analyze_experiment(
-                datasource_id=testing_datasource.ds.id,
+                datasource_id=testing_datasource.datasource_id,
                 experiment_id=experiment_id,
             )
         timings.append(time.perf_counter() - t0)
