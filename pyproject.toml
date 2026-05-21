@@ -150,7 +150,6 @@ ignore = [
     "PT006", # Wrong type passed to first argument of `pytest.mark.parametrize`; expected `tuple`
     "PT011", # pytest.raises(_) is too broad, set the `match` parameter or use a more specific exception
     "PT018", # Assertion should be broken down into multiple parts
-    "PYI041", # Use `float` instead of `int | float`
     "RUF069", # Unreliable floating point equality comparison
     "S101", # Use of `assert` detected
     "SIM108", # Use ternary operator instead of `if`-`else`-block
