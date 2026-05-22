@@ -130,7 +130,7 @@ from xngin.apiserver.routers.common_enums import ExperimentState, PreloadMethod
 from xngin.apiserver.routers.experiments import experiments_common, experiments_common_csv
 from xngin.apiserver.routers.experiments.experiments_common import (
     AbandonExperimentResult,
-    fetch_fields_from_table_or_raise,
+    convert_table_to_fields_or_raise,
     make_participants_def_from_experiment,
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
@@ -1386,7 +1386,7 @@ async def delete_participant(
             return None
         return resource
 
-    async def deleter(_session: AsyncSession, resource: tables.Datasource):  # noqa: RUF029  -- handle_delete expects Awaitable
+    def deleter(_session: AsyncSession, resource: tables.Datasource):
         config = resource.get_config()
         participant = config.find_participants(participant_id)
         config.participants.remove(participant)
@@ -1882,7 +1882,7 @@ async def power_check(
     async with DwhSession(dsconfig.dwh) as dwh:
         sa_table = await dwh.inspect_table(design_spec.table_name)
         # Validate the fields used in the design spec are present in the table and that filter values are valid.
-        _ = fetch_fields_from_table_or_raise(sa_table, design_spec)
+        _ = convert_table_to_fields_or_raise(sa_table, design_spec)
 
         metric_stats = await asyncio.to_thread(
             get_stats_on_metrics,

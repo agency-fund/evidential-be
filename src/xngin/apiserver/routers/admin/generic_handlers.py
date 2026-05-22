@@ -1,3 +1,4 @@
+import inspect
 from collections.abc import Awaitable, Callable
 
 import sqlalchemy
@@ -13,7 +14,7 @@ async def handle_delete[T](
     allow_missing: bool,
     is_authorized: sqlalchemy.Select,
     get_resource_or_none: sqlalchemy.Select | Callable[[AsyncSession], Awaitable[T]],
-    deleter: Callable[[AsyncSession, T], Awaitable[None]] | None = None,
+    deleter: Callable[[AsyncSession, T], Awaitable[None]] | Callable[[AsyncSession, T], None] | None = None,
 ):
     """Generic delete request handler.
 
@@ -49,7 +50,10 @@ async def handle_delete[T](
             return GENERIC_SUCCESS
         raise HTTPException(404)
     if deleter:
-        await deleter(session, resource)
+        # If the deleter does not perform I/O, it does not need to be awaited.
+        result = deleter(session, resource)
+        if inspect.isawaitable(result):
+            await result
     else:
         await session.delete(resource)
     return GENERIC_SUCCESS

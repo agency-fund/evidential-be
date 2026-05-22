@@ -143,10 +143,10 @@ async def fetch_fields_or_raise(
     """
     async with DwhSession(datasource.get_config().dwh) as dwh:
         sa_table = await dwh.inspect_table(design_spec.table_name)
-        return fetch_fields_from_table_or_raise(sa_table, design_spec)
+        return convert_table_to_fields_or_raise(sa_table, design_spec)
 
 
-def fetch_fields_from_table_or_raise(table: Table, design_spec: AnyFrequentistDesignSpec) -> dict[str, DataType]:
+def convert_table_to_fields_or_raise(table: Table, design_spec: AnyFrequentistDesignSpec) -> dict[str, DataType]:
     """Helper to fetch_fields_or_raise that operates on a pre-inspected SQLAlchemy table."""
     schema_supported_fields_map: dict[str, DataType] = {}
     for column in table.columns.values():
