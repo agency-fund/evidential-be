@@ -52,7 +52,7 @@ def client():
 
 
 @pytest.mark.parametrize(
-    "method,query_path,input_data,expected",
+    ("method", "query_path", "input_data", "expected"),
     [
         (
             "POST",
@@ -89,7 +89,7 @@ def test_unwraps_nested_json_with_http_methods(client, method, query_path, input
 
 
 @pytest.mark.parametrize(
-    "query_path,input_data,expected",
+    ("query_path", "input_data", "expected"),
     [
         ("/message", {"message": "hello world"}, "hello world"),
         ("/nullable", {"nullable": None}, None),
@@ -119,7 +119,7 @@ def test_unwraps_primitive_values(client, query_path, input_data, expected):
 
 
 @pytest.mark.parametrize(
-    "query_path,input_data,expected",
+    ("query_path", "input_data", "expected"),
     [
         ("/text", {"text": ""}, ""),
         ("/obj", {"obj": {}}, {}),
@@ -140,7 +140,7 @@ def test_unwraps_empty_values(client, query_path, input_data, expected):
 
 
 @pytest.mark.parametrize(
-    "query_path,input_data",
+    ("query_path", "input_data"),
     [
         ("data", {"data": "value"}),  # Invalid JSON Pointer (must start with /)
         ("/nonexistent", {"data": "value"}),  # Path doesn't exist
@@ -160,7 +160,7 @@ def test_error_on_invalid_paths(client, query_path, input_data):
 
 
 @pytest.mark.parametrize(
-    "unwrap_param,query_param,query_value,input_data,expected",
+    ("unwrap_param", "query_param", "query_value", "input_data", "expected"),
     [
         (
             "_extract",
@@ -205,7 +205,7 @@ def test_handles_empty_request_body(client):
 
 
 @pytest.mark.parametrize(
-    "query_value,input_key,expected_data",
+    ("query_value", "input_key", "expected_data"),
     [
         ("/foo~1bar", "foo/bar", {"special": "key"}),
         ("/foo~0bar", "foo~bar", {"tilde": "value"}),

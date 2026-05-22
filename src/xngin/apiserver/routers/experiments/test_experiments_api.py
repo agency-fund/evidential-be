@@ -181,7 +181,7 @@ def make_unvalidated_create_experiment_request(
 
 
 @pytest.mark.parametrize(
-    "key,expected_status,expected_message",
+    ("key", "expected_status", "expected_message"),
     [
         ("", 400, "request header is required"),
         ("a", 400, "must start with"),
@@ -237,7 +237,7 @@ async def test_get_experiment(testing_datasource, aclient: AdminAPIClient, eclie
 
 
 @pytest.mark.parametrize(
-    "experiment_type, table_name, primary_key, expected_status, expected_in_loc",
+    ("experiment_type", "table_name", "primary_key", "expected_status", "expected_in_loc"),
     [
         (ExperimentsType.FREQ_PREASSIGNED, None, None, 422, "table_name"),
         (ExperimentsType.FREQ_PREASSIGNED, "dwh", None, 422, "primary_key"),

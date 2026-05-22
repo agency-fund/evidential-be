@@ -2141,7 +2141,7 @@ def test_create_and_get_freq_online_experiment(testing_datasource, aclient: Admi
 
 
 @pytest.mark.parametrize(
-    "reward_type,prior_type",
+    ("reward_type", "prior_type"),
     [
         (LikelihoodTypes.BERNOULLI, PriorTypes.BETA),
         (LikelihoodTypes.NORMAL, PriorTypes.NORMAL),
@@ -2212,7 +2212,7 @@ def test_create_and_get_online_mab_experiment(testing_datasource, aclient: Admin
 
 
 @pytest.mark.parametrize(
-    "reward_type,prior_type",
+    ("reward_type", "prior_type"),
     [
         (LikelihoodTypes.NORMAL, PriorTypes.NORMAL),
         (LikelihoodTypes.BERNOULLI, PriorTypes.NORMAL),
@@ -2276,7 +2276,7 @@ def test_create_online_cmab_experiment(testing_datasource, aclient: AdminAPIClie
 
 
 @pytest.mark.parametrize(
-    "experiment_type,reward_type,prior_type",
+    ("experiment_type", "reward_type", "prior_type"),
     [
         (ExperimentsType.MAB_ONLINE, LikelihoodTypes.NORMAL, PriorTypes.NORMAL),
         (ExperimentsType.MAB_ONLINE, LikelihoodTypes.BERNOULLI, PriorTypes.BETA),
@@ -2804,7 +2804,7 @@ def test_mab_experiments_analyze_with_no_participants(testing_bandit_experiment,
 
 
 @pytest.mark.parametrize(
-    "endpoint,initial_state,expected_status,expected_detail",
+    ("endpoint", "initial_state", "expected_status", "expected_detail"),
     [
         ("commit", ExperimentState.ASSIGNED, 204, None),  # Success case
         ("commit", ExperimentState.COMMITTED, 204, None),  # No-op
