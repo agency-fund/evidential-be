@@ -1,7 +1,7 @@
 """Benchmarks (vibed) for the Experiment.draws access paths.
 
 Run explicitly with:
-    task test -- -m benchmark -s src/xngin/apiserver/snapshots/test_draws_perf.py
+    task test -- -m benchmark -s src/xngin/apiserver/benchmarks/test_draws_perf.py
 
 Per-scenario setup is hybrid: a fixed N_WARMUP of participants is assigned
 and their outcomes recorded via the real assignment + update-outcome APIs
