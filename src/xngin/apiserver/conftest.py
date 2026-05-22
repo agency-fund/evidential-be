@@ -9,6 +9,7 @@ import os
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, assert_never, cast
 
 import pytest
@@ -427,8 +428,7 @@ def _convert_dwh_to_create_api_dsn(dwh: settings.Dwh) -> aapi.Dsn:
                 case settings.GcpServiceAccountInfo():
                     credentials_content = base64.standard_b64decode(dwh.credentials.content_base64).decode()
                 case settings.GcpServiceAccountFile():
-                    with open(dwh.credentials.path, encoding="utf-8") as credentials_file:
-                        credentials_content = credentials_file.read()
+                    credentials_content = Path(dwh.credentials.path).read_text(encoding="utf-8")
                 case _:
                     raise TypeError(f"Unsupported BigQuery credentials type: {type(dwh.credentials).__name__}")
             return aapi.BqDsn(
