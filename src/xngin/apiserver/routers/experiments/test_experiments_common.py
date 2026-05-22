@@ -490,7 +490,7 @@ async def test_create_preassigned_experiment_impl(
 
     response = await create_preassigned_experiment_impl(
         request=request.model_copy(deep=True),  # we'll use the original request for assertions
-        datasource_id=testing_datasource.ds.id,
+        datasource_id=testing_datasource.datasource_id,
         organization_id=testing_datasource.ds.organization_id,
         dwh_sa_table=sample_table,
         dwh_participants=participants,
@@ -503,7 +503,7 @@ async def test_create_preassigned_experiment_impl(
 
     # Verify response
     experiment_id = response.experiment_id
-    assert response.datasource_id == testing_datasource.ds.id
+    assert response.datasource_id == testing_datasource.datasource_id
     assert response.state == ExperimentState.ASSIGNED
     assert response.participant_type_deprecated == ""
     assert response.power_analyses is not None
@@ -554,7 +554,7 @@ async def test_create_preassigned_experiment_impl(
     assert experiment.description == request.design_spec.description
     assert experiment.design_url == expected_design_url
     assert experiment.state == ExperimentState.ASSIGNED
-    assert experiment.datasource_id == testing_datasource.ds.id
+    assert experiment.datasource_id == testing_datasource.datasource_id
     # This comparison is dependent on whether the db can store tz or not (sqlite does not).
     assert_dates_equal(experiment.start_date, request.design_spec.start_date)
     assert_dates_equal(experiment.end_date, request.design_spec.end_date)
@@ -654,7 +654,7 @@ async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
     with pytest.raises(LateValidationError, match="Duplicate participant ID found after filtering:"):
         await create_preassigned_experiment_impl(
             request=request,
-            datasource_id=testing_datasource.ds.id,
+            datasource_id=testing_datasource.datasource_id,
             organization_id=testing_datasource.ds.organization_id,
             dwh_sa_table=sample_table,
             dwh_participants=participants_with_duplicate,
@@ -682,7 +682,7 @@ async def test_create_preassigned_experiment_impl_with_unbalanced_arms(
 
     response = await create_preassigned_experiment_impl(
         request=request,
-        datasource_id=testing_datasource.ds.id,
+        datasource_id=testing_datasource.datasource_id,
         organization_id=testing_datasource.ds.organization_id,
         dwh_sa_table=sample_table,
         dwh_participants=participants,
@@ -694,7 +694,7 @@ async def test_create_preassigned_experiment_impl_with_unbalanced_arms(
     )
 
     experiment_id = response.experiment_id
-    assert response.datasource_id == testing_datasource.ds.id
+    assert response.datasource_id == testing_datasource.datasource_id
     assert response.state == ExperimentState.ASSIGNED
     assert isinstance(response.design_spec, PreassignedFrequentistExperimentSpec)
     assert response.design_spec.get_validated_arm_weights() == expected_weights
@@ -745,7 +745,7 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
 
     response = await create_preassigned_experiment_impl(
         request=request,
-        datasource_id=testing_datasource.ds.id,
+        datasource_id=testing_datasource.datasource_id,
         organization_id=testing_datasource.ds.organization_id,
         dwh_sa_table=sample_table,
         dwh_participants=participants,
@@ -757,7 +757,7 @@ async def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
     )
 
     experiment_id = response.experiment_id
-    assert response.datasource_id == testing_datasource.ds.id
+    assert response.datasource_id == testing_datasource.datasource_id
     assert response.state == ExperimentState.ASSIGNED
     assert isinstance(response.design_spec, PreassignedFrequentistExperimentSpec)
     assert response.design_spec.get_validated_arm_weights() == expected_weights
@@ -845,7 +845,7 @@ async def test_create_freq_online_experiment_impl_experiments_fields_are_correct
 
     response = await create_freq_online_experiment_impl(
         request=experiment_request,
-        datasource_id=testing_datasource.ds.id,
+        datasource_id=testing_datasource.datasource_id,
         organization_id=testing_datasource.ds.organization_id,
         xngin_session=xngin_session,
         validated_webhooks=[],
@@ -854,7 +854,7 @@ async def test_create_freq_online_experiment_impl_experiments_fields_are_correct
 
     # Verify API response
     assert response.experiment_id is not None
-    assert response.datasource_id == testing_datasource.ds.id
+    assert response.datasource_id == testing_datasource.datasource_id
     assert response.state == ExperimentState.ASSIGNED
     assert response.power_analyses is None
     assert response.participant_type_deprecated == ""
@@ -1094,7 +1094,7 @@ async def test_create_experiment_impl_for_freq_online(xngin_session, testing_dat
         validated_webhooks=[],
     )
     # Verify response
-    assert response.datasource_id == testing_datasource.ds.id
+    assert response.datasource_id == testing_datasource.datasource_id
     assert response.state == ExperimentState.ASSIGNED
 
     # Verify design_spec
@@ -1133,7 +1133,7 @@ async def test_create_experiment_impl_for_freq_online(xngin_session, testing_dat
     assert experiment.design_url == ""
     # Online experiments still go through a review step before being committed
     assert experiment.state == ExperimentState.ASSIGNED
-    assert experiment.datasource_id == testing_datasource.ds.id
+    assert experiment.datasource_id == testing_datasource.datasource_id
     assert_dates_equal(experiment.start_date, req_online_spec.start_date)
     assert_dates_equal(experiment.end_date, req_online_spec.end_date)
     # Verify stats parameters were stored correctly
@@ -1175,12 +1175,12 @@ async def test_create_experiment_impl_for_mab_online(xngin_session, testing_data
     response = await create_bandit_online_experiment_impl(
         request=request.model_copy(deep=True),
         xngin_session=xngin_session,
-        organization_id=testing_datasource.org.id,
-        datasource_id=testing_datasource.ds.id,
+        organization_id=testing_datasource.organization_id,
+        datasource_id=testing_datasource.datasource_id,
         validated_webhooks=[],
     )
     # Verify response
-    assert response.datasource_id == testing_datasource.ds.id
+    assert response.datasource_id == testing_datasource.datasource_id
     assert response.state == ExperimentState.ASSIGNED
 
     # Verify design_spec
@@ -1216,7 +1216,7 @@ async def test_create_experiment_impl_for_mab_online(xngin_session, testing_data
     assert experiment.description == request.design_spec.description
     # Online experiments still go through a review step before being committed
     assert experiment.state == ExperimentState.ASSIGNED
-    assert experiment.datasource_id == testing_datasource.ds.id
+    assert experiment.datasource_id == testing_datasource.datasource_id
     assert_dates_equal(experiment.start_date, request.design_spec.start_date)
     assert_dates_equal(experiment.end_date, request.design_spec.end_date)
 
@@ -1259,12 +1259,12 @@ async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_dat
     response = await create_bandit_online_experiment_impl(
         request=request.model_copy(deep=True),
         xngin_session=xngin_session,
-        organization_id=testing_datasource.org.id,
-        datasource_id=testing_datasource.ds.id,
+        organization_id=testing_datasource.organization_id,
+        datasource_id=testing_datasource.datasource_id,
         validated_webhooks=[],
     )
     # Verify response
-    assert response.datasource_id == testing_datasource.ds.id
+    assert response.datasource_id == testing_datasource.datasource_id
     assert response.state == ExperimentState.ASSIGNED
 
     # Verify design_spec
@@ -1298,7 +1298,7 @@ async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_dat
     assert experiment.description == request.design_spec.description
     # Online experiments still go through a review step before being committed
     assert experiment.state == ExperimentState.ASSIGNED
-    assert experiment.datasource_id == testing_datasource.ds.id
+    assert experiment.datasource_id == testing_datasource.datasource_id
     assert_dates_equal(experiment.start_date, request.design_spec.start_date)
     assert_dates_equal(experiment.end_date, request.design_spec.end_date)
 
@@ -1370,12 +1370,12 @@ async def test_create_experiment_impl_for_bandit_with_arm_weights(
     response = await create_bandit_online_experiment_impl(
         request=request.model_copy(deep=True),
         xngin_session=xngin_session,
-        organization_id=testing_datasource.org.id,
-        datasource_id=testing_datasource.ds.id,
+        organization_id=testing_datasource.organization_id,
+        datasource_id=testing_datasource.datasource_id,
         validated_webhooks=[],
     )
     # Verify response
-    assert response.datasource_id == testing_datasource.ds.id
+    assert response.datasource_id == testing_datasource.datasource_id
     assert response.state == ExperimentState.ASSIGNED
 
     # Verify design_spec
@@ -1453,7 +1453,7 @@ async def test_create_experiment_impl_no_metric_stratification(
     )
 
     # Verify basic response
-    assert response.datasource_id == testing_datasource.ds.id
+    assert response.datasource_id == testing_datasource.datasource_id
     assert response.state == ExperimentState.ASSIGNED
     assert response.experiment_id.startswith("exp_")
     assert response.design_spec.arms[0].arm_id is not None
@@ -1496,7 +1496,11 @@ async def test_get_experiment_impl_of_legacy_experiment(xngin_session, testing_d
     )
     experiment_db.webhooks = [
         tables.Webhook(
-            id="wh1", name="wh", type="experiment.created", url="https://url", organization_id=testing_datasource.org.id
+            id="wh1",
+            name="wh",
+            type="experiment.created",
+            url="https://url",
+            organization_id=testing_datasource.organization_id,
         )
     ]
     experiment_db.participant_type = "experiment_1.0_type"
@@ -1508,7 +1512,7 @@ async def test_get_experiment_impl_of_legacy_experiment(xngin_session, testing_d
 
     # Simple field presence checks
     assert result.experiment_id == experiment_db.id
-    assert result.datasource_id == testing_datasource.ds.id
+    assert result.datasource_id == testing_datasource.datasource_id
     assert result.state == ExperimentState.COMMITTED
     assert result.participant_type_deprecated == "experiment_1.0_type"
     assert result.power_analyses is None
