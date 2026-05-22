@@ -75,7 +75,7 @@
 | src/xngin/stats/bandit\_sampling.py                                                |       86 |        7 |     92% |184, 215, 222, 250, 274, 276, 308 |
 | src/xngin/stats/bandit\_weights\_to\_prior.py                                      |       50 |        2 |     96% |   75, 138 |
 | src/xngin/stats/cluster\_icc.py                                                    |       40 |        2 |     95% |    33, 57 |
-| src/xngin/stats/cluster\_power.py                                                  |       92 |       14 |     85% |191, 194, 221-255 |
+| src/xngin/stats/cluster\_power.py                                                  |      106 |        2 |     98% |  221, 224 |
 | src/xngin/stats/individual\_power.py                                               |      102 |        5 |     95% |75, 78, 122-123, 198 |
 | src/xngin/stats/power.py                                                           |       34 |        1 |     97% |        84 |
 | src/xngin/tq/handlers.py                                                           |       58 |        9 |     84% |54-55, 101, 109-110, 121-130 |
@@ -87,7 +87,7 @@
 | src/xngin/xsecrets/secretservice.py                                                |       63 |        5 |     92% |37, 49-50, 108, 130 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                                     |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                                         |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                                          | **13592** |  **869** | **94%** |           |
+| **TOTAL**                                                                          | **13645** |  **857** | **94%** |           |
 
 78 files skipped due to complete coverage.
 
