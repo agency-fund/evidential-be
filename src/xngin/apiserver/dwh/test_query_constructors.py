@@ -35,7 +35,7 @@ pytest_plugins = ("xngin.apiserver.dwh.dwh_test_support",)
 
 
 @pytest.mark.parametrize(
-    "select_columns, error_message",
+    ("select_columns", "error_message"),
     [
         (set(), "select_columns must have at least one item."),
         ({"missing_column"}, "Column missing_column not found in schema."),
@@ -57,7 +57,7 @@ SELECT_COLUMNS_CASES_PG = [
 ]
 
 
-@pytest.mark.parametrize("select_columns, expected_columns", SELECT_COLUMNS_CASES_PG)
+@pytest.mark.parametrize(("select_columns", "expected_columns"), SELECT_COLUMNS_CASES_PG)
 def test_compile_query_without_filters_pg(select_columns, expected_columns):
     # SQLAlchemy shares a base class for both psycopg2's and psycopg's dialect so they are very similar.
     dialects = (
@@ -82,7 +82,7 @@ SELECT_COLUMNS_CASES_BQ = [
 ]
 
 
-@pytest.mark.parametrize("select_columns, expected_columns", SELECT_COLUMNS_CASES_BQ)
+@pytest.mark.parametrize(("select_columns", "expected_columns"), SELECT_COLUMNS_CASES_BQ)
 def test_compile_query_without_filters_bq(select_columns, expected_columns):
     query = compose_query(SampleTable.get_table(), select_columns, [], 2)
     dialect = sqlalchemy_bigquery.dialect()
@@ -553,7 +553,7 @@ def test_allowed_date_or_datetime_filter_validation(column_type):
 
 
 @pytest.mark.parametrize(
-    "table_name,schema_name,expected_sql",
+    ("table_name", "schema_name", "expected_sql"),
     [
         ("foo", None, "SELECT * FROM foo LIMIT 0"),
         ("--bar", "my;schema", 'SELECT * FROM "my;schema"."--bar" LIMIT 0'),

@@ -181,7 +181,7 @@ def make_unvalidated_create_experiment_request(
 
 
 @pytest.mark.parametrize(
-    "key,expected_status,expected_message",
+    ("key", "expected_status", "expected_message"),
     [
         ("", 400, "request header is required"),
         ("a", 400, "must start with"),
@@ -237,7 +237,7 @@ async def test_get_experiment(testing_datasource, aclient: AdminAPIClient, eclie
 
 
 @pytest.mark.parametrize(
-    "experiment_type, table_name, primary_key, expected_status, expected_in_loc",
+    ("experiment_type", "table_name", "primary_key", "expected_status", "expected_in_loc"),
     [
         (ExperimentsType.FREQ_PREASSIGNED, None, None, 422, "table_name"),
         (ExperimentsType.FREQ_PREASSIGNED, "dwh", None, 422, "primary_key"),
@@ -390,7 +390,7 @@ async def test_both_get_experiment_assignments_endpoints_have_matching_strata_or
         strata=[Stratum(field_name="ethnicity"), Stratum(field_name="gender")],
     )
     created_experiment = aclient.create_experiment(
-        datasource_id=testing_datasource.ds.id,
+        datasource_id=testing_datasource.datasource_id,
         body=request,
     ).data
     aclient.commit_experiment(
