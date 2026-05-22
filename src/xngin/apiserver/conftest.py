@@ -41,7 +41,6 @@ from xngin.apiserver.routers.auth.auth_dependencies import (
 )
 from xngin.apiserver.settings import (
     Dsn,
-    ParticipantsDef,
 )
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing import (
@@ -319,7 +318,6 @@ class DatasourceMetadata:
     api_ds: aapi.GetDatasourceResponse
     organization_id: str
     datasource_id: str
-    pt: ParticipantsDef
 
     # An API key suitable for use in the Authorization: header.
     key: str
@@ -385,7 +383,6 @@ async def _make_datasource_metadata(
 
     org = await xngin_session.get_one(tables.Organization, org_id)
     datasource = await xngin_session.get_one(tables.Datasource, datasource_id)
-    datasource_config = datasource.get_config()
 
     return DatasourceMetadata(
         ds=datasource,
@@ -393,7 +390,6 @@ async def _make_datasource_metadata(
         api_ds=api_ds,
         organization_id=api_org.id,
         datasource_id=api_ds.id,
-        pt=datasource_config.participants[0],
         key=key_response.key,
         key_id=key_response.id,
         org=org,

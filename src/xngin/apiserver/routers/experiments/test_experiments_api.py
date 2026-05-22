@@ -390,7 +390,7 @@ async def test_both_get_experiment_assignments_endpoints_have_matching_strata_or
         strata=[Stratum(field_name="ethnicity"), Stratum(field_name="gender")],
     )
     created_experiment = aclient.create_experiment(
-        datasource_id=testing_datasource.ds.id,
+        datasource_id=testing_datasource.datasource_id,
         body=request,
     ).data
     aclient.commit_experiment(
