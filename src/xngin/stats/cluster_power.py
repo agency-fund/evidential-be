@@ -37,9 +37,13 @@ class MdeClusterResult:
     values and surface the design-effect inputs without recomputing them.
     """
 
+    # The minimum detectable effect in absolute terms
     target_possible: float
+    # The minimum detectable effect as percent change from baseline
     pct_change_possible: float
+    # The design effect (DEFF)
     deff: float
+    # The effective sample size when accounting for clustering
     effective_n: int
 
 
