@@ -43,7 +43,7 @@ def test_analyze_metric_power_numeric():
 
 
 @pytest.mark.parametrize(
-    "available_nonnull_n,available_n,target_possible",
+    ("available_nonnull_n", "available_n", "target_possible"),
     [
         (789, 789, 23.8468),
         (104, 789, 42.9997),

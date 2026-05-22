@@ -1025,7 +1025,7 @@ async def test_create_experiment_impl_for_freq_online_with_unbalanced_arms(
 
 
 @pytest.mark.parametrize(
-    "experiment_type, filters, match",
+    ("experiment_type", "filters", "match"),
     [
         (
             ExperimentsType.FREQ_ONLINE,
@@ -1345,7 +1345,7 @@ async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_dat
 
 
 @pytest.mark.parametrize(
-    "experiment_type,reward_type,prior_type",
+    ("experiment_type", "reward_type", "prior_type"),
     [
         (ExperimentsType.MAB_ONLINE, LikelihoodTypes.NORMAL, PriorTypes.NORMAL),
         (ExperimentsType.MAB_ONLINE, LikelihoodTypes.BERNOULLI, PriorTypes.BETA),
@@ -2031,7 +2031,7 @@ async def test_create_assignment_for_participant_with_three_weighted_arms(xngin_
 
 
 @pytest.mark.parametrize(
-    "experiment_type,stopped_reason",
+    ("experiment_type", "stopped_reason"),
     [
         (ExperimentsType.FREQ_PREASSIGNED, StopAssignmentReason.PREASSIGNED),
         (ExperimentsType.FREQ_ONLINE, StopAssignmentReason.END_DATE),
@@ -2068,7 +2068,7 @@ async def test_create_assignment_for_participant_stopped_reason(
 
 
 @pytest.mark.parametrize(
-    "has_assignment, participant_id, sample_timestamp, income",
+    ("has_assignment", "participant_id", "sample_timestamp", "income"),
     [
         # These 2 will already exist in the database due to make_experiment_with_assignments
         (True, "p1", "2023", 0),
@@ -2128,7 +2128,7 @@ async def test_get_or_create_assignment_for_participant_with_filters_in_online_f
 
 
 @pytest.mark.parametrize(
-    "has_assignment, experiment_type, create_if_none, expected_exception",
+    ("has_assignment", "experiment_type", "create_if_none", "expected_exception"),
     [
         # Preassigned experiments can't add new assignments
         (False, ExperimentsType.FREQ_PREASSIGNED, False, does_not_raise()),
@@ -2168,7 +2168,7 @@ async def test_get_or_create_assignment_for_participant_without_filters(
 
 
 @pytest.mark.parametrize(
-    "experiment_type,prior_type,reward_type",
+    ("experiment_type", "prior_type", "reward_type"),
     [
         (ExperimentsType.MAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
         (ExperimentsType.MAB_ONLINE, PriorTypes.BETA, LikelihoodTypes.BERNOULLI),

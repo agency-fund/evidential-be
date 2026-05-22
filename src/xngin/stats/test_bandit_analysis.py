@@ -12,7 +12,7 @@ from xngin.stats.test_bandit_sampling import make_experiment_table
 
 
 @pytest.mark.parametrize(
-    "prior_type,reward_type",
+    ("prior_type", "reward_type"),
     [
         (PriorTypes.BETA, LikelihoodTypes.BERNOULLI),
         (PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
@@ -48,7 +48,7 @@ def test_mab_analysis(prior_type, reward_type):
 
 
 @pytest.mark.parametrize(
-    "prior_type,reward_type",
+    ("prior_type", "reward_type"),
     [
         (PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
         (PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
