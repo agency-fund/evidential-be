@@ -7,7 +7,7 @@
 | src/xngin/apiserver/apikeys.py                                                     |       51 |        4 |     92% |     59-63 |
 | src/xngin/apiserver/certs/certs.py                                                 |       16 |        9 |     44% |19-23, 37-44 |
 | src/xngin/apiserver/common\_field\_types.py                                        |       12 |        1 |     92% |        13 |
-| src/xngin/apiserver/conftest.py                                                    |      248 |       26 |     90% |72, 91, 106, 108, 119, 170, 174, 176, 180, 408, 425-440, 455, 472, 475, 510 |
+| src/xngin/apiserver/conftest.py                                                    |      247 |       26 |     89% |71, 90, 105, 107, 118, 169, 173, 175, 179, 404, 421-436, 451, 468, 471, 506 |
 | src/xngin/apiserver/customlogging.py                                               |       66 |       13 |     80% |25-26, 48-68, 73-74, 102-107 |
 | src/xngin/apiserver/database.py                                                    |       48 |        5 |     90% |30, 41, 58, 64, 71 |
 | src/xngin/apiserver/dependencies.py                                                |       12 |        4 |     67% | 12, 23-25 |
@@ -46,7 +46,7 @@
 | src/xngin/apiserver/routers/experiments/experiments\_common\_csv.py                |       75 |        4 |     95% |36, 90, 200-201 |
 | src/xngin/apiserver/routers/experiments/property\_filters.py                       |       96 |        8 |     92% |25, 28, 32, 95-96, 148, 160-161 |
 | src/xngin/apiserver/routers/experiments/test\_experiments\_api.py                  |      420 |        3 |     99% |63, 177-178 |
-| src/xngin/apiserver/routers/experiments/test\_experiments\_common.py               |     1001 |        8 |     99% |200-201, 1232-1234, 1609-1610, 2063 |
+| src/xngin/apiserver/routers/experiments/test\_experiments\_common.py               |     1001 |        8 |     99% |200-201, 1232-1234, 1613-1614, 2067 |
 | src/xngin/apiserver/routers/experiments/test\_property\_filters.py                 |       41 |        1 |     98% |        24 |
 | src/xngin/apiserver/routers/healthchecks\_api.py                                   |       16 |        2 |     88% |     26-27 |
 | src/xngin/apiserver/routers/test\_assignment\_adapters.py                          |      204 |        1 |     99% |       103 |
@@ -87,7 +87,7 @@
 | src/xngin/xsecrets/secretservice.py                                                |       63 |        5 |     92% |37, 49-50, 108, 130 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                                     |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                                         |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                                          | **13645** |  **857** | **94%** |           |
+| **TOTAL**                                                                          | **13644** |  **857** | **94%** |           |
 
 78 files skipped due to complete coverage.
 
