@@ -146,7 +146,6 @@ ignore = [
     "PLR6301", # method could be a function, class method, or static method
     "PT011", # pytest.raises(_) is too broad, set the `match` parameter or use a more specific exception
     "PT018", # Assertion should be broken down into multiple parts
-    "RUF069", # Unreliable floating point equality comparison
     "S101", # Use of `assert` detected
     "SIM108", # Use ternary operator instead of `if`-`else`-block
     "RUF029", # Unused async
@@ -155,6 +154,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "**/test_*" = [
+    "RUF069", # round-trip float equality with literals is fine in tests
     "S105",  # Possible hardcoded password assigned
     "S106",  # Possible hardcoded password assigned to argument
     "S311",  # Standard pseudo-random generators are not suitable for cryptographic purposes
