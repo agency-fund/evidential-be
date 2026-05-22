@@ -1,7 +1,3 @@
-# FastAPI's exception-handler dispatch checks `iscoroutinefunction`: sync handlers run via
-# `run_in_threadpool`, async ones directly on the event loop. Our handlers build tiny JSON
-# responses with no awaits, but staying async avoids the thread-pool round-trip per error.
-# ruff: noqa: RUF029
 from collections.abc import Sequence
 
 import psycopg.errors

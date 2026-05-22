@@ -161,7 +161,7 @@ class CompatHTTPBearer(HTTPBearer):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Authorization header is required")
 
 
-async def require_valid_session_token(  # noqa: RUF029  -- FastAPI dispatches sync deps via thread pool; keep async
+async def require_valid_session_token(
     authorization: Annotated[
         HTTPAuthorizationCredentials,
         Depends(CompatHTTPBearer()),

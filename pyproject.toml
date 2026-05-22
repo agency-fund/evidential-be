@@ -165,6 +165,13 @@ ignore = [
     "S311",  # Standard pseudo-random generators are not suitable for cryptographic purposes
     "S608",  # Possible SQL injection vector through string-based query construction
 ]
+"**/*_dependencies.py" = [
+    "RUF029", # Unused async: FastAPI dependencies are allowed to be async to avoid threading.
+]
+"**/exceptionhandlers.py" = [
+    "RUF029", # Unused async: FastAPI exception handlers are allowed to be async to avoid threading.
+]
+
 
 [tool.ruff.lint.flake8-import-conventions]
 # https://docs.astral.sh/ruff/settings/#lintflake8-import-conventions
