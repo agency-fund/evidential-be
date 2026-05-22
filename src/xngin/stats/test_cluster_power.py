@@ -124,7 +124,7 @@ class TestCalculateDesignEffect:
         assert deft_ratio == pytest.approx(mde_ratio, rel=0.01)
 
     @pytest.mark.parametrize(
-        "icc, avg_cluster_size, cv, expected",
+        ("icc", "avg_cluster_size", "cv", "expected"),
         [
             pytest.param(0.0, 30, 0.0, 1.0, id="no_clustering"),
             pytest.param(1.0, 30, 0.0, 30.0, id="perfect_clustering"),
@@ -142,7 +142,7 @@ class TestCalculateDesignEffect:
         assert deff == expected
 
     @pytest.mark.parametrize(
-        "icc, avg_cluster_size, cv, expected_error",
+        ("icc", "avg_cluster_size", "cv", "expected_error"),
         [
             pytest.param(1.5, 30, 0.0, "ICC must be between 0 and 1, got 1.5", id="invalid_icc"),
             pytest.param(0.15, 0, 0.0, "Cluster size must be >= 1, got 0", id="invalid_cluster_size"),
@@ -676,7 +676,7 @@ def test_solve_for_sample_size_cluster_cv_affects_all_arms():
 
 
 @pytest.mark.parametrize(
-    "cv,expected_warning",
+    ("cv", "expected_warning"),
     [(0, None), (1.0, None), (1.5, "Warning: High cluster size variation (CV=1.50)")],
 )
 def test_solve_for_sample_size_cluster_cv_warning_message(cv: float, expected_warning: str | None):
