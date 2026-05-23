@@ -18,7 +18,7 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from xngin.apiserver import flags
+from xngin.apiserver import constants, flags
 from xngin.apiserver.conftest import delete_seeded_users, expect_status_code
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
@@ -3994,7 +3994,14 @@ async def test_list_organization_events_pagination_with_same_timestamp_is_id_des
     assert page2.items[0].created_at == tied_created_at
 
 
-async def _insert_webhook_sent_event(xngin_session: AsyncSession, organization_id: str) -> tuple[str, dict]:
+_PERSISTED_WEBHOOK_TOKEN = "sample-token"
+
+
+async def _insert_webhook_sent_event(
+    xngin_session: AsyncSession,
+    organization_id: str,
+    webhook_token_header: str = constants.HEADER_WEBHOOK_TOKEN,
+) -> tuple[str, dict]:
     """Inserts a webhook.sent event for the given org. Returns (event_id, expected_outbound_payload).
 
     Done via direct insert because the only way to produce a webhook.sent event in production is to run the
@@ -4004,7 +4011,7 @@ async def _insert_webhook_sent_event(xngin_session: AsyncSession, organization_i
         organization_id=organization_id,
         url="https://example.com/webhook",
         body={"hello": "world"},
-        headers={"x-auth": "secret"},
+        headers={webhook_token_header: _PERSISTED_WEBHOOK_TOKEN},
     )
     event = tables.Event(organization_id=organization_id, type=WebhookSentEvent.TYPE).set_data(
         WebhookSentEvent(request=outbound, success=False, response="boom")
@@ -4015,7 +4022,7 @@ async def _insert_webhook_sent_event(xngin_session: AsyncSession, organization_i
 
 
 async def test_resend_organization_event_enqueues_task(xngin_session: AsyncSession, aclient: AdminAPIClient):
-    """Resending a webhook.sent event inserts a webhook.outbound task with the original payload."""
+    """Resending a webhook.sent event inserts a webhook.outbound task with the original (unredacted) payload."""
     org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="resend-happy")).data.id
     event_id, expected_payload = await _insert_webhook_sent_event(xngin_session, org_id)
 
@@ -4025,8 +4032,30 @@ async def test_resend_organization_event_enqueues_task(xngin_session: AsyncSessi
         await xngin_session.scalars(select(tables.Task).where(tables.Task.task_type == WEBHOOK_OUTBOUND_TASK_TYPE))
     )
     assert len(tasks) == 1
-    assert tasks[0].payload == expected_payload
     assert tasks[0].status == "pending"
+    # The new task carries the original payload verbatim, including the unredacted auth token, so the downstream
+    # webhook receives the same authenticated request as the original.
+    assert tasks[0].payload == expected_payload
+    assert tasks[0].payload["headers"][constants.HEADER_WEBHOOK_TOKEN] == _PERSISTED_WEBHOOK_TOKEN
+
+
+@pytest.mark.parametrize(
+    "webhook_token_header",
+    [constants.HEADER_WEBHOOK_TOKEN, constants.HEADER_WEBHOOK_TOKEN.lower()],
+)
+async def test_list_organization_events_redacts_webhook_token(
+    xngin_session: AsyncSession,
+    aclient: AdminAPIClient,
+    webhook_token_header: str,
+):
+    """The webhook.sent event details surfaced by the API mask the webhook token header."""
+    org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="resend-redact")).data.id
+    event_id, _ = await _insert_webhook_sent_event(xngin_session, org_id, webhook_token_header=webhook_token_header)
+
+    events = aclient.list_organization_events(organization_id=org_id).data.items
+    event = next(ev for ev in events if ev.id == event_id)
+    assert event.details is not None
+    assert event.details["request"]["headers"][webhook_token_header] == "***"
 
 
 async def test_resend_organization_event_rejects_non_webhook_event(

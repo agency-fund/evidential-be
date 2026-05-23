@@ -19,3 +19,7 @@ class BaseEventModel(BaseModel):
         This is displayed in the UI so it may be an absolute path in the Dash UI.
         """
         return None
+
+    def sanitize(self):
+        """Sanitizes the event for display in the UI."""
+        return self

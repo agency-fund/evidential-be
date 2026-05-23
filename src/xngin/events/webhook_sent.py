@@ -21,3 +21,6 @@ class WebhookSentEvent(BaseEventModel):
         else:
             summary += " (failed)"
         return summary
+
+    def sanitize(self):
+        return self.model_copy(update={"request": self.request.sanitize()})
