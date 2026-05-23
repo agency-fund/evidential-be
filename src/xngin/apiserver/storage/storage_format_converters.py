@@ -367,7 +367,6 @@ class ExperimentStorageConverter:
         return capi.GetExperimentResponse(
             experiment_id=(await self.experiment.awaitable_attrs.id),
             datasource_id=self.experiment.datasource_id,
-            participant_type_deprecated=self.experiment.participant_type,
             state=ExperimentState(self.experiment.state),
             stopped_assignments_at=self.experiment.stopped_assignments_at,
             stopped_assignments_reason=StopAssignmentReason.from_str(self.experiment.stopped_assignments_reason),
@@ -415,14 +414,12 @@ class ExperimentStorageConverter:
         decision: str = "",
         impact: str = "",
         field_type_map: dict[str, DataType] | None = None,
-        participant_type: str = "",
     ) -> Self:
         """Init experiment with arms from components. Get the final object with get_experiment()."""
         # Initialize common fields
         experiment = tables.Experiment(
             datasource_id=datasource_id,
             experiment_type=design_spec.experiment_type,
-            participant_type=participant_type,
             datasource_table=None,
             name=design_spec.experiment_name,
             description=design_spec.description,
