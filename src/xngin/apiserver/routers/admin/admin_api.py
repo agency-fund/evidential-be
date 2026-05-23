@@ -143,7 +143,9 @@ from xngin.apiserver.settings import (
 from xngin.apiserver.snapshots import snapshotter
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
+from xngin.events.webhook_sent import WebhookSentEvent
 from xngin.stats import check_power
+from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE
 
 GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
 RESPONSE_CACHE_MAX_AGE_SECONDS = timedelta(minutes=15).seconds
@@ -783,6 +785,35 @@ def convert_events_to_eventsummaries(events):
             )
         )
     return event_summaries
+
+
+@router.post(
+    "/organizations/{organization_id}/events/{event_id}/resend",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def resend_organization_event(
+    organization_id: str,
+    event_id: str,
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
+):
+    """Re-enqueues the outbound webhook task that produced a webhook.sent event."""
+    org = await get_organization_or_raise(session, user, organization_id)
+    event = await session.get(tables.Event, event_id)
+    if event is None or event.organization_id != org.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found.")
+    data = event.get_data()
+    if not isinstance(data, WebhookSentEvent):
+        # Only webhook.sent events can be resent.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event type cannot be resent.")
+    session.add(
+        tables.Task(
+            task_type=WEBHOOK_OUTBOUND_TASK_TYPE,
+            payload=data.request.model_dump(),
+        )
+    )
+    await session.commit()
+    return GENERIC_SUCCESS
 
 
 @router.post("/organizations/{organization_id}/members", status_code=status.HTTP_204_NO_CONTENT)

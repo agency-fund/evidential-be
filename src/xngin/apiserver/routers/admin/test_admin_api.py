@@ -103,7 +103,10 @@ from xngin.apiserver.storage.storage_format_converters import ExperimentStorageC
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
+from xngin.events.experiment_created import ExperimentCreatedEvent
+from xngin.events.webhook_sent import WebhookSentEvent
 from xngin.stats.bandit_sampling import update_arm
+from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
 
 SAMPLE_GCLOUD_SERVICE_ACCOUNT = {
     "auth_provider_x509_cert_url": "",
@@ -3989,6 +3992,73 @@ async def test_list_organization_events_pagination_with_same_timestamp_is_id_des
     assert page2.items[0].id == expected_tied_order[1]
     assert page2.items[0].id != page1.items[0].id
     assert page2.items[0].created_at == tied_created_at
+
+
+async def _insert_webhook_sent_event(xngin_session: AsyncSession, organization_id: str) -> tuple[str, dict]:
+    """Inserts a webhook.sent event for the given org. Returns (event_id, expected_outbound_payload).
+
+    Done via direct insert because the only way to produce a webhook.sent event in production is to run the
+    task queue, which we don't want tests to depend on.
+    """
+    outbound = WebhookOutboundTask(
+        organization_id=organization_id,
+        url="https://example.com/webhook",
+        body={"hello": "world"},
+        headers={"x-auth": "secret"},
+    )
+    event = tables.Event(organization_id=organization_id, type=WebhookSentEvent.TYPE).set_data(
+        WebhookSentEvent(request=outbound, success=False, response="boom")
+    )
+    xngin_session.add(event)
+    await xngin_session.commit()
+    return event.id, outbound.model_dump()
+
+
+async def test_resend_organization_event_enqueues_task(xngin_session: AsyncSession, aclient: AdminAPIClient):
+    """Resending a webhook.sent event inserts a webhook.outbound task with the original payload."""
+    org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="resend-happy")).data.id
+    event_id, expected_payload = await _insert_webhook_sent_event(xngin_session, org_id)
+
+    aclient.resend_organization_event(organization_id=org_id, event_id=event_id)
+
+    tasks = list(
+        await xngin_session.scalars(select(tables.Task).where(tables.Task.task_type == WEBHOOK_OUTBOUND_TASK_TYPE))
+    )
+    assert len(tasks) == 1
+    assert tasks[0].payload == expected_payload
+    assert tasks[0].status == "pending"
+
+
+async def test_resend_organization_event_rejects_non_webhook_event(
+    xngin_session: AsyncSession, aclient: AdminAPIClient
+):
+    """Resending an experiment.created event returns 404 (only webhook.sent events can be resent)."""
+    org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="resend-non-webhook")).data.id
+    event = tables.Event(organization_id=org_id, type=ExperimentCreatedEvent.TYPE).set_data(
+        ExperimentCreatedEvent(datasource_id=None, experiment_id="exp_abc")
+    )
+    xngin_session.add(event)
+    await xngin_session.commit()
+
+    with expect_status_code(404, text="cannot be resent"):
+        aclient.resend_organization_event(organization_id=org_id, event_id=event.id)
+
+
+async def test_resend_organization_event_missing_event(aclient: AdminAPIClient):
+    """Resending an unknown event id returns 404."""
+    org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="resend-missing")).data.id
+    with expect_status_code(404, text="Event not found"):
+        aclient.resend_organization_event(organization_id=org_id, event_id="evt_does_not_exist")
+
+
+async def test_resend_organization_event_cross_org_isolation(xngin_session: AsyncSession, aclient: AdminAPIClient):
+    """An event id from org A cannot be resent through org B's URL, even by a member of both orgs."""
+    org_a_id = aclient.create_organizations(body=CreateOrganizationRequest(name="resend-cross-org-a")).data.id
+    org_b_id = aclient.create_organizations(body=CreateOrganizationRequest(name="resend-cross-org-b")).data.id
+    event_id, _ = await _insert_webhook_sent_event(xngin_session, org_a_id)
+
+    with expect_status_code(404, text="Event not found"):
+        aclient.resend_organization_event(organization_id=org_b_id, event_id=event_id)
 
 
 async def test_list_experiments(
