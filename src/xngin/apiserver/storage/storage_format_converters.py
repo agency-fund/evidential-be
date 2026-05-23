@@ -49,7 +49,6 @@ def _set_experiment_fields_from_design_spec(
     """Save the field-related components of a DesignSpec to an experiment."""
     match design_spec:
         case capi.MABExperimentSpec() | capi.CMABExperimentSpec():
-            experiment.design_spec_fields = None
             experiment.experiment_fields = []
             return
         case capi.PreassignedFrequentistExperimentSpec() | capi.OnlineFrequentistExperimentSpec():

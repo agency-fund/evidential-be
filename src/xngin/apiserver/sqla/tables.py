@@ -470,9 +470,6 @@ class Experiment(Base):
     reward_type: Mapped[str | None] = mapped_column()
 
     # Frequentist config params
-    # JSON serialized form of an experiment's specified dwh fields used for strata/metrics/filters.
-    # TODO: Deprecated. Drop this column in a future migration.
-    design_spec_fields: Mapped[dict | None] = mapped_column(postgresql.JSONB)
     # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run
     # power analyses.
     power_analyses: Mapped[dict | None] = mapped_column(postgresql.JSONB)
