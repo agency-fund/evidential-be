@@ -2,3 +2,5 @@
 ALTER TABLE "public"."arm_assignments" DROP COLUMN "participant_type";
 -- Modify "draws" table
 ALTER TABLE "public"."draws" DROP COLUMN "participant_type";
+-- Modify "experiments" table
+ALTER TABLE "public"."experiments" DROP COLUMN "participant_type", DROP COLUMN "design_spec_fields";
