@@ -221,7 +221,6 @@ async def test_bulk_insert_arm_assignments_basic(
     arm_ids = [arm.id for arm in experiment.arms]
     unique_id_field = experiment.unique_id_field()
     assert unique_id_field is not None
-    participant_type_name = "participant_type_is_deprecated"
 
     # Simulate 2 arms with stratification
     fake_assignment_results = AssignmentResult(
@@ -236,7 +235,6 @@ async def test_bulk_insert_arm_assignments_basic(
         xngin_session=xngin_session,
         experiment_id=experiment.id,
         arm_ids=arm_ids,
-        participant_type=participant_type_name,
         participant_id_col=unique_id_field.field_name,
         data=sample_rows,
         assignments=fake_assignment_results,
@@ -260,7 +258,6 @@ async def test_bulk_insert_arm_assignments_basic(
     # Verify arm assignments
     for assignment in assignments:
         assert assignment.experiment_id == experiment.id
-        assert assignment.participant_type == participant_type_name
         assert assignment.arm_id in arm_ids
 
         # Verify strata are properly stored
@@ -285,7 +282,6 @@ async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
     arm_ids = [arm.id for arm in experiment.arms]
     unique_id_field = experiment.unique_id_field()
     assert unique_id_field is not None
-    participant_type_name = "participant_type_is_deprecated"
 
     async def _assign_test(data):
         rows = [Row(**row) for row in data.to_dict("records")]
@@ -303,7 +299,6 @@ async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
             xngin_session=xngin_session,
             experiment_id=experiment.id,
             arm_ids=arm_ids,
-            participant_type=participant_type_name,
             participant_id_col=unique_id_field.field_name,
             data=rows,
             assignments=assignment_result,
@@ -382,7 +377,6 @@ async def test_bulk_insert_renders_decimal_and_bool_strata_correctly(
     arm_ids = [arm.id for arm in experiment.arms]
     unique_id_field = experiment.unique_id_field()
     assert unique_id_field is not None
-    participant_type_name = "participant_type_is_deprecated"
 
     fake_assignment_results = AssignmentResult(
         treatment_ids=[0, 1] * (len(sample_rows) // 2),
@@ -396,7 +390,6 @@ async def test_bulk_insert_renders_decimal_and_bool_strata_correctly(
         xngin_session=xngin_session,
         experiment_id=experiment.id,
         arm_ids=arm_ids,
-        participant_type=participant_type_name,
         participant_id_col=unique_id_field.field_name,
         data=sample_rows,
         assignments=fake_assignment_results,
@@ -423,7 +416,6 @@ async def test_bulk_insert_with_no_stratification(xngin_session: AsyncSession, t
     arm_ids = [arm.id for arm in experiment.arms]
     unique_id_field = experiment.unique_id_field()
     assert unique_id_field is not None
-    participant_type_name = "participant_type_is_deprecated"
 
     fake_assignment_results = AssignmentResult(
         treatment_ids=[0, 1] * (len(sample_rows) // 2),
@@ -437,7 +429,6 @@ async def test_bulk_insert_with_no_stratification(xngin_session: AsyncSession, t
         xngin_session=xngin_session,
         experiment_id=experiment.id,
         arm_ids=arm_ids,
-        participant_type=participant_type_name,
         participant_id_col=unique_id_field.field_name,
         data=sample_rows,
         assignments=fake_assignment_results,
@@ -464,7 +455,6 @@ async def test_bulk_insert_with_no_valid_strata(xngin_session: AsyncSession, tes
     arm_ids = [arm.id for arm in experiment.arms]
     unique_id_field = experiment.unique_id_field()
     assert unique_id_field is not None
-    participant_type_name = "participant_type_is_deprecated"
 
     # Simulate no stratification case: the strata column only has a single value.
     fake_assignment_results = AssignmentResult(
@@ -479,7 +469,6 @@ async def test_bulk_insert_with_no_valid_strata(xngin_session: AsyncSession, tes
         xngin_session=xngin_session,
         experiment_id=experiment.id,
         arm_ids=arm_ids,
-        participant_type=participant_type_name,
         participant_id_col=unique_id_field.field_name,
         data=sample_rows,
         assignments=fake_assignment_results,
@@ -503,7 +492,6 @@ async def test_bulk_insert_renders_missing_strata_values_as_na(
     arm_ids = [arm.id for arm in experiment.arms]
     unique_id_field = experiment.unique_id_field()
     assert unique_id_field is not None
-    participant_type_name = "participant_type_is_deprecated"
 
     rows = [dataclasses.replace(row, nullable_value=missing_value) for row in sample_rows]
     fake_assignment_results = AssignmentResult(
@@ -518,7 +506,6 @@ async def test_bulk_insert_renders_missing_strata_values_as_na(
         xngin_session=xngin_session,
         experiment_id=experiment.id,
         arm_ids=arm_ids,
-        participant_type=participant_type_name,
         participant_id_col=unique_id_field.field_name,
         data=rows,
         assignments=fake_assignment_results,

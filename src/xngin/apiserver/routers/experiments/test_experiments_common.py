@@ -610,7 +610,6 @@ async def test_create_preassigned_experiment_impl(
 
     # Check one assignment to see if it looks roughly right
     sample_assignment = assignments[0]
-    assert sample_assignment.participant_type == ""
     assert sample_assignment.experiment_id == experiment.id
     assert sample_assignment.arm_id in (arm.arm_id for arm in response.design_spec.arms)
     # Verify strata information
@@ -1532,7 +1531,6 @@ async def make_experiment_with_assignments(
             assignments = [
                 tables.ArmAssignment(
                     experiment_id=experiment.id,
-                    participant_type="",
                     participant_id="p1",
                     arm_id=arm1_id,
                     created_at=datetime(2025, 1, 1, tzinfo=UTC),
@@ -1543,7 +1541,6 @@ async def make_experiment_with_assignments(
                 ),
                 tables.ArmAssignment(
                     experiment_id=experiment.id,
-                    participant_type="",
                     participant_id="p2",
                     arm_id=arm2_id,
                     created_at=datetime(2025, 1, 2, tzinfo=UTC),
@@ -1557,7 +1554,6 @@ async def make_experiment_with_assignments(
             assignments = [
                 tables.Draw(
                     experiment_id=experiment.id,
-                    participant_type="",
                     participant_id="p1",
                     arm_id=arm1_id,
                     created_at=datetime(2025, 1, 1, tzinfo=UTC),
@@ -1565,7 +1561,6 @@ async def make_experiment_with_assignments(
                 ),
                 tables.Draw(
                     experiment_id=experiment.id,
-                    participant_type="",
                     participant_id="p2",
                     arm_id=arm2_id,
                     created_at=datetime(2025, 1, 2, tzinfo=UTC),
@@ -1576,7 +1571,6 @@ async def make_experiment_with_assignments(
             assignments = [
                 tables.Draw(
                     experiment_id=experiment.id,
-                    participant_type="",
                     participant_id="p1",
                     arm_id=arm1_id,
                     created_at=datetime(2025, 1, 1, tzinfo=UTC),
@@ -1586,7 +1580,6 @@ async def make_experiment_with_assignments(
                 ),
                 tables.Draw(
                     experiment_id=experiment.id,
-                    participant_type="",
                     participant_id="p2",
                     arm_id=arm2_id,
                     created_at=datetime(2025, 1, 2, tzinfo=UTC),
@@ -2240,14 +2233,12 @@ async def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_
     arm_assignments = [
         tables.ArmAssignment(
             experiment_id=experiment_id,
-            participant_type="",
             participant_id="1",
             arm_id=arm1_id,
             strata=[],
         ),
         tables.ArmAssignment(
             experiment_id=experiment_id,
-            participant_type="",
             participant_id="2",
             arm_id=arm2_id,
             strata=[],

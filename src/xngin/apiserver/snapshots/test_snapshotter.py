@@ -78,14 +78,12 @@ async def make_experiment(
     arm_assignments = [
         tables.ArmAssignment(
             experiment_id=experiment.id,
-            participant_type="",
             participant_id="1",
             arm_id=experiment.arms[0].id,
             strata=[],
         ),
         tables.ArmAssignment(
             experiment_id=experiment.id,
-            participant_type="",
             participant_id="2",
             arm_id=experiment.arms[1].id,
             strata=[],

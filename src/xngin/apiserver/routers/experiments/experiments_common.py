@@ -342,7 +342,6 @@ async def create_preassigned_experiment_impl(
         xngin_session=xngin_session,
         experiment_id=experiment.id,
         arm_ids=[arm.id for arm in experiment.arms],
-        participant_type="",
         participant_id_col=unique_id_name,
         data=dwh_participants,
         assignments=assignment_result,
@@ -779,7 +778,6 @@ async def create_assignment_for_participant(
                         .values(
                             experiment_id=experiment.id,
                             participant_id=participant_id,
-                            participant_type="",
                             arm_id=chosen_arm_id,
                             strata=[],
                         )
@@ -793,7 +791,6 @@ async def create_assignment_for_participant(
                         .values(
                             experiment_id=experiment.id,
                             participant_id=participant_id,
-                            participant_type="",
                             arm_id=chosen_arm_id,
                             context_vals=sorted_context_vals,
                         )

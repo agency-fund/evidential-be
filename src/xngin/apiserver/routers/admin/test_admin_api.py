@@ -246,7 +246,6 @@ async def fixture_testing_experiment(xngin_session: AsyncSession, testing_dataso
         assignment = tables.ArmAssignment(
             experiment_id=experiment.id,
             participant_id=str(i),
-            participant_type="",
             arm_id=arm_ids[i % 2],  # Alternate between the two arms
             strata=[],
         )
@@ -293,7 +292,6 @@ async def fixture_testing_bandit_experiment(request, xngin_session: AsyncSession
         assignment = tables.Draw(
             experiment_id=experiment.id,
             participant_id=str(i),
-            participant_type="",
             arm_id=arm_id,
             outcome=outcome,
             observed_at=datetime.now(tz=UTC),
@@ -2746,7 +2744,6 @@ async def test_analyze_experiment_with_no_assignments_in_one_arm_yet(
         arm_assignments.append(
             tables.ArmAssignment(
                 experiment_id=experiment_id,
-                participant_type="",
                 participant_id=f"{i}",
                 arm_id=assigned_arm_id,
                 strata=[],

@@ -411,7 +411,6 @@ class ArmAssignment(Base):
 
     experiment_id: Mapped[str] = mapped_column(String(length=36), primary_key=True)
     participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
-    participant_type: Mapped[str] = mapped_column(String(255))
     arm_id: Mapped[str] = mapped_column(String(36))
     # JSON serialized form of a list of Strata objects (from Assignment.strata).
     strata: Mapped[list[dict[str, str]]] = mapped_column(postgresql.JSONB)
@@ -589,7 +588,6 @@ class Draw(Base):
 
     experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True)
     participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
-    participant_type: Mapped[str] = mapped_column(String(255))
     arm_id: Mapped[str] = mapped_column(ForeignKey("arms.id", ondelete="CASCADE"))
     created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
 
