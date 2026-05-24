@@ -41,7 +41,7 @@ ide = [
 dev = [
     "boto3-stubs>=1.39.1",
     "coverage>=7.11.0",
-    "deepdiff>=8.6.1,<9",
+    "deepdiff>=8.6.2,<9",
     "fastapi-typed-client @ git+https://github.com/dctaf/fastapi-typed-client-fork@evid",
     "mypy>=1.19.1",
     "pandas-stubs>=2.3.2",
@@ -129,9 +129,6 @@ select = [
 ]
 ignore = [
     "E266", # Too many leading `#` before block comment
-    "FURB101", # `open` and `read` should be replaced by `Path(file).read_text()`
-    "FURB103", # `open` and `write` should be replaced by `Path(filename)....`
-    "FURB140", # Use `itertools.starmap` instead of the generator
     "FURB152", # replace values that resemble mathemematical constants with constants (e.g. 3.14 => math.pi)
     "PD002", # `inplace=True` should be avoided; it has inconsistent behavior
     "PD003", # `.isna` is preferred to `.isnull`; functionality is equivalent"
@@ -147,11 +144,8 @@ ignore = [
     "PLR1702", # too many nested blocks
     "PLR2004", # magic value,
     "PLR6301", # method could be a function, class method, or static method
-    "PT006", # Wrong type passed to first argument of `pytest.mark.parametrize`; expected `tuple`
     "PT011", # pytest.raises(_) is too broad, set the `match` parameter or use a more specific exception
     "PT018", # Assertion should be broken down into multiple parts
-    "PYI041", # Use `float` instead of `int | float`
-    "RUF069", # Unreliable floating point equality comparison
     "S101", # Use of `assert` detected
     "SIM108", # Use ternary operator instead of `if`-`else`-block
     "RUF029", # Unused async
@@ -160,6 +154,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "**/test_*" = [
+    "RUF069", # round-trip float equality with literals is fine in tests
     "S105",  # Possible hardcoded password assigned
     "S106",  # Possible hardcoded password assigned to argument
     "S311",  # Standard pseudo-random generators are not suitable for cryptographic purposes

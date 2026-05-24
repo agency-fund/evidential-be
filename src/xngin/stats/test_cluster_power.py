@@ -13,6 +13,7 @@ from xngin.stats.cluster_power import (
     calculate_design_effect,
     calculate_effective_sample_size,
     calculate_num_clusters_needed,
+    solve_for_mde_cluster,
     solve_for_mde_cluster_impl,
     solve_for_sample_size_cluster,
 )
@@ -124,7 +125,7 @@ class TestCalculateDesignEffect:
         assert deft_ratio == pytest.approx(mde_ratio, rel=0.01)
 
     @pytest.mark.parametrize(
-        "icc, avg_cluster_size, cv, expected",
+        ("icc", "avg_cluster_size", "cv", "expected"),
         [
             pytest.param(0.0, 30, 0.0, 1.0, id="no_clustering"),
             pytest.param(1.0, 30, 0.0, 30.0, id="perfect_clustering"),
@@ -142,7 +143,7 @@ class TestCalculateDesignEffect:
         assert deff == expected
 
     @pytest.mark.parametrize(
-        "icc, avg_cluster_size, cv, expected_error",
+        ("icc", "avg_cluster_size", "cv", "expected_error"),
         [
             pytest.param(1.5, 30, 0.0, "ICC must be between 0 and 1, got 1.5", id="invalid_icc"),
             pytest.param(0.15, 0, 0.0, "Cluster size must be >= 1, got 0", id="invalid_cluster_size"),
@@ -219,23 +220,6 @@ def test_calculate_num_clusters_needed_high_deff():
     assert n_high == 20
 
 
-def test_solve_for_mde_cluster_impl_basic():
-    metric = DesignSpecMetric(
-        field_name="reading_score",
-        metric_type=MetricType.NUMERIC,
-        metric_baseline=100,
-        metric_stddev=20,
-        icc=0.15,
-        avg_cluster_size=30,
-        cv=0.0,
-    )
-
-    target, pct_change = solve_for_mde_cluster_impl(desired_n=600, metric=metric, n_arms=2)
-
-    assert target == pytest.approx(110.68, rel=0.01)
-    assert pct_change == pytest.approx(0.1068, rel=0.01)
-
-
 def test_solve_for_mde_cluster_impl_no_clustering():
     ind_metric = DesignSpecMetric(
         field_name="test_metric",
@@ -254,10 +238,10 @@ def test_solve_for_mde_cluster_impl_no_clustering():
     )
 
     ind_target, ind_pct = solve_for_mde_individual_impl(desired_n=1000, metric=ind_metric, n_arms=2)
-    clust_target, clust_pct = solve_for_mde_cluster_impl(desired_n=1000, metric=clust_metric, n_arms=2)
+    clust_result = solve_for_mde_cluster_impl(desired_n=1000, metric=clust_metric, n_arms=2)
 
-    assert clust_target == pytest.approx(ind_target)
-    assert clust_pct == pytest.approx(ind_pct)
+    assert clust_result.target_possible == pytest.approx(ind_target)
+    assert clust_result.pct_change_possible == pytest.approx(ind_pct)
 
 
 def test_solve_for_mde_cluster_impl_higher_with_clustering():
@@ -278,7 +262,7 @@ def test_solve_for_mde_cluster_impl_higher_with_clustering():
     )
 
     ind_target, ind_pct = solve_for_mde_individual_impl(desired_n=600, metric=ind_metric, n_arms=2)
-    clust_target, clust_pct = solve_for_mde_cluster_impl(desired_n=600, metric=clust_metric, n_arms=2)
+    clust_result = solve_for_mde_cluster_impl(desired_n=600, metric=clust_metric, n_arms=2)
 
     assert ind_target == pytest.approx(104.6, rel=0.01)
     assert ind_pct == pytest.approx(0.046, rel=0.01)
@@ -286,8 +270,8 @@ def test_solve_for_mde_cluster_impl_higher_with_clustering():
     # With 600 participants, ICC=0.15, m=30:
     # DEFF = 5.35, effective_n = 600/5.35 = 112
     # MDE should be ~10.68 points (10.68% change)
-    assert clust_target == pytest.approx(110.7, rel=0.01)
-    assert clust_pct == pytest.approx(0.1068, rel=0.01)
+    assert clust_result.target_possible == pytest.approx(110.7, rel=0.01)
+    assert clust_result.pct_change_possible == pytest.approx(0.1068, rel=0.01)
 
 
 def test_solve_for_mde_cluster_impl_binary_metric():
@@ -300,12 +284,12 @@ def test_solve_for_mde_cluster_impl_binary_metric():
         cv=0.0,
     )
 
-    target, pct_change = solve_for_mde_cluster_impl(desired_n=1000, metric=metric, n_arms=2)
+    result = solve_for_mde_cluster_impl(desired_n=1000, metric=metric, n_arms=2)
 
     # Binary metric with clustering
     # DEFF = 1 + (50-1)*0.05 = 3.45
-    assert target == pytest.approx(0.0243, rel=0.01)
-    assert pct_change == pytest.approx(-0.7566, rel=0.01)
+    assert result.target_possible == pytest.approx(0.0243, rel=0.01)
+    assert result.pct_change_possible == pytest.approx(-0.7566, rel=0.01)
 
 
 def test_solve_for_mde_cluster_impl_unbalanced():
@@ -319,10 +303,10 @@ def test_solve_for_mde_cluster_impl_unbalanced():
         cv=0.0,
     )
 
-    target, pct_change = solve_for_mde_cluster_impl(desired_n=1000, metric=metric, n_arms=2, arm_weights=[20, 80])
+    result = solve_for_mde_cluster_impl(desired_n=1000, metric=metric, n_arms=2, arm_weights=[20, 80])
 
-    assert target == pytest.approx(110.35, rel=0.01)
-    assert pct_change == pytest.approx(0.1035, rel=0.01)
+    assert result.target_possible == pytest.approx(110.35, rel=0.01)
+    assert result.pct_change_possible == pytest.approx(0.1035, rel=0.01)
 
 
 def test_solve_for_mde_cluster_impl_with_cv():
@@ -338,14 +322,118 @@ def test_solve_for_mde_cluster_impl_with_cv():
     )
     metric_high_cv = metric_no_cv.model_copy(update={"cv": 1.5})
 
-    target_no_cv, pct_no_cv = solve_for_mde_cluster_impl(desired_n=720, metric=metric_no_cv, n_arms=2)
-    target_high_cv, pct_high_cv = solve_for_mde_cluster_impl(desired_n=720, metric=metric_high_cv, n_arms=2)
+    result_no_cv = solve_for_mde_cluster_impl(desired_n=720, metric=metric_no_cv, n_arms=2)
+    result_high_cv = solve_for_mde_cluster_impl(desired_n=720, metric=metric_high_cv, n_arms=2)
 
     # CV increases DEFF, which increases MDE
-    assert target_high_cv > target_no_cv
-    assert target_no_cv == pytest.approx(110.3, rel=0.01)
-    assert target_high_cv == pytest.approx(116.89, rel=0.01)
-    assert pct_high_cv > pct_no_cv
+    assert result_high_cv.target_possible > result_no_cv.target_possible
+    assert result_no_cv.target_possible == pytest.approx(110.3, rel=0.01)
+    assert result_high_cv.target_possible == pytest.approx(116.89, rel=0.01)
+    assert result_high_cv.pct_change_possible > result_no_cv.pct_change_possible
+
+
+def test_solve_for_mde_cluster_populates_all_fields():
+    """In MDE mode, the wrapper populates per-arm cluster counts, DEFF, and effective_n
+    so the FE doesn't fall back to stale values from a prior power check."""
+    metric = DesignSpecMetric(
+        field_name="reading_score",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_stddev=20,
+        icc=0.15,
+        avg_cluster_size=30,
+        cv=0.0,
+    )
+
+    analysis = solve_for_mde_cluster(metric=metric, desired_n=600, n_arms=2)
+
+    # MDE math itself is unchanged from the existing _impl tests.
+    assert analysis.target_n == 600
+    assert analysis.target_possible == pytest.approx(110.68, rel=0.01)
+    assert analysis.pct_change_possible == pytest.approx(0.1068, rel=0.01)
+    assert analysis.sufficient_n is None  # not applicable in MDE mode
+
+    # The new fields.
+    expected_deff = calculate_design_effect(icc=0.15, avg_cluster_size=30, cv=0.0)
+    assert analysis.design_effect == pytest.approx(expected_deff)
+    assert analysis.effective_sample_size == calculate_effective_sample_size(600, expected_deff)
+
+    # Equal split across 2 arms: 300 each, rounded up to whole clusters of size 30 → 10 per arm.
+    assert analysis.clusters_per_arm == [10, 10]
+    assert analysis.n_per_arm == [300, 300]
+    assert analysis.num_clusters_total == 20
+    assert sum(analysis.clusters_per_arm) == analysis.num_clusters_total
+
+    # The user-facing message should mention the cluster count.
+    assert analysis.msg is not None
+    assert analysis.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
+    assert "20 clusters" in analysis.msg.msg
+
+
+def test_solve_for_mde_cluster_respects_arm_weights():
+    """Unequal arm weights produce proportional per-arm cluster splits, and all
+    response fields are populated consistently (cf. test_solve_for_mde_cluster_populates_all_fields)."""
+    metric = DesignSpecMetric(
+        field_name="reading_score",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_stddev=20,
+        icc=0.15,
+        avg_cluster_size=30,
+        cv=0.0,
+    )
+
+    # 3:1 weighting on 800 participants → 600 in arm 0, 200 in arm 1.
+    analysis = solve_for_mde_cluster(metric=metric, desired_n=800, n_arms=2, arm_weights=[3.0, 1.0])
+
+    # Top-level sample-size fields.
+    assert analysis.target_n == 800
+    assert analysis.sufficient_n is None
+    assert analysis.target_possible is not None
+    assert analysis.pct_change_possible is not None
+
+    # Cluster shape.
+    expected_deff = calculate_design_effect(icc=0.15, avg_cluster_size=30, cv=0.0)
+    assert analysis.design_effect == pytest.approx(expected_deff)
+    assert analysis.effective_sample_size == calculate_effective_sample_size(800, expected_deff)
+
+    # 600 / 30 = 20 clusters, 200 / 30 = 6.67 → ceil to 7.
+    assert analysis.n_per_arm == [600, 200]
+    assert analysis.clusters_per_arm == [20, 7]
+    assert analysis.num_clusters_total == 27
+    assert sum(analysis.clusters_per_arm) == analysis.num_clusters_total
+
+    # Message.
+    assert analysis.msg is not None
+    assert analysis.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
+    assert "27 clusters" in analysis.msg.msg
+
+
+def test_solve_for_mde_cluster_unbalanced_has_larger_mde():
+    """Unbalanced arm splits should yield a larger MDE than a balanced split of
+    the same total n, because the smaller arm becomes the statistical bottleneck.
+    Regression test for arm_weights previously being dropped before reaching
+    solve_for_mde_individual_impl."""
+    metric = DesignSpecMetric(
+        field_name="reading_score",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_stddev=20,
+        icc=0.15,
+        avg_cluster_size=30,
+        cv=0.0,
+    )
+
+    balanced = solve_for_mde_cluster(metric=metric, desired_n=800, n_arms=2)
+    unbalanced = solve_for_mde_cluster(metric=metric, desired_n=800, n_arms=2, arm_weights=[3.0, 1.0])
+
+    assert balanced.target_possible is not None
+    assert unbalanced.target_possible is not None
+    assert balanced.pct_change_possible is not None
+    assert unbalanced.pct_change_possible is not None
+
+    assert unbalanced.target_possible > balanced.target_possible
+    assert unbalanced.pct_change_possible > balanced.pct_change_possible
 
 
 def test_solve_for_sample_size_cluster_missing_baseline():
@@ -433,7 +521,7 @@ def test_solve_for_sample_size_cluster_uses_cluster_target_for_sufficiency():
     )
 
     result = solve_for_sample_size_cluster(metric=metric, n_arms=2)
-    expected_target_possible, expected_pct_change_possible = solve_for_mde_cluster_impl(
+    expected_result = solve_for_mde_cluster_impl(
         metric=metric,
         desired_n=desired_n,
         n_arms=2,
@@ -446,8 +534,8 @@ def test_solve_for_sample_size_cluster_uses_cluster_target_for_sufficiency():
 
     assert result.target_n == 720
     assert result.sufficient_n is False
-    assert result.target_possible == pytest.approx(expected_target_possible)
-    assert result.pct_change_possible == pytest.approx(expected_pct_change_possible)
+    assert result.target_possible == pytest.approx(expected_result.target_possible)
+    assert result.pct_change_possible == pytest.approx(expected_result.pct_change_possible)
     assert result.target_possible is not None
     assert result.target_possible > individual_target_possible
 
@@ -457,7 +545,7 @@ def test_solve_for_sample_size_cluster_uses_cluster_target_for_sufficiency():
     assert msg_values is not None
     assert msg_values["target_n"] == result.target_n
     assert msg_values["additional_n_needed"] == 520
-    assert msg_values["target_possible"] == round(expected_target_possible, 4)
+    assert msg_values["target_possible"] == round(expected_result.target_possible, 4)
     assert "You need at least 720 units across 24 clusters" in result.msg.msg
     assert "You need at least 128 units" not in result.msg.msg
     assert result.msg.msg == result.msg.source_msg.format_map(msg_values)
@@ -480,7 +568,7 @@ def test_solve_for_sample_size_cluster_possible_target_uses_cluster_mde():
     )
 
     result = solve_for_sample_size_cluster(metric=metric, n_arms=2)
-    expected_target_possible, expected_pct_change_possible = solve_for_mde_cluster_impl(
+    expected_result = solve_for_mde_cluster_impl(
         metric=metric,
         desired_n=desired_n,
         n_arms=2,
@@ -492,8 +580,8 @@ def test_solve_for_sample_size_cluster_possible_target_uses_cluster_mde():
     )
 
     assert result.sufficient_n is False
-    assert result.target_possible == pytest.approx(expected_target_possible)
-    assert result.pct_change_possible == pytest.approx(expected_pct_change_possible)
+    assert result.target_possible == pytest.approx(expected_result.target_possible)
+    assert result.pct_change_possible == pytest.approx(expected_result.pct_change_possible)
     assert result.target_possible is not None
     assert result.target_possible > individual_target_possible
     assert result.msg is not None
@@ -676,7 +764,7 @@ def test_solve_for_sample_size_cluster_cv_affects_all_arms():
 
 
 @pytest.mark.parametrize(
-    "cv,expected_warning",
+    ("cv", "expected_warning"),
     [(0, None), (1.0, None), (1.5, "Warning: High cluster size variation (CV=1.50)")],
 )
 def test_solve_for_sample_size_cluster_cv_warning_message(cv: float, expected_warning: str | None):

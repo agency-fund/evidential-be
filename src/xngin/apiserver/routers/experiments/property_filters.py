@@ -9,7 +9,7 @@ from xngin.apiserver.routers.common_enums import Relation
 
 def str_to_date_or_datetime(
     col_name: str,
-    s: int | float | str | date | datetime | None,
+    s: float | str | date | datetime | None,
     target_type: Literal["date", "datetime"],
 ) -> date | datetime | None:
     """Convert an ISO8601 string to a date or datetime based on target_type.
