@@ -164,13 +164,6 @@ def _drop_and_create(cur, dest: _Dest, create_table_ddl: str) -> None:
     cur.execute(create_table_ddl)
 
 
-def _exists(cur, dest: _Dest):
-    if dwh_utils.is_bigquery(dest.url):
-        cur.execute(f"SELECT 1 FROM `{dest.url.database}.{dest.table_name}` LIMIT 0")  # noqa: S608
-    else:
-        cur.execute(f"SELECT 1 FROM {dest.full_table_name} LIMIT 0")  # noqa: S608
-
-
 def _count(cur, dest: _Dest):
     if dwh_utils.is_bigquery(dest.url):
         cur.execute(f"SELECT COUNT(*) FROM `{dest.url.database}.{dest.table_name}`")  # noqa: S608
@@ -191,18 +184,16 @@ def _maybe_create_views(cur, dest: _Dest) -> None:
         )
 
 
-def _table_exists_and_skip(dest: _Dest, *, create_db: bool) -> bool:
-    """Returns True iff the table already exists and we should skip the load."""
+def _table_is_populated(dest: _Dest, *, create_db: bool) -> bool:
+    """Returns True iff the table already exists and contains more one or more rows."""
     if create_db:
         engine = create_engine_and_database(dest.url)
     else:
         engine = create_engine(dest.url, logging_name=SA_LOGGER_NAME_FOR_CLI)
     conn = engine.raw_connection()
-    skip = False
     try:
         with conn.cursor() as cur:
             try:
-                _exists(cur, dest)
                 ct = _count(cur, dest)
             except (
                 psycopg.errors.UndefinedTable,
@@ -210,13 +201,16 @@ def _table_exists_and_skip(dest: _Dest, *, create_db: bool) -> bool:
                 sqlalchemy.exc.OperationalError,
             ):
                 print(f"Table {dest.table_name} does not exist; creating...\n")
+                return False
             else:
-                print(f"Table {dest.table_name} already exists (nrows={ct}).\n")
-                skip = True
+                if ct > 0:
+                    print(f"Table {dest.table_name} already exists (nrows={ct}).\n")
+                    return True
+                print(f"Table {dest.table_name} already exists but is empty.\n")
+                return False
     finally:
         conn.close()
         engine.dispose()
-    return skip
 
 
 def _load_redshift(source: _Source, dest: _Dest, *, bucket: str | None, iam_role: str | None) -> None:
@@ -394,7 +388,7 @@ def create_testing_dwh(
         views=views,
     )
 
-    if allow_existing and _table_exists_and_skip(dest, create_db=create_db):
+    if allow_existing and _table_is_populated(dest, create_db=create_db):
         return
 
     if dwh_utils.is_redshift(dest.url):
