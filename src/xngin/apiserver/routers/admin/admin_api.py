@@ -130,7 +130,7 @@ from xngin.apiserver.routers.common_enums import ExperimentState, PreloadMethod
 from xngin.apiserver.routers.experiments import experiments_common, experiments_common_csv
 from xngin.apiserver.routers.experiments.experiments_common import (
     AbandonExperimentResult,
-    fetch_fields_from_table_or_raise,
+    convert_table_to_fields_or_raise,
     make_participants_def_from_experiment,
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
@@ -583,7 +583,7 @@ async def create_organizations(
             detail="Only privileged users can create organizations",
         )
 
-    organization = await create_organization_impl(session, user, body.name)
+    organization = create_organization_impl(session, user, body.name)
     await session.commit()
 
     return CreateOrganizationResponse(id=organization.id)
@@ -984,7 +984,7 @@ async def create_datasource(
         async with DwhSession(config.dwh) as dwh:
             await dwh.connectivity_check()
 
-    datasource = await admin_common.create_datasource_impl(session, org, body.name, config)
+    datasource = admin_common.create_datasource_impl(session, org, body.name, config)
     await session.commit()
 
     return CreateDatasourceResponse(id=datasource.id)
@@ -1386,7 +1386,7 @@ async def delete_participant(
             return None
         return resource
 
-    async def deleter(_session: AsyncSession, resource: tables.Datasource):
+    def deleter(_session: AsyncSession, resource: tables.Datasource):
         config = resource.get_config()
         participant = config.find_participants(participant_id)
         config.participants.remove(participant)
@@ -1651,7 +1651,7 @@ async def abandon_experiment(
 ):
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
-    result = await experiments_common.abandon_experiment_impl(experiment)
+    result = experiments_common.abandon_experiment_impl(experiment)
     if result == AbandonExperimentResult.INVALID_STATE:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Invalid state: {experiment.state}")
     await session.commit()
@@ -1882,7 +1882,7 @@ async def power_check(
     async with DwhSession(dsconfig.dwh) as dwh:
         sa_table = await dwh.inspect_table(design_spec.table_name)
         # Validate the fields used in the design spec are present in the table and that filter values are valid.
-        _ = await fetch_fields_from_table_or_raise(sa_table, design_spec)
+        _ = convert_table_to_fields_or_raise(sa_table, design_spec)
 
         metric_stats = await asyncio.to_thread(
             get_stats_on_metrics,

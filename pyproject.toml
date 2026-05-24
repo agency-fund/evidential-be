@@ -148,18 +148,25 @@ ignore = [
     "PT018", # Assertion should be broken down into multiple parts
     "S101", # Use of `assert` detected
     "SIM108", # Use ternary operator instead of `if`-`else`-block
-    "RUF029", # Unused async
     "TRY003", # Raised bare custom exception with long message
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "**/test_*" = [
+    "RUF029", # Unused async
     "RUF069", # round-trip float equality with literals is fine in tests
     "S105",  # Possible hardcoded password assigned
     "S106",  # Possible hardcoded password assigned to argument
     "S311",  # Standard pseudo-random generators are not suitable for cryptographic purposes
     "S608",  # Possible SQL injection vector through string-based query construction
 ]
+"**/*_dependencies.py" = [
+    "RUF029", # Unused async: FastAPI dependencies are allowed to be async to avoid threading.
+]
+"**/exceptionhandlers.py" = [
+    "RUF029", # Unused async: FastAPI exception handlers are allowed to be async to avoid threading.
+]
+
 
 [tool.ruff.lint.flake8-import-conventions]
 # https://docs.astral.sh/ruff/settings/#lintflake8-import-conventions
