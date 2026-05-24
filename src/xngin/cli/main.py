@@ -284,8 +284,7 @@ def create_testing_dwh(
         ddl_file = re.sub(r"[.]csv([.]zst)?$", f".{flavor}.ddl", str(src))
         if Path(ddl_file).exists():
             print(f"Using provided DDL from {ddl_file}")
-            with open(ddl_file) as inp:
-                ddl = inp.read().replace("{{table_name}}", full_table_name)
+            ddl = Path(ddl_file).read_text().replace("{{table_name}}", full_table_name)
         else:
             print("Using inferred DDL (warning: may lose fidelity!)")
             ddl = df_to_ddl(
@@ -425,9 +424,8 @@ def export_json_schemas(output: Path = Path(".schemas")):
         output.mkdir()
     for model in (ParticipantsSchema, Datasource):
         filename = output / (model.__name__ + ".schema.json")
-        with open(filename, "w") as outf:
-            outf.write(json.dumps(model.model_json_schema(), indent=2, sort_keys=True))
-            print(f"Wrote {filename}.")
+        filename.write_text(json.dumps(model.model_json_schema(), indent=2, sort_keys=True))
+        print(f"Wrote {filename}.")
 
 
 @app.command()

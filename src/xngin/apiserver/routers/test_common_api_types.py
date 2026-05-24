@@ -71,7 +71,7 @@ VALID_BETWEEN = [
 ]
 
 
-@pytest.mark.parametrize("value,descr", VALID_BETWEEN)
+@pytest.mark.parametrize(("value", "descr"), VALID_BETWEEN)
 def test_between_relation(value, descr):
     filter_spec = Filter(field_name="col", relation=Relation.BETWEEN, value=value)
     assert filter_spec.value == value, f"Failed for case: {descr}"
@@ -92,7 +92,7 @@ INVALID_BETWEEN = [
 ]
 
 
-@pytest.mark.parametrize("value,descr", INVALID_BETWEEN)
+@pytest.mark.parametrize(("value", "descr"), INVALID_BETWEEN)
 def test_between_relation_invalid(value, descr):
     # The third case occurs when Pydantic backtracks internally to solve the constraints on `value`.
     with pytest.raises(ValidationError, match=r"(BETWEEN relation|same type| validation errors )"):
@@ -113,7 +113,7 @@ VALID_OTHER = [
 ]
 
 
-@pytest.mark.parametrize("relation,value", VALID_OTHER)
+@pytest.mark.parametrize(("relation", "value"), VALID_OTHER)
 def test_other_relations(relation, value):
     Filter(field_name="col", relation=relation, value=value)
 

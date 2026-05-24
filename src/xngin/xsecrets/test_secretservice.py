@@ -15,7 +15,7 @@ from xngin.xsecrets.secretservice import (
 
 
 @pytest.mark.parametrize(
-    "backend,ciphertext",
+    ("backend", "ciphertext"),
     [
         ("test_backend", b"encrypted_data"),
         (
@@ -87,7 +87,7 @@ def fixture_nacl_secretservice():
 
 
 @pytest.mark.parametrize(
-    "plaintext,aad",
+    ("plaintext", "aad"),
     [
         ("This is a secret value", "test_context"),
         ("Unicode text with emojis 😀🔑🌍 and special chars €£¥", "unicode_test"),
@@ -112,7 +112,7 @@ def test_secretservice_encrypt_decrypt(nacl_secretservice, plaintext, aad):
 
 
 @pytest.mark.parametrize(
-    "plaintext,aad",
+    ("plaintext", "aad"),
     [
         ("This is not an encrypted value", "any_context"),
         ("", "empty_plaintext_test"),  # Test with empty plaintext
@@ -128,7 +128,7 @@ def test_secretservice_decrypt_unencrypted_value(nacl_secretservice, plaintext, 
 
 
 @pytest.mark.parametrize(
-    "plaintext,correct_aad,wrong_aad",
+    ("plaintext", "correct_aad", "wrong_aad"),
     [
         ("Secret message", "correct_context", "wrong_context"),
         ("", "correct_context", "wrong_context"),  # Empty plaintext
