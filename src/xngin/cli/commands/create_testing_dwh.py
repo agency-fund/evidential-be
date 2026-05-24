@@ -146,11 +146,10 @@ def _read_csv(source: _Source) -> DataFrame:
 
 def _get_ddl_magic(source: _Source, dest: _Dest, quoter: IdentifierPreparer, flavor: str) -> str:
     """Gets the hard-coded DDL if available, or infers it using Pandas."""
-    ddl_file = re.sub(r"[.]csv([.]zst)?$", f".{flavor}.ddl", str(source.path))
-    if Path(ddl_file).exists():
+    ddl_file = Path(re.sub(r"[.]csv([.]zst)?$", f".{flavor}.ddl", str(source.path)))
+    if ddl_file.exists():
         print(f"Using provided DDL from {ddl_file}")
-        with open(ddl_file) as inp:
-            ddl = inp.read().replace("{{table_name}}", dest.full_table_name)
+        ddl = ddl_file.read_text().replace("{{table_name}}", dest.full_table_name)
     else:
         print("Using inferred DDL (warning: may lose fidelity!)")
         ddl = _df_to_ddl(_read_csv(source), table_name=dest.full_table_name, quoter=quoter)

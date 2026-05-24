@@ -79,9 +79,8 @@ def export_json_schemas(output: Path = Path(".schemas")):
         output.mkdir()
     for model in (ParticipantsSchema, Datasource):
         filename = output / (model.__name__ + ".schema.json")
-        with open(filename, "w") as outf:
-            outf.write(json.dumps(model.model_json_schema(), indent=2, sort_keys=True))
-            print(f"Wrote {filename}.")
+        filename.write_text(json.dumps(model.model_json_schema(), indent=2, sort_keys=True))
+        print(f"Wrote {filename}.")
 
 
 @app.command()

@@ -12,7 +12,7 @@ from xngin.stats.test_bandit_sampling import make_experiment_table
 
 
 @pytest.mark.parametrize(
-    "prior_type,reward_type",
+    ("prior_type", "reward_type"),
     [
         (PriorTypes.BETA, LikelihoodTypes.BERNOULLI),
         (PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
@@ -48,7 +48,7 @@ def test_mab_analysis(prior_type, reward_type):
 
 
 @pytest.mark.parametrize(
-    "prior_type,reward_type",
+    ("prior_type", "reward_type"),
     [
         (PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
         (PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
@@ -105,7 +105,7 @@ def test_analyze_normal_ci_correctness():
 
     mean, stddev, ci_upper, ci_lower = _analyze_normal(mu, covariance, outcome_std_dev, context)
 
-    assert mean == 10.0
+    assert np.isclose(mean, 10.0)
 
     # If we incorrectly used stddev for our CI, SEM = sqrt(1+100), much wider than the real
     # standard error of the mean = sqrt(1.0). So the correct 95% CI half-width is:

@@ -183,8 +183,8 @@ async def test_turn_journey_mapping_lifecycle(
     iaclient: AdminIntegrationsAPIClient,
 ):
     """Full lifecycle of the per-experiment arm->journey mapping: PUT, GET, update, DELETE."""
-    ds_id = testing_datasource.ds.id
-    org_id = testing_datasource.org.id
+    ds_id = testing_datasource.datasource_id
+    org_id = testing_datasource.organization_id
     experiment = aclient.create_experiment(
         datasource_id=ds_id, body=CreateExperimentRequest(design_spec=testing_design_spec)
     ).data
@@ -255,8 +255,8 @@ async def test_turn_journey_mapping_rejects_mismatched_arm_ids(
     iaclient: AdminIntegrationsAPIClient,
 ):
     """PUT rejects a mapping whose keys do not exactly match the experiment's arm IDs."""
-    ds_id = testing_datasource.ds.id
-    org_id = testing_datasource.org.id
+    ds_id = testing_datasource.datasource_id
+    org_id = testing_datasource.organization_id
     experiment = aclient.create_experiment(
         datasource_id=ds_id, body=CreateExperimentRequest(design_spec=testing_design_spec)
     ).data
@@ -303,8 +303,8 @@ async def test_rotating_or_deleting_token_wipes_arm_journey_mapping(
     iaclient: AdminIntegrationsAPIClient,
 ):
     """Rotating an org's Turn token deletes the org's arm->journey mappings."""
-    ds_id = testing_datasource.ds.id
-    org_id = testing_datasource.org.id
+    ds_id = testing_datasource.datasource_id
+    org_id = testing_datasource.organization_id
     experiment = aclient.create_experiment(
         datasource_id=ds_id, body=CreateExperimentRequest(design_spec=testing_design_spec)
     ).data
@@ -359,8 +359,8 @@ async def test_resetting_same_token_preserves_arm_journey_mapping(
     Guards against an infrastructure-retried PUT silently wiping configured journey
     mappings just because the request was replayed with the same token.
     """
-    ds_id = testing_datasource.ds.id
-    org_id = testing_datasource.org.id
+    ds_id = testing_datasource.datasource_id
+    org_id = testing_datasource.organization_id
     experiment = aclient.create_experiment(
         datasource_id=ds_id, body=CreateExperimentRequest(design_spec=testing_design_spec)
     ).data
