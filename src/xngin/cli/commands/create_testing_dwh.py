@@ -264,12 +264,8 @@ def _load_bigquery(source: _Source, dest: _Dest) -> None:
     pandas_gbq.to_gbq(df, destination_table, project_id=dest.url.host, if_exists="replace")
 
 
-def _load_postgres(source: _Source, dest: _Dest, *, create_db: bool) -> None:
-    engine = (
-        create_engine_and_database(dest.url)
-        if create_db
-        else create_engine(dest.url, logging_name=SA_LOGGER_NAME_FOR_CLI)
-    )
+def _load_postgres(source: _Source, dest: _Dest) -> None:
+    engine = create_engine(dest.url, logging_name=SA_LOGGER_NAME_FOR_CLI)
     ddl = _get_ddl_magic(source, dest, engine.dialect.identifier_preparer, "postgres")
     with engine.begin() as conn:
         cursor = conn.connection.cursor()
@@ -395,7 +391,7 @@ def create_testing_dwh(
     elif dwh_utils.is_bigquery(dest.url):
         _load_bigquery(source, dest)
     elif dwh_utils.is_postgres(dest.url):
-        _load_postgres(source, dest, create_db=create_db)
+        _load_postgres(source, dest)
     else:
         _err_console.print("Unrecognized database driver.")
         raise typer.Exit(2)
