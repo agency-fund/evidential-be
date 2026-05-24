@@ -5,6 +5,7 @@
 | Name                                                                               |    Stmts |     Miss |   Cover |   Missing |
 |----------------------------------------------------------------------------------- | -------: | -------: | ------: | --------: |
 | src/xngin/apiserver/apikeys.py                                                     |       51 |        4 |     92% |     59-63 |
+| src/xngin/apiserver/benchmarks/test\_draws\_perf.py                                |       95 |       66 |     31% |48, 54-95, 113-130, 145-162, 166, 174, 180-185, 197-220, 233-256, 269-287 |
 | src/xngin/apiserver/certs/certs.py                                                 |       16 |        9 |     44% |19-23, 37-44 |
 | src/xngin/apiserver/common\_field\_types.py                                        |       12 |        1 |     92% |        13 |
 | src/xngin/apiserver/conftest.py                                                    |      247 |       25 |     90% |72, 91, 106, 108, 119, 170, 174, 176, 180, 405, 422-436, 451, 468, 471, 506 |
@@ -53,7 +54,6 @@
 | src/xngin/apiserver/settings.py                                                    |      143 |       23 |     84% |102, 122, 129, 135, 180-181, 241, 246, 252-253, 305-308, 327, 349, 360, 362, 372, 375, 389, 392, 417 |
 | src/xngin/apiserver/snapshots/fake\_data.py                                        |      126 |       37 |     71% |73-81, 87, 90, 92, 97, 102, 107, 199-202, 280, 301-306, 322-349 |
 | src/xngin/apiserver/snapshots/snapshotter.py                                       |       80 |        2 |     98% |  196, 207 |
-| src/xngin/apiserver/snapshots/test\_draws\_perf.py                                 |       95 |       66 |     31% |48, 54-95, 113-130, 145-162, 166, 174, 180-185, 197-220, 233-256, 269-287 |
 | src/xngin/apiserver/snapshots/test\_snapshotter.py                                 |      253 |        6 |     98% |60-63, 565-566 |
 | src/xngin/apiserver/sql/queries.py                                                 |       43 |       10 |     77% | 23, 61-70 |
 | src/xngin/apiserver/sqla/tables.py                                                 |      340 |        4 |     99% |58, 223, 422, 426 |
