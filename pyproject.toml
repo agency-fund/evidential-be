@@ -139,7 +139,6 @@ ignore = [
     "PLR0912", # too many branches
     "PLR0913", # too many positional arguments
     "PLR0914", # too many local variables
-    "PLR0915", # too many statements
     "PLR0917", # too many positional arguments
     "PLR1702", # too many nested blocks
     "PLR2004", # magic value,
@@ -151,8 +150,12 @@ ignore = [
     "TRY003", # Raised bare custom exception with long message
 ]
 
+[tool.ruff.lint.pylint]
+max-statements = 54
+
 [tool.ruff.lint.per-file-ignores]
 "**/test_*" = [
+    "PLR0915", # Too many statements
     "RUF029", # Unused async
     "RUF069", # round-trip float equality with literals is fine in tests
     "S105",  # Possible hardcoded password assigned
@@ -160,13 +163,15 @@ ignore = [
     "S311",  # Standard pseudo-random generators are not suitable for cryptographic purposes
     "S608",  # Possible SQL injection vector through string-based query construction
 ]
+"tools/{generate_wide_dwh,generate_clustered_data}.py" = [
+    "PLR0915",  # "Too many statements"
+]
 "**/*_dependencies.py" = [
     "RUF029", # Unused async: FastAPI dependencies are allowed to be async to avoid threading.
 ]
 "**/exceptionhandlers.py" = [
     "RUF029", # Unused async: FastAPI exception handlers are allowed to be async to avoid threading.
 ]
-
 
 [tool.ruff.lint.flake8-import-conventions]
 # https://docs.astral.sh/ruff/settings/#lintflake8-import-conventions
