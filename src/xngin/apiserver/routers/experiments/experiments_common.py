@@ -53,6 +53,7 @@ from xngin.apiserver.routers.common_api_types import (
 )
 from xngin.apiserver.routers.common_enums import (
     DataType,
+    DataTypeStorageClass,
     ExperimentState,
     ExperimentsType,
     LikelihoodTypes,
@@ -180,6 +181,13 @@ async def fetch_mab_dwh_fields_or_raise(
             f"{', '.join(sorted(missing_fields))}"
         )
 
+    target_type = referenced_fields_and_types[design_spec.target_field_name]
+    if not target_type.is_supported_as_metric():
+        raise LateValidationError(
+            f"Invalid target field '{design_spec.target_field_name}' of type {target_type.value}. "
+            "Only boolean or numeric data types are supported as targets."
+        )
+
     return referenced_fields_and_types
 
 
@@ -294,7 +302,18 @@ async def create_experiment_impl(
                 field_type_map=field_type_map,
             )
 
-        case MABExperimentSpec() | MABDwhExperimentSpec() | CMABExperimentSpec():
+        case MABDwhExperimentSpec():
+            field_type_map = await fetch_mab_dwh_fields_or_raise(datasource, request.design_spec)
+            return await create_bandit_online_experiment_impl(
+                xngin_session=xngin_session,
+                organization_id=datasource.organization_id,
+                validated_webhooks=validated_webhooks,
+                request=request,
+                datasource_id=datasource.id,
+                field_type_map=field_type_map,
+            )
+
+        case MABExperimentSpec() | CMABExperimentSpec():
             return await create_bandit_online_experiment_impl(
                 xngin_session=xngin_session,
                 organization_id=datasource.organization_id,
@@ -436,6 +455,7 @@ async def create_bandit_online_experiment_impl(
     validated_webhooks: list[tables.Webhook],
     request: CreateExperimentRequest,
     datasource_id: str,
+    field_type_map: dict[str, DataType] | None = None,
 ) -> CreateExperimentResponse:
     """Create a bandit experiment and persist it to the database."""
     design_spec = request.design_spec
@@ -450,6 +470,7 @@ async def create_bandit_online_experiment_impl(
         datasource_id=datasource_id,
         organization_id=organization_id,
         design_spec=design_spec,
+        field_type_map=field_type_map,
     )
     experiment = experiment_converter.get_experiment()
     # Associate webhooks with the experiment
@@ -907,6 +928,17 @@ async def update_bandit_arm_with_outcome_impl(
         1,
     }:
         raise LateValidationError(f"Invalid outcome for binary reward type: {outcome}. Must be 0 or 1.")
+
+    # For DWH-backed bandits, type-check the outcome against the stored target column's data_type.
+    if isinstance(design_spec, MABDwhExperimentSpec):
+        experiment_fields = await experiment.awaitable_attrs.experiment_fields
+        target_field = next(ef for ef in experiment_fields if ef.is_target)
+        target_type = DataType(target_field.data_type)
+        if target_type.storage_class() == DataTypeStorageClass.BOOLEAN and outcome not in {0, 1}:
+            raise LateValidationError(
+                f"Invalid outcome {outcome} for target field '{target_field.field_name}' "
+                f"of type {target_type.value}: must be 0 or 1 for boolean targets."
+            )
 
     try:
         result = await xngin_session.execute(

@@ -48,7 +48,25 @@ def _set_experiment_fields_from_design_spec(
 ) -> None:
     """Save the field-related components of a DesignSpec to an experiment."""
     match design_spec:
-        case capi.MABExperimentSpec() | capi.MABDwhExperimentSpec() | capi.CMABExperimentSpec():
+        case capi.MABDwhExperimentSpec():
+            experiment.design_spec_fields = None
+            type_map = field_type_map or {}
+            experiment.experiment_fields = [
+                tables.ExperimentField(
+                    field_name=design_spec.primary_key,
+                    data_type=type_map.get(design_spec.primary_key, DataType.UNKNOWN).value,
+                    is_unique_id=True,
+                    experiment_filters=[],
+                ),
+                tables.ExperimentField(
+                    field_name=design_spec.target_field_name,
+                    data_type=type_map.get(design_spec.target_field_name, DataType.UNKNOWN).value,
+                    is_target=True,
+                    experiment_filters=[],
+                ),
+            ]
+            return
+        case capi.MABExperimentSpec() | capi.CMABExperimentSpec():
             experiment.design_spec_fields = None
             experiment.experiment_fields = []
             return
@@ -466,6 +484,9 @@ class ExperimentStorageConverter:
                 if isinstance(design_spec, capi.CMABExperimentSpec) and not design_spec.contexts:
                     raise ValueError(f"CMAB experiment {experiment.id} must have contexts set.")
 
+                if isinstance(design_spec, capi.MABDwhExperimentSpec):
+                    experiment.datasource_table = design_spec.table_name
+
                 # Set bandit fields
                 context_len = len(design_spec.contexts) if design_spec.contexts else 1
                 if design_spec.contexts:
@@ -519,6 +540,9 @@ class ExperimentStorageConverter:
                     )
                     for i, arm in enumerate(design_spec.arms, start=1)
                 ]
+
+                if isinstance(design_spec, capi.MABDwhExperimentSpec):
+                    _set_experiment_fields_from_design_spec(experiment, design_spec, field_type_map)
 
                 return cls(experiment)
             case _:
