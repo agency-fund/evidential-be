@@ -3890,6 +3890,9 @@ def test_list_organization_events_pagination(testing_datasource, aclient: AdminA
     all_events = aclient.list_organization_events(organization_id=org_id).data
     total = len(all_events.items)
     assert total >= 3
+    experiment_created_events = [ev for ev in all_events.items if ev.type == "experiment.created"]
+    assert experiment_created_events
+    assert all(ev.status_icon == "info" for ev in experiment_created_events)
 
     # Page through with page_size=1
     page1 = aclient.list_organization_events(organization_id=org_id, page_size=1).data
@@ -4056,6 +4059,7 @@ async def test_list_organization_events_redacts_webhook_token(
     event = next(ev for ev in events if ev.id == event_id)
     assert event.details is not None
     assert event.details["request"]["headers"][webhook_token_header] == "***"
+    assert event.status_icon == "failure"
 
 
 async def test_resend_organization_event_rejects_non_webhook_event(

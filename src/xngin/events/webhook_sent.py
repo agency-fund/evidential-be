@@ -22,5 +22,8 @@ class WebhookSentEvent(BaseEventModel):
             summary += " (failed)"
         return summary
 
+    def status_icon(self) -> Literal["success", "info", "failure"]:
+        return "success" if self.success else "failure"
+
     def sanitize(self):
         return self.model_copy(update={"request": self.request.sanitize()})

@@ -782,6 +782,7 @@ def convert_events_to_eventsummaries(events):
                 summary=data.summarize() if data else "Unknown",
                 link=data.link() if data else None,
                 details=data.sanitize().model_dump() if data else None,
+                status_icon=data.status_icon() if data else "info",
             )
         )
     return event_summaries

@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -8,6 +10,10 @@ class BaseEventModel(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid")
+
+    def status_icon(self) -> Literal["success", "info", "failure"]:
+        """Returns the status icon to display for this event in the UI."""
+        return "info"
 
     def summarize(self) -> str:
         """Returns a human-readable one-sentence summary of this event."""
