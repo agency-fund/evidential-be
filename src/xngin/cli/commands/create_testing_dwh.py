@@ -184,7 +184,7 @@ def _maybe_create_views(cur, dest: _Dest) -> None:
 
 
 def _table_is_populated(dest: _Dest, *, create_db: bool) -> bool:
-    """Returns True iff the table already exists and contains more one or more rows."""
+    """Returns True iff the table already exists and contains one or more rows."""
     if create_db:
         engine = create_engine_and_database(dest.url)
     else:
