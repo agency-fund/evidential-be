@@ -322,6 +322,7 @@ class ExperimentStorageConverter:
 
         if self.experiment.experiment_type in {
             ExperimentsType.MAB_ONLINE.value,
+            ExperimentsType.MAB_ONLINE_DWH.value,
             ExperimentsType.CMAB_ONLINE.value,
         }:
             if not self.experiment.prior_type or not self.experiment.reward_type:
@@ -338,8 +339,25 @@ class ExperimentStorageConverter:
                     for context in self.experiment.contexts
                 ]
 
+            mab_dwh_fields: dict[str, Any] = {}
+            if self.experiment.experiment_type == ExperimentsType.MAB_ONLINE_DWH.value:
+                await self.experiment.awaitable_attrs.experiment_fields
+                primary_key_field = self.experiment.unique_id_field()
+                target_field = next(f for f in self.experiment.experiment_fields if f.is_target)
+                if self.experiment.datasource_table is None or primary_key_field is None:
+                    raise ValueError(
+                        f"MAB-DWH experiment {self.experiment.id} "
+                        "is missing datasource_table or unique participant key field."
+                    )
+                mab_dwh_fields = {
+                    "table_name": self.experiment.datasource_table,
+                    "primary_key": primary_key_field.field_name,
+                    "target_field_name": target_field.field_name,
+                }
+
             return TypeAdapter(capi.DesignSpec).validate_python({
                 **base_experiment_dict,
+                **mab_dwh_fields,
                 "arms": [
                     {
                         "arm_id": arm.id,
