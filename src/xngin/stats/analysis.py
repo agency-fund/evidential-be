@@ -28,15 +28,18 @@ def analyze_experiment(
     participant_outcomes: list[ParticipantOutcome],
     baseline_arm_id: str | None = None,
     alpha: float | None = None,
+    cluster_col: str | None = None,
 ) -> dict[str, dict[str, ArmAnalysisResult]]:
     """
     Perform statistical analysis with DesignSpec metrics and their values
 
     Args:
-    assignments_df: DataFrame of {assignment_id, participant_id} strings
+    assignments_df: DataFrame of {participant_id, arm_id} strings, and optionally a column of cluster ids.
     participant_outcomes: list of participant outcomes
     baseline_arm_id: which arm to use as baseline; if not provided, uses the first arm seen
     alpha: significance level for confidence intervals (defaults to 0.05 if None for a 95% CI).
+    cluster_col: Name of column to use as cluster identifiers in assignments_df. If provided, uses
+    clustered standard errors instead of HC1.
 
     Returns:
         map of metric name => map of arm_id (may be partial or empty!) => analysis results
@@ -44,11 +47,13 @@ def analyze_experiment(
         - If *zero* arm analyses exist for a metric (e.g. since zero non-null outcomes were found
           across all arms), the name will exist, but the inner dict will be empty.
     """
-    expected_columns = {"participant_id", "arm_id"}
+    expected_id_columns = {"participant_id", "arm_id"}
+    if cluster_col is not None:
+        expected_id_columns |= {cluster_col}
     actual_columns = set(assignments_df.columns)
-    if actual_columns != expected_columns:
+    if actual_columns != expected_id_columns:
         raise ValueError(
-            f"assignments_df shape is wrong: expected={','.join(expected_columns)}, actual={','.join(actual_columns)}"
+            f"assignments_df shape is wrong: expected={','.join(expected_id_columns)}, got={','.join(actual_columns)}"
         )
 
     if alpha is None:
@@ -72,7 +77,8 @@ def analyze_experiment(
         arm_ids.insert(0, baseline_arm_id)
         merged_df["arm_id"] = merged_df["arm_id"].cat.reorder_categories(arm_ids)
 
-    metric_columns = [col for col in merged_df.columns if col not in {"arm_id", "participant_id"}]
+    # Exclude various id columns
+    metric_columns = [col for col in merged_df.columns if col not in expected_id_columns]
 
     # Calculate NaN counts for all metrics. Since assignments_df may have participants that are not
     # yet in the dwh (e.g. in an online experiment) we're also counting missing participants as having NaN as well.
@@ -91,7 +97,14 @@ def analyze_experiment(
 
         # smf.ols internally actually drops missing values by default (see Model.from_formula),
         # but make it explicit here for developer clarity.
-        model = smf.ols(f"{metric_name} ~ arm_id", data=merged_df, missing="drop").fit(cov_type="HC1")
+        if cluster_col is not None:
+            merged_df_dropna = merged_df.dropna(subset=[metric_name])
+            model = smf.ols(f"{metric_name} ~ arm_id", data=merged_df_dropna).fit(
+                cov_type="cluster",
+                cov_kwds={"groups": merged_df_dropna[cluster_col]},
+            )
+        else:
+            model = smf.ols(f"{metric_name} ~ arm_id", data=merged_df, missing="drop").fit(cov_type="HC1")
         arm_ids = model.model.data.design_info.factor_infos[EvalFactor("arm_id")].categories
 
         # Calculate CIs for coefficients

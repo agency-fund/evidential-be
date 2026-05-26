@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -9,6 +11,10 @@ class BaseEventModel(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    def status_icon(self) -> Literal["success", "info", "failure"]:
+        """Returns the status icon to display for this event in the UI."""
+        return "info"
+
     def summarize(self) -> str:
         """Returns a human-readable one-sentence summary of this event."""
         return "Unrecognized event."
@@ -19,3 +25,7 @@ class BaseEventModel(BaseModel):
         This is displayed in the UI so it may be an absolute path in the Dash UI.
         """
         return None
+
+    def sanitize(self):
+        """Sanitizes the event for display in the UI."""
+        return self

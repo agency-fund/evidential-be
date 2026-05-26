@@ -2,6 +2,8 @@
 Power analysis for individually-randomized designs.
 """
 
+import math
+
 import numpy as np
 import statsmodels.stats.api as sms
 
@@ -197,7 +199,7 @@ def solve_for_sample_size_individual(
     else:
         raise ValueError("metric_type must be NUMERIC or BINARY.")
 
-    if effect_size == 0.0:
+    if math.isclose(effect_size, 0.0):
         return power_analysis_error(
             metric,
             MetricPowerAnalysisMessageType.ZERO_EFFECT_SIZE,

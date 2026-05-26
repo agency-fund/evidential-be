@@ -66,7 +66,7 @@ async def _maybe_create_developer_samples(
         AddWebhookToOrganizationRequest(type="experiment.created", name="Sample Webhook", url="http://localhost:8000"),
     )
 
-    datasource = await admin_common.create_datasource_impl(
+    datasource = admin_common.create_datasource_impl(
         session,
         organization,
         TESTING_DWH_DATASOURCE_NAME,
@@ -77,7 +77,7 @@ async def _maybe_create_developer_samples(
         ),
     )
 
-    alt_datasource = await admin_common.create_datasource_impl(
+    alt_datasource = admin_common.create_datasource_impl(
         session,
         organization,
         ALT_TESTING_DWH_DATASOURCE_NAME,
@@ -243,7 +243,7 @@ async def create_entities_for_first_time_user(
     When testing_dwh_dsn is None or empty, we create only the minimum entities necessary for the application to
     function: a NoDWH datasource, and an Organization. This is the standard production deployment configuration.
     """
-    organization = await admin_common.create_organization_impl(session, user, DEFAULT_ORGANIZATION_NAME)
+    organization = admin_common.create_organization_impl(session, user, DEFAULT_ORGANIZATION_NAME)
     await session.flush()
     await _maybe_create_developer_samples(session, organization, testing_dwh_dsn)
     return user

@@ -411,7 +411,6 @@ class ArmAssignment(Base):
 
     experiment_id: Mapped[str] = mapped_column(String(length=36), primary_key=True)
     participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
-    participant_type: Mapped[str] = mapped_column(String(255))
     arm_id: Mapped[str] = mapped_column(String(36))
     # JSON serialized form of a list of Strata objects (from Assignment.strata).
     strata: Mapped[list[dict[str, str]]] = mapped_column(postgresql.JSONB)
@@ -439,8 +438,6 @@ class Experiment(Base):
     datasource_id: Mapped[str] = mapped_column(String(255), ForeignKey("datasources.id", ondelete="CASCADE"))
 
     experiment_type: Mapped[str] = mapped_column()
-    # participant_type is deprecated
-    participant_type: Mapped[str] = mapped_column(String(255))
     # The underlying datasource table name backing this experiment.
     datasource_table: Mapped[str | None] = mapped_column(String(255))
     name: Mapped[str] = mapped_column(String(255))
@@ -470,9 +467,6 @@ class Experiment(Base):
     reward_type: Mapped[str | None] = mapped_column()
 
     # Frequentist config params
-    # JSON serialized form of an experiment's specified dwh fields used for strata/metrics/filters.
-    # TODO: Deprecated. Drop this column in a future migration.
-    design_spec_fields: Mapped[dict | None] = mapped_column(postgresql.JSONB)
     # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run
     # power analyses.
     power_analyses: Mapped[dict | None] = mapped_column(postgresql.JSONB)
@@ -594,7 +588,6 @@ class Draw(Base):
 
     experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True)
     participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
-    participant_type: Mapped[str] = mapped_column(String(255))
     arm_id: Mapped[str] = mapped_column(ForeignKey("arms.id", ondelete="CASCADE"))
     created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
 

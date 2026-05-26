@@ -51,7 +51,7 @@ def fixture_turn_config_response(
     testing_design_spec: MABExperimentSpec,
 ) -> Generator[TurnConfigResponse]:
     """Configure a Turn connection for the org and save an arm→journey mapping for the experiment."""
-    ds_id = testing_datasource.ds.id
+    ds_id = testing_datasource.datasource_id
     experiment = aclient.create_experiment(
         datasource_id=ds_id, body=CreateExperimentRequest(design_spec=testing_design_spec)
     ).data
@@ -63,11 +63,11 @@ def fixture_turn_config_response(
         arm_ids[1]: f"journey-{arm_ids[1]}-uuid",
     }
     iaclient.set_organization_turn_connection(
-        organization_id=testing_datasource.org.id,
+        organization_id=testing_datasource.organization_id,
         body=SetConnectionToTurnRequest(turn_api_token="a" * 335),
     )
     iaclient.set_turn_arm_journey_mapping(
-        datasource_id=testing_datasource.ds.id,
+        datasource_id=testing_datasource.datasource_id,
         experiment_id=experiment.experiment_id,
         body=SetTurnArmJourneyMappingRequest(arm_to_journeys=arm_to_journeys),
     )
@@ -79,9 +79,11 @@ def fixture_turn_config_response(
     })
 
     iaclient.delete_turn_arm_journey_mapping(
-        datasource_id=testing_datasource.ds.id, experiment_id=experiment.experiment_id, allow_missing=True
+        datasource_id=testing_datasource.datasource_id, experiment_id=experiment.experiment_id, allow_missing=True
     )
-    iaclient.delete_turn_connection_from_organization(organization_id=testing_datasource.org.id, allow_missing=True)
+    iaclient.delete_turn_connection_from_organization(
+        organization_id=testing_datasource.organization_id, allow_missing=True
+    )
 
 
 async def test_get_turn_app_config_returns_mapping(
@@ -106,7 +108,7 @@ async def test_get_turn_app_config_404_when_no_mapping(
 ):
     """Experiment exists but has no ExperimentTurnConfig row."""
     iaclient.delete_turn_arm_journey_mapping(
-        datasource_id=testing_datasource.ds.id, experiment_id=turn_config_response.experiment_id
+        datasource_id=testing_datasource.datasource_id, experiment_id=turn_config_response.experiment_id
     )
     with expect_status_code(404):
         iclient.get_turn_app_config(experiment_id=turn_config_response.experiment_id, api_key=testing_datasource.key)
