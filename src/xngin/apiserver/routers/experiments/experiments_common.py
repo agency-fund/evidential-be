@@ -18,7 +18,7 @@ from sqlalchemy.orm import selectinload
 
 from xngin.apiserver import constants, flags
 from xngin.apiserver.dwh.dwh_session import DwhSession
-from xngin.apiserver.dwh.inspection_types import FieldDescriptor
+from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.dwh.participant_metrics_queries import get_participant_metrics
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.assignment_adapters import (
@@ -60,7 +60,7 @@ from xngin.apiserver.routers.common_enums import (
     UpdateTypeNormal,
 )
 from xngin.apiserver.routers.experiments.property_filters import passes_filters, validate_filter_value
-from xngin.apiserver.settings import DatasourceConfig, ParticipantsDef
+from xngin.apiserver.settings import DatasourceConfig
 from xngin.apiserver.sql.queries import select_as_csv
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
@@ -95,8 +95,8 @@ class AbandonExperimentResult(enum.StrEnum):
     INVALID_STATE = "invalid_state"
 
 
-def make_participants_def_from_experiment(experiment: tables.Experiment) -> ParticipantsDef | None:
-    """Build a ParticipantsDef from stored experiment fields."""
+def make_schema_from_experiment(experiment: tables.Experiment) -> ParticipantsSchema | None:
+    """Build a ParticipantsSchema from stored experiment fields."""
     if experiment.experiment_type not in {ExperimentsType.FREQ_ONLINE.value, ExperimentsType.FREQ_PREASSIGNED.value}:
         return None
 
@@ -120,11 +120,8 @@ def make_participants_def_from_experiment(experiment: tables.Experiment) -> Part
         if ef.is_strata:
             fd.is_strata = True
 
-    return ParticipantsDef(
-        type="schema",
+    return ParticipantsSchema(
         table_name=table_name,
-        participant_type="",
-        hidden=True,
         fields=list(sorted(schema.values(), key=lambda x: x.field_name)),
     )
 

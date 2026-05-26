@@ -619,13 +619,13 @@ class CreateApiKeyResponse(AdminApiBaseModel):
 
 
 class GetExperimentForUiResponse(AdminApiBaseModel):
-    """Experiment configuration and participant type information."""
+    """Experiment configuration for the admin UI."""
 
     config: Annotated[ExperimentConfig, Field()]
-    participant_type: Annotated[
-        ParticipantsDef | None,
+    experiment_schema: Annotated[
+        ParticipantsSchema | None,
         Field(
-            description="If available, the Participant Type information for this experiment. "
+            description="If available, the schema information (fields used, data types) for this experiment. "
             "This field is null for experiments that only use an 'API Only' datasource."
         ),
     ]
