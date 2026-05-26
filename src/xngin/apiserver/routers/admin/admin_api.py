@@ -453,7 +453,7 @@ async def logout(
 @router.post("/users")
 async def create_user(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(require_privileged_user)],
+    _user: Annotated[tables.User, Depends(require_privileged_user)],
     body: Annotated[CreateUserRequest, Body(...)],
 ) -> CreateUserResponse:
     """Creates a User record by email. Privileged users only.
@@ -545,7 +545,7 @@ async def list_users(
 async def get_user(
     user_id: Annotated[str, Path(description="The ID of the user to fetch.")],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(require_privileged_user)],
+    _user: Annotated[tables.User, Depends(require_privileged_user)],
 ) -> GetUserResponse:
     """Fetches details for a single user, including the organizations they belong to.
 
@@ -608,7 +608,7 @@ async def get_user(
 async def patch_user(
     user_id: Annotated[str, Path(description="The ID of the user to update.")],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(require_privileged_user)],
+    _user: Annotated[tables.User, Depends(require_privileged_user)],
     body: Annotated[PatchUserRequest, Body(...)],
 ):
     """Updates a user's properties. Privileged users only.
