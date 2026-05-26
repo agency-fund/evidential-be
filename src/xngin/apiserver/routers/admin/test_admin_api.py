@@ -137,6 +137,13 @@ def find_ds_with_name[DSType: HasName](datasources: list[DSType], name: str) -> 
     return next(ds for ds in datasources if ds.name == name)
 
 
+def create_org_with_default_datasource(aclient: AdminAPIClient, org_name: str) -> tuple[str, str]:
+    org_id = aclient.create_organizations(body=CreateOrganizationRequest(name=org_name)).data.id
+    datasources = aclient.list_organization_datasources(organization_id=org_id).data.items
+    datasource = find_ds_with_name(datasources, DEFAULT_NO_DWH_SOURCE_NAME)
+    return org_id, datasource.id
+
+
 async def make_freq_online_experiment(
     aclient: AdminAPIClient, datasource_id: str, end_date: datetime | None = None
 ) -> GetExperimentForUiResponse:
@@ -994,6 +1001,25 @@ def test_delete_datasource(testing_datasource, aclient: AdminAPIClient, aclient_
     assert list_datasources3.items[0].name == DEFAULT_NO_DWH_SOURCE_NAME
 
 
+def test_delete_datasource_scopes_resource_to_organization(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    aclient_unpriv: AdminAPIClient,
+):
+    caller_org_id, _caller_datasource_id = create_org_with_default_datasource(
+        aclient_unpriv, "datasource-delete-caller-org"
+    )
+
+    with expect_status_code(404):
+        aclient_unpriv.delete_datasource(
+            organization_id=caller_org_id,
+            datasource_id=testing_datasource.datasource_id,
+        )
+
+    response = aclient.get_datasource(datasource_id=testing_datasource.datasource_id).data
+    assert response.id == testing_datasource.datasource_id
+
+
 async def test_webhook_lifecycle(aclient: AdminAPIClient):
     """Test creating, updating, and deleting a webhook."""
     # Create an organization.
@@ -1073,6 +1099,30 @@ async def test_webhook_lifecycle(aclient: AdminAPIClient):
     # Try to delete a non-existent webhook
     with expect_status_code(404):
         aclient.delete_webhook_from_organization(organization_id=org_id, webhook_id=webhook_id)
+
+
+def test_delete_webhook_scopes_resource_to_organization(aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
+    victim_org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="webhook-delete-victim")).data.id
+    webhook = aclient.add_webhook_to_organization(
+        organization_id=victim_org_id,
+        body=AddWebhookToOrganizationRequest(
+            type="experiment.created",
+            url="https://example.com/webhook",
+            name="victim webhook",
+        ),
+    ).data
+    caller_org_id, _caller_datasource_id = create_org_with_default_datasource(
+        aclient_unpriv, "webhook-delete-caller-org"
+    )
+
+    with expect_status_code(404):
+        aclient_unpriv.delete_webhook_from_organization(
+            organization_id=caller_org_id,
+            webhook_id=webhook.id,
+        )
+
+    webhook_ids = {item.id for item in aclient.list_organization_webhooks(organization_id=victim_org_id).data.items}
+    assert webhook.id in webhook_ids
 
 
 def test_create_webhook_rejects_ssrf_url(aclient: AdminAPIClient):
@@ -1537,6 +1587,30 @@ async def test_lifecycle_with_db(testing_datasource, aclient: AdminAPIClient, ac
     aclient.delete_experiment(
         datasource_id=testing_datasource.datasource_id, experiment_id=parsed_experiment_id, allow_missing=True
     )
+
+
+async def test_delete_experiment_scopes_resource_to_datasource(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    aclient_unpriv: AdminAPIClient,
+):
+    victim_experiment = await make_freq_online_experiment(aclient, testing_datasource.datasource_id)
+    victim_experiment_id = victim_experiment.config.experiment_id
+    _caller_org_id, caller_datasource_id = create_org_with_default_datasource(
+        aclient_unpriv, "experiment-delete-caller-org"
+    )
+
+    with expect_status_code(404):
+        aclient_unpriv.delete_experiment(
+            datasource_id=caller_datasource_id,
+            experiment_id=victim_experiment_id,
+        )
+
+    response = aclient.get_experiment_for_ui(
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=victim_experiment_id,
+    ).data
+    assert response.config.experiment_id == victim_experiment_id
 
 
 async def test_abandon_experiment(testing_datasource, aclient: AdminAPIClient):
@@ -3239,6 +3313,38 @@ def test_snapshots(aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
             experiment_id=experiment_id,
             snapshot_id=success_snapshot.id,
         )
+
+
+async def test_delete_snapshot_scopes_resource_to_datasource(
+    aclient: AdminAPIClient,
+    aclient_unpriv: AdminAPIClient,
+):
+    victim_org_id, victim_datasource_id = create_org_with_default_datasource(aclient, "snapshot-delete-victim-org")
+    victim_experiment = await make_freq_online_experiment(aclient, victim_datasource_id)
+    snapshot = aclient.create_snapshot(
+        organization_id=victim_org_id,
+        datasource_id=victim_datasource_id,
+        experiment_id=victim_experiment.config.experiment_id,
+    ).data
+    caller_org_id, caller_datasource_id = create_org_with_default_datasource(
+        aclient_unpriv, "snapshot-delete-caller-org"
+    )
+
+    with expect_status_code(404):
+        aclient_unpriv.delete_snapshot(
+            _organization_id=caller_org_id,
+            datasource_id=caller_datasource_id,
+            experiment_id=victim_experiment.config.experiment_id,
+            snapshot_id=snapshot.id,
+        )
+
+    response = aclient.get_snapshot(
+        organization_id=victim_org_id,
+        datasource_id=victim_datasource_id,
+        experiment_id=victim_experiment.config.experiment_id,
+        snapshot_id=snapshot.id,
+    ).data
+    assert response.snapshot.id == snapshot.id
 
 
 def test_snapshot_on_ineligible_experiments(testing_datasource, aclient: AdminAPIClient):
