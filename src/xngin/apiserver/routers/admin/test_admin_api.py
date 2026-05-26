@@ -249,7 +249,6 @@ async def fixture_testing_experiment(xngin_session: AsyncSession, testing_dataso
         assignment = tables.ArmAssignment(
             experiment_id=experiment.id,
             participant_id=str(i),
-            participant_type=experiment.participant_type,
             arm_id=arm_ids[i % 2],  # Alternate between the two arms
             strata=[],
         )
@@ -296,7 +295,6 @@ async def fixture_testing_bandit_experiment(request, xngin_session: AsyncSession
         assignment = tables.Draw(
             experiment_id=experiment.id,
             participant_id=str(i),
-            participant_type=experiment.participant_type,
             arm_id=arm_id,
             outcome=outcome,
             observed_at=datetime.now(tz=UTC),
@@ -1440,8 +1438,6 @@ async def test_lifecycle_with_db(testing_datasource, aclient: AdminAPIClient, ac
     assert created_experiment.stopped_assignments_reason == StopAssignmentReason.PREASSIGNED
     parsed_arm_ids = [arm.arm_id for arm in created_experiment.design_spec.arms]
     assert len(parsed_arm_ids) == 2
-    # Confirm that the deprecated participant type is set to the empty string for new experiments
-    assert created_experiment.participant_type_deprecated == ""
 
     # Commit the new experiment.
     aclient.commit_experiment(datasource_id=testing_datasource.datasource_id, experiment_id=parsed_experiment_id)
@@ -1463,7 +1459,6 @@ async def test_lifecycle_with_db(testing_datasource, aclient: AdminAPIClient, ac
         datasource_id=testing_datasource.datasource_id, experiment_id=parsed_experiment_id
     ).data
     assert get_exp.config.state == ExperimentState.COMMITTED
-    assert get_exp.config.participant_type_deprecated == ""
     assert get_exp.participant_type is not None
     assert get_exp.participant_type.participant_type == ""
 
@@ -2752,7 +2747,6 @@ async def test_analyze_experiment_with_no_assignments_in_one_arm_yet(
         arm_assignments.append(
             tables.ArmAssignment(
                 experiment_id=experiment_id,
-                participant_type="",
                 participant_id=f"{i}",
                 arm_id=assigned_arm_id,
                 strata=[],
@@ -3669,7 +3663,7 @@ async def test_list_participant_types_excludes_hidden(
 async def test_create_experiment_with_table_name_and_primary_key(
     xngin_session: AsyncSession, testing_datasource, aclient: AdminAPIClient
 ):
-    """Test creating an experiment with table_name and primary_key instead of participant_type."""
+    """Test creating an experiment with table_name and primary_key."""
     ds_id = testing_datasource.datasource_id
 
     request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
@@ -3681,8 +3675,6 @@ async def test_create_experiment_with_table_name_and_primary_key(
         body=experiment_request,
         random_state=42,
     ).data
-
-    assert created.participant_type_deprecated == ""
 
     # Verify no participant type was persisted to datasource config.
     ds = await xngin_session.get_one(tables.Datasource, ds_id)
@@ -3724,7 +3716,6 @@ async def test_create_preassigned_experiment_with_table_name_and_primary_key(
         random_state=42,
     ).data
 
-    assert created.participant_type_deprecated == ""
     assert created.assign_summary is not None
     assert created.assign_summary.sample_size == 100
 

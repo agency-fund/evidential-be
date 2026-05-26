@@ -120,13 +120,11 @@ def make_participants_def_from_experiment(experiment: tables.Experiment) -> Part
         if ef.is_strata:
             fd.is_strata = True
 
-    hidden = experiment.participant_type.strip() == ""
-    ptype = experiment.participant_type if not hidden else ""
     return ParticipantsDef(
         type="schema",
         table_name=table_name,
-        participant_type=ptype,
-        hidden=hidden,
+        participant_type="",
+        hidden=True,
         fields=list(sorted(schema.values(), key=lambda x: x.field_name)),
     )
 
@@ -344,7 +342,6 @@ async def create_preassigned_experiment_impl(
         xngin_session=xngin_session,
         experiment_id=experiment.id,
         arm_ids=[arm.id for arm in experiment.arms],
-        participant_type=experiment.participant_type,
         participant_id_col=unique_id_name,
         data=dwh_participants,
         assignments=assignment_result,
@@ -781,7 +778,6 @@ async def create_assignment_for_participant(
                         .values(
                             experiment_id=experiment.id,
                             participant_id=participant_id,
-                            participant_type=experiment.participant_type,
                             arm_id=chosen_arm_id,
                             strata=[],
                         )
@@ -795,7 +791,6 @@ async def create_assignment_for_participant(
                         .values(
                             experiment_id=experiment.id,
                             participant_id=participant_id,
-                            participant_type=experiment.participant_type,
                             arm_id=chosen_arm_id,
                             context_vals=sorted_context_vals,
                         )

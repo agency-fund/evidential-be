@@ -380,7 +380,6 @@ def _make_experiment_field(
 def _make_experiment(
     experiment_type: ExperimentsType,
     *,
-    participant_type: str = "",
     datasource_table: str | None = "my_table",
     fields: list[tables.ExperimentField] | None = None,
 ) -> tables.Experiment:
@@ -388,7 +387,6 @@ def _make_experiment(
     exp = tables.Experiment(
         datasource_id="ds-test",
         experiment_type=experiment_type.value,
-        participant_type=participant_type,
         datasource_table=datasource_table,
         name="test",
         description="test",
@@ -423,8 +421,7 @@ def test_make_participants_def_from_experiment_missing_table_returns_none():
     assert make_participants_def_from_experiment(exp) is None
 
 
-@pytest.mark.parametrize("participant_type", ["", "experiment_1.0"])
-def test_make_participants_def_from_experiment_builds_participants_def(participant_type: str):
+def test_make_participants_def_from_experiment_builds_participants_def():
     fields = [
         _make_experiment_field("id", DataType.INTEGER, is_unique_id=True),
         _make_experiment_field("revenue", DataType.DOUBLE_PRECISION, metric_pct_change=0.05),
@@ -444,7 +441,6 @@ def test_make_participants_def_from_experiment_builds_participants_def(participa
     ]
     exp = _make_experiment(
         ExperimentsType.FREQ_PREASSIGNED,
-        participant_type=participant_type,
         datasource_table="my_table",
         fields=fields,
     )
@@ -453,8 +449,8 @@ def test_make_participants_def_from_experiment_builds_participants_def(participa
 
     assert result is not None
     assert result.table_name == "my_table"
-    assert result.participant_type == participant_type
-    assert result.hidden is (participant_type == "")
+    assert result.participant_type == ""
+    assert result.hidden is True
     field_names = [f.field_name for f in result.fields]
     assert field_names == ["country", "id", "revenue"]  # sorted by name
     id_fd = next(f for f in result.fields if f.field_name == "id")
@@ -505,7 +501,6 @@ async def test_create_preassigned_experiment_impl(
     experiment_id = response.experiment_id
     assert response.datasource_id == testing_datasource.datasource_id
     assert response.state == ExperimentState.ASSIGNED
-    assert response.participant_type_deprecated == ""
     assert response.power_analyses is not None
     assert response.power_analyses == request.power_analyses
     # Verify design_spec
@@ -546,7 +541,6 @@ async def test_create_preassigned_experiment_impl(
     assert experiment.arms[1].position == 2
 
     assert experiment.experiment_type == ExperimentsType.FREQ_PREASSIGNED
-    assert experiment.participant_type == ""
     assert experiment.datasource_table == spec.table_name
     unique_id_field = experiment.unique_id_field()
     assert unique_id_field is not None and unique_id_field.field_name == spec.primary_key
@@ -616,7 +610,6 @@ async def test_create_preassigned_experiment_impl(
 
     # Check one assignment to see if it looks roughly right
     sample_assignment = assignments[0]
-    assert sample_assignment.participant_type == ""
     assert sample_assignment.experiment_id == experiment.id
     assert sample_assignment.arm_id in (arm.arm_id for arm in response.design_spec.arms)
     # Verify strata information
@@ -857,7 +850,6 @@ async def test_create_freq_online_experiment_impl_experiments_fields_are_correct
     assert response.datasource_id == testing_datasource.datasource_id
     assert response.state == ExperimentState.ASSIGNED
     assert response.power_analyses is None
-    assert response.participant_type_deprecated == ""
 
     assert isinstance(response.design_spec, OnlineFrequentistExperimentSpec)
     assert response.design_spec.table_name == "dwh"
@@ -1125,8 +1117,6 @@ async def test_create_experiment_impl_for_freq_online(xngin_session, testing_dat
     # Verify database state
     experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
     assert experiment.experiment_type == ExperimentsType.FREQ_ONLINE
-    assert experiment.participant_type == ""
-    assert response.participant_type_deprecated == ""
     assert experiment.datasource_table == req_online_spec.table_name
     assert experiment.name == req_online_spec.experiment_name
     assert experiment.description == req_online_spec.description
@@ -1209,8 +1199,6 @@ async def test_create_experiment_impl_for_mab_online(xngin_session, testing_data
         await xngin_session.refresh(experiment)
 
     assert experiment.experiment_type == ExperimentsType.MAB_ONLINE
-    assert experiment.participant_type == ""
-    assert response.participant_type_deprecated == ""
     assert experiment.datasource_table is None
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
@@ -1291,8 +1279,6 @@ async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_dat
     # Verify database state
     experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
     assert experiment.experiment_type == ExperimentsType.CMAB_ONLINE
-    assert experiment.participant_type == ""
-    assert response.participant_type_deprecated == ""
     assert experiment.datasource_table is None
     assert experiment.name == request.design_spec.experiment_name
     assert experiment.description == request.design_spec.description
@@ -1503,7 +1489,6 @@ async def test_get_experiment_impl_of_legacy_experiment(xngin_session, testing_d
             organization_id=testing_datasource.organization_id,
         )
     ]
-    experiment_db.participant_type = "experiment_1.0_type"
     xngin_session.add(experiment_db)
     await xngin_session.commit()
 
@@ -1514,7 +1499,6 @@ async def test_get_experiment_impl_of_legacy_experiment(xngin_session, testing_d
     assert result.experiment_id == experiment_db.id
     assert result.datasource_id == testing_datasource.datasource_id
     assert result.state == ExperimentState.COMMITTED
-    assert result.participant_type_deprecated == "experiment_1.0_type"
     assert result.power_analyses is None
     assert result.assign_summary is not None
     assert result.webhooks == ["wh1"]
@@ -1547,7 +1531,6 @@ async def make_experiment_with_assignments(
             assignments = [
                 tables.ArmAssignment(
                     experiment_id=experiment.id,
-                    participant_type="",
                     participant_id="p1",
                     arm_id=arm1_id,
                     created_at=datetime(2025, 1, 1, tzinfo=UTC),
@@ -1558,7 +1541,6 @@ async def make_experiment_with_assignments(
                 ),
                 tables.ArmAssignment(
                     experiment_id=experiment.id,
-                    participant_type="",
                     participant_id="p2",
                     arm_id=arm2_id,
                     created_at=datetime(2025, 1, 2, tzinfo=UTC),
@@ -1572,7 +1554,6 @@ async def make_experiment_with_assignments(
             assignments = [
                 tables.Draw(
                     experiment_id=experiment.id,
-                    participant_type="",
                     participant_id="p1",
                     arm_id=arm1_id,
                     created_at=datetime(2025, 1, 1, tzinfo=UTC),
@@ -1580,7 +1561,6 @@ async def make_experiment_with_assignments(
                 ),
                 tables.Draw(
                     experiment_id=experiment.id,
-                    participant_type="",
                     participant_id="p2",
                     arm_id=arm2_id,
                     created_at=datetime(2025, 1, 2, tzinfo=UTC),
@@ -1591,7 +1571,6 @@ async def make_experiment_with_assignments(
             assignments = [
                 tables.Draw(
                     experiment_id=experiment.id,
-                    participant_type="",
                     participant_id="p1",
                     arm_id=arm1_id,
                     created_at=datetime(2025, 1, 1, tzinfo=UTC),
@@ -1601,7 +1580,6 @@ async def make_experiment_with_assignments(
                 ),
                 tables.Draw(
                     experiment_id=experiment.id,
-                    participant_type="",
                     participant_id="p2",
                     arm_id=arm2_id,
                     created_at=datetime(2025, 1, 2, tzinfo=UTC),
@@ -2255,14 +2233,12 @@ async def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_
     arm_assignments = [
         tables.ArmAssignment(
             experiment_id=experiment_id,
-            participant_type="",
             participant_id="1",
             arm_id=arm1_id,
             strata=[],
         ),
         tables.ArmAssignment(
             experiment_id=experiment_id,
-            participant_type="",
             participant_id="2",
             arm_id=arm2_id,
             strata=[],

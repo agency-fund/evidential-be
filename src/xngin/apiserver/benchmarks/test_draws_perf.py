@@ -148,11 +148,10 @@ async def _bulk_insert_draws(xngin_session, experiment_id: str, arm_ids: list[st
     arm0 = arm_ids[0]
     arm1 = arm_ids[1] if len(arm_ids) > 1 else arm0
     sql = text(f"""
-        INSERT INTO draws (experiment_id, participant_id, participant_type, arm_id, outcome, context_vals)
+        INSERT INTO draws (experiment_id, participant_id, arm_id, outcome, context_vals)
         SELECT
             :eid,
             'p' || gs::text,
-            '',
             CASE WHEN MOD(gs, 2) = 0 THEN :arm0 ELSE :arm1 END,
             CASE WHEN MOD(gs, 2) = 0 THEN MOD(gs, 3)::float8 ELSE NULL END,
             {context_expr}
