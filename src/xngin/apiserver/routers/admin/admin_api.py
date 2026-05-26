@@ -25,6 +25,7 @@ from fastapi import (
 from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy import delete, func, literal, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute, joinedload, selectinload
 
@@ -466,14 +467,19 @@ async def create_user(
     memberships. When they next sign in via OIDC, the existing user record is bound to their OIDC
     identity automatically.
     """
-    existing = (await session.execute(select(tables.User).where(tables.User.email == body.email))).scalar_one_or_none()
-    if existing is not None:
-        return CreateUserResponse(id=existing.id)
-
-    new_user = tables.User(email=body.email)
-    session.add(new_user)
+    user_id = (
+        await session.execute(
+            pg_insert(tables.User)
+            .values(email=body.email)
+            .on_conflict_do_update(
+                index_elements=[tables.User.email],
+                set_={"email": body.email},
+            )
+            .returning(tables.User.id)
+        )
+    ).scalar_one()
     await session.commit()
-    return CreateUserResponse(id=new_user.id)
+    return CreateUserResponse(id=user_id)
 
 
 @router.get("/users")
