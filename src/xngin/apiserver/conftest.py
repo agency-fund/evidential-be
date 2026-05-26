@@ -9,6 +9,7 @@ import os
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, assert_never, cast
 
 import pytest
@@ -43,7 +44,6 @@ from xngin.apiserver.routers.auth.auth_dependencies import (
 )
 from xngin.apiserver.settings import (
     Dsn,
-    ParticipantsDef,
 )
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing import (
@@ -329,7 +329,6 @@ class DatasourceMetadata:
     api_ds: aapi.GetDatasourceResponse
     organization_id: str
     datasource_id: str
-    pt: ParticipantsDef
 
     # An API key suitable for use in the Authorization: header.
     key: str
@@ -395,7 +394,6 @@ async def _make_datasource_metadata(
 
     org = await xngin_session.get_one(tables.Organization, org_id)
     datasource = await xngin_session.get_one(tables.Datasource, datasource_id)
-    datasource_config = datasource.get_config()
 
     return DatasourceMetadata(
         ds=datasource,
@@ -403,7 +401,6 @@ async def _make_datasource_metadata(
         api_ds=api_ds,
         organization_id=api_org.id,
         datasource_id=api_ds.id,
-        pt=datasource_config.participants[0],
         key=key_response.key,
         key_id=key_response.id,
         org=org,
@@ -437,8 +434,7 @@ def _convert_dwh_to_create_api_dsn(dwh: settings.Dwh) -> aapi.Dsn:
                 case settings.GcpServiceAccountInfo():
                     credentials_content = base64.standard_b64decode(dwh.credentials.content_base64).decode()
                 case settings.GcpServiceAccountFile():
-                    with open(dwh.credentials.path, encoding="utf-8") as credentials_file:
-                        credentials_content = credentials_file.read()
+                    credentials_content = Path(dwh.credentials.path).read_text(encoding="utf-8")
                 case _:
                     raise TypeError(f"Unsupported BigQuery credentials type: {type(dwh.credentials).__name__}")
             return aapi.BqDsn(

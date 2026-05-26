@@ -138,10 +138,11 @@ from xngin.apiserver.routers.common_enums import ExperimentState, PreloadMethod
 from xngin.apiserver.routers.experiments import experiments_common, experiments_common_csv
 from xngin.apiserver.routers.experiments.experiments_common import (
     AbandonExperimentResult,
-    fetch_fields_from_table_or_raise,
+    convert_table_to_fields_or_raise,
     make_participants_def_from_experiment,
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
+from xngin.apiserver.routers.power_adapters import calculate_icc_and_cv_from_database
 from xngin.apiserver.settings import (
     NoDwh,
     ParticipantsDef,
@@ -150,7 +151,9 @@ from xngin.apiserver.settings import (
 from xngin.apiserver.snapshots import snapshotter
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
+from xngin.events.webhook_sent import WebhookSentEvent
 from xngin.stats import check_power
+from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE
 
 GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
 RESPONSE_CACHE_MAX_AGE_SECONDS = timedelta(minutes=15).seconds
@@ -234,7 +237,7 @@ def require_privileged(user: tables.User) -> None:
         )
 
 
-async def require_privileged_user(
+def require_privileged_user(
     user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> tables.User:
     """Dependency: returns the caller's User row, or raises 403 if not privileged."""
@@ -891,7 +894,7 @@ async def create_organizations(
     Any authenticated user may create an organization. The creator is automatically added as a
     member of the new organization.
     """
-    organization = await create_organization_impl(session, user, body.name)
+    organization = create_organization_impl(session, user, body.name)
     await session.commit()
 
     return CreateOrganizationResponse(id=organization.id)
@@ -1087,10 +1090,40 @@ def convert_events_to_eventsummaries(events):
                 type=event.type,
                 summary=data.summarize() if data else "Unknown",
                 link=data.link() if data else None,
-                details=data.model_dump() if data else None,
+                details=data.sanitize().model_dump() if data else None,
+                status_icon=data.status_icon() if data else "info",
             )
         )
     return event_summaries
+
+
+@router.post(
+    "/organizations/{organization_id}/events/{event_id}/resend",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def resend_organization_event(
+    organization_id: str,
+    event_id: str,
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
+):
+    """Re-enqueues the outbound webhook task that produced a webhook.sent event."""
+    org = await get_organization_or_raise(session, user, organization_id)
+    event = await session.get(tables.Event, event_id)
+    if event is None or event.organization_id != org.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found.")
+    data = event.get_data()
+    if not isinstance(data, WebhookSentEvent):
+        # Only webhook.sent events can be resent.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event type cannot be resent.")
+    session.add(
+        tables.Task(
+            task_type=WEBHOOK_OUTBOUND_TASK_TYPE,
+            payload=data.request.model_dump(),
+        )
+    )
+    await session.commit()
+    return GENERIC_SUCCESS
 
 
 @router.post("/organizations/{organization_id}/members", status_code=status.HTTP_204_NO_CONTENT)
@@ -1299,7 +1332,7 @@ async def create_datasource(
         async with DwhSession(config.dwh) as dwh:
             await dwh.connectivity_check()
 
-    datasource = await admin_common.create_datasource_impl(session, org, body.name, config)
+    datasource = admin_common.create_datasource_impl(session, org, body.name, config)
     await session.commit()
 
     return CreateDatasourceResponse(id=datasource.id)
@@ -1701,7 +1734,7 @@ async def delete_participant(
             return None
         return resource
 
-    async def deleter(_session: AsyncSession, resource: tables.Datasource):
+    def deleter(_session: AsyncSession, resource: tables.Datasource):
         config = resource.get_config()
         participant = config.find_participants(participant_id)
         config.participants.remove(participant)
@@ -1966,7 +1999,7 @@ async def abandon_experiment(
 ):
     ds = await get_datasource_or_raise(session, user, datasource_id)
     experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
-    result = await experiments_common.abandon_experiment_impl(experiment)
+    result = experiments_common.abandon_experiment_impl(experiment)
     if result == AbandonExperimentResult.INVALID_STATE:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Invalid state: {experiment.state}")
     await session.commit()
@@ -2197,7 +2230,8 @@ async def power_check(
     async with DwhSession(dsconfig.dwh) as dwh:
         sa_table = await dwh.inspect_table(design_spec.table_name)
         # Validate the fields used in the design spec are present in the table and that filter values are valid.
-        _ = await fetch_fields_from_table_or_raise(sa_table, design_spec)
+        _ = convert_table_to_fields_or_raise(sa_table, design_spec)
+
         metric_stats = await asyncio.to_thread(
             get_stats_on_metrics,
             dwh.session,
@@ -2205,6 +2239,29 @@ async def power_check(
             design_spec.metrics,
             design_spec.filters,
         )
+
+        # Augment with cluster-level stats if this is a cluster-randomized design.
+        if design_spec.cluster_key is not None:
+            request_metrics_by_name = {m.field_name: m for m in design_spec.metrics}
+            for metric_stat in metric_stats:
+                req_metric = request_metrics_by_name[metric_stat.field_name]
+                # If the user provided ICC, avg_cluster_size, and cv, use them instead of deriving from the dwh.
+                if req_metric.icc is not None:
+                    metric_stat.icc = req_metric.icc
+                    metric_stat.avg_cluster_size = req_metric.avg_cluster_size
+                    metric_stat.cv = req_metric.cv
+                else:
+                    cluster_stats = await asyncio.to_thread(
+                        calculate_icc_and_cv_from_database,
+                        dwh.session,
+                        sa_table,
+                        design_spec.cluster_key,
+                        metric_stat.field_name,
+                        design_spec.filters,
+                    )
+                    metric_stat.icc = cluster_stats["icc"]
+                    metric_stat.avg_cluster_size = cluster_stats["avg_cluster_size"]
+                    metric_stat.cv = cluster_stats["cv"]
 
     arm_weights = design_spec.get_validated_arm_weights()
 
