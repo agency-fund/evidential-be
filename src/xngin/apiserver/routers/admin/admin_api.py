@@ -234,6 +234,14 @@ def require_privileged(user: tables.User) -> None:
         )
 
 
+async def require_privileged_user(
+    user: Annotated[tables.User, Depends(require_user_from_token)],
+) -> tables.User:
+    """Dependency: returns the caller's User row, or raises 403 if not privileged."""
+    require_privileged(user)
+    return user
+
+
 async def ensure_not_last_privileged_user(session: AsyncSession, exclude_user_id: str) -> None:
     """Raises 403 if no privileged users remain after excluding the given user_id.
 
@@ -445,7 +453,7 @@ async def logout(
 @router.post("/users")
 async def create_user(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(require_user_from_token)],
+    user: Annotated[tables.User, Depends(require_privileged_user)],
     body: Annotated[CreateUserRequest, Body(...)],
 ) -> CreateUserResponse:
     """Creates a User record by email. Privileged users only.
@@ -455,8 +463,6 @@ async def create_user(
     memberships. When they next sign in via OIDC, the existing user record is bound to their OIDC
     identity automatically.
     """
-    require_privileged(user)
-
     existing = (await session.execute(select(tables.User).where(tables.User.email == body.email))).scalar_one_or_none()
     if existing is not None:
         return CreateUserResponse(id=existing.id)
@@ -470,7 +476,7 @@ async def create_user(
 @router.get("/users")
 async def list_users(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(require_user_from_token)],
+    user: Annotated[tables.User, Depends(require_privileged_user)],
     pagination: Annotated[PaginationQuery, Depends(pagination_query_params)],
     email_contains: Annotated[
         str | None,
@@ -493,8 +499,6 @@ async def list_users(
 
     Sorted by email ascending.
     """
-    require_privileged(user)
-
     stmt = select(tables.User).options(selectinload(tables.User.organizations))
     if scope == "mine":
         callers_org_ids = (
@@ -541,15 +545,13 @@ async def list_users(
 async def get_user(
     user_id: Annotated[str, Path(description="The ID of the user to fetch.")],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(require_user_from_token)],
+    user: Annotated[tables.User, Depends(require_privileged_user)],
 ) -> GetUserResponse:
     """Fetches details for a single user, including the organizations they belong to.
 
     Privileged users only. Each returned organization carries summary counts (number of users,
     number of experiments), matching the shape used on the organizations list page.
     """
-    require_privileged(user)
-
     target = await session.get(tables.User, user_id)
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
@@ -606,7 +608,7 @@ async def get_user(
 async def patch_user(
     user_id: Annotated[str, Path(description="The ID of the user to update.")],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(require_user_from_token)],
+    user: Annotated[tables.User, Depends(require_privileged_user)],
     body: Annotated[PatchUserRequest, Body(...)],
 ):
     """Updates a user's properties. Privileged users only.
@@ -614,8 +616,6 @@ async def patch_user(
     Currently only supports updating `is_privileged`. Revoking privilege from the last privileged
     user in the system is rejected with a 400.
     """
-    require_privileged(user)
-
     target = await session.get(tables.User, user_id)
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
@@ -633,15 +633,13 @@ async def patch_user(
 async def delete_user(
     user_id: Annotated[str, Path(description="The ID of the user to delete.")],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(require_user_from_token)],
+    user: Annotated[tables.User, Depends(require_privileged_user)],
 ):
     """Deletes a user. Privileged users only.
 
     Cascades to remove all organization memberships. Rejects deleting yourself, and rejects deleting
     the last privileged user in the system.
     """
-    require_privileged(user)
-
     if user_id == user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
