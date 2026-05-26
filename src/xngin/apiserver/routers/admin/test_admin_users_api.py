@@ -314,7 +314,7 @@ def test_patch_user_requires_privileged(aclient_unpriv: AdminAPIClient):
 
 def test_delete_user_self_rejected(aclient: AdminAPIClient):
     self_id = _user_id_for(aclient.list_users().data.items, PRIVILEGED_EMAIL)
-    with expect_status_code(403, text="own user"):
+    with expect_status_code(403, text="yourself"):
         aclient.delete_user(user_id=self_id)
 
 

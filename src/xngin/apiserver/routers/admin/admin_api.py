@@ -643,7 +643,7 @@ async def delete_user(
     if user_id == user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You cannot delete your own user.",
+            detail="You cannot delete yourself.",
         )
 
     target = await session.get(tables.User, user_id)
