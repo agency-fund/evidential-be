@@ -138,6 +138,10 @@ class EventSummary(AdminApiBaseModel):
     summary: Annotated[str, Field(description="Human-readable summary of the event.")]
     link: Annotated[str | None, Field(description="A navigable link to related information.")] = None
     details: Annotated[dict | None, Field(description="Details")]
+    status_icon: Annotated[
+        Literal["success", "info", "failure"],
+        Field(description="Status icon to display for this event."),
+    ] = "info"
 
 
 class ListOrganizationEventsResponse(PaginatedResponse, AdminApiBaseModel):

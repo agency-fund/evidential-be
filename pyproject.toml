@@ -41,7 +41,7 @@ ide = [
 dev = [
     "boto3-stubs>=1.39.1",
     "coverage>=7.11.0",
-    "deepdiff>=8.6.1,<9",
+    "deepdiff>=8.6.2,<9",
     "fastapi-typed-client @ git+https://github.com/dctaf/fastapi-typed-client-fork@evid",
     "mypy>=1.19.1",
     "pandas-stubs>=2.3.2",
@@ -139,7 +139,6 @@ ignore = [
     "PLR0912", # too many branches
     "PLR0913", # too many positional arguments
     "PLR0914", # too many local variables
-    "PLR0915", # too many statements
     "PLR0917", # too many positional arguments
     "PLR1702", # too many nested blocks
     "PLR2004", # magic value,
@@ -148,17 +147,30 @@ ignore = [
     "PT018", # Assertion should be broken down into multiple parts
     "S101", # Use of `assert` detected
     "SIM108", # Use ternary operator instead of `if`-`else`-block
-    "RUF029", # Unused async
     "TRY003", # Raised bare custom exception with long message
 ]
 
+[tool.ruff.lint.pylint]
+max-statements = 54
+
 [tool.ruff.lint.per-file-ignores]
 "**/test_*" = [
+    "PLR0915", # Too many statements
+    "RUF029", # Unused async
     "RUF069", # round-trip float equality with literals is fine in tests
     "S105",  # Possible hardcoded password assigned
     "S106",  # Possible hardcoded password assigned to argument
     "S311",  # Standard pseudo-random generators are not suitable for cryptographic purposes
     "S608",  # Possible SQL injection vector through string-based query construction
+]
+"tools/{generate_wide_dwh,generate_clustered_data}.py" = [
+    "PLR0915",  # "Too many statements"
+]
+"**/*_dependencies.py" = [
+    "RUF029", # Unused async: FastAPI dependencies are allowed to be async to avoid threading.
+]
+"**/exceptionhandlers.py" = [
+    "RUF029", # Unused async: FastAPI exception handlers are allowed to be async to avoid threading.
 ]
 
 [tool.ruff.lint.flake8-import-conventions]
