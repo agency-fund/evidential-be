@@ -347,6 +347,7 @@ async def create_preassigned_experiment_impl(
         experiment_id=experiment.id,
         arm_ids=[arm.id for arm in experiment.arms],
         participant_id_col=unique_id_name,
+        cluster_key_col=design_spec.cluster_key,
         data=dwh_participants,
         assignments=assignment_result,
     )

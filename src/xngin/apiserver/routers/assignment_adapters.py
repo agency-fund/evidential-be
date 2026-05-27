@@ -114,6 +114,7 @@ async def bulk_insert_arm_assignments(
     participant_id_col: str,
     data: Sequence[RowProtocol],
     assignments: AssignmentResult,
+    cluster_key_col: str | None = None,
 ) -> None:
     """Bulk insert arm assignments into the database via async COPY.
 
@@ -122,6 +123,7 @@ async def bulk_insert_arm_assignments(
         experiment_id: Database ID of the experiment
         arm_ids: Database ID of each treatment arm, ordered by arm index used in assignment.
         participant_id_col: Name of column in `data` containing participant identifiers
+        cluster_key_col: Optional column in `data` containing cluster identifiers
         data: sqlalchemy result set of Rows representing units to be assigned
         assignments: AssignmentResult containing assignments and balance check results. AssignmentResult.arm_pop
           indexes are parallel to indexes on arm_ids.
@@ -132,6 +134,7 @@ async def bulk_insert_arm_assignments(
             experiment_id=experiment_id,
             arm_ids=arm_ids,
             participant_id_col=participant_id_col,
+            cluster_key_col=cluster_key_col,
             data=data,
             assignments=assignments,
         )
@@ -148,17 +151,24 @@ async def _bulk_insert_async(
     participant_id_col: str,
     data: Sequence[RowProtocol],
     assignments: AssignmentResult,
+    cluster_key_col: str | None = None,
 ) -> None:
     """Write arm assignments in bulk via COPY on the session's driver connection."""
     stratum_cols = assignments.stratum_cols
 
-    copy_sql = "COPY arm_assignments (experiment_id, participant_id, arm_id, strata) FROM STDIN"
+    if cluster_key_col is None:
+        copy_sql = "COPY arm_assignments (experiment_id, participant_id, arm_id, strata) FROM STDIN"
+        copy_types = ["text", "text", "text", "jsonb"]
+    else:
+        copy_sql = "COPY arm_assignments (experiment_id, participant_id, cluster_key, arm_id, strata) FROM STDIN"
+        copy_types = ["text", "text", "text", "text", "jsonb"]
+
     async with (
         with_driver_connection(xngin_session) as driver_conn,
         driver_conn.cursor() as cur,
         cur.copy(copy_sql) as copy,
     ):
-        copy.set_types(["text", "text", "text", "jsonb"])
+        copy.set_types(copy_types)
         for treatment_assignment, row in zip(assignments.treatment_ids, data, strict=True):
             row_mapping = row._mapping
 
@@ -173,9 +183,17 @@ async def _bulk_insert_async(
             ]
 
             arm_id = arm_ids[treatment_assignment]
-            await copy.write_row((
-                experiment_id,
-                str(row_mapping[participant_id_col]),
-                arm_id,
-                Jsonb(strata, dumps=orjson.dumps),
-            ))
+            participant_id = str(row_mapping[participant_id_col])
+            if cluster_key_col is None:
+                await copy.write_row((experiment_id, participant_id, arm_id, Jsonb(strata, dumps=orjson.dumps)))
+            else:
+                cluster_key = None
+                if _is_present_scalar(row_mapping[cluster_key_col]):
+                    cluster_key = str(row_mapping[cluster_key_col])
+                await copy.write_row((
+                    experiment_id,
+                    participant_id,
+                    cluster_key,
+                    arm_id,
+                    Jsonb(strata, dumps=orjson.dumps),
+                ))

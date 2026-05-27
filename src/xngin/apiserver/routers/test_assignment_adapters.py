@@ -301,12 +301,50 @@ async def test_bulk_insert_arm_assignments_basic(
     # Verify arm assignments
     for assignment in assignments:
         assert assignment.experiment_id == experiment.id
+        assert assignment.cluster_key is None
         assert assignment.arm_id in arm_ids
 
         # Verify strata are properly stored
         assert len(assignment.strata) == 1
         assert assignment.strata[0]["field_name"] == "gender"
         assert assignment.strata[0]["strata_value"] in {"M", "F"}
+
+
+async def test_bulk_insert_arm_assignments_stores_cluster_key(
+    xngin_session: AsyncSession,
+    testing_datasource: DatasourceMetadata,
+    sample_rows,
+):
+    """Cluster keys are copied from the source assignment rows when configured."""
+    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
+    arm_ids = [arm.id for arm in experiment.arms]
+    unique_id_field = experiment.unique_id_field()
+    assert unique_id_field is not None
+
+    treatment_ids = [0, 1] * (len(sample_rows) // 2)
+    fake_assignment_results = AssignmentResult(
+        treatment_ids=treatment_ids,
+        stratum_ids=[0] * len(sample_rows),
+        balance_result=None,
+        stratum_cols=[],
+        arm_pop=np.bincount(treatment_ids),
+    )
+
+    await bulk_insert_arm_assignments(
+        xngin_session=xngin_session,
+        experiment_id=experiment.id,
+        arm_ids=arm_ids,
+        participant_id_col=unique_id_field.field_name,
+        data=sample_rows,
+        assignments=fake_assignment_results,
+        cluster_key_col="region",
+    )
+
+    assignments = (await xngin_session.scalars(select(tables.ArmAssignment))).all()
+    clusters_by_participant = {str(row.id): row.region for row in sample_rows}
+    assert {assignment.cluster_key for assignment in assignments} <= set(clusters_by_participant.values())
+    for assignment in assignments:
+        assert assignment.cluster_key == clusters_by_participant[assignment.participant_id]
 
 
 MAX_SAFE_INTEGER = (1 << 53) - 1  # 9007199254740991

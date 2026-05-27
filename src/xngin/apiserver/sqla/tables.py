@@ -411,6 +411,7 @@ class ArmAssignment(Base):
 
     experiment_id: Mapped[str] = mapped_column(String(length=36), primary_key=True)
     participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    cluster_key: Mapped[str | None] = mapped_column(String(255))
     arm_id: Mapped[str] = mapped_column(String(36))
     # JSON serialized form of a list of Strata objects (from Assignment.strata).
     strata: Mapped[list[dict[str, str]]] = mapped_column(postgresql.JSONB)
