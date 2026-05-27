@@ -564,7 +564,7 @@ async def get_existing_assignment_for_participant(
     Returns: None if no assignment exists.
     """
     stmt: (
-        Select[tuple[str, str, str, datetime]]
+        Select[tuple[str, str | None, str, str, datetime]]
         | Select[
             tuple[
                 str,
@@ -583,6 +583,7 @@ async def get_existing_assignment_for_participant(
             stmt = (
                 select(
                     tables.ArmAssignment.participant_id,
+                    tables.ArmAssignment.cluster_key,
                     tables.Arm.id.label("arm_id"),
                     tables.Arm.name.label("arm_name"),
                     tables.ArmAssignment.created_at,
@@ -626,6 +627,7 @@ async def get_existing_assignment_for_participant(
     if existing_assignment:
         return Assignment(
             participant_id=existing_assignment.participant_id,
+            cluster_key=existing_assignment.cluster_key if hasattr(existing_assignment, "cluster_key") else None,
             arm_id=existing_assignment.arm_id,
             arm_name=existing_assignment.arm_name,
             created_at=existing_assignment.created_at,
@@ -826,6 +828,7 @@ async def create_assignment_for_participant(
 
     return Assignment(
         participant_id=participant_id,
+        cluster_key=None,
         arm_id=chosen_arm_id,
         arm_name=chosen_arm.name,
         created_at=created_at,

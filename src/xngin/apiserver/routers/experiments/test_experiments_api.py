@@ -407,6 +407,7 @@ async def test_both_get_experiment_assignments_endpoints_have_matching_strata_or
         headers={"X-API-Key": testing_datasource.key},
     )
     assert csv_response.status_code == HTTPStatus.OK, csv_response.content
+    assert "cluster_key" not in csv_response.text.splitlines()[0].split(",")
 
     csv_rows = {row["participant_id"]: row for row in csv.DictReader(StringIO(csv_response.text))}
     assert set(csv_rows) == {assignment.participant_id for assignment in data.assignments}
@@ -419,6 +420,82 @@ async def test_both_get_experiment_assignments_endpoints_have_matching_strata_or
             "ethnicity": csv_row["ethnicity"] or None,
             "gender": csv_row["gender"] or None,
         }
+
+    json_response = eclient.client.get(
+        f"/v1/experiments/{created_experiment.experiment_id}/assignments",
+        headers={"X-API-Key": testing_datasource.key},
+    )
+    assert json_response.status_code == HTTPStatus.OK, json_response.content
+    assert all("cluster_key" not in assignment for assignment in json_response.json()["assignments"])
+
+
+async def test_cluster_key_exports_with_preassigned_assignments(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+):
+    request = CreateExperimentRequest(
+        design_spec=PreassignedFrequentistExperimentSpec(
+            experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+            experiment_name="cluster-key export",
+            description="Verify cluster keys are exported with assignments.",
+            table_name="clustered_dwh",
+            primary_key="participant_id",
+            cluster_key="cluster_powerlaw",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime.now(UTC) + timedelta(days=1),
+            arms=[
+                Arm(arm_name="control", arm_description="Control group"),
+                Arm(arm_name="treatment", arm_description="Treatment group"),
+            ],
+            metrics=[DesignSpecMetricRequest(field_name="test_score", metric_pct_change=0.1)],
+            strata=[],
+            filters=[],
+            desired_n=5,
+        ),
+        webhooks=[],
+    )
+    created_experiment = aclient.create_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        body=request,
+        random_state=42,
+    ).data
+    aclient.commit_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=created_experiment.experiment_id,
+    )
+
+    json_response = eclient.client.get(
+        f"/v1/experiments/{created_experiment.experiment_id}/assignments",
+        headers={"X-API-Key": testing_datasource.key},
+    )
+    assert json_response.status_code == HTTPStatus.OK, json_response.content
+    json_assignments = json_response.json()["assignments"]
+    assert len(json_assignments) == 5
+    assert all("cluster_key" in assignment for assignment in json_assignments)
+    assert all(assignment["cluster_key"] is not None for assignment in json_assignments)
+
+    csv_response = eclient.client.get(
+        f"/v1/experiments/{created_experiment.experiment_id}/assignments/csv",
+        headers={"X-API-Key": testing_datasource.key},
+    )
+    assert csv_response.status_code == HTTPStatus.OK, csv_response.content
+    csv_reader = csv.DictReader(StringIO(csv_response.text))
+    assert csv_reader.fieldnames == ["participant_id", "cluster_key", "arm_id", "arm_name", "created_at"]
+    csv_rows = {row["participant_id"]: row for row in csv_reader}
+    assert set(csv_rows) == {assignment["participant_id"] for assignment in json_assignments}
+    for assignment in json_assignments:
+        csv_row = csv_rows[assignment["participant_id"]]
+        assert csv_row["cluster_key"] == assignment["cluster_key"]
+
+        single_assignment = eclient.get_assignment(
+            api_key=testing_datasource.key,
+            experiment_id=created_experiment.experiment_id,
+            participant_id=assignment["participant_id"],
+            create_if_none=False,
+        ).data.assignment
+        assert single_assignment is not None
+        assert single_assignment.cluster_key == assignment["cluster_key"]
 
 
 async def test_get_experiment_assignments_streams_bandit_assignments(

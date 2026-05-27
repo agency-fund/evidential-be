@@ -183,6 +183,7 @@ async def get_experiment_assignments(
 
     Output columns:
     - `participant_id`
+    - `cluster_key` when the experiment design specifies a cluster key
     - `arm_id`
     - `arm_name`
     - `created_at`: UTC ISO 8601 timestamp in ISO8601 format

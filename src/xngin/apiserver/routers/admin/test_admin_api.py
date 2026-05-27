@@ -4320,11 +4320,12 @@ async def test_power_check_cluster_with_manual_and_db_derived_metrics(testing_da
     assert dwh_analysis.clusters_per_arm == [602, 602]
 
 
-async def test_create_freq_preassigned_experiment_with_cluster_key_roundtrips(
+def test_create_freq_preassigned_experiment_with_cluster_key_roundtrips(
     testing_datasource,
     aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
 ):
-    """cluster_key set on the design spec should survive save and reload."""
+    """cluster_key set on the design spec should survive save, reload, and assignment export."""
     datasource_id = testing_datasource.datasource_id
     experiment_request = CreateExperimentRequest(
         design_spec=PreassignedFrequentistExperimentSpec(
@@ -4355,3 +4356,28 @@ async def test_create_freq_preassigned_experiment_with_cluster_key_roundtrips(
     fetched = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=created.experiment_id).data
     assert isinstance(fetched.config.design_spec, PreassignedFrequentistExperimentSpec)
     assert fetched.config.design_spec.cluster_key == "cluster_powerlaw"
+
+    # Verify assignment exports are consistent and contain the cluster key.
+    assignments = eclient.get_experiment_assignments(
+        api_key=testing_datasource.key,
+        experiment_id=created.experiment_id,
+    ).data.assignments
+    assert len(assignments) == 100
+    assert all(assignment.cluster_key is not None for assignment in assignments)
+
+    csv_response = aclient.client.get(
+        f"/v1/m/datasources/{datasource_id}/experiments/{created.experiment_id}/assignments/csv"
+    )
+    assert csv_response.status_code == HTTPStatus.OK, csv_response.content
+    csv_reader = csv.DictReader(io.StringIO(csv_response.text))
+    assert csv_reader.fieldnames == ["participant_id", "cluster_key", "arm_id", "arm_name", "created_at"]
+    csv_rows = {row["participant_id"]: row for row in csv_reader}
+    assert set(csv_rows) == {assignment.participant_id for assignment in assignments}
+    for assignment in assignments:
+        csv_assignment = csv_rows[assignment.participant_id]
+        assert csv_assignment["cluster_key"] == assignment.cluster_key
+        assert csv_assignment["arm_id"] == assignment.arm_id
+        assert csv_assignment["arm_name"] == assignment.arm_name
+        created_at = assignment.created_at
+        assert created_at is not None
+        assert csv_assignment["created_at"] == created_at.isoformat(timespec="seconds").replace("+00:00", "Z")

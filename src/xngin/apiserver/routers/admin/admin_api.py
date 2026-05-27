@@ -1737,7 +1737,7 @@ async def get_experiment_for_ui(
     "/datasources/{datasource_id}/experiments/{experiment_id}/assignments/csv",
     summary=(
         "Export experiment assignments as CSV file; BalanceCheck not included. "
-        "csv header form: participant_id,arm_id,arm_name,strata_name1,strata_name2,..."
+        "csv header form: participant_id,[cluster_key,]arm_id,arm_name,strata_name1,strata_name2,..."
     ),
     response_class=CsvStreamingResponse,
 )

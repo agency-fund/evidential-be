@@ -1165,6 +1165,7 @@ class AssignmentTypedDict(TypedDict):
 
     arm_id: str
     participant_id: str
+    cluster_key: NotRequired[str | None]
     arm_name: str
     created_at: NotRequired[str | None]
     strata: NotRequired[list[StrataTypedDict] | None]
@@ -1191,6 +1192,15 @@ class Assignment(ApiBaseModel):
             max_length=MAX_LENGTH_OF_PARTICIPANT_ID_VALUE,
         ),
     ]
+    cluster_key: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Cluster identifier for this participant. Present for cluster-randomized preassigned experiments."
+            ),
+            max_length=MAX_LENGTH_OF_PARTICIPANT_ID_VALUE,
+        ),
+    ] = None
     arm_name: Annotated[
         str,
         Field(
