@@ -38,12 +38,12 @@ class FakeAsyncClient:
     async def __aexit__(self, *_):
         return None
 
-    async def get(self, url, headers=None):
+    async def request(self, method, url, headers=None):
         FakeAsyncClient.call_log += 1
         return httpx.Response(
             status_code=200,
             json=list(FakeAsyncClient.stacks),
-            request=httpx.Request("GET", url),
+            request=httpx.Request(method, url),
         )
 
 
