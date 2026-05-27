@@ -34,6 +34,7 @@ from xngin.apiserver.routers.admin import authz
 from xngin.apiserver.routers.admin.admin_api import (
     GENERIC_SUCCESS,
     STANDARD_ADMIN_RESPONSES,
+    HTTPExceptionError,
     get_datasource_or_raise,
     get_experiment_via_ds_or_raise,
     get_organization_or_raise,
@@ -51,26 +52,57 @@ from xngin.apiserver.sqla import tables
 
 TURN_JOURNEYS_URL = "https://whatsapp.turn.io/v1/stacks"
 
+TURN_JOURNEYS_RESPONSES: dict[str | int, dict[str, Any]] = {
+    "404": {
+        "model": HTTPExceptionError,
+        "description": "No Turn.io connection has been configured for the organization.",
+    },
+    "409": {
+        "model": HTTPExceptionError,
+        "description": "The configured Turn.io API token is invalid or unauthorized.",
+    },
+    "502": {
+        "model": HTTPExceptionError,
+        "description": "Failed to reach Turn.io API, or Turn.io returned a non-200 response.",
+    },
+}
+
+TURN_ARM_JOURNEY_MAPPING_RESPONSES: dict[str | int, dict[str, Any]] = {
+    "400": {
+        "model": HTTPExceptionError,
+        "description": "Malformed request body, or request arm IDs don't match the experiment's arms.",
+    },
+    "409": {
+        "model": HTTPExceptionError,
+        "description": "A Turn.io connection must be configured before journey mappings can be saved.",
+    },
+}
+
 
 async def _call_turn_api(
     turn_api_token: str,
     method: str,
     url: str = TURN_JOURNEYS_URL,
+    headers: dict[str, str] | None = None,
     **request_kwargs: Any,
 ) -> httpx.Response:
     """
-    Wrapper for outbound Turn.io API calls to standardize error handling
+    Wrapper for outbound Turn.io API calls to standardize error handling.
 
-    Any non-2xx response from Turnio and httpx.RequestErrors (e.g. network issues, timeouts) are logged
+    Any non-2xx response from Turn.io and httpx.RequestErrors (e.g. network issues, timeouts) are logged
     and re-raised as 502 HTTP exceptions, but with appropriate status codes and error messages
     reproduced for debugging.
     """
+    if headers is None:
+        headers = {}
+    headers.update({"Authorization": f"Bearer {turn_api_token}"})
+
     try:
         async with httpx.AsyncClient(timeout=TURN_REQUEST_TIMEOUT_SECONDS) as client:
             response = await client.request(
                 method,
                 url,
-                headers={"Authorization": f"Bearer {turn_api_token}"},
+                headers=headers,
                 **request_kwargs,
             )
             response.raise_for_status()
@@ -217,7 +249,7 @@ async def delete_turn_connection_from_organization(
     return response
 
 
-@router.get("/integrations/turn-connection/{organization_id}/journeys")
+@router.get("/integrations/turn-connection/{organization_id}/journeys", responses=TURN_JOURNEYS_RESPONSES)
 async def get_organization_turn_journeys(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
@@ -255,6 +287,7 @@ async def get_organization_turn_journeys(
 
 @router.put(
     "/integrations/turn-journey-mapping/datasources/{datasource_id}/experiments/{experiment_id}",
+    responses=TURN_ARM_JOURNEY_MAPPING_RESPONSES,
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def set_turn_arm_journey_mapping(
@@ -288,7 +321,7 @@ async def set_turn_arm_journey_mapping(
     extra_arm_ids = input_arm_ids - arm_ids
     if missing_arm_ids or extra_arm_ids:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Error in arm IDs config. Missing: {missing_arm_ids}, Extra: {extra_arm_ids}",
         )
 

@@ -222,7 +222,7 @@ async def test_turn_journey_mapping_lifecycle(
     experiment_id = experiment.experiment_id
     arm_ids = [arm.arm_id for arm in experiment.design_spec.arms]
 
-    # PUT without a Turn connection configured for the org -> 400.
+    # PUT without a Turn connection configured for the org -> 409.
     with expect_status_code(409, text="No Turn.io connection"):
         iaclient.set_turn_arm_journey_mapping(
             datasource_id=ds_id,
@@ -299,8 +299,8 @@ async def test_turn_journey_mapping_rejects_mismatched_arm_ids(
         body=SetConnectionToTurnRequest(turn_api_token="a" * 335),
     )
 
-    # Missing one arm -> 409 mentioning the missing id.
-    with expect_status_code(409, text="Missing") as match:
+    # Missing one arm -> 400 mentioning the missing id.
+    with expect_status_code(400, text="Missing") as match:
         iaclient.set_turn_arm_journey_mapping(
             datasource_id=ds_id,
             experiment_id=experiment_id,
@@ -310,9 +310,9 @@ async def test_turn_journey_mapping_rejects_mismatched_arm_ids(
         )
     assert arm_ids[1] in match.http_response().text
 
-    # Extra arm id not belonging to the experiment -> 409 mentioning the extra id.
+    # Extra arm id not belonging to the experiment -> 400 mentioning the extra id.
     extra_id = "arm_not_in_experiment_1"
-    with expect_status_code(409, text="Extra") as match:
+    with expect_status_code(400, text="Extra") as match:
         iaclient.set_turn_arm_journey_mapping(
             datasource_id=ds_id,
             experiment_id=experiment_id,
