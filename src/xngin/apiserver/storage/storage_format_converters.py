@@ -47,7 +47,15 @@ def _upsert_field_used(
     fields_used_map: dict[str, tables.ExperimentField],
     **field_kwargs: Any,
 ) -> tables.ExperimentField:
-    """Helper function for adding or updating ExperimentField objects to associate with an experiment."""
+    """
+    Helper function for adding or updating ExperimentField objects to associate with an experiment.
+
+    Args:
+        field_name - the name of an underlying table column used in the experiment
+        field_type_map - used to resolve the data type of the field_name
+        fields_used_map - in-out map used to store ExperimentField objects by field_name
+        field_kwargs - additional fields to set on the ExperimentField object
+    """
     field = fields_used_map.get(field_name)
     if field is not None:
         for key, value in field_kwargs.items():
@@ -96,25 +104,12 @@ def _experiment_filter_from_spec_filter(
             )
 
 
-def _set_experiment_fields_from_design_spec(
-    experiment: tables.Experiment,
-    design_spec: capi.DesignSpec,
-    field_type_map: dict[str, DataType] | None = None,
-) -> None:
-    """Save the field-related components of a DesignSpec to an experiment."""
-    match design_spec:
-        case capi.MABExperimentSpec() | capi.CMABExperimentSpec():
-            experiment.experiment_fields = []
-            return
-        case capi.PreassignedFrequentistExperimentSpec() | capi.OnlineFrequentistExperimentSpec():
-            pass
-        case _:
-            assert_never(design_spec)
-
-    field_type_map = field_type_map or {}
-    # Clear existing design fields
-    experiment.experiment_fields = []
-    # New fields used in the experiment. Each key is a field name and maps to a ExperimentField object.
+def _make_freq_experiment_fields(
+    design_spec: capi.BaseFrequentistDesignSpec,
+    field_type_map: dict[str, DataType],
+) -> list[tables.ExperimentField]:
+    """Make ExperimentField objects for a frequentist experiment."""
+    #  Each key is a field name used in the spec and will map to a final ExperimentField object.
     fields_used_map: dict[str, tables.ExperimentField] = {}
 
     _upsert_field_used(design_spec.primary_key, field_type_map, fields_used_map, is_unique_id=True)
@@ -143,8 +138,24 @@ def _set_experiment_fields_from_design_spec(
         for stratum in design_spec.strata:
             _upsert_field_used(stratum.field_name, field_type_map, fields_used_map, is_strata=True)
 
-    # Finally move the fields_used_map to the final experiment's experiment_fields
-    experiment.experiment_fields = list(fields_used_map.values())
+    # Finally convert the fields_used_map to a list usable as an Experiment's experiment_fields
+    return list(fields_used_map.values())
+
+
+def _set_experiment_fields_from_design_spec(
+    experiment: tables.Experiment,
+    design_spec: capi.DesignSpec,
+    field_type_map: dict[str, DataType] | None = None,
+) -> None:
+    """Save the field-related components of a DesignSpec to an experiment."""
+    field_type_map = field_type_map or {}
+    match design_spec:
+        case capi.MABExperimentSpec() | capi.CMABExperimentSpec():
+            experiment.experiment_fields = []
+        case capi.PreassignedFrequentistExperimentSpec() | capi.OnlineFrequentistExperimentSpec():
+            experiment.experiment_fields = _make_freq_experiment_fields(design_spec, field_type_map)
+        case _:
+            assert_never(design_spec)
 
 
 class ExperimentStorageConverter:
