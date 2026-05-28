@@ -707,8 +707,8 @@ def test_remove_member_from_org(aclient: AdminAPIClient):
     member_list = list_members()
     assert member_list.keys() == {PRIVILEGED_EMAIL, UNPRIVILEGED_EMAIL}
 
-    # 404 when trying to remove self from organization
-    remove_member(member_list.get(PRIVILEGED_EMAIL), expected_status_code=404)
+    # 403 when trying to remove self from organization
+    remove_member(member_list.get(PRIVILEGED_EMAIL), expected_status_code=403)
     assert list_members().keys() == {PRIVILEGED_EMAIL, UNPRIVILEGED_EMAIL}
 
     # 204 when remove existing member

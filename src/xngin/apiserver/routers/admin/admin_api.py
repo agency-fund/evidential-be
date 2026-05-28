@@ -8,7 +8,7 @@ import json
 import secrets
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Any, assert_never
+from typing import Annotated, Any, Literal, assert_never
 
 from fastapi import (
     APIRouter,
@@ -24,7 +24,8 @@ from fastapi import (
 )
 from loguru import logger
 from pydantic import BaseModel
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, literal, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute, joinedload, selectinload
 
@@ -44,6 +45,7 @@ from xngin.apiserver.dwh.queries import (
 )
 from xngin.apiserver.exceptionhandlers import XHTTPValidationError
 from xngin.apiserver.exceptions_common import LateValidationError
+from xngin.apiserver.limits import MAX_LENGTH_OF_EMAIL_VALUE, MAX_LENGTH_OF_NAME_VALUE
 from xngin.apiserver.pagination import (
     PaginationQuery,
     SortField,
@@ -70,6 +72,8 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     CreateParticipantsTypeRequest,
     CreateParticipantsTypeResponse,
     CreateSnapshotResponse,
+    CreateUserRequest,
+    CreateUserResponse,
     DatasourceSummary,
     DeleteExperimentDataRequest,
     Drift,
@@ -79,6 +83,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     GetOrganizationResponse,
     GetParticipantsTypeResponse,
     GetSnapshotResponse,
+    GetUserResponse,
     InspectDatasourceResponse,
     InspectDatasourceTableResponse,
     InspectParticipantTypesResponse,
@@ -88,8 +93,11 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     ListOrganizationsResponse,
     ListParticipantsTypeResponse,
     ListSnapshotsResponse,
+    ListUsersResponse,
     ListWebhooksResponse,
+    OrganizationListItem,
     OrganizationSummary,
+    PatchUserRequest,
     PostgresDsn,
     RedshiftDsn,
     SnapshotStatus,
@@ -101,6 +109,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     UpdateOrganizationWebhookRequest,
     UpdateParticipantsTypeRequest,
     UpdateParticipantsTypeResponse,
+    UserDetail,
     UserSummary,
     WebhookSummary,
 )
@@ -220,6 +229,40 @@ def cache_is_fresh(updated: datetime | None):
     return updated is not None and datetime.now(UTC) - updated < timedelta(minutes=5)
 
 
+def require_privileged(user: tables.User) -> None:
+    """Raises 403 if the given user is not privileged."""
+    if not user.is_privileged:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only privileged users can perform this action.",
+        )
+
+
+def require_privileged_user(
+    user: Annotated[tables.User, Depends(require_user_from_token)],
+) -> tables.User:
+    """Dependency: returns the caller's User row, or raises 403 if not privileged."""
+    require_privileged(user)
+    return user
+
+
+async def ensure_not_last_privileged_user(session: AsyncSession, exclude_user_id: str) -> None:
+    """Raises 403 if no privileged users remain after excluding the given user_id.
+
+    Use this guard before revoking privilege from, or deleting, a user that is privileged.
+    """
+    remaining = await session.scalar(
+        select(func.count())
+        .select_from(tables.User)
+        .where(tables.User.is_privileged.is_(True), tables.User.id != exclude_user_id)
+    )
+    if not remaining:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="At least one privileged user must remain.",
+        )
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     logger.info(f"Starting router: {__name__} (prefix={router.prefix})")
@@ -246,13 +289,13 @@ router = APIRouter(
 
 
 async def get_organization_or_raise(session: AsyncSession, user: tables.User, organization_id: str):
-    """Reads the requested organization from the database. Raises 404 if disallowed or not found."""
-    stmt = (
-        select(tables.Organization)
-        .join(tables.UserOrganization)
-        .where(tables.Organization.id == organization_id)
-        .where(tables.UserOrganization.user_id == user.id)
-    )
+    """Reads the requested organization from the database. Raises 404 if disallowed or not found.
+
+    Privileged users may access any organization; non-privileged users must be a member.
+    """
+    stmt = select(tables.Organization).where(tables.Organization.id == organization_id)
+    if not user.is_privileged:
+        stmt = stmt.join(tables.UserOrganization).where(tables.UserOrganization.user_id == user.id)
     result = await session.execute(stmt)
     org = result.scalar_one_or_none()
     if org is None:
@@ -411,6 +454,222 @@ async def logout(
     return GENERIC_SUCCESS
 
 
+@router.post("/users")
+async def create_user(
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    _user: Annotated[tables.User, Depends(require_privileged_user)],
+    body: Annotated[CreateUserRequest, Body(...)],
+) -> CreateUserResponse:
+    """Creates a User record by email. Privileged users only.
+
+    Idempotent: if a user with the given email already exists, the existing user's id is returned
+    and nothing else is changed. Newly-created users have `is_privileged=false` and no organization
+    memberships. When they next sign in via OIDC, the existing user record is bound to their OIDC
+    identity automatically.
+    """
+    user_id = (
+        await session.execute(
+            pg_insert(tables.User)
+            .values(email=body.email)
+            .on_conflict_do_update(
+                index_elements=[tables.User.email],
+                set_={"email": body.email},
+            )
+            .returning(tables.User.id)
+        )
+    ).scalar_one()
+    await session.commit()
+    return CreateUserResponse(id=user_id)
+
+
+@router.get("/users")
+async def list_users(
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(require_privileged_user)],
+    pagination: Annotated[PaginationQuery, Depends(pagination_query_params)],
+    email_contains: Annotated[
+        str | None,
+        Query(
+            max_length=MAX_LENGTH_OF_EMAIL_VALUE,
+            description="Optional case-insensitive substring filter on the user's email address.",
+        ),
+    ] = None,
+    scope: Annotated[
+        Literal["all", "mine"],
+        Query(
+            description=(
+                "`all` (default) returns every user in the system. `mine` returns only users that share "
+                "at least one organization with the caller."
+            )
+        ),
+    ] = "all",
+) -> ListUsersResponse:
+    """Lists users in the system. Privileged users only.
+
+    Sorted by email ascending.
+    """
+    stmt = select(tables.User).options(selectinload(tables.User.organizations))
+    if scope == "mine":
+        callers_org_ids = (
+            select(tables.UserOrganization.organization_id).where(tables.UserOrganization.user_id == user.id).subquery()
+        )
+        stmt = stmt.where(
+            tables.User.id.in_(
+                select(tables.UserOrganization.user_id).where(
+                    tables.UserOrganization.organization_id.in_(select(callers_org_ids))
+                )
+            )
+        )
+    if email_contains:
+        stmt = stmt.where(tables.User.email.icontains(email_contains, autoescape=True))
+
+    ordering = [
+        SortField(column=tables.User.email, attr="email", direction="asc"),
+        SortField(column=tables.User.id, attr="id", direction="asc"),
+    ]
+    stmt = paginate(stmt, ordering, pagination)
+    rows = list(await session.scalars(stmt))
+    rows, next_page_token = build_next_page_token(rows, pagination.page_size, ordering)
+
+    return ListUsersResponse(
+        items=[
+            UserDetail(
+                id=u.id,
+                email=u.email,
+                is_privileged=u.is_privileged,
+                organizations=[
+                    OrganizationSummary(id=o.id, name=o.name) for o in sorted(u.organizations, key=lambda o: o.name)
+                ],
+                last_logout=u.last_logout,
+                has_logged_in=u.iss is not None,
+                created_at=u.created_at,
+            )
+            for u in rows
+        ],
+        next_page_token=next_page_token,
+    )
+
+
+@router.get("/users/{user_id}")
+async def get_user(
+    user_id: Annotated[str, Path(description="The ID of the user to fetch.")],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    _user: Annotated[tables.User, Depends(require_privileged_user)],
+) -> GetUserResponse:
+    """Fetches details for a single user, including the organizations they belong to.
+
+    Privileged users only. Each returned organization carries summary counts (number of users,
+    number of experiments), matching the shape used on the organizations list page.
+    """
+    target = await session.get(tables.User, user_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+
+    membership_rows = (
+        await session.execute(
+            select(tables.UserOrganization, tables.Organization)
+            .join(tables.Organization, tables.UserOrganization.organization_id == tables.Organization.id)
+            .where(tables.UserOrganization.user_id == target.id)
+            .order_by(tables.Organization.name)
+        )
+    ).all()
+    org_ids = [org.id for _, org in membership_rows]
+    user_counts: dict[str, int] = {}
+    experiment_counts: dict[str, int] = {}
+    if org_ids:
+        user_count_rows = await session.execute(
+            select(tables.UserOrganization.organization_id, func.count())
+            .where(tables.UserOrganization.organization_id.in_(org_ids))
+            .group_by(tables.UserOrganization.organization_id)
+        )
+        user_counts = {org_id: count for org_id, count in user_count_rows}
+
+        experiment_count_rows = await session.execute(
+            select(tables.Datasource.organization_id, func.count(tables.Experiment.id))
+            .join(tables.Experiment, tables.Experiment.datasource_id == tables.Datasource.id)
+            .where(tables.Datasource.organization_id.in_(org_ids))
+            .group_by(tables.Datasource.organization_id)
+        )
+        experiment_counts = {org_id: count for org_id, count in experiment_count_rows}
+
+    return GetUserResponse(
+        id=target.id,
+        email=target.email,
+        is_privileged=target.is_privileged,
+        organizations=[
+            OrganizationListItem(
+                id=org.id,
+                name=org.name,
+                created_at=org.created_at,
+                user_count=user_counts.get(org.id, 0),
+                experiment_count=experiment_counts.get(org.id, 0),
+                joined_at=membership.created_at,
+            )
+            for membership, org in membership_rows
+        ],
+        last_logout=target.last_logout,
+        has_logged_in=target.iss is not None,
+        created_at=target.created_at,
+    )
+
+
+@router.patch("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def patch_user(
+    user_id: Annotated[str, Path(description="The ID of the user to update.")],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    _user: Annotated[tables.User, Depends(require_privileged_user)],
+    body: Annotated[PatchUserRequest, Body(...)],
+):
+    """Updates a user's properties. Privileged users only.
+
+    Currently only supports updating `is_privileged`. Revoking privilege from the last privileged
+    user in the system is rejected with a 400.
+    """
+    target = await session.get(tables.User, user_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+
+    if body.is_privileged is not None:
+        if target.is_privileged and not body.is_privileged:
+            await ensure_not_last_privileged_user(session, target.id)
+        target.is_privileged = body.is_privileged
+
+    await session.commit()
+    return GENERIC_SUCCESS
+
+
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user(
+    user_id: Annotated[str, Path(description="The ID of the user to delete.")],
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(require_privileged_user)],
+):
+    """Deletes a user. Privileged users only.
+
+    Cascades to remove all organization memberships. Rejects deleting yourself, and rejects deleting
+    the last privileged user in the system.
+    """
+    if user_id == user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot delete yourself.",
+        )
+
+    target = await session.get(tables.User, user_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+
+    # Defense-in-depth: under normal flow, require_privileged + the self-delete check above guarantee
+    # this can't be the last privileged user (deleting the last priv user would require being them,
+    # and self-delete is blocked). Kept in case those checks are reordered or relaxed in the future.
+    if target.is_privileged:
+        await ensure_not_last_privileged_user(session, target.id)
+
+    await session.delete(target)
+    await session.commit()
+    return GENERIC_SUCCESS
+
+
 @router.get(
     "/organizations/{organization_id}/datasources/{datasource_id}/experiments/{experiment_id}/snapshots/{snapshot_id}"
 )
@@ -548,24 +807,85 @@ async def create_snapshot(
 async def list_organizations(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
+    pagination: Annotated[PaginationQuery, Depends(pagination_query_params)],
+    scope: Annotated[
+        Literal["mine", "all"],
+        Query(
+            description=(
+                "`mine` (default) returns organizations the caller is a member of. `all` returns every "
+                "organization in the system and requires the caller to be privileged."
+            )
+        ),
+    ] = "mine",
+    name_contains: Annotated[
+        str | None,
+        Query(
+            max_length=MAX_LENGTH_OF_NAME_VALUE,
+            description="Optional case-insensitive substring filter on the organization's name.",
+        ),
+    ] = None,
+    include_stats: Annotated[
+        bool,
+        Query(
+            description=(
+                "When true, populate `user_count` and `experiment_count` on each item. When false "
+                "(the default), those fields are returned as null."
+            )
+        ),
+    ] = False,
 ) -> ListOrganizationsResponse:
-    """Returns a list of organizations that the authenticated user is a member of."""
-    stmt = (
-        select(tables.Organization)
-        .join(tables.Organization.users)
-        .where(tables.User.id == user.id)
-        .order_by(tables.Organization.name)
-    )
-    organizations = await session.scalars(stmt)
+    """Returns the list of organizations the caller can see, scoped by the `scope` query param.
+
+    Sorted by name ascending.
+    """
+    if scope == "all":
+        require_privileged(user)
+        stmt = select(tables.Organization)
+    else:
+        stmt = select(tables.Organization).join(tables.Organization.users).where(tables.User.id == user.id)
+
+    if name_contains:
+        stmt = stmt.where(tables.Organization.name.icontains(name_contains, autoescape=True))
+
+    ordering = [
+        SortField(column=tables.Organization.name, attr="name", direction="asc"),
+        SortField(column=tables.Organization.id, attr="id", direction="asc"),
+    ]
+    stmt = paginate(stmt, ordering, pagination)
+    rows = list(await session.scalars(stmt))
+    rows, next_page_token = build_next_page_token(rows, pagination.page_size, ordering)
+
+    user_counts: dict[str, int] = {}
+    experiment_counts: dict[str, int] = {}
+    if include_stats and rows:
+        org_ids = [o.id for o in rows]
+        user_count_rows = await session.execute(
+            select(tables.UserOrganization.organization_id, func.count())
+            .where(tables.UserOrganization.organization_id.in_(org_ids))
+            .group_by(tables.UserOrganization.organization_id)
+        )
+        user_counts = {org_id: count for org_id, count in user_count_rows}
+
+        experiment_count_rows = await session.execute(
+            select(tables.Datasource.organization_id, func.count(tables.Experiment.id))
+            .join(tables.Experiment, tables.Experiment.datasource_id == tables.Datasource.id)
+            .where(tables.Datasource.organization_id.in_(org_ids))
+            .group_by(tables.Datasource.organization_id)
+        )
+        experiment_counts = {org_id: count for org_id, count in experiment_count_rows}
 
     return ListOrganizationsResponse(
         items=[
-            OrganizationSummary(
+            OrganizationListItem(
                 id=org.id,
                 name=org.name,
+                created_at=org.created_at,
+                user_count=user_counts.get(org.id, 0) if include_stats else None,
+                experiment_count=experiment_counts.get(org.id, 0) if include_stats else None,
             )
-            for org in organizations
-        ]
+            for org in rows
+        ],
+        next_page_token=next_page_token,
     )
 
 
@@ -577,14 +897,9 @@ async def create_organizations(
 ) -> CreateOrganizationResponse:
     """Creates a new organization.
 
-    Only privileged users can create organizations.
+    Any authenticated user may create an organization. The creator is automatically added as a
+    member of the new organization.
     """
-    if not user.is_privileged:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only privileged users can create organizations",
-        )
-
     organization = create_organization_impl(session, user, body.name)
     await session.commit()
 
@@ -869,19 +1184,23 @@ async def remove_member_from_organization(
 ):
     """Removes a member from an organization.
 
-    The authenticated user must be part of the organization to remove members.
+    The authenticated user must be part of the organization to remove members. Privileged users may
+    remove members from any organization. A user cannot remove themselves from an organization.
     """
+    if user_id == user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot remove yourself from an organization.",
+        )
+
     resource_query = select(tables.UserOrganization).where(
         tables.UserOrganization.organization_id == organization_id,
         tables.UserOrganization.user_id == user_id,
-        tables.UserOrganization.user_id != user.id,  # not current authenticated user
     )
-    response = await handle_delete(
-        session,
-        allow_missing,
-        authz.is_user_authorized_on_organization(user, organization_id),
-        resource_query,
+    is_authorized = (
+        select(literal(True)) if user.is_privileged else authz.is_user_authorized_on_organization(user, organization_id)
     )
+    response = await handle_delete(session, allow_missing, is_authorized, resource_query)
     await session.commit()
     return response
 
@@ -934,7 +1253,10 @@ async def get_organization(
     return GetOrganizationResponse(
         id=org.id,
         name=org.name,
-        users=[UserSummary(id=u.id, email=u.email) for u in sorted(users, key=lambda x: x.email)],
+        users=[
+            UserSummary(id=u.id, email=u.email, is_privileged=u.is_privileged)
+            for u in sorted(users, key=lambda x: x.email)
+        ],
         datasources=[
             DatasourceSummary(
                 id=ds.id,
