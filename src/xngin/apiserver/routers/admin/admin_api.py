@@ -1513,6 +1513,7 @@ async def delete_datasource(
         tables.Datasource.organization_id == organization_id,
         tables.Datasource.id == datasource_id,
     )
+
     response = await handle_delete(
         session,
         allow_missing,

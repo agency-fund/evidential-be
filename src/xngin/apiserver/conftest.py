@@ -376,7 +376,7 @@ async def _make_datasource_metadata(
         body=aapi.CreateDatasourceRequest(
             organization_id=org_id,
             name=org_name,
-            dsn=_convert_dwh_to_create_api_dsn(dwh),
+            dsn=convert_dwh_to_create_api_dsn(dwh),
         )
     ).data.id
 
@@ -407,7 +407,7 @@ async def _make_datasource_metadata(
     )
 
 
-def _convert_dwh_to_create_api_dsn(dwh: settings.Dwh) -> aapi.Dsn:
+def convert_dwh_to_create_api_dsn(dwh: settings.Dwh) -> aapi.Dsn:
     """Converts a trusted settings DWH config into a create_datasource request payload with revealed credentials."""
     match dwh:
         case Dsn():

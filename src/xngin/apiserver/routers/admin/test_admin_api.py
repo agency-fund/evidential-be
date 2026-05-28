@@ -19,7 +19,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import constants, flags
-from xngin.apiserver.conftest import delete_seeded_users, expect_status_code
+from xngin.apiserver.conftest import convert_dwh_to_create_api_dsn, delete_seeded_users, expect_status_code
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.dwh.inspections import ColumnDeleted, Drift, FieldChangedType
@@ -97,7 +97,7 @@ from xngin.apiserver.routers.experiments.test_experiments_common import (
     make_createexperimentrequest_json,
     make_insertable_experiment,
 )
-from xngin.apiserver.settings import ParticipantsDef, RemoteDatabaseConfig
+from xngin.apiserver.settings import Dsn, ParticipantsDef, RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
@@ -139,9 +139,14 @@ def find_ds_with_name[DSType: HasName](datasources: list[DSType], name: str) -> 
 
 def create_org_with_default_datasource(aclient: AdminAPIClient, org_name: str) -> tuple[str, str]:
     org_id = aclient.create_organizations(body=CreateOrganizationRequest(name=org_name)).data.id
-    datasources = aclient.list_organization_datasources(organization_id=org_id).data.items
-    datasource = find_ds_with_name(datasources, DEFAULT_NO_DWH_SOURCE_NAME)
-    return org_id, datasource.id
+    datasource_id = aclient.create_datasource(
+        body=CreateDatasourceRequest(
+            organization_id=org_id,
+            name=org_name,
+            dsn=convert_dwh_to_create_api_dsn(Dsn.from_url(flags.XNGIN_DEVDWH_DSN)),
+        )
+    ).data.id
+    return org_id, datasource_id
 
 
 async def make_freq_online_experiment(
