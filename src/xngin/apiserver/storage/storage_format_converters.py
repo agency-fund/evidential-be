@@ -27,20 +27,6 @@ from xngin.stats.bandit_weights_to_prior import (
 )
 
 
-def _set_balance_check_json(experiment: tables.Experiment, value: capi.BalanceCheck | None) -> None:
-    if value is None:
-        experiment.balance_check = None
-    else:
-        experiment.balance_check = capi.BalanceCheck.model_validate(value).model_dump()
-
-
-def _set_power_response_json(experiment: tables.Experiment, value: capi.PowerResponse | None) -> None:
-    if value is None:
-        experiment.power_analyses = None
-    else:
-        experiment.power_analyses = capi.PowerResponse.model_validate(value).model_dump()
-
-
 def _upsert_field_used(
     field_name: str,
     field_type_map: dict[str, DataType],
@@ -446,8 +432,12 @@ class ExperimentStorageConverter:
                     for i, arm in enumerate(design_spec.arms, start=1)
                 ]
                 experiment.experiment_fields = _make_experiment_fields_from_design_spec(design_spec, field_type_map)
-                _set_balance_check_json(experiment, balance_check)
-                _set_power_response_json(experiment, power_analyses)
+                experiment.balance_check = (
+                    None if balance_check is None else capi.BalanceCheck.model_validate(balance_check).model_dump()
+                )
+                experiment.power_analyses = (
+                    None if power_analyses is None else capi.PowerResponse.model_validate(power_analyses).model_dump()
+                )
                 return cls(experiment)
 
             case capi.MABExperimentSpec() | capi.CMABExperimentSpec():
