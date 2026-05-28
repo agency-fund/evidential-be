@@ -41,6 +41,61 @@ def _set_power_response_json(experiment: tables.Experiment, value: capi.PowerRes
         experiment.power_analyses = capi.PowerResponse.model_validate(value).model_dump()
 
 
+def _upsert_field_used(
+    field_name: str,
+    field_type_map: dict[str, DataType],
+    fields_used_map: dict[str, tables.ExperimentField],
+    **field_kwargs: Any,
+) -> tables.ExperimentField:
+    """Helper function for adding or updating ExperimentField objects to associate with an experiment."""
+    field = fields_used_map.get(field_name)
+    if field is not None:
+        for key, value in field_kwargs.items():
+            setattr(field, key, value)
+        return field
+
+    resolved_type = field_type_map.get(field_name, DataType.UNKNOWN)
+    field = tables.ExperimentField(
+        field_name=field_name,
+        data_type=resolved_type.value,
+        experiment_filters=[],
+        **field_kwargs,
+    )
+    fields_used_map[field_name] = field
+    return field
+
+
+def _experiment_filter_from_spec_filter(
+    field_type_map: dict[str, DataType],
+    spec_filter: capi.Filter,
+    index: int,
+) -> tables.ExperimentFilter:
+    """Convert a DesignSpec's Filter object into a tables.ExperimentFilter."""
+    values = spec_filter.value
+    datatype = field_type_map.get(spec_filter.field_name, DataType.UNKNOWN)
+    match datatype.storage_class():
+        case DataTypeStorageClass.BOOLEAN:
+            values = [None if v is None else bool(v) for v in values]
+            return tables.ExperimentFilter(
+                position=index + 1,
+                relation=spec_filter.relation,
+                boolean_values=values,
+            )
+        case DataTypeStorageClass.NUMERIC:
+            return tables.ExperimentFilter(
+                position=index + 1,
+                relation=spec_filter.relation,
+                numeric_values=values,
+            )
+        case _:
+            values = [None if v is None else str(v) for v in values]
+            return tables.ExperimentFilter(
+                position=index + 1,
+                relation=spec_filter.relation,
+                string_values=values,
+            )
+
+
 def _set_experiment_fields_from_design_spec(
     experiment: tables.Experiment,
     design_spec: capi.DesignSpec,
@@ -57,111 +112,38 @@ def _set_experiment_fields_from_design_spec(
             assert_never(design_spec)
 
     field_type_map = field_type_map or {}
-    unique_id_name = design_spec.primary_key
-
     # Clear existing design fields
     experiment.experiment_fields = []
-
     # New fields used in the experiment. Each key is a field name and maps to a ExperimentField object.
     fields_used_map: dict[str, tables.ExperimentField] = {}
 
-    fields_used_map[unique_id_name] = tables.ExperimentField(
-        field_name=unique_id_name,
-        data_type=field_type_map.get(unique_id_name, DataType.UNKNOWN).value,
-        is_unique_id=True,
-        experiment_filters=[],
-    )
+    _upsert_field_used(design_spec.primary_key, field_type_map, fields_used_map, is_unique_id=True)
 
     if design_spec.cluster_key:
-        cluster_key_name = design_spec.cluster_key
-        field = fields_used_map.get(cluster_key_name)
-        if field is None:
-            field = tables.ExperimentField(
-                field_name=cluster_key_name,
-                data_type=field_type_map.get(cluster_key_name, DataType.UNKNOWN).value,
-                experiment_filters=[],
-            )
-            fields_used_map[cluster_key_name] = field
-        field.is_cluster_key = True
+        _upsert_field_used(design_spec.cluster_key, field_type_map, fields_used_map, is_cluster_key=True)
 
     # Add filters. Fields used as filters technically could be reused with different filter values.
-    for idx, filter_item in enumerate(design_spec.filters):
-        field = fields_used_map.get(filter_item.field_name)
-        datatype = field_type_map.get(filter_item.field_name, DataType.UNKNOWN)
-        # Create the new field if it doesn't exist
-        if field is None:
-            field = tables.ExperimentField(
-                field_name=filter_item.field_name,
-                data_type=datatype.value,
-                experiment_filters=[],
-            )
-            fields_used_map[filter_item.field_name] = field
-
-        # and associate new filter metadata with the field
-        filters = field.experiment_filters or []
-        values = filter_item.value
-        match datatype.storage_class():
-            case DataTypeStorageClass.BOOLEAN:
-                values = [None if v is None else bool(v) for v in values]
-                filters.append(
-                    tables.ExperimentFilter(
-                        position=idx + 1,
-                        relation=filter_item.relation,
-                        boolean_values=values,
-                    )
-                )
-            case DataTypeStorageClass.NUMERIC:
-                filters.append(
-                    tables.ExperimentFilter(
-                        position=idx + 1,
-                        relation=filter_item.relation,
-                        numeric_values=values,
-                    )
-                )
-            case _:
-                values = [None if v is None else str(v) for v in values]
-                filters.append(
-                    tables.ExperimentFilter(
-                        position=idx + 1,
-                        relation=filter_item.relation,
-                        string_values=values,
-                    )
-                )
-
-        field.experiment_filters = filters
+    for idx, spec_filter in enumerate(design_spec.filters):
+        filter_field = _upsert_field_used(spec_filter.field_name, field_type_map, fields_used_map)
+        filters = filter_field.experiment_filters or []
+        filters.append(_experiment_filter_from_spec_filter(field_type_map, spec_filter, idx))
+        filter_field.experiment_filters = filters
 
     # Add metrics
     if design_spec.metrics:
         for index, metric in enumerate(design_spec.metrics):
-            field = fields_used_map.get(metric.field_name)
-            if field is None:
-                field = tables.ExperimentField(
-                    field_name=metric.field_name,
-                    data_type=field_type_map.get(metric.field_name, DataType.UNKNOWN).value,
-                    experiment_filters=[],
-                )
-                fields_used_map[metric.field_name] = field
-
+            metric_field = _upsert_field_used(metric.field_name, field_type_map, fields_used_map)
             if index == 0:
-                field.is_primary_metric = True
-            field.metric_pct_change = metric.metric_pct_change
-            field.metric_target = metric.metric_target
+                metric_field.is_primary_metric = True
+            metric_field.metric_pct_change = metric.metric_pct_change
+            metric_field.metric_target = metric.metric_target
 
     # Add strata
     if design_spec.strata:
         for stratum in design_spec.strata:
-            field = fields_used_map.get(stratum.field_name)
-            if field is None:
-                field = tables.ExperimentField(
-                    field_name=stratum.field_name,
-                    data_type=field_type_map.get(stratum.field_name, DataType.UNKNOWN).value,
-                    experiment_filters=[],
-                )
-                fields_used_map[stratum.field_name] = field
+            _upsert_field_used(stratum.field_name, field_type_map, fields_used_map, is_strata=True)
 
-            field.is_strata = True
-
-    # add fields_used_map to experiment_fields
+    # Finally move the fields_used_map to the final experiment's experiment_fields
     experiment.experiment_fields = list(fields_used_map.values())
 
 
