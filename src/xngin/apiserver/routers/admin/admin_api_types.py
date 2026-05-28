@@ -121,12 +121,104 @@ class DatasourceSummary(AdminApiBaseModel):
 
 
 class UserSummary(AdminApiBaseModel):
-    id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE)]
-    email: Annotated[str, Field(max_length=MAX_LENGTH_OF_EMAIL_VALUE)]
+    id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE, description="The unique ID of the user.")]
+    email: Annotated[str, Field(max_length=MAX_LENGTH_OF_EMAIL_VALUE, description="The user's email address.")]
+    is_privileged: Annotated[
+        bool,
+        Field(description="True if the user is privileged (can manage all users and organizations)."),
+    ]
 
 
-class ListOrganizationsResponse(AdminApiBaseModel):
-    items: list[OrganizationSummary]
+class _UserResponseBase(AdminApiBaseModel):
+    id: Annotated[str, Field(description="The unique ID of the user.")]
+    email: Annotated[str, Field(description="The user's email address.")]
+    is_privileged: Annotated[
+        bool,
+        Field(description="True if the user is privileged (can manage all users and organizations)."),
+    ]
+    last_logout: Annotated[
+        datetime,
+        Field(
+            description="The time the user last logged out. Session tokens issued before this time are invalid. "
+            "Defaults to the unix epoch if the user has never logged out."
+        ),
+    ]
+    has_logged_in: Annotated[
+        bool,
+        Field(description="True if the user has logged in at least once."),
+    ]
+    created_at: Annotated[datetime, Field(description="The time the user was created or invited.")]
+
+
+class UserDetail(_UserResponseBase):
+    organizations: Annotated[
+        list[OrganizationSummary],
+        Field(description="Organizations this user is a member of."),
+    ]
+
+
+class ListUsersResponse(PaginatedResponse, AdminApiBaseModel):
+    items: Annotated[list[UserDetail], Field(description="The page of users.")]
+
+
+class GetUserResponse(_UserResponseBase):
+    organizations: Annotated[
+        list[OrganizationListItem],
+        Field(
+            description="Organizations this user is a member of, each with summary counts. Sorted by name ascending."
+        ),
+    ]
+
+
+class PatchUserRequest(AdminApiBaseModel):
+    is_privileged: Annotated[
+        bool | None,
+        Field(description="When non-null, sets the user's privileged status. Privileged status is a system-wide flag."),
+    ] = None
+
+
+class CreateUserRequest(AdminApiBaseModel):
+    email: Annotated[str, Field(max_length=MAX_LENGTH_OF_EMAIL_VALUE, description="The user's email address.")]
+
+
+class CreateUserResponse(AdminApiBaseModel):
+    id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE, description="The user's unique ID.")]
+
+
+class OrganizationListItem(AdminApiBaseModel):
+    id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE, description="The unique ID of the organization.")]
+    name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE, description="The organization's name.")]
+    created_at: Annotated[datetime, Field(description="The time the organization was created.")]
+    user_count: Annotated[
+        int | None,
+        Field(
+            description=(
+                "Number of users that are members of this organization. Null when the caller did not request stats."
+            )
+        ),
+    ] = None
+    experiment_count: Annotated[
+        int | None,
+        Field(
+            description=(
+                "Number of experiments across all datasources in this organization. Null when the "
+                "caller did not request stats."
+            )
+        ),
+    ] = None
+    joined_at: Annotated[
+        datetime | None,
+        Field(
+            description=(
+                "When listed as part of a specific user's memberships, the time that user joined the "
+                "organization. Null in contexts where the listing is not user-scoped."
+            )
+        ),
+    ] = None
+
+
+class ListOrganizationsResponse(PaginatedResponse, AdminApiBaseModel):
+    items: Annotated[list[OrganizationListItem], Field(description="The page of organizations.")]
 
 
 class EventSummary(AdminApiBaseModel):
