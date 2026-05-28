@@ -973,6 +973,8 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         """Validate that the strata are valid."""
         if any(stratum.field_name == self.primary_key for stratum in self.strata):
             raise ValueError(f"Primary key {self.primary_key} cannot be used in strata.")
+        if self.cluster_key is not None and self.strata:
+            raise ValueError("Cluster-randomized frequentist designs cannot also set strata.")
         return self
 
 

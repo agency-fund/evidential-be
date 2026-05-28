@@ -210,6 +210,49 @@ def test_assign_treatments_with_balance_basic(sample_table, sample_rows):
     assert result.balance_result.f_pvalue == pytest.approx(0.99990, abs=1e-4)
 
 
+@dataclass
+class ClusterRow(RowProtocolMixin):
+    id: int
+    cluster: int
+    age: float
+    region: str
+
+
+def test_assign_treatments_with_balance_clustered():
+    """Cluster column assigns every member of a cluster to the same arm."""
+    cluster_ids = [0, 0, 0, 1, 1, 1]
+    rows = [
+        ClusterRow(id=i, cluster=cluster_id, age=30.0, region="North")
+        for i, cluster_id in enumerate(cluster_ids, start=1)
+    ]
+    metadata_obj = MetaData()
+    table = Table(
+        "clustered",
+        metadata_obj,
+        Column("id", Integer, primary_key=True),
+        Column("cluster", Integer),
+    )
+
+    result = assign_treatments_with_balance(
+        sa_table=table,
+        data=rows,
+        stratum_cols=["region"],
+        id_col="id",
+        n_arms=2,
+        random_state=42,
+        cluster_col="cluster",
+    )
+
+    # Strata are ignored in a cluster-randomized design.
+    assert result.stratum_cols == []
+    # Verify that each member of a cluster is assigned to the same treatment.
+    treatments_by_cluster: dict[int, set[int]] = defaultdict(set)
+    for cluster_id, treatment in zip(cluster_ids, result.treatment_ids, strict=True):
+        treatments_by_cluster[cluster_id].add(treatment)
+    assert treatments_by_cluster[0] == {0}
+    assert treatments_by_cluster[1] == {1}
+
+
 async def test_bulk_insert_arm_assignments_basic(
     xngin_session: AsyncSession,
     testing_datasource: DatasourceMetadata,
