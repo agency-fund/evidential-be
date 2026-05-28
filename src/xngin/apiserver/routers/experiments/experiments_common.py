@@ -40,6 +40,7 @@ from xngin.apiserver.routers.common_api_types import (
     CreateExperimentRequest,
     CreateExperimentResponse,
     DesignSpecMetricRequest,
+    Filter,
     FreqExperimentAnalysisResponse,
     GetExperimentResponse,
     GetParticipantAssignmentResponse,
@@ -55,6 +56,7 @@ from xngin.apiserver.routers.common_enums import (
     ExperimentState,
     ExperimentsType,
     LikelihoodTypes,
+    Relation,
     StopAssignmentReason,
     UpdateTypeBeta,
     UpdateTypeNormal,
@@ -158,6 +160,8 @@ def convert_table_to_fields_or_raise(table: Table, design_spec: AnyFrequentistDe
         *[stratum.field_name for stratum in design_spec.strata],
         design_spec.primary_key,
     }
+    if design_spec.cluster_key is not None:
+        referenced_fields.add(design_spec.cluster_key)
 
     referenced_fields_and_types = {
         field_name: schema_supported_fields_map[field_name]
@@ -216,15 +220,20 @@ async def create_experiment_impl(
             strata_names = [s.field_name for s in request.design_spec.strata]
             stratum_cols = strata_names + metric_names if stratify_on_metrics else strata_names
             select_columns = {*stratum_cols, primary_key}
+            eligibility_filters = request.design_spec.filters
             if preassigned_spec.cluster_key is not None:
                 select_columns.add(preassigned_spec.cluster_key)
+                eligibility_filters = [
+                    *eligibility_filters,
+                    Filter(field_name=preassigned_spec.cluster_key, relation=Relation.EXCLUDES, value=[None]),
+                ]
 
             ds_config = datasource.get_config()
             async with DwhSession(ds_config.dwh) as dwh:
                 result = await dwh.get_participants(
                     table_name,
                     select_columns=select_columns,
-                    filters=request.design_spec.filters,
+                    filters=eligibility_filters,
                     n=desired_n,
                 )
                 sa_table, participants = result.sa_table, result.participants

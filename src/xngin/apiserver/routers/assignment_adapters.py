@@ -187,13 +187,10 @@ async def _bulk_insert_async(
             if cluster_key_col is None:
                 await copy.write_row((experiment_id, participant_id, arm_id, Jsonb(strata, dumps=orjson.dumps)))
             else:
-                cluster_key = None
-                if _is_present_scalar(row_mapping[cluster_key_col]):
-                    cluster_key = str(row_mapping[cluster_key_col])
                 await copy.write_row((
                     experiment_id,
                     participant_id,
-                    cluster_key,
+                    str(row_mapping[cluster_key_col]),
                     arm_id,
                     Jsonb(strata, dumps=orjson.dumps),
                 ))
