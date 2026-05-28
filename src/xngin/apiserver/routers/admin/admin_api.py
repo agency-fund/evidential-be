@@ -757,7 +757,7 @@ async def list_snapshots(
 async def delete_snapshot(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
-    _organization_id: Annotated[str, Path(alias="organization_id")],
+    organization_id: Annotated[str, Path()],
     datasource_id: Annotated[str, Path()],
     experiment_id: Annotated[str, Path()],
     snapshot_id: Annotated[str, Path()],
@@ -772,7 +772,7 @@ async def delete_snapshot(
         .join(tables.Experiment, tables.Snapshot.experiment_id == tables.Experiment.id)
         .join(tables.Datasource, tables.Experiment.datasource_id == tables.Datasource.id)
         .where(
-            tables.Datasource.organization_id == _organization_id,
+            tables.Datasource.organization_id == organization_id,
             tables.Experiment.datasource_id == datasource_id,
             tables.Snapshot.experiment_id == experiment_id,
             tables.Snapshot.id == snapshot_id,

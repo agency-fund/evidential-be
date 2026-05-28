@@ -3297,7 +3297,7 @@ def test_snapshots(aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
 
     with expect_status_code(204):
         aclient.delete_snapshot(
-            _organization_id=create_organization_response.id,
+            organization_id=create_organization_response.id,
             datasource_id=create_datasource_response.id,
             experiment_id=experiment_id,
             snapshot_id=success_snapshot.id,
@@ -3305,7 +3305,7 @@ def test_snapshots(aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
 
     with expect_status_code(404):
         aclient.delete_snapshot(
-            _organization_id=create_organization_response.id,
+            organization_id=create_organization_response.id,
             datasource_id=create_datasource_response.id,
             experiment_id=experiment_id,
             snapshot_id=success_snapshot.id,
@@ -3337,7 +3337,7 @@ async def test_delete_snapshot_scopes_resource_to_datasource(
 
     with expect_status_code(404):
         aclient_unpriv.delete_snapshot(
-            _organization_id=caller_org_id,
+            organization_id=caller_org_id,
             datasource_id=caller_datasource_id,
             experiment_id=victim_experiment.config.experiment_id,
             snapshot_id=snapshot.id,

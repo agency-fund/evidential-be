@@ -1007,7 +1007,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def delete_snapshot(
         self,
         *,
-        _organization_id: str,
+        organization_id: str,
         datasource_id: str,
         experiment_id: str,
         snapshot_id: str,
@@ -1019,7 +1019,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def delete_snapshot(
         self,
         *,
-        _organization_id: str,
+        organization_id: str,
         datasource_id: str,
         experiment_id: str,
         snapshot_id: str,
@@ -1041,7 +1041,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def delete_snapshot(
         self,
         *,
-        _organization_id: str,
+        organization_id: str,
         datasource_id: str,
         experiment_id: str,
         snapshot_id: str,
@@ -1086,7 +1086,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                     HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
                 },
                 path_params={
-                    "organization_id": _organization_id,
+                    "organization_id": organization_id,
                     "datasource_id": datasource_id,
                     "experiment_id": experiment_id,
                     "snapshot_id": snapshot_id,
