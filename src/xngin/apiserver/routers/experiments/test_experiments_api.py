@@ -431,6 +431,7 @@ async def test_both_get_experiment_assignments_endpoints_have_matching_strata_or
 
 async def test_cluster_key_exports_with_preassigned_assignments(
     testing_datasource,
+    use_deterministic_random,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
 ):
@@ -448,7 +449,7 @@ async def test_cluster_key_exports_with_preassigned_assignments(
             metrics=[DesignSpecMetricRequest(field_name="test_score", metric_pct_change=0.1)],
             strata=[],
             filters=[],
-            desired_n=12,
+            desired_n=24,
         ),
         webhooks=[],
     )
@@ -461,7 +462,7 @@ async def test_cluster_key_exports_with_preassigned_assignments(
     json_response = eclient.client.get(f"/v1/experiments/{experiment_id}/assignments", headers=eclient_headers)
     assert json_response.status_code == HTTPStatus.OK, json_response.content
     json_assignments = json_response.json()["assignments"]
-    assert len(json_assignments) == 12
+    assert len(json_assignments) == 24
     assert all("cluster_key" in assignment for assignment in json_assignments)
     assert all(assignment["cluster_key"] is not None for assignment in json_assignments)
 
