@@ -142,18 +142,17 @@ def _make_freq_experiment_fields(
     return list(fields_used_map.values())
 
 
-def _set_experiment_fields_from_design_spec(
-    experiment: tables.Experiment,
+def _make_experiment_fields_from_design_spec(
     design_spec: capi.DesignSpec,
     field_type_map: dict[str, DataType] | None = None,
-) -> None:
-    """Save the field-related components of a DesignSpec to an experiment."""
+) -> list[tables.ExperimentField]:
+    """Make ExperimentField objects for a DesignSpec."""
     field_type_map = field_type_map or {}
     match design_spec:
         case capi.MABExperimentSpec() | capi.CMABExperimentSpec():
-            experiment.experiment_fields = []
+            return []
         case capi.PreassignedFrequentistExperimentSpec() | capi.OnlineFrequentistExperimentSpec():
-            experiment.experiment_fields = _make_freq_experiment_fields(design_spec, field_type_map)
+            return _make_freq_experiment_fields(design_spec, field_type_map)
         case _:
             assert_never(design_spec)
 
@@ -446,7 +445,7 @@ class ExperimentStorageConverter:
                     )
                     for i, arm in enumerate(design_spec.arms, start=1)
                 ]
-                _set_experiment_fields_from_design_spec(experiment, design_spec, field_type_map)
+                experiment.experiment_fields = _make_experiment_fields_from_design_spec(design_spec, field_type_map)
                 _set_balance_check_json(experiment, balance_check)
                 _set_power_response_json(experiment, power_analyses)
                 return cls(experiment)
