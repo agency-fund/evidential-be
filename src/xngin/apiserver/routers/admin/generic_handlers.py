@@ -28,9 +28,10 @@ async def handle_delete[T](
 
     :param session: SQLAlchemy session
     :param allow_missing: When True, a 204 will be returned even if the item does not exist.
-    :param is_authorized: Query that returns one row if the user is authorized to perform the delete, or zero rows if
-                          they are not.
-    :param get_resource_or_none: Query that returns the SQLAlchemy ORM instance of the resource being deleted.
+    :param is_authorized: Query that proves the caller may delete the resource at the requested path.
+    :param get_resource_or_none: Query that returns the SQLAlchemy ORM instance of the resource being deleted. Do not
+                                 fetch by child ID alone; parent IDs from the request must constrain the lookup to
+                                 prevent cross-parent deletion.
     :param deleter: If specified, will be invoked instead of a standard database session delete operation. The method
         will be passed the return value of get_resource_or_none.
     :return:
