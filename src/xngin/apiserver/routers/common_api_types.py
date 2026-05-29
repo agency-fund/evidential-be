@@ -23,6 +23,7 @@ from xngin.apiserver.common_field_types import FieldName
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.limits import (
     MAX_GCP_SERVICE_ACCOUNT_LEN,
+    MAX_LENGTH_OF_CLUSTER_KEY_VALUE,
     MAX_LENGTH_OF_DESCRIPTION_VALUE,
     MAX_LENGTH_OF_NAME_VALUE,
     MAX_LENGTH_OF_PARTICIPANT_ID_VALUE,
@@ -1198,7 +1199,7 @@ class Assignment(ApiBaseModel):
             description=(
                 "Cluster identifier for this participant. Present for cluster-randomized preassigned experiments."
             ),
-            max_length=MAX_LENGTH_OF_PARTICIPANT_ID_VALUE,
+            max_length=MAX_LENGTH_OF_CLUSTER_KEY_VALUE,
         ),
     ] = None
     arm_name: Annotated[
