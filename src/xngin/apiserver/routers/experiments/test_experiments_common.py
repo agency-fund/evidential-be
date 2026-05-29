@@ -57,7 +57,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     get_existing_assignment_for_participant,
     get_experiment_impl,
     get_or_create_assignment_for_participant,
-    make_participants_def_from_experiment,
+    make_schema_from_experiment,
     update_bandit_arm_with_outcome_impl,
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import get_experiment_assignments_as_csv_impl
@@ -421,30 +421,30 @@ def _make_experiment(
     return exp
 
 
-def test_make_participants_def_from_experiment_non_frequentist_returns_none():
+def test_make_schema_from_experiment_non_frequentist_returns_none():
     exp = _make_experiment(ExperimentsType.MAB_ONLINE)
-    assert make_participants_def_from_experiment(exp) is None
+    assert make_schema_from_experiment(exp) is None
 
 
-def test_make_participants_def_from_experiment_missing_uid_returns_none():
+def test_make_schema_from_experiment_missing_uid_returns_none():
     # No field has is_unique_id=True, so unique_id_field() returns None.
     exp = _make_experiment(
         ExperimentsType.FREQ_ONLINE,
         fields=[_make_experiment_field("revenue", DataType.DOUBLE_PRECISION, metric_pct_change=0.1)],
     )
-    assert make_participants_def_from_experiment(exp) is None
+    assert make_schema_from_experiment(exp) is None
 
 
-def test_make_participants_def_from_experiment_missing_table_returns_none():
+def test_make_schema_from_experiment_missing_table_returns_none():
     exp = _make_experiment(
         ExperimentsType.FREQ_PREASSIGNED,
         datasource_table=None,
         fields=[_make_experiment_field("id", DataType.INTEGER, is_unique_id=True)],
     )
-    assert make_participants_def_from_experiment(exp) is None
+    assert make_schema_from_experiment(exp) is None
 
 
-def test_make_participants_def_from_experiment_builds_participants_def():
+def test_make_schema_from_experiment_builds_participants_schema():
     fields = [
         _make_experiment_field("id", DataType.INTEGER, is_unique_id=True),
         _make_experiment_field("revenue", DataType.DOUBLE_PRECISION, metric_pct_change=0.05),
@@ -468,12 +468,10 @@ def test_make_participants_def_from_experiment_builds_participants_def():
         fields=fields,
     )
 
-    result = make_participants_def_from_experiment(exp)
+    result = make_schema_from_experiment(exp)
 
     assert result is not None
     assert result.table_name == "my_table"
-    assert result.participant_type == ""
-    assert result.hidden is True
     field_names = [f.field_name for f in result.fields]
     assert field_names == ["country", "id", "revenue"]  # sorted by name
     id_fd = next(f for f in result.fields if f.field_name == "id")
