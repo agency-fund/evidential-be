@@ -142,7 +142,7 @@ from xngin.apiserver.routers.experiments import experiments_common, experiments_
 from xngin.apiserver.routers.experiments.experiments_common import (
     AbandonExperimentResult,
     convert_table_to_fields_or_raise,
-    make_participants_def_from_experiment,
+    make_schema_from_experiment,
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
 from xngin.apiserver.routers.power_adapters import calculate_icc_and_cv_from_database
@@ -2053,7 +2053,7 @@ async def get_experiment_for_ui(
     )
     return GetExperimentForUiResponse(
         config=await experiments_common.get_experiment_impl(session, experiment),
-        participant_type=make_participants_def_from_experiment(experiment),
+        experiment_schema=make_schema_from_experiment(experiment),
     )
 
 
