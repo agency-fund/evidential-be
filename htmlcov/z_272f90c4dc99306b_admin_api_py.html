@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_272f90c4dc99306b_admin_api_converters_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.14.1">coverage.py v7.14.1</a>,
-            created at 2026-05-29 02:59 +0000
+            created at 2026-05-29 03:12 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -222,7 +222,7 @@
     <p class="run"><span class="n"><a id="t140" href="#t140">140</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span><span class="op">.</span><span class="nam">routers</span><span class="op">.</span><span class="nam">experiments</span><span class="op">.</span><span class="nam">experiments_common</span> <span class="key">import</span> <span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t141" href="#t141">141</a></span><span class="t">    <span class="nam">AbandonExperimentResult</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t142" href="#t142">142</a></span><span class="t">    <span class="nam">convert_table_to_fields_or_raise</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t143" href="#t143">143</a></span><span class="t">    <span class="nam">make_participants_def_from_experiment</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t143" href="#t143">143</a></span><span class="t">    <span class="nam">make_schema_from_experiment</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t144" href="#t144">144</a></span><span class="t"><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t145" href="#t145">145</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span><span class="op">.</span><span class="nam">routers</span><span class="op">.</span><span class="nam">experiments</span><span class="op">.</span><span class="nam">experiments_common_csv</span> <span class="key">import</span> <span class="nam">CsvStreamingResponse</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t146" href="#t146">146</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span><span class="op">.</span><span class="nam">routers</span><span class="op">.</span><span class="nam">power_adapters</span> <span class="key">import</span> <span class="nam">calculate_icc_and_cv_from_database</span>&nbsp;</span><span class="r"></span></p>
@@ -2133,7 +2133,7 @@
     <p class="run run2"><span class="n"><a id="t2051" href="#t2051">2051</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t2052" href="#t2052">2052</a></span><span class="t">    <span class="key">return</span> <span class="nam">GetExperimentForUiResponse</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t2053" href="#t2053">2053</a></span><span class="t">        <span class="nam">config</span><span class="op">=</span><span class="key">await</span> <span class="nam">experiments_common</span><span class="op">.</span><span class="nam">get_experiment_impl</span><span class="op">(</span><span class="nam">session</span><span class="op">,</span> <span class="nam">experiment</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t2054" href="#t2054">2054</a></span><span class="t">        <span class="nam">participant_type</span><span class="op">=</span><span class="nam">make_participants_def_from_experiment</span><span class="op">(</span><span class="nam">experiment</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t2054" href="#t2054">2054</a></span><span class="t">        <span class="nam">experiment_schema</span><span class="op">=</span><span class="nam">make_schema_from_experiment</span><span class="op">(</span><span class="nam">experiment</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t2055" href="#t2055">2055</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t2056" href="#t2056">2056</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t2057" href="#t2057">2057</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -2386,7 +2386,7 @@
             <a class="nav" href="z_272f90c4dc99306b_admin_api_converters_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.14.1">coverage.py v7.14.1</a>,
-            created at 2026-05-29 02:59 +0000
+            created at 2026-05-29 03:12 +0000
         </p>
     </div>
 </footer>

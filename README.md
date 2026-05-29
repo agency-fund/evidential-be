@@ -32,7 +32,7 @@
 | src/xngin/apiserver/routers/admin/admin\_api.py                                    |      731 |       46 |     94% |401, 413, 424, 428, 666, 1153, 1220-1226, 1412, 1449, 1566-1644, 1691, 1693-1696, 1736, 1857, 1920-1926, 1951, 1958, 2230 |
 | src/xngin/apiserver/routers/admin/admin\_api\_converters.py                        |       62 |        8 |     87% |29, 73-74, 84, 110-111, 123-124 |
 | src/xngin/apiserver/routers/admin/admin\_api\_types.py                             |      143 |        2 |     99% |    40, 42 |
-| src/xngin/apiserver/routers/admin/test\_admin\_api.py                              |     1732 |        7 |     99% |200-205, 430 |
+| src/xngin/apiserver/routers/admin/test\_admin\_api.py                              |     1727 |        7 |     99% |200-205, 430 |
 | src/xngin/apiserver/routers/admin/test\_admin\_users\_api.py                       |      374 |        1 |     99% |        33 |
 | src/xngin/apiserver/routers/admin\_integrations/admin\_integrations\_api.py        |      120 |       10 |     92% |225, 241-243, 249-251, 257-259 |
 | src/xngin/apiserver/routers/admin\_integrations/admin\_integrations\_api\_types.py |       14 |        1 |     93% |        26 |
@@ -44,11 +44,11 @@
 | src/xngin/apiserver/routers/common\_enums.py                                       |      200 |       39 |     80% |73, 75, 98-107, 112, 149-165, 187-188, 207-211, 249, 299-302, 311, 350-351, 355, 387 |
 | src/xngin/apiserver/routers/experiments/dependencies.py                            |       60 |        3 |     95% |39, 60, 67 |
 | src/xngin/apiserver/routers/experiments/experiments\_api.py                        |       96 |        4 |     96% |140-142, 346 |
-| src/xngin/apiserver/routers/experiments/experiments\_common.py                     |      412 |       31 |     92% |207, 233, 270-271, 294, 371, 382, 410-411, 421, 530, 619-620, 641, 745, 749, 804-805, 808, 849-852, 871, 886, 939-940, 956-958, 1031 |
+| src/xngin/apiserver/routers/experiments/experiments\_common.py                     |      412 |       31 |     92% |204, 230, 267-268, 291, 368, 379, 407-408, 418, 527, 616-617, 638, 742, 746, 801-802, 805, 846-849, 868, 883, 936-937, 953-955, 1028 |
 | src/xngin/apiserver/routers/experiments/experiments\_common\_csv.py                |       75 |        4 |     95% |36, 90, 200-201 |
 | src/xngin/apiserver/routers/experiments/property\_filters.py                       |       96 |        8 |     92% |25, 28, 32, 95-96, 148, 160-161 |
 | src/xngin/apiserver/routers/experiments/test\_experiments\_api.py                  |      420 |        3 |     99% |63, 177-178 |
-| src/xngin/apiserver/routers/experiments/test\_experiments\_common.py               |     1014 |        8 |     99% |202-203, 1293-1295, 1664-1665, 2118 |
+| src/xngin/apiserver/routers/experiments/test\_experiments\_common.py               |     1012 |        8 |     99% |202-203, 1291-1293, 1662-1663, 2116 |
 | src/xngin/apiserver/routers/experiments/test\_property\_filters.py                 |       41 |        1 |     98% |        24 |
 | src/xngin/apiserver/routers/healthchecks\_api.py                                   |       16 |        2 |     88% |     26-27 |
 | src/xngin/apiserver/routers/test\_assignment\_adapters.py                          |      211 |        1 |     99% |       103 |
@@ -88,7 +88,7 @@
 | src/xngin/xsecrets/secretservice.py                                                |       63 |        5 |     92% |37, 49-50, 108, 130 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                                     |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                                         |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                                          | **14232** |  **852** | **94%** |           |
+| **TOTAL**                                                                          | **14225** |  **852** | **94%** |           |
 
 79 files skipped due to complete coverage.
 
