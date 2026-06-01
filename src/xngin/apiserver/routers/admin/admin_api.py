@@ -2271,7 +2271,7 @@ async def power_check(
                         sa_table,
                         cluster_key,
                         metric_stat.field_name,
-                        design_spec.filters,
+                        filters,
                     )
                     metric_stat.icc = cluster_stats["icc"]
                     metric_stat.avg_cluster_size = cluster_stats["avg_cluster_size"]
