@@ -38,7 +38,9 @@ from xngin.apiserver.routers.auth.auth_dependencies import (
     PRIVILEGED_EMAIL,
     PRIVILEGED_TOKEN_FOR_TESTING,
     UNPRIVILEGED_EMAIL,
+    UNPRIVILEGED_EMAIL_2,
     UNPRIVILEGED_TOKEN_FOR_TESTING,
+    UNPRIVILEGED_TOKEN_FOR_TESTING_2,
 )
 from xngin.apiserver.settings import (
     Dsn,
@@ -232,6 +234,13 @@ def fixture_admin_api_client_unpriv(xngin_session):
         yield admin_api_client.AdminAPIClient(client)
 
 
+@pytest.fixture(name="aclient_unpriv_2")
+def fixture_admin_api_client_unpriv_2(xngin_session):
+    """Returns a second generated API client for unprivileged Admin API requests, for cross-tenant tests."""
+    with TestClient(app, headers={"Authorization": f"Bearer {UNPRIVILEGED_TOKEN_FOR_TESTING_2}"}) as client:
+        yield admin_api_client.AdminAPIClient(client)
+
+
 @pytest.fixture(name="iaclient")
 def fixture_integrations_admin_api_client(xngin_session):
     """Returns a generated API client for privileged Admin API requests."""
@@ -261,8 +270,8 @@ async def fixture_xngin_db_session(fixture_initialize_xngin_db_schema):
 
     This will delete all rows from the application tables at the beginning of every test. The users table will be seeded
     with
-    a privileged user (pget, ppost, ...) and an unprivileged user (uget, upost, ...). These users can be removed by
-    individual tests by calling delete_seeded_users().
+    a privileged user (pget, ppost, ...) and two unprivileged users (uget/upost and the second unprivileged user for
+    cross-tenant tests). These users can be removed by individual tests by calling delete_seeded_users().
 
     Where possible, prefer using the API methods to test functionality rather than touching the database
     directly.
@@ -275,6 +284,7 @@ async def fixture_xngin_db_session(fixture_initialize_xngin_db_schema):
             session.add_all([
                 tables.User(email=PRIVILEGED_EMAIL, is_privileged=True),
                 tables.User(email=UNPRIVILEGED_EMAIL, is_privileged=False),
+                tables.User(email=UNPRIVILEGED_EMAIL_2, is_privileged=False),
             ])
             await session.commit()
         async with database.async_session() as sess:

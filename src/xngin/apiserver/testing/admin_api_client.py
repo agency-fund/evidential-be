@@ -49,12 +49,15 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     CreateParticipantsTypeRequest,
     CreateParticipantsTypeResponse,
     CreateSnapshotResponse,
+    CreateUserRequest,
+    CreateUserResponse,
     DeleteExperimentDataRequest,
     GetDatasourceResponse,
     GetExperimentForUiResponse,
     GetOrganizationResponse,
     GetParticipantsTypeResponse,
     GetSnapshotResponse,
+    GetUserResponse,
     InspectDatasourceResponse,
     InspectDatasourceTableResponse,
     InspectParticipantTypesResponse,
@@ -64,7 +67,9 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     ListOrganizationsResponse,
     ListParticipantsTypeResponse,
     ListSnapshotsResponse,
+    ListUsersResponse,
     ListWebhooksResponse,
+    PatchUserRequest,
     SnapshotStatus,
     UpdateArmRequest,
     UpdateDatasourceRequest,
@@ -386,6 +391,418 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
                     HTTPStatus.NOT_FOUND: HTTPExceptionError,
+                },
+                raise_if_not_default_status=raise_if_not_default_status,
+                client_exts=client_exts,
+            ),
+        )
+
+    @overload
+    def create_user(
+        self,
+        *,
+        body: CreateUserRequest,
+        raise_if_not_default_status: Literal[True] = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], CreateUserResponse, type[CreateUserResponse]]: ...
+    @overload
+    def create_user(
+        self,
+        *,
+        body: CreateUserRequest,
+        raise_if_not_default_status: Literal[False],
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateUserResponse, type[CreateUserResponse]]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+            AdminAPIClientHTTPValidationError,
+            type[AdminAPIClientHTTPValidationError],
+        ]
+    ): ...
+    def create_user(
+        self,
+        *,
+        body: CreateUserRequest,
+        raise_if_not_default_status: bool = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateUserResponse, type[CreateUserResponse]]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+            AdminAPIClientHTTPValidationError,
+            type[AdminAPIClientHTTPValidationError],
+        ]
+    ):
+        return cast(
+            (
+                AdminAPIClientResult[Literal[HTTPStatus.OK], CreateUserResponse, type[CreateUserResponse]]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+                | AdminAPIClientResult[
+                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+                    AdminAPIClientHTTPValidationError,
+                    type[AdminAPIClientHTTPValidationError],
+                ]
+            ),
+            self._route_handler(
+                path="/v1/m/users",
+                method=HTTPMethod.POST,
+                default_status=HTTPStatus.OK,
+                models={
+                    HTTPStatus.OK: CreateUserResponse,
+                    HTTPStatus.BAD_REQUEST: HTTPExceptionError,
+                    HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
+                    HTTPStatus.FORBIDDEN: HTTPExceptionError,
+                    HTTPStatus.NOT_FOUND: HTTPExceptionError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
+                },
+                body_params={
+                    "body": body,
+                },
+                raise_if_not_default_status=raise_if_not_default_status,
+                client_exts=client_exts,
+            ),
+        )
+
+    @overload
+    def list_users(
+        self,
+        *,
+        email_contains: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        scope: Literal["all", "mine"] = ADMIN_API_CLIENT_NOT_REQUIRED,
+        page_size: int = ADMIN_API_CLIENT_NOT_REQUIRED,
+        page_token: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        skip: int = ADMIN_API_CLIENT_NOT_REQUIRED,
+        raise_if_not_default_status: Literal[True] = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ListUsersResponse, type[ListUsersResponse]]: ...
+    @overload
+    def list_users(
+        self,
+        *,
+        email_contains: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        scope: Literal["all", "mine"] = ADMIN_API_CLIENT_NOT_REQUIRED,
+        page_size: int = ADMIN_API_CLIENT_NOT_REQUIRED,
+        page_token: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        skip: int = ADMIN_API_CLIENT_NOT_REQUIRED,
+        raise_if_not_default_status: Literal[False],
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ListUsersResponse, type[ListUsersResponse]]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+            AdminAPIClientHTTPValidationError,
+            type[AdminAPIClientHTTPValidationError],
+        ]
+    ): ...
+    def list_users(
+        self,
+        *,
+        email_contains: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        scope: Literal["all", "mine"] = ADMIN_API_CLIENT_NOT_REQUIRED,
+        page_size: int = ADMIN_API_CLIENT_NOT_REQUIRED,
+        page_token: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        skip: int = ADMIN_API_CLIENT_NOT_REQUIRED,
+        raise_if_not_default_status: bool = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ListUsersResponse, type[ListUsersResponse]]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+            AdminAPIClientHTTPValidationError,
+            type[AdminAPIClientHTTPValidationError],
+        ]
+    ):
+        return cast(
+            (
+                AdminAPIClientResult[Literal[HTTPStatus.OK], ListUsersResponse, type[ListUsersResponse]]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+                | AdminAPIClientResult[
+                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+                    AdminAPIClientHTTPValidationError,
+                    type[AdminAPIClientHTTPValidationError],
+                ]
+            ),
+            self._route_handler(
+                path="/v1/m/users",
+                method=HTTPMethod.GET,
+                default_status=HTTPStatus.OK,
+                models={
+                    HTTPStatus.OK: ListUsersResponse,
+                    HTTPStatus.BAD_REQUEST: HTTPExceptionError,
+                    HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
+                    HTTPStatus.FORBIDDEN: HTTPExceptionError,
+                    HTTPStatus.NOT_FOUND: HTTPExceptionError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
+                },
+                query_params={
+                    "email_contains": email_contains,
+                    "scope": scope,
+                    "page_size": page_size,
+                    "page_token": page_token,
+                    "skip": skip,
+                },
+                raise_if_not_default_status=raise_if_not_default_status,
+                client_exts=client_exts,
+            ),
+        )
+
+    @overload
+    def get_user(
+        self,
+        *,
+        user_id: str,
+        raise_if_not_default_status: Literal[True] = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], GetUserResponse, type[GetUserResponse]]: ...
+    @overload
+    def get_user(
+        self,
+        *,
+        user_id: str,
+        raise_if_not_default_status: Literal[False],
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.OK], GetUserResponse, type[GetUserResponse]]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+            AdminAPIClientHTTPValidationError,
+            type[AdminAPIClientHTTPValidationError],
+        ]
+    ): ...
+    def get_user(
+        self,
+        *,
+        user_id: str,
+        raise_if_not_default_status: bool = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.OK], GetUserResponse, type[GetUserResponse]]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+            AdminAPIClientHTTPValidationError,
+            type[AdminAPIClientHTTPValidationError],
+        ]
+    ):
+        return cast(
+            (
+                AdminAPIClientResult[Literal[HTTPStatus.OK], GetUserResponse, type[GetUserResponse]]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+                | AdminAPIClientResult[
+                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+                    AdminAPIClientHTTPValidationError,
+                    type[AdminAPIClientHTTPValidationError],
+                ]
+            ),
+            self._route_handler(
+                path="/v1/m/users/{user_id}",  # noqa: RUF100,RUF027
+                method=HTTPMethod.GET,
+                default_status=HTTPStatus.OK,
+                models={
+                    HTTPStatus.OK: GetUserResponse,
+                    HTTPStatus.BAD_REQUEST: HTTPExceptionError,
+                    HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
+                    HTTPStatus.FORBIDDEN: HTTPExceptionError,
+                    HTTPStatus.NOT_FOUND: HTTPExceptionError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
+                },
+                path_params={
+                    "user_id": user_id,
+                },
+                raise_if_not_default_status=raise_if_not_default_status,
+                client_exts=client_exts,
+            ),
+        )
+
+    @overload
+    def patch_user(
+        self,
+        *,
+        user_id: str,
+        body: PatchUserRequest,
+        raise_if_not_default_status: Literal[True] = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
+    @overload
+    def patch_user(
+        self,
+        *,
+        user_id: str,
+        body: PatchUserRequest,
+        raise_if_not_default_status: Literal[False],
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+            AdminAPIClientHTTPValidationError,
+            type[AdminAPIClientHTTPValidationError],
+        ]
+    ): ...
+    def patch_user(
+        self,
+        *,
+        user_id: str,
+        body: PatchUserRequest,
+        raise_if_not_default_status: bool = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+            AdminAPIClientHTTPValidationError,
+            type[AdminAPIClientHTTPValidationError],
+        ]
+    ):
+        return cast(
+            (
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+                | AdminAPIClientResult[
+                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+                    AdminAPIClientHTTPValidationError,
+                    type[AdminAPIClientHTTPValidationError],
+                ]
+            ),
+            self._route_handler(
+                path="/v1/m/users/{user_id}",  # noqa: RUF100,RUF027
+                method=HTTPMethod.PATCH,
+                default_status=HTTPStatus.NO_CONTENT,
+                models={
+                    HTTPStatus.NO_CONTENT: None,
+                    HTTPStatus.BAD_REQUEST: HTTPExceptionError,
+                    HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
+                    HTTPStatus.FORBIDDEN: HTTPExceptionError,
+                    HTTPStatus.NOT_FOUND: HTTPExceptionError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
+                },
+                path_params={
+                    "user_id": user_id,
+                },
+                body_params={
+                    "body": body,
+                },
+                raise_if_not_default_status=raise_if_not_default_status,
+                client_exts=client_exts,
+            ),
+        )
+
+    @overload
+    def delete_user(
+        self,
+        *,
+        user_id: str,
+        raise_if_not_default_status: Literal[True] = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
+    @overload
+    def delete_user(
+        self,
+        *,
+        user_id: str,
+        raise_if_not_default_status: Literal[False],
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+            AdminAPIClientHTTPValidationError,
+            type[AdminAPIClientHTTPValidationError],
+        ]
+    ): ...
+    def delete_user(
+        self,
+        *,
+        user_id: str,
+        raise_if_not_default_status: bool = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+            AdminAPIClientHTTPValidationError,
+            type[AdminAPIClientHTTPValidationError],
+        ]
+    ):
+        return cast(
+            (
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+                | AdminAPIClientResult[
+                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+                    AdminAPIClientHTTPValidationError,
+                    type[AdminAPIClientHTTPValidationError],
+                ]
+            ),
+            self._route_handler(
+                path="/v1/m/users/{user_id}",  # noqa: RUF100,RUF027
+                method=HTTPMethod.DELETE,
+                default_status=HTTPStatus.NO_CONTENT,
+                models={
+                    HTTPStatus.NO_CONTENT: None,
+                    HTTPStatus.BAD_REQUEST: HTTPExceptionError,
+                    HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
+                    HTTPStatus.FORBIDDEN: HTTPExceptionError,
+                    HTTPStatus.NOT_FOUND: HTTPExceptionError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
+                },
+                path_params={
+                    "user_id": user_id,
                 },
                 raise_if_not_default_status=raise_if_not_default_status,
                 client_exts=client_exts,
@@ -772,6 +1189,12 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def list_organizations(
         self,
         *,
+        scope: Literal["mine", "all"] = ADMIN_API_CLIENT_NOT_REQUIRED,
+        name_contains: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        include_stats: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
+        page_size: int = ADMIN_API_CLIENT_NOT_REQUIRED,
+        page_token: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        skip: int = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ListOrganizationsResponse, type[ListOrganizationsResponse]]: ...
@@ -779,6 +1202,12 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def list_organizations(
         self,
         *,
+        scope: Literal["mine", "all"] = ADMIN_API_CLIENT_NOT_REQUIRED,
+        name_contains: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        include_stats: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
+        page_size: int = ADMIN_API_CLIENT_NOT_REQUIRED,
+        page_token: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        skip: int = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -787,10 +1216,21 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
         | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+            AdminAPIClientHTTPValidationError,
+            type[AdminAPIClientHTTPValidationError],
+        ]
     ): ...
     def list_organizations(
         self,
         *,
+        scope: Literal["mine", "all"] = ADMIN_API_CLIENT_NOT_REQUIRED,
+        name_contains: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        include_stats: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
+        page_size: int = ADMIN_API_CLIENT_NOT_REQUIRED,
+        page_token: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        skip: int = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
@@ -799,6 +1239,11 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
         | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+        | AdminAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+            AdminAPIClientHTTPValidationError,
+            type[AdminAPIClientHTTPValidationError],
+        ]
     ):
         return cast(
             (
@@ -807,6 +1252,11 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                 | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
                 | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
                 | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+                | AdminAPIClientResult[
+                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+                    AdminAPIClientHTTPValidationError,
+                    type[AdminAPIClientHTTPValidationError],
+                ]
             ),
             self._route_handler(
                 path="/v1/m/organizations",
@@ -818,6 +1268,15 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
                     HTTPStatus.NOT_FOUND: HTTPExceptionError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
+                },
+                query_params={
+                    "scope": scope,
+                    "name_contains": name_contains,
+                    "include_stats": include_stats,
+                    "page_size": page_size,
+                    "page_token": page_token,
+                    "skip": skip,
                 },
                 raise_if_not_default_status=raise_if_not_default_status,
                 client_exts=client_exts,
