@@ -28,8 +28,8 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import constants
-from xngin.apiserver.dependencies import xngin_db_session
-from xngin.apiserver.limits import TURN_JOURNEYS_CACHE_TTL_SECONDS, TURN_REQUEST_TIMEOUT_SECONDS
+from xngin.apiserver.dependencies import retrying_httpx_dependency, xngin_db_session
+from xngin.apiserver.limits import TURN_JOURNEYS_CACHE_TTL_SECONDS
 from xngin.apiserver.routers.admin import authz
 from xngin.apiserver.routers.admin.admin_api import (
     GENERIC_SUCCESS,
@@ -80,11 +80,9 @@ TURN_ARM_JOURNEY_MAPPING_RESPONSES: dict[str | int, dict[str, Any]] = {
 
 
 async def _call_turn_api(
+    httpx_client: httpx.AsyncClient,
     turn_api_token: str,
     method: str,
-    url: str = TURN_JOURNEYS_URL,
-    headers: dict[str, str] | None = None,
-    **request_kwargs: Any,
 ) -> httpx.Response:
     """
     Wrapper for outbound Turn.io API calls to standardize error handling.
@@ -93,28 +91,25 @@ async def _call_turn_api(
     and re-raised as 502 HTTP exceptions, but with appropriate status codes and error messages
     reproduced for debugging.
     """
-    if headers is None:
-        headers = {}
-    headers.update({"Authorization": f"Bearer {turn_api_token}"})
+    headers = {"Authorization": f"Bearer {turn_api_token}"}
 
     try:
-        async with httpx.AsyncClient(timeout=TURN_REQUEST_TIMEOUT_SECONDS) as client:
-            response = await client.request(
-                method,
-                url,
-                headers=headers,
-                **request_kwargs,
-            )
-            response.raise_for_status()
+        response = await httpx_client.request(
+            method,
+            TURN_JOURNEYS_URL,
+            headers=headers,
+        )
+        response.raise_for_status()
     except httpx.RequestError as exc:
-        logger.error(f"Error calling Turn.io API at {method} {url}: {exc}")
+        logger.error(f"Error calling Turn.io API at {method} {TURN_JOURNEYS_URL}: {exc}")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Failed to reach Turn.io API. Details: {exc}",
         ) from exc
     except httpx.HTTPStatusError as exc:
         logger.error(
-            f"Turn.io API returned non-2xx status at {method} {url}: {exc.response.status_code} - {exc.response.text}"
+            f"Turn.io API returned non-2xx status at {method} {TURN_JOURNEYS_URL}:"
+            + f"{exc.response.status_code} - {exc.response.text}"
         )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -254,6 +249,7 @@ async def get_organization_turn_journeys(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
+    httpx_client: Annotated[httpx.AsyncClient, Depends(retrying_httpx_dependency)],
 ) -> GetTurnJourneysResponse:
     """Returns a {name: uuid} map of Turn.io journeys available to the organization.
 
@@ -276,7 +272,9 @@ async def get_organization_turn_journeys(
     ):
         return GetTurnJourneysResponse(journeys=turn_connection.cached_journeys)
 
-    response = await _call_turn_api(turn_api_token=turn_connection.get_turn_api_token(), method="GET")
+    response = await _call_turn_api(
+        httpx_client=httpx_client, turn_api_token=turn_connection.get_turn_api_token(), method="GET"
+    )
 
     journey_dict = {journey["name"]: journey["uuid"] for journey in response.json()}
     turn_connection.cached_journeys = journey_dict
