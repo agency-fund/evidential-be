@@ -52,6 +52,7 @@ from xngin.apiserver.pagination import (
     build_next_page_token,
     paginate,
     pagination_query_params,
+    unbounded_pagination_query_params,
 )
 from xngin.apiserver.routers.admin import admin_api_converters, admin_common, authz
 from xngin.apiserver.routers.admin.admin_api_converters import (
@@ -706,7 +707,7 @@ async def list_snapshots(
     organization_id: Annotated[str, Path()],
     datasource_id: Annotated[str, Path()],
     experiment_id: Annotated[str, Path()],
-    pagination: Annotated[PaginationQuery, Depends(pagination_query_params)],
+    pagination: Annotated[PaginationQuery, Depends(unbounded_pagination_query_params)],
     status_: Annotated[
         list[SnapshotStatus] | None,
         Query(
