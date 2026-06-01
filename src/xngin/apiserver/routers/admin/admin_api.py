@@ -2241,9 +2241,10 @@ async def power_check(
         _ = convert_table_to_fields_or_raise(sa_table, design_spec)
 
         filters = design_spec.filters
+        cluster_key = design_spec.cluster_key if isinstance(design_spec, PreassignedFrequentistExperimentSpec) else None
         # Exclude rows without a valid cluster key.
-        if design_spec.cluster_key is not None:
-            filters = [*filters, Filter(field_name=design_spec.cluster_key, relation=Relation.EXCLUDES, value=[None])]
+        if cluster_key is not None:
+            filters = [*filters, Filter(field_name=cluster_key, relation=Relation.EXCLUDES, value=[None])]
 
         metric_stats = await asyncio.to_thread(
             get_stats_on_metrics,
@@ -2254,7 +2255,7 @@ async def power_check(
         )
 
         # Augment with cluster-level stats if this is a cluster-randomized design.
-        if design_spec.cluster_key is not None:
+        if cluster_key is not None:
             request_metrics_by_name = {m.field_name: m for m in design_spec.metrics}
             for metric_stat in metric_stats:
                 req_metric = request_metrics_by_name[metric_stat.field_name]
@@ -2268,7 +2269,7 @@ async def power_check(
                         calculate_icc_and_cv_from_database,
                         dwh.session,
                         sa_table,
-                        design_spec.cluster_key,
+                        cluster_key,
                         metric_stat.field_name,
                         design_spec.filters,
                     )

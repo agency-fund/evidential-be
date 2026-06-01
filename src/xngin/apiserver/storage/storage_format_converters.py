@@ -100,7 +100,7 @@ def _make_freq_experiment_fields(
 
     _upsert_field_used(design_spec.primary_key, field_type_map, fields_used_map, is_unique_id=True)
 
-    if design_spec.cluster_key:
+    if isinstance(design_spec, capi.PreassignedFrequentistExperimentSpec) and design_spec.cluster_key:
         _upsert_field_used(design_spec.cluster_key, field_type_map, fields_used_map, is_cluster_key=True)
 
     # Add filters. Fields used as filters technically could be reused with different filter values.
@@ -254,13 +254,10 @@ class ExperimentStorageConverter:
                     f"Frequentist experiment {self.experiment.id} "
                     "is missing datasource_table or unique participant key field."
                 )
-            cluster_key_field = self.experiment.cluster_key_field()
-
-            return TypeAdapter(capi.DesignSpec).validate_python({
+            freq_spec_dict: dict[str, object] = {
                 **base_experiment_dict,
                 "table_name": self.experiment.datasource_table,
                 "primary_key": primary_key_field.field_name,
-                "cluster_key": cluster_key_field.field_name if cluster_key_field else None,
                 "arms": [
                     {
                         "arm_id": arm.id,
@@ -277,7 +274,12 @@ class ExperimentStorageConverter:
                 "alpha": self.experiment.alpha,
                 "fstat_thresh": self.experiment.fstat_thresh,
                 "desired_n": self.experiment.desired_n,
-            })
+            }
+            if self.experiment.experiment_type == ExperimentsType.FREQ_PREASSIGNED.value:
+                cluster_key_field = self.experiment.cluster_key_field()
+                freq_spec_dict["cluster_key"] = cluster_key_field.field_name if cluster_key_field else None
+
+            return TypeAdapter(capi.DesignSpec).validate_python(freq_spec_dict)
 
         if self.experiment.experiment_type in {
             ExperimentsType.MAB_ONLINE.value,
