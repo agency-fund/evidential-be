@@ -1123,14 +1123,26 @@ async def analyze_experiment_freq_impl(
     )
 
 
-async def read_assignments_efficiently(xngin_session: AsyncSession, experiment_id: str) -> tuple[list[str], DataFrame]:
+async def read_assignments_efficiently(
+    xngin_session: AsyncSession,
+    experiment_id: str,
+    *,
+    include_cluster_key: bool = False,
+) -> tuple[list[str], DataFrame]:
     """Reads assignments directly from Postgres via a COPY statement.
 
     Reads CSV output in row-bounded chunks and concatenates the parsed frames.
     """
-    select_query = t"SELECT arm_id, participant_id FROM arm_assignments WHERE experiment_id = {experiment_id}"  # type: ignore
+    if include_cluster_key:
+        select_query = (
+            t"SELECT arm_id, participant_id, cluster_key FROM arm_assignments WHERE experiment_id = {experiment_id}"  # type: ignore
+        )
+        column_names = ["arm_id", "participant_id", "cluster_key"]
+    else:
+        select_query = t"SELECT arm_id, participant_id FROM arm_assignments WHERE experiment_id = {experiment_id}"  # type: ignore
+        column_names = ["arm_id", "participant_id"]
     dfs = [
-        pd.read_csv(io.BytesIO(chunk), names=["arm_id", "participant_id"], dtype=str)
+        pd.read_csv(io.BytesIO(chunk), names=column_names, dtype=str)
         async for chunk in select_as_csv(
             xngin_session, select_query, buffer_size_bytes=CSV_PARSE_CHUNK_SIZE_BYTES, newline_framed=True
         )
@@ -1138,7 +1150,7 @@ async def read_assignments_efficiently(xngin_session: AsyncSession, experiment_i
     if dfs:
         df = pd.concat(dfs, ignore_index=True)
     else:
-        df = pd.DataFrame(columns=["arm_id", "participant_id"]).astype(str)
+        df = pd.DataFrame(columns=column_names).astype(str)
     return df["participant_id"].to_list(), df
 
 
