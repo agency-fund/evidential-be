@@ -697,6 +697,92 @@ async def test_create_preassigned_experiment_impl_cluster_assignment(xngin_sessi
     assert len(set.union(*arms_by_cluster.values())) == 2
 
 
+async def _create_clustered_preassigned_experiment(
+    xngin_session: AsyncSession,
+    testing_datasource,
+    *,
+    cluster_key: str | None = "cluster_equal",
+    metric_name: str = "test_score",
+) -> tables.Experiment:
+    design_spec = make_design_spec_clustered(cluster_key=cluster_key)
+    request = CreateExperimentRequest(design_spec=design_spec)
+    field_type_map = await fetch_fields_or_raise(testing_datasource.ds, design_spec)
+    assert design_spec.desired_n is not None
+
+    select_columns = {design_spec.primary_key, metric_name}
+    if cluster_key is not None:
+        select_columns.add(cluster_key)
+    async with DwhSession(testing_datasource.ds.get_config().dwh) as dwh:
+        participant_result = await dwh.get_participants(
+            design_spec.table_name,
+            select_columns=select_columns,
+            filters=design_spec.filters,
+            n=design_spec.desired_n,
+        )
+        sa_table = participant_result.sa_table
+        dwh_participants = participant_result.participants
+
+    assert dwh_participants is not None
+    response = await create_preassigned_experiment_impl(
+        request=request,
+        datasource_id=testing_datasource.ds.id,
+        organization_id=testing_datasource.ds.organization_id,
+        dwh_sa_table=sa_table,
+        dwh_participants=dwh_participants,
+        random_state=42,
+        xngin_session=xngin_session,
+        stratify_on_metrics=False,
+        validated_webhooks=[],
+        field_type_map=field_type_map,
+    )
+    return await get_experiment_preloaded(xngin_session, response.experiment_id)
+
+
+async def test_analyze_experiment_freq_impl_with_cluster_key(
+    xngin_session,
+    testing_datasource,
+    use_deterministic_random,
+):
+    """``analyze_experiment_freq_impl`` uses cluster-robust SEs when the experiment has a cluster key.
+
+    Uses ``clustered_dwh`` with ``cluster_powerlaw`` and metric ``test_score`` (ICC ~0.20 on that
+    cluster id per ``tools/generate_clustered_data.py``). Runs analysis twice on the same
+    assignments and outcomes: first with cluster-robust SEs, then after clearing ``is_cluster_key``
+    on the experiment field so the second pass uses only basic heteroskedasticity-robust SEs.
+    Expect coefficients to be the same, but CRSE should usually be larger than HC1 SE in this case.
+    """
+    dsconfig = testing_datasource.ds.get_config()
+    experiment = await _create_clustered_preassigned_experiment(
+        xngin_session,
+        testing_datasource,
+        cluster_key="cluster_powerlaw",
+        metric_name="test_score",
+    )
+    baseline_arm_id = experiment.arms[0].id
+    treatment_arm_id = experiment.arms[1].id
+    metrics = [DesignSpecMetricRequest(field_name="test_score", metric_pct_change=0.1)]
+
+    crse_analysis = await analyze_experiment_freq_impl(xngin_session, dsconfig, experiment, baseline_arm_id, metrics)
+    crse_treatment = next(a for a in crse_analysis.metric_analyses[0].arm_analyses if a.arm_id == treatment_arm_id)
+    assert crse_treatment.std_error is not None
+    assert not np.isnan(crse_treatment.std_error)
+    assert crse_treatment.std_error > 0
+
+    # Same assignments/outcomes; uses HC1 instead of cluster-robust SEs. Unsets is_cluster_key only
+    # so cluster_key_field() is None on re-analysis.
+    field = experiment.cluster_key_field()
+    assert field is not None
+    field.is_cluster_key = False
+
+    hc1_analysis = await analyze_experiment_freq_impl(xngin_session, dsconfig, experiment, baseline_arm_id, metrics)
+    hc1_treatment = next(a for a in hc1_analysis.metric_analyses[0].arm_analyses if a.arm_id == treatment_arm_id)
+    assert hc1_treatment.std_error is not None
+    assert not np.isnan(hc1_treatment.std_error)
+    assert hc1_treatment.std_error > 0
+    assert crse_treatment.estimate == hc1_treatment.estimate
+    assert crse_treatment.std_error > hc1_treatment.std_error
+
+
 async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
     xngin_session: AsyncSession,
     testing_datasource,
