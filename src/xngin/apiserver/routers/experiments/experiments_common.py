@@ -40,6 +40,7 @@ from xngin.apiserver.routers.common_api_types import (
     CreateExperimentRequest,
     CreateExperimentResponse,
     DesignSpecMetricRequest,
+    Filter,
     FreqExperimentAnalysisResponse,
     GetExperimentResponse,
     GetParticipantAssignmentResponse,
@@ -55,6 +56,7 @@ from xngin.apiserver.routers.common_enums import (
     ExperimentState,
     ExperimentsType,
     LikelihoodTypes,
+    Relation,
     StopAssignmentReason,
     UpdateTypeBeta,
     UpdateTypeNormal,
@@ -155,6 +157,8 @@ def convert_table_to_fields_or_raise(table: Table, design_spec: AnyFrequentistDe
         *[stratum.field_name for stratum in design_spec.strata],
         design_spec.primary_key,
     }
+    if design_spec.cluster_key is not None:
+        referenced_fields.add(design_spec.cluster_key)
 
     referenced_fields_and_types = {
         field_name: schema_supported_fields_map[field_name]
@@ -213,15 +217,20 @@ async def create_experiment_impl(
             strata_names = [s.field_name for s in request.design_spec.strata]
             stratum_cols = strata_names + metric_names if stratify_on_metrics else strata_names
             select_columns = {*stratum_cols, primary_key}
+            eligibility_filters = request.design_spec.filters
             if preassigned_spec.cluster_key is not None:
                 select_columns.add(preassigned_spec.cluster_key)
+                eligibility_filters = [
+                    *eligibility_filters,
+                    Filter(field_name=preassigned_spec.cluster_key, relation=Relation.EXCLUDES, value=[None]),
+                ]
 
             ds_config = datasource.get_config()
             async with DwhSession(ds_config.dwh) as dwh:
                 result = await dwh.get_participants(
                     table_name,
                     select_columns=select_columns,
-                    filters=request.design_spec.filters,
+                    filters=eligibility_filters,
                     n=desired_n,
                 )
                 sa_table, participants = result.sa_table, result.participants
@@ -344,6 +353,7 @@ async def create_preassigned_experiment_impl(
         experiment_id=experiment.id,
         arm_ids=[arm.id for arm in experiment.arms],
         participant_id_col=unique_id_name,
+        cluster_key_col=design_spec.cluster_key,
         data=dwh_participants,
         assignments=assignment_result,
     )
@@ -560,7 +570,7 @@ async def get_existing_assignment_for_participant(
     Returns: None if no assignment exists.
     """
     stmt: (
-        Select[tuple[str, str, str, datetime]]
+        Select[tuple[str, str | None, str, str, datetime]]
         | Select[
             tuple[
                 str,
@@ -579,6 +589,7 @@ async def get_existing_assignment_for_participant(
             stmt = (
                 select(
                     tables.ArmAssignment.participant_id,
+                    tables.ArmAssignment.cluster_key,
                     tables.Arm.id.label("arm_id"),
                     tables.Arm.name.label("arm_name"),
                     tables.ArmAssignment.created_at,
@@ -622,6 +633,7 @@ async def get_existing_assignment_for_participant(
     if existing_assignment:
         return Assignment(
             participant_id=existing_assignment.participant_id,
+            cluster_key=existing_assignment.cluster_key if hasattr(existing_assignment, "cluster_key") else None,
             arm_id=existing_assignment.arm_id,
             arm_name=existing_assignment.arm_name,
             created_at=existing_assignment.created_at,
@@ -732,21 +744,6 @@ async def create_assignment_for_participant(
     if len(experiment.arms) == 0:
         raise ExperimentsAssignmentError("Experiment has no arms")
 
-    experiment_type = ExperimentsType(experiment.experiment_type)
-    if experiment_type == ExperimentsType.FREQ_PREASSIGNED:
-        # Preassigned experiments are not allowed to have new assignments added.
-        return None
-
-    if experiment_type == ExperimentsType.CMAB_ONLINE:
-        if not sorted_context_vals:
-            raise ExperimentsAssignmentError(
-                "Context values are required for contextual multi-armed bandit experiments"
-            )
-        if len(sorted_context_vals) != len(experiment.contexts):
-            raise ExperimentsAssignmentError(
-                f"Expected {len(experiment.contexts)} context values, got {len(sorted_context_vals)}"
-            )
-
     # Don't allow new assignments for experiments that have ended.
     if experiment.end_date < datetime.now(UTC):
         experiment.stopped_assignments_at = datetime.now(UTC)
@@ -754,45 +751,54 @@ async def create_assignment_for_participant(
         await xngin_session.commit()
         return None
 
-    # For online frequentist, create a new assignment
-    # with simple random assignment or weighted random assignment if arm_weights are specified.
-    match experiment_type:
-        case ExperimentsType.FREQ_ONLINE:
-            chosen_arm = choose_online_arm(experiment=experiment, random_state=random_state)
-        case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
-            chosen_arm = choose_bandit_arm(
-                experiment=experiment,
-                sorted_context_vals=sorted_context_vals,
-                random_state=random_state,
-            )
-
-    chosen_arm_id = chosen_arm.id
-
-    # Create and save the new assignment. We use the insert() API because it allows us to read
-    # the database-generated created_at value without needing to refresh the object in the SQLAlchemy cache.
     try:
+        # Create and save the new assignment. The insert() API allows us to read the
+        # database-generated created_at value without needing to refresh the object in the
+        # SQLAlchemy cache.
+        experiment_type = ExperimentsType(experiment.experiment_type)
         match experiment_type:
-            case ExperimentsType.FREQ_ONLINE | ExperimentsType.FREQ_PREASSIGNED:
+            case ExperimentsType.FREQ_PREASSIGNED:
+                # Preassigned experiments are not allowed to have new assignments added.
+                return None
+            case ExperimentsType.FREQ_ONLINE:
+                # For online frequentist, create a new assignment
+                # with simple random assignment or weighted random assignment if arm_weights are specified.
+                chosen_arm = choose_online_arm(experiment=experiment, random_state=random_state)
                 result = (
                     await xngin_session.execute(
                         insert(tables.ArmAssignment)
                         .values(
                             experiment_id=experiment.id,
                             participant_id=participant_id,
-                            arm_id=chosen_arm_id,
+                            arm_id=chosen_arm.id,
                             strata=[],
                         )
                         .returning(tables.ArmAssignment.created_at)
                     )
                 ).fetchone()
             case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
+                if experiment_type == ExperimentsType.CMAB_ONLINE:
+                    if not sorted_context_vals:
+                        raise ExperimentsAssignmentError(
+                            "Context values are required for contextual multi-armed bandit experiments"
+                        )
+                    if len(sorted_context_vals) != len(experiment.contexts):
+                        raise ExperimentsAssignmentError(
+                            f"Expected {len(experiment.contexts)} context values, got {len(sorted_context_vals)}"
+                        )
+
+                chosen_arm = choose_bandit_arm(
+                    experiment=experiment,
+                    sorted_context_vals=sorted_context_vals,
+                    random_state=random_state,
+                )
                 result = (
                     await xngin_session.execute(
                         insert(tables.Draw)
                         .values(
                             experiment_id=experiment.id,
                             participant_id=participant_id,
-                            arm_id=chosen_arm_id,
+                            arm_id=chosen_arm.id,
                             context_vals=sorted_context_vals,
                         )
                         .returning(tables.Draw.created_at)
@@ -806,7 +812,7 @@ async def create_assignment_for_participant(
         created_at = result[0]
         stmt = (
             pg_insert(tables.ArmStats)
-            .values(arm_id=chosen_arm_id, population=1)
+            .values(arm_id=chosen_arm.id, population=1)
             .on_conflict_do_update(
                 index_elements=[tables.ArmStats.arm_id],
                 set_={"population": tables.ArmStats.population + 1},
@@ -816,13 +822,12 @@ async def create_assignment_for_participant(
         await xngin_session.commit()
     except IntegrityError as e:
         await xngin_session.rollback()
-        raise ExperimentsAssignmentError(
-            f"Failed to assign participant '{participant_id}' to arm '{chosen_arm_id}': {e}"
-        ) from e
+        raise ExperimentsAssignmentError(f"Failed to assign participant '{participant_id}': {e}") from e
 
     return Assignment(
         participant_id=participant_id,
-        arm_id=chosen_arm_id,
+        cluster_key=None,
+        arm_id=chosen_arm.id,
         arm_name=chosen_arm.name,
         created_at=created_at,
         strata=[],

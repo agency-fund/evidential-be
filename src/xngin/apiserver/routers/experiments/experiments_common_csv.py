@@ -25,10 +25,17 @@ async def _get_assignment_csv_strata_names_from_experiment(experiment: tables.Ex
     return sorted([ef.field_name for ef in await experiment.awaitable_attrs.experiment_fields if ef.is_strata])
 
 
+async def _get_assignment_cluster_key_name_from_experiment(experiment: tables.Experiment) -> str | None:
+    if experiment.experiment_type not in {ExperimentsType.FREQ_ONLINE.value, ExperimentsType.FREQ_PREASSIGNED.value}:
+        return None
+    return next((ef.field_name for ef in await experiment.awaitable_attrs.experiment_fields if ef.is_cluster_key), None)
+
+
 def _build_freq_experiment_assignments_select_query(
     experiment_id: str,
     experiment_type: str,
     strata_names: list[str],
+    cluster_key_name: str | None,
     *,
     with_microseconds: bool = False,
 ):
@@ -62,9 +69,14 @@ def _build_freq_experiment_assignments_select_query(
             """to_char(aa.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at"""
         )
 
+    cluster_key_column = sql.SQL("")
+    if cluster_key_name is not None:
+        cluster_key_column = sql.SQL("aa.cluster_key AS cluster_key,")
+
     return t"""
         SELECT
             aa.participant_id AS participant_id,
+            {cluster_key_column:q}
             aa.arm_id AS arm_id,
             a.name AS arm_name,
             {created_at_column:q}
@@ -132,9 +144,10 @@ async def get_experiment_assignments_as_csv_impl(
     experiment: tables.Experiment,
 ) -> CsvStreamingResponse:
     strata_names = await _get_assignment_csv_strata_names_from_experiment(experiment)
+    cluster_key_name = await _get_assignment_cluster_key_name_from_experiment(experiment)
     if experiment.experiment_type in {ExperimentsType.FREQ_ONLINE.value, ExperimentsType.FREQ_PREASSIGNED.value}:
         select_query = _build_freq_experiment_assignments_select_query(
-            experiment.id, experiment.experiment_type, strata_names
+            experiment.id, experiment.experiment_type, strata_names, cluster_key_name
         )
     else:
         select_query = _build_bandit_experiment_assignments_select_query(
@@ -155,28 +168,49 @@ async def get_experiment_assignments_impl(
     match experiment.experiment_type:
         case ExperimentsType.FREQ_ONLINE.value | ExperimentsType.FREQ_PREASSIGNED.value:
             strata_names = await _get_assignment_csv_strata_names_from_experiment(experiment)
+            cluster_key_name = await _get_assignment_cluster_key_name_from_experiment(experiment)
             select_query = _build_freq_experiment_assignments_select_query(
                 experiment.id,
                 experiment.experiment_type,
                 strata_names,
+                cluster_key_name,
                 with_microseconds=True,
             )
-            async for assignment in stream(xngin_session, select_query, JSON_STREAM_FETCH_SIZE_ROWS):
-                participant_id, arm_id, arm_name, created_at, *strata_values = assignment
-                strata: list[StrataTypedDict] = [
-                    {"field_name": strata_names[i], "strata_value": strata_values[i]}
-                    for i, _ in enumerate(strata_names)
-                ]
-                yield {
-                    "participant_id": participant_id,
-                    "arm_id": arm_id,
-                    "arm_name": arm_name,
-                    "created_at": created_at,
-                    "strata": strata,
-                    "observed_at": None,
-                    "outcome": None,
-                    "context_values": None,
-                }
+            if cluster_key_name is None:
+                async for assignment in stream(xngin_session, select_query, JSON_STREAM_FETCH_SIZE_ROWS):
+                    participant_id, arm_id, arm_name, created_at, *strata_values = assignment
+                    strata: list[StrataTypedDict] = [
+                        {"field_name": strata_names[i], "strata_value": strata_values[i]}
+                        for i, _ in enumerate(strata_names)
+                    ]
+                    yield {
+                        "participant_id": participant_id,
+                        "arm_id": arm_id,
+                        "arm_name": arm_name,
+                        "created_at": created_at,
+                        "strata": strata,
+                        "observed_at": None,
+                        "outcome": None,
+                        "context_values": None,
+                    }
+            else:
+                async for assignment in stream(xngin_session, select_query, JSON_STREAM_FETCH_SIZE_ROWS):
+                    participant_id, cluster_key, arm_id, arm_name, created_at, *strata_values = assignment
+                    strata = [
+                        {"field_name": strata_names[i], "strata_value": strata_values[i]}
+                        for i, _ in enumerate(strata_names)
+                    ]
+                    yield {
+                        "participant_id": participant_id,
+                        "cluster_key": cluster_key,
+                        "arm_id": arm_id,
+                        "arm_name": arm_name,
+                        "created_at": created_at,
+                        "strata": strata,
+                        "observed_at": None,
+                        "outcome": None,
+                        "context_values": None,
+                    }
         case ExperimentsType.MAB_ONLINE.value | ExperimentsType.CMAB_ONLINE.value:
             select_query = _build_bandit_experiment_assignments_select_query(
                 experiment.id,

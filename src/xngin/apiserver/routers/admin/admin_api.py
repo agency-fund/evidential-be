@@ -126,6 +126,7 @@ from xngin.apiserver.routers.common_api_types import (
     CreateExperimentResponse,
     ExperimentAnalysisResponse,
     ExperimentsType,
+    Filter,
     GetMetricsResponseElement,
     GetStrataResponseElement,
     ListExperimentsResponse,
@@ -134,6 +135,7 @@ from xngin.apiserver.routers.common_api_types import (
     PowerRequest,
     PowerResponse,
     PreassignedFrequentistExperimentSpec,
+    Relation,
 )
 from xngin.apiserver.routers.common_enums import ExperimentState, PreloadMethod
 from xngin.apiserver.routers.experiments import experiments_common, experiments_common_csv
@@ -2059,7 +2061,7 @@ async def get_experiment_for_ui(
     "/datasources/{datasource_id}/experiments/{experiment_id}/assignments/csv",
     summary=(
         "Export experiment assignments as CSV file; BalanceCheck not included. "
-        "csv header form: participant_id,arm_id,arm_name,strata_name1,strata_name2,..."
+        "csv header form: participant_id,[cluster_key,]arm_id,arm_name,strata_name1,strata_name2,..."
     ),
     response_class=CsvStreamingResponse,
 )
@@ -2238,12 +2240,17 @@ async def power_check(
         # Validate the fields used in the design spec are present in the table and that filter values are valid.
         _ = convert_table_to_fields_or_raise(sa_table, design_spec)
 
+        filters = design_spec.filters
+        # Exclude rows without a valid cluster key.
+        if design_spec.cluster_key is not None:
+            filters = [*filters, Filter(field_name=design_spec.cluster_key, relation=Relation.EXCLUDES, value=[None])]
+
         metric_stats = await asyncio.to_thread(
             get_stats_on_metrics,
             dwh.session,
             sa_table,
             design_spec.metrics,
-            design_spec.filters,
+            filters,
         )
 
         # Augment with cluster-level stats if this is a cluster-randomized design.
