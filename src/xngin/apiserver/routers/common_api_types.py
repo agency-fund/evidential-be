@@ -877,19 +877,6 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         Field(description="Column name in table_name that uniquely identifies each participant."),
     ]
 
-    cluster_key: Annotated[
-        str | None,
-        Field(
-            default=None,
-            description=(
-                "Column name in table_name that identifies clusters for a cluster-randomized design. "
-                "When set, per-metric icc, avg_cluster_size, and cv are either supplied on each "
-                "metric or computed from this column at power_check time. "
-                "When None, the design is assumed to be individual-randomized."
-            ),
-        ),
-    ] = None
-
     # Frequentist config params
     strata: Annotated[
         list[Stratum],
@@ -974,8 +961,6 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         """Validate that the strata are valid."""
         if any(stratum.field_name == self.primary_key for stratum in self.strata):
             raise ValueError(f"Primary key {self.primary_key} cannot be used in strata.")
-        if self.cluster_key is not None and self.strata:
-            raise ValueError("Cluster-randomized frequentist designs cannot also set strata.")
         return self
 
 
@@ -1074,6 +1059,25 @@ class PreassignedFrequentistExperimentSpec(BaseFrequentistDesignSpec):
     frequentist A/B experiments."""
 
     experiment_type: Literal[ExperimentsType.FREQ_PREASSIGNED] = ExperimentsType.FREQ_PREASSIGNED
+
+    cluster_key: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "Column name in table_name that identifies clusters for a cluster-randomized design. "
+                "When set, per-metric icc, avg_cluster_size, and cv are either supplied on each "
+                "metric or computed from this column at power_check time. "
+                "When None, the design is assumed to be individual-randomized."
+            ),
+        ),
+    ] = None
+
+    @model_validator(mode="after")
+    def validate_cluster_randomization(self) -> Self:
+        if self.cluster_key is not None and self.strata:
+            raise ValueError("Cluster-randomized frequentist designs cannot also set strata.")
+        return self
 
 
 class OnlineFrequentistExperimentSpec(BaseFrequentistDesignSpec):

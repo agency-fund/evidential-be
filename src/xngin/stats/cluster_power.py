@@ -362,7 +362,7 @@ def solve_for_sample_size_cluster(
         deff = calculate_design_effect(metric.icc, metric.avg_cluster_size, metric.cv)
 
         # 3) Compute the number of clusters we need for each arm accounting for the design effect
-        # inflating the actual number of total units due to the correlation members of the cluster.
+        # inflating the actual number of total units due to their correlation within a cluster.
         clusters_per_arm_list = []
         n_per_arm_list = []
         for prob in arm_probs:
