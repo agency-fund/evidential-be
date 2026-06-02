@@ -571,7 +571,6 @@ class AdminIntegrationsAPIClient:  # noqa: RUF100,PLR0904
         ]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.CONFLICT], HTTPExceptionError, type[HTTPExceptionError]]
         | AdminIntegrationsAPIClientResult[
             Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
             AdminIntegrationsAPIClientHTTPValidationError,
@@ -597,7 +596,6 @@ class AdminIntegrationsAPIClient:  # noqa: RUF100,PLR0904
         ]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.CONFLICT], HTTPExceptionError, type[HTTPExceptionError]]
         | AdminIntegrationsAPIClientResult[
             Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
             AdminIntegrationsAPIClientHTTPValidationError,
@@ -625,9 +623,6 @@ class AdminIntegrationsAPIClient:  # noqa: RUF100,PLR0904
                     Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]
                 ]
                 | AdminIntegrationsAPIClientResult[
-                    Literal[HTTPStatus.CONFLICT], HTTPExceptionError, type[HTTPExceptionError]
-                ]
-                | AdminIntegrationsAPIClientResult[
                     Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
                     AdminIntegrationsAPIClientHTTPValidationError,
                     type[AdminIntegrationsAPIClientHTTPValidationError],
@@ -646,7 +641,6 @@ class AdminIntegrationsAPIClient:  # noqa: RUF100,PLR0904
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
                     HTTPStatus.NOT_FOUND: HTTPExceptionError,
-                    HTTPStatus.CONFLICT: HTTPExceptionError,
                     HTTPStatus.UNPROCESSABLE_CONTENT: AdminIntegrationsAPIClientHTTPValidationError,
                     HTTPStatus.BAD_GATEWAY: HTTPExceptionError,
                 },

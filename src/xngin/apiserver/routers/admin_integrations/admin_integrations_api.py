@@ -57,10 +57,6 @@ TURN_JOURNEYS_RESPONSES: dict[str | int, dict[str, Any]] = {
         "model": HTTPExceptionError,
         "description": "No Turn.io connection has been configured for the organization.",
     },
-    "409": {
-        "model": HTTPExceptionError,
-        "description": "The configured Turn.io API token is invalid or unauthorized.",
-    },
     "502": {
         "model": HTTPExceptionError,
         "description": "Failed to reach Turn.io API, or Turn.io returned a non-200 response.",
