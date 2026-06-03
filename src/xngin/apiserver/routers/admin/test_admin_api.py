@@ -4177,12 +4177,12 @@ async def test_power_check_with_missing_cluster_key_raises(testing_datasource, a
         )
 
 
-async def test_power_check_with_manual_icc(testing_datasource, aclient: AdminAPIClient):
+async def test_power_check_with_manual_icc_and_nulls_in_cluster_key(testing_datasource, aclient: AdminAPIClient):
     """Power check accepts user-supplied ICC values and returns cluster analysis and handles nulls correctly."""
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
         experiment_name="test cluster power",
-        description="test power check with manual ICC",
+        description="Verify null cluster key rows are excluded from manual ICC in power check.",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
         end_date=datetime.now(UTC) + timedelta(days=1),
         table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
@@ -4192,9 +4192,9 @@ async def test_power_check_with_manual_icc(testing_datasource, aclient: AdminAPI
             DesignSpecMetricRequest(
                 field_name="household_income",
                 metric_pct_change=0.1,
-                icc=0.15,
-                avg_cluster_size=30,
-                cv=1.2,
+                icc=0.015,
+                avg_cluster_size=10,
+                cv=0.1,
             )
         ],
         strata=[],
@@ -4210,20 +4210,77 @@ async def test_power_check_with_manual_icc(testing_datasource, aclient: AdminAPI
     assert len(result.data.analyses) == 1
     analysis = result.data.analyses[0]
     # Primary test: verify that the user-provided values are used.
-    assert analysis.metric_spec.icc == 0.15
-    assert analysis.metric_spec.avg_cluster_size == 30
-    assert analysis.metric_spec.cv == 1.2
+    assert analysis.metric_spec.icc == 0.015
+    assert analysis.metric_spec.avg_cluster_size == 10
+    # assert analysis.metric_spec.cv == 0.3
 
     # Verify that the 28 null cluster key (age) rows are excluded from the analysis:
     assert analysis.metric_spec.available_n == 972
     # Verify that the 24 null outcome rows + 28 null cluster key rows are excluded here:
     assert analysis.metric_spec.available_nonnull_n == 948
 
-    # Verify this was analyzed as a cluster-randomized experiment:
+    # Verify this was analyzed as a cluster-randomized experiment, and that with the user-supplied
+    # estimates about the data we should have enough clusters to sample from despite the minimum
+    # units needed being inflated by the design effect:
     assert analysis.num_clusters_total is not None
-    assert analysis.num_clusters_total > 0
+    assert analysis.num_clusters_total == 92
     assert analysis.design_effect is not None
-    assert analysis.design_effect > 1.0
+    assert analysis.design_effect == pytest.approx(1.137, abs=1e-3)
+    assert analysis.msg is not None
+    assert analysis.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
+
+
+async def test_power_check_with_db_derived_icc_and_nulls_in_cluster_key(testing_datasource, aclient: AdminAPIClient):
+    """DB-derived ICC excludes rows with a null cluster key, and available_n is consistent.
+
+    Uses wide_dwh with cluster_key="age", which has 28 null rows in a 1000-row table.
+    This exercises the calculate_icc_and_cv_from_database path (no manual ICC supplied).
+
+    The invariant being tested: both available_n (from get_stats_on_metrics) and the
+    cluster size stats (from get_cluster_size_stats) should operate on the same 972
+    non-null-age rows, so that the ICC and available_n passed to the power formula are
+    consistent.
+    """
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test db-derived icc null exclusion",
+        description="Verify null cluster key rows are excluded from DB-derived ICC in power check.",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
+        arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
+        metrics=[DesignSpecMetricRequest(field_name="household_income", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+        cluster_key="age",
+    )
+
+    result = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(design_spec=design_spec),
+    )
+
+    assert len(result.data.analyses) == 1
+    analysis = result.data.analyses[0]
+    # ICC and cluster stats are computed from the DB (no manual values supplied).
+    assert analysis.metric_spec.icc == pytest.approx(0.021, abs=1e-3)
+    assert analysis.metric_spec.avg_cluster_size == pytest.approx(13.5, abs=1e-3)
+    assert analysis.metric_spec.cv == pytest.approx(0.282, abs=1e-3)
+
+    # The 28 null age rows are excluded from the eligible population as is the case with a manual ICC.
+    assert analysis.metric_spec.available_n == 972
+    # 24 rows have a null household_income among the 972 non-null-age rows.
+    assert analysis.metric_spec.available_nonnull_n == 948
+
+    # In this case, due to clustering we do not have a sufficient number of clusters (and units) to sample from.
+    assert analysis.num_clusters_total == 78
+    assert analysis.design_effect is not None
+    assert analysis.design_effect == pytest.approx(1.287, abs=1e-3)
+    assert analysis.target_n is not None
+    assert analysis.target_n > analysis.metric_spec.available_nonnull_n
+    assert analysis.msg is not None
+    assert analysis.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
 
 
 async def test_power_check_with_calculated_icc(testing_datasource, aclient: AdminAPIClient):

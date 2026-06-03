@@ -28,8 +28,8 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import constants
-from xngin.apiserver.dependencies import xngin_db_session
-from xngin.apiserver.limits import TURN_JOURNEYS_CACHE_TTL_SECONDS, TURN_REQUEST_TIMEOUT_SECONDS
+from xngin.apiserver.dependencies import retrying_httpx_dependency, xngin_db_session
+from xngin.apiserver.limits import TURN_JOURNEYS_CACHE_TTL_SECONDS
 from xngin.apiserver.routers.admin import authz
 from xngin.apiserver.routers.admin.admin_api import (
     GENERIC_SUCCESS,
@@ -57,23 +57,61 @@ TURN_JOURNEYS_RESPONSES: dict[str | int, dict[str, Any]] = {
         "model": HTTPExceptionError,
         "description": "No Turn.io connection has been configured for the organization.",
     },
-    "409": {
-        "model": HTTPExceptionError,
-        "description": "The configured Turn.io API token is invalid or unauthorized.",
-    },
     "502": {
         "model": HTTPExceptionError,
         "description": "Failed to reach Turn.io API, or Turn.io returned a non-200 response.",
     },
 }
 
-
-TURN_JOURNEY_MAPPING_RESPONSES: dict[str | int, dict[str, Any]] = {
+TURN_ARM_JOURNEY_MAPPING_RESPONSES: dict[str | int, dict[str, Any]] = {
+    "400": {
+        "model": HTTPExceptionError,
+        "description": "Malformed request body, or request arm IDs don't match the experiment's arms.",
+    },
     "409": {
         "model": HTTPExceptionError,
         "description": "A Turn.io connection must be configured before journey mappings can be saved.",
     },
 }
+
+
+async def _call_turn_api(
+    httpx_client: httpx.AsyncClient,
+    turn_api_token: str,
+    method: str,
+) -> httpx.Response:
+    """
+    Wrapper for outbound Turn.io API calls to standardize error handling.
+
+    Any non-2xx response from Turn.io and httpx.RequestErrors (e.g. network issues, timeouts) are logged
+    and re-raised as 502 HTTP exceptions, but with appropriate status codes and error messages
+    reproduced for debugging.
+    """
+    headers = {"Authorization": f"Bearer {turn_api_token}"}
+
+    try:
+        response = await httpx_client.request(
+            method,
+            TURN_JOURNEYS_URL,
+            headers=headers,
+        )
+        response.raise_for_status()
+    except httpx.RequestError as exc:
+        logger.error(f"Error calling Turn.io API at {method} {TURN_JOURNEYS_URL}: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to reach Turn.io API. Details: {exc}",
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        logger.error(
+            f"Turn.io API returned non-2xx status at {method} {TURN_JOURNEYS_URL}:"
+            + f"{exc.response.status_code} - {exc.response.text}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Turn.io API returned non-2xx status. Details: {exc.response.status_code} - {exc.response.text}",
+        ) from exc
+    return response
 
 
 @asynccontextmanager
@@ -202,14 +240,12 @@ async def delete_turn_connection_from_organization(
     return response
 
 
-@router.get(
-    "/integrations/turn-connection/{organization_id}/journeys",
-    responses=TURN_JOURNEY_MAPPING_RESPONSES,
-)
+@router.get("/integrations/turn-connection/{organization_id}/journeys", responses=TURN_JOURNEYS_RESPONSES)
 async def get_organization_turn_journeys(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
+    httpx_client: Annotated[httpx.AsyncClient, Depends(retrying_httpx_dependency)],
 ) -> GetTurnJourneysResponse:
     """Returns a {name: uuid} map of Turn.io journeys available to the organization.
 
@@ -232,37 +268,9 @@ async def get_organization_turn_journeys(
     ):
         return GetTurnJourneysResponse(journeys=turn_connection.cached_journeys)
 
-    try:
-        async with httpx.AsyncClient(timeout=TURN_REQUEST_TIMEOUT_SECONDS) as client:
-            response = await client.get(
-                TURN_JOURNEYS_URL,
-                headers={"Authorization": f"Bearer {turn_connection.get_turn_api_token()}"},
-            )
-    except httpx.RequestError as exc:
-        logger.error(f"Error fetching Turn.io journeys: {exc}")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Failed to reach Turn.io API to fetch journeys. Details: {exc}",
-        ) from exc
-
-    if response.status_code in {401, 403}:
-        with logger.contextualize(organization_id=turn_connection.organization_id):
-            logger.error("Unauthorized when fetching Turn.io journeys. API token may be invalid.")
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Unauthorized when fetching Turn.io journeys. Please check that the configured API token is valid.",
-        )
-
-    if response.status_code != 200:
-        with logger.contextualize(organization_id=turn_connection.organization_id):
-            logger.error(f"Non-200 response from Turn.io journeys endpoint: {response.status_code} - {response.text}")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=(
-                "Turn.io API returned non-200 status code when fetching journeys. "
-                f"Details: {response.status_code} - {response.text}"
-            ),
-        )
+    response = await _call_turn_api(
+        httpx_client=httpx_client, turn_api_token=turn_connection.get_turn_api_token(), method="GET"
+    )
 
     journey_dict = {journey["name"]: journey["uuid"] for journey in response.json()}
     turn_connection.cached_journeys = journey_dict
@@ -273,8 +281,8 @@ async def get_organization_turn_journeys(
 
 @router.put(
     "/integrations/turn-journey-mapping/datasources/{datasource_id}/experiments/{experiment_id}",
+    responses=TURN_ARM_JOURNEY_MAPPING_RESPONSES,
     status_code=status.HTTP_204_NO_CONTENT,
-    responses=TURN_JOURNEY_MAPPING_RESPONSES,
 )
 async def set_turn_arm_journey_mapping(
     datasource_id: str,

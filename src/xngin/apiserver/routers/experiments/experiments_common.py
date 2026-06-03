@@ -158,7 +158,7 @@ def convert_table_to_fields_or_raise(table: Table, design_spec: AnyFrequentistDe
         *[stratum.field_name for stratum in design_spec.strata],
         design_spec.primary_key,
     }
-    if design_spec.cluster_key is not None:
+    if isinstance(design_spec, PreassignedFrequentistExperimentSpec) and design_spec.cluster_key is not None:
         referenced_fields.add(design_spec.cluster_key)
 
     referenced_fields_and_types = {
