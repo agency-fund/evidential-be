@@ -9,6 +9,7 @@ import pytest
 
 from xngin.apiserver.dwh.analysis_types import MetricValue, ParticipantOutcome
 from xngin.stats.analysis import analyze_experiment
+from xngin.stats.stats_errors import StatsAnalysisError
 
 
 @pytest.fixture(name="test_assignments")
@@ -287,6 +288,18 @@ def test_analysis_with_cluster_col_missing_from_df_raises():
             arm_col="arm",
             cluster_col="missing_cluster_column",
         )
+
+
+def test_analysis_with_null_cluster_col_raises():
+    """Clustered analysis rejects assignments with null cluster identifiers."""
+    assignments_df = pd.DataFrame({
+        "participant_id": ["0", "1"],
+        "arm_id": ["control", "treatment"],
+        "cluster": [np.nan, "school_a"],
+    })
+
+    with pytest.raises(StatsAnalysisError, match="null cluster"):
+        analyze_experiment(assignments_df, [], cluster_col="cluster")
 
 
 def test_analysis_with_cluster_col_unequal_sizes():

@@ -5,6 +5,7 @@ import statsmodels.formula.api as smf
 from patsy.eval import EvalFactor
 
 from xngin.apiserver.dwh.analysis_types import ParticipantOutcome
+from xngin.stats.stats_errors import StatsAnalysisError
 
 
 @dataclasses.dataclass(slots=True)  # slots=True for performance
@@ -43,8 +44,8 @@ def analyze_experiment(
     participant_outcomes: list of outcomes for each unit in assignments_df, in the same order.
     unit_col: Name of column in assignments_df to use for participant identifiers.
     arm_col: Name of column in assignments_df to use for arm identifiers.
-    cluster_col: Name of column in assignments_df to use as cluster identifiers. If provided, the
-            analysis uses clustered instead of HC standard errors.
+    cluster_col: Name of column in assignments_df to use as cluster identifiers.
+            If provided, the analysis uses clustered SEs instead of HC SEs.
     baseline_arm_id: which arm to use as baseline; if not provided, uses the first arm seen
     alpha: significance level for confidence intervals (defaults to 0.05 if None for a 95% CI).
 
@@ -62,6 +63,10 @@ def analyze_experiment(
         raise ValueError(
             f"assignments_df shape is wrong: expected={','.join(sorted(expected_id_columns))},"
             f" got={','.join(sorted(actual_columns))}"
+        )
+    if cluster_col is not None and assignments_df[cluster_col].isna().any():
+        raise StatsAnalysisError(
+            f"One or more participants in a clustered experiment have a null {cluster_col}, which is disallowed."
         )
 
     if alpha is None:
