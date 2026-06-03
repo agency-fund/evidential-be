@@ -59,6 +59,8 @@ jobs:
       - uses: j178/prek-action@bdca6f102f98e2b4c7029491a53dfd366469e33d # v2.0.4
 
   check-migrations:
+    needs: changes
+    if: needs.changes.outputs.pydependencies == 'true' || needs.changes.outputs.migrations == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -150,6 +152,7 @@ jobs:
     outputs:
       ruffannotations: ${{ steps.filter.outputs.ruffannotations }}
       pydependencies: ${{ steps.filter.outputs.pydependencies }}
+      migrations: ${{ steps.filter.outputs.migrations }}
       queries: ${{ steps.filter.outputs.queries }}
     steps:
       - if: github.event_name != 'pull_request'
@@ -168,6 +171,8 @@ jobs:
             pydependencies:
               - 'pyproject.toml'
               - 'uv.lock'
+            migrations:
+              - 'migrations/**'
             queries:
               - 'src/xngin/apiserver/dwh/**'
               - 'src/xngin/apiserver/conftest.py'
