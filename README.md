@@ -32,7 +32,7 @@
 | src/xngin/apiserver/routers/admin/admin\_api.py                                    |      735 |       46 |     94% |404, 416, 427, 431, 669, 1156, 1223-1229, 1415, 1452, 1569-1647, 1694, 1696-1699, 1739, 1860, 1923-1929, 1954, 1961, 2233 |
 | src/xngin/apiserver/routers/admin/admin\_api\_converters.py                        |       62 |        8 |     87% |29, 73-74, 84, 110-111, 123-124 |
 | src/xngin/apiserver/routers/admin/admin\_api\_types.py                             |      143 |        2 |     99% |    40, 42 |
-| src/xngin/apiserver/routers/admin/test\_admin\_api.py                              |     1786 |        7 |     99% |201-206, 431 |
+| src/xngin/apiserver/routers/admin/test\_admin\_api.py                              |     1804 |        7 |     99% |201-206, 431 |
 | src/xngin/apiserver/routers/admin/test\_admin\_users\_api.py                       |      374 |        1 |     99% |        33 |
 | src/xngin/apiserver/routers/admin\_integrations/admin\_integrations\_api.py        |      119 |        1 |     99% |       261 |
 | src/xngin/apiserver/routers/admin\_integrations/admin\_integrations\_api\_types.py |       14 |        1 |     93% |        26 |
@@ -44,11 +44,11 @@
 | src/xngin/apiserver/routers/common\_enums.py                                       |      200 |       39 |     80% |73, 75, 98-107, 112, 149-165, 187-188, 207-211, 249, 299-302, 311, 350-351, 355, 387 |
 | src/xngin/apiserver/routers/experiments/dependencies.py                            |       60 |        3 |     95% |39, 60, 67 |
 | src/xngin/apiserver/routers/experiments/experiments\_api.py                        |       96 |        4 |     96% |140-142, 347 |
-| src/xngin/apiserver/routers/experiments/experiments\_common.py                     |      412 |       31 |     92% |208, 239, 276-277, 300, 378, 389, 417-418, 428, 537, 627-628, 650, 782, 786, 807-808, 811, 851-854, 873, 888, 941-942, 958-960, 1033 |
+| src/xngin/apiserver/routers/experiments/experiments\_common.py                     |      418 |       31 |     93% |209, 240, 277-278, 301, 379, 390, 418-419, 429, 538, 628-629, 651, 783, 787, 808-809, 812, 852-855, 874, 889, 942-943, 959-961, 1034 |
 | src/xngin/apiserver/routers/experiments/experiments\_common\_csv.py                |       89 |        4 |     96% |43, 102, 234-235 |
 | src/xngin/apiserver/routers/experiments/property\_filters.py                       |       96 |        8 |     92% |25, 28, 32, 95-96, 148, 160-161 |
 | src/xngin/apiserver/routers/experiments/test\_experiments\_api.py                  |      453 |        3 |     99% |63, 177-178 |
-| src/xngin/apiserver/routers/experiments/test\_experiments\_common.py               |     1012 |        8 |     99% |202-203, 1291-1293, 1662-1663, 2116 |
+| src/xngin/apiserver/routers/experiments/test\_experiments\_common.py               |     1048 |        8 |     99% |202-203, 1377-1379, 1748-1749, 2202 |
 | src/xngin/apiserver/routers/experiments/test\_property\_filters.py                 |       41 |        1 |     98% |        24 |
 | src/xngin/apiserver/routers/healthchecks\_api.py                                   |       16 |        2 |     88% |     26-27 |
 | src/xngin/apiserver/routers/test\_assignment\_adapters.py                          |      225 |        1 |     99% |       103 |
@@ -88,7 +88,7 @@
 | src/xngin/xsecrets/secretservice.py                                                |       63 |        5 |     92% |37, 49-50, 108, 130 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                                     |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                                         |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                                          | **14386** |  **841** | **94%** |           |
+| **TOTAL**                                                                          | **14456** |  **841** | **94%** |           |
 
 79 files skipped due to complete coverage.
 
