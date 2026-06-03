@@ -34,7 +34,9 @@ env:
 jobs:
 
   ruff-annotations:
-    runs-on: ubuntu-24.04
+    needs: changes
+    if: needs.changes.outputs.ruffannotations == 'true'
+    runs-on: ubuntu-slim
     timeout-minutes: 15
     steps:
       - name: Checkout code
@@ -145,12 +147,13 @@ jobs:
           fi
 
   changes:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-slim
     timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read
     outputs:
+      ruffannotations: ${{ steps.filter.outputs.ruffannotations }}
       pydependencies: ${{ steps.filter.outputs.pydependencies }}
       queries: ${{ steps.filter.outputs.queries }}
     steps:
@@ -162,6 +165,11 @@ jobs:
         id: filter
         with:
           filters: |
+            ruffannotations:
+              - '*.py'
+              - '**/*.py'
+              - 'pyproject.toml'
+              - 'uv.lock'
             pydependencies:
               - 'pyproject.toml'
               - 'uv.lock'
