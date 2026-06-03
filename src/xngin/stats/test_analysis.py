@@ -268,12 +268,25 @@ def test_analysis_with_cluster_col():
 def test_analysis_with_cluster_col_missing_from_df_raises():
     """analyze_experiment raises ValueError if cluster_col is missing from assignments_df."""
     assignments_df = pd.DataFrame({
-        "participant_id": [str(i) for i in range(100)],
-        "arm_id": ["arm1", "arm2"] * 50,
+        "participant": [str(i) for i in range(100)],
+        "arm": ["arm1", "arm2"] * 50,
     })
     unused_participant_outcomes: list[ParticipantOutcome] = []
-    with pytest.raises(ValueError, match=r"assignments_df shape is wrong: expected=.*missing_cluster_column"):
-        analyze_experiment(assignments_df, unused_participant_outcomes, cluster_col="missing_cluster_column")
+
+    with pytest.raises(ValueError, match="assignments_df shape is wrong: expected=arm_id,participant_id, "):
+        analyze_experiment(assignments_df, unused_participant_outcomes)
+
+    with pytest.raises(
+        ValueError,
+        match="assignments_df shape is wrong: expected=arm,missing_cluster_column,participant, got=arm,participant",
+    ):
+        analyze_experiment(
+            assignments_df,
+            unused_participant_outcomes,
+            unit_col="participant",
+            arm_col="arm",
+            cluster_col="missing_cluster_column",
+        )
 
 
 def test_analysis_with_cluster_col_unequal_sizes():

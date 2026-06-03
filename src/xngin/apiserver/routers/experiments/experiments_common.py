@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from fastapi import HTTPException, status
 from pandas import DataFrame
+from psycopg import sql
 from sqlalchemy import Select, Table, func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
@@ -1039,7 +1040,6 @@ async def analyze_experiment_freq_impl(
     if assignments_df.empty:
         raise StatsAnalysisError("No participants found for experiment.")
 
-    cluster_col = "cluster_key" if include_cluster else None
     async with DwhSession(dsconfig.dwh) as dwh:
         sa_table = await dwh.inspect_table(experiment.datasource_table)
 
@@ -1070,9 +1070,11 @@ async def analyze_experiment_freq_impl(
     analyze_results = analyze_freq_experiment(
         assignments_df,
         participant_outcomes,
-        baseline_arm_id,
+        unit_col=tables.ArmAssignment.participant_id.name,
+        arm_col=tables.ArmAssignment.arm_id.name,
+        cluster_col=tables.ArmAssignment.cluster_key.name if include_cluster else None,
+        baseline_arm_id=baseline_arm_id,
         alpha=experiment.alpha,
-        cluster_col=cluster_col,
     )
 
     metric_analyses = []
@@ -1139,14 +1141,15 @@ async def read_assignments_efficiently(
 
     Reads CSV output in row-bounded chunks and concatenates the parsed frames.
     """
+    column_names = [
+        tables.ArmAssignment.arm_id.name,
+        tables.ArmAssignment.participant_id.name,
+    ]
     if include_cluster_key:
-        select_query = (
-            t"SELECT arm_id, participant_id, cluster_key FROM arm_assignments WHERE experiment_id = {experiment_id}"  # type: ignore
-        )
-        column_names = ["arm_id", "participant_id", "cluster_key"]
-    else:
-        select_query = t"SELECT arm_id, participant_id FROM arm_assignments WHERE experiment_id = {experiment_id}"  # type: ignore
-        column_names = ["arm_id", "participant_id"]
+        column_names.append(tables.ArmAssignment.cluster_key.name)
+
+    joined_column_names = sql.SQL(", ").join(sql.Identifier(name) for name in column_names)
+    select_query = t"SELECT {joined_column_names:q} FROM arm_assignments WHERE experiment_id = {experiment_id}"  # type: ignore
     dfs = [
         pd.read_csv(io.BytesIO(chunk), names=column_names, dtype=str)
         async for chunk in select_as_csv(
@@ -1157,7 +1160,7 @@ async def read_assignments_efficiently(
         df = pd.concat(dfs, ignore_index=True)
     else:
         df = pd.DataFrame(columns=column_names).astype(str)
-    return df["participant_id"].to_list(), df
+    return df[tables.ArmAssignment.participant_id.name].to_list(), df
 
 
 @dataclass(frozen=True, slots=True)
