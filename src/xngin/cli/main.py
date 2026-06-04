@@ -335,7 +335,7 @@ def generate_typed_clients():
     print(f"Generating ExperimentsAPIClient: {eapi_path}")
     fastapi_typed_client.generate_fastapi_typed_client(
         "xngin.apiserver.routers.experiments.experiments_api:router",
-        include_security_params=True,
+        kwonly_args=True,
         output_path=eapi_path,
         raise_if_not_default_status=True,
         title="ExperimentsAPIClient",
@@ -343,6 +343,8 @@ def generate_typed_clients():
     print(f"Generating AdminAPIClient: {aapi_path}")
     fastapi_typed_client.generate_fastapi_typed_client(
         "xngin.apiserver.routers.admin.admin_api:router",
+        include_security_params=False,
+        kwonly_args=True,
         output_path=aapi_path,
         raise_if_not_default_status=True,
         title="AdminAPIClient",
@@ -350,6 +352,8 @@ def generate_typed_clients():
     print(f"Generating AdminIntegrationsAPIClient: {iadminapi_path}")
     fastapi_typed_client.generate_fastapi_typed_client(
         "xngin.apiserver.routers.admin_integrations.admin_integrations_api:router",
+        include_security_params=False,
+        kwonly_args=True,
         output_path=iadminapi_path,
         raise_if_not_default_status=True,
         title="AdminIntegrationsAPIClient",
@@ -358,7 +362,7 @@ def generate_typed_clients():
     print(f"Generating IntegrationsAPIClient: {iapi_path}")
     fastapi_typed_client.generate_fastapi_typed_client(
         "xngin.apiserver.routers.integrations.integrations_api:router",
-        include_security_params=True,
+        kwonly_args=True,
         output_path=iapi_path,
         raise_if_not_default_status=True,
         title="IntegrationsAPIClient",
