@@ -4,6 +4,7 @@ All tests interact with the system exclusively through the AdminAPIClient. No di
 """
 
 from collections.abc import Iterable
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from xngin.apiserver.conftest import expect_status_code
@@ -227,6 +228,20 @@ def test_get_user_returns_details(aclient: AdminAPIClient):
     assert response.is_privileged is False
     assert response.has_logged_in is False
     assert response.organizations == []
+
+
+def test_logout_updates_last_logout_timestamp(aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
+    # The unprivileged user logs out, then the privileged user reads their last_logout. Using two
+    # separate users avoids invalidating the reader's own session token by the logout being measured.
+    target_id = _user_id_for(aclient.list_users(email_contains=UNPRIVILEGED_EMAIL).data.items, UNPRIVILEGED_EMAIL)
+    initial_last_logout = aclient.get_user(user_id=target_id).data.last_logout
+
+    response = aclient_unpriv.logout().response
+    assert response.content == b""
+
+    updated_last_logout = aclient.get_user(user_id=target_id).data.last_logout
+    assert updated_last_logout > initial_last_logout
+    assert datetime.now(UTC) - updated_last_logout < timedelta(seconds=60)
 
 
 def test_get_user_returns_organizations_with_counts(aclient: AdminAPIClient):
