@@ -31,10 +31,13 @@ env:
   # Server startup will fail without these values being set.
   GOOGLE_OIDC_CLIENT_ID: "unset-google-oidc-client-id"
   GOOGLE_OIDC_CLIENT_SECRET: "unset-google-oidc-client-secret"
+
 jobs:
 
   ruff-annotations:
-    runs-on: ubuntu-24.04
+    needs: changes
+    if: needs.changes.outputs.ruffannotations == 'true'
+    runs-on: ubuntu-slim
     timeout-minutes: 15
     steps:
       - name: Checkout code
@@ -53,15 +56,11 @@ jobs:
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@e06108dd0aef18192324c70427afc47652e63a82 # v7.5.0
-      - run: echo PYTHON_DIR="$(uv python dir)" | tee -a "$GITHUB_ENV"
-      - name: Configure cache for pre-commit
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
-        with:
-          path: ~/.cache/pre-commit
-          key: pre-commit-5|${{ env.PYTHON_DIR }}|${{ hashFiles('.pre-commit-config.yaml') }}|${{ hashFiles('pyproject.toml') }}
-      - run: uv run pre-commit run --show-diff-on-failure --color=always --all-files
+      - uses: j178/prek-action@bdca6f102f98e2b4c7029491a53dfd366469e33d # v2.0.4
 
   check-migrations:
+    needs: changes
+    if: needs.changes.outputs.pydependencies == 'true' || needs.changes.outputs.migrations == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -145,13 +144,15 @@ jobs:
           fi
 
   changes:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-slim
     timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read
     outputs:
+      ruffannotations: ${{ steps.filter.outputs.ruffannotations }}
       pydependencies: ${{ steps.filter.outputs.pydependencies }}
+      migrations: ${{ steps.filter.outputs.migrations }}
       queries: ${{ steps.filter.outputs.queries }}
     steps:
       - if: github.event_name != 'pull_request'
@@ -162,9 +163,16 @@ jobs:
         id: filter
         with:
           filters: |
+            ruffannotations:
+              - '*.py'
+              - '**/*.py'
+              - 'pyproject.toml'
+              - 'uv.lock'
             pydependencies:
               - 'pyproject.toml'
               - 'uv.lock'
+            migrations:
+              - 'migrations/**'
             queries:
               - 'src/xngin/apiserver/dwh/**'
               - 'src/xngin/apiserver/conftest.py'

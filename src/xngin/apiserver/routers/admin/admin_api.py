@@ -752,7 +752,8 @@ async def list_snapshots(
 
 
 @router.delete(
-    "/organizations/{organization_id}/datasources/{datasource_id}/experiments/{experiment_id}/snapshots/{snapshot_id}"
+    "/organizations/{organization_id}/datasources/{datasource_id}/experiments/{experiment_id}/snapshots/{snapshot_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
 )
 async def delete_snapshot(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],

@@ -1,10 +1,11 @@
+from base64 import b64encode
 from collections.abc import (
     Iterator,
     Mapping,
+    MutableMapping,
     Sequence,
 )
 from contextlib import contextmanager
-from dataclasses import dataclass
 from http import (
     HTTPMethod,
     HTTPStatus,
@@ -13,6 +14,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Literal,
+    NamedTuple,
     Self,
     TypedDict,
     cast,
@@ -21,6 +23,7 @@ from typing import (
 from warnings import warn
 
 from fastapi.encoders import jsonable_encoder
+from fastapi.sse import ServerSentEvent
 from httpx import (
     USE_CLIENT_DEFAULT,
     Client,
@@ -94,34 +97,14 @@ if TYPE_CHECKING:
     from fastapi import FastAPI
 
 
-def _is_no_body_response(*, method: HTTPMethod, status: HTTPStatus) -> bool:
-    """Returns true if the method or status code indicate that there is no response body."""
-    return (
-        method == HTTPMethod.HEAD
-        or status < HTTPStatus.OK
-        or status
-        in {
-            HTTPStatus.NO_CONTENT,
-            HTTPStatus.RESET_CONTENT,
-            HTTPStatus.NOT_MODIFIED,
-        }
-    )
-
-
 class AdminAPIClientExtensions(TypedDict, total=False):
     timeout: float | tuple[float | None, float | None, float | None, float | None] | Timeout | None
 
 
-@dataclass(frozen=True)
-class AdminAPIClientResult[Status: HTTPStatus, Data, ModelType]:
-    # `data` is the decoded response body. For streaming responses it is an
-    # iterator/async iterator of decoded items rather than a fully materialized value.
-    # `model` is the runtime decoder used for that body. For normal and streaming
-    # responses this is a class object like `User` with static type `type[User]`; for
-    # no-body responses it is `None`.
+class AdminAPIClientResult[Status: HTTPStatus, Model](NamedTuple):
     status: Status
-    data: Data
-    model: ModelType
+    data: Model
+    model: type[Model]
     response: Response
 
 
@@ -140,7 +123,7 @@ class AdminAPIClientNotDefaultStatusError(Exception):
         self,
         *,
         default_status: HTTPStatus,
-        result: AdminAPIClientResult[HTTPStatus, Any, object],
+        result: AdminAPIClientResult[HTTPStatus, Any],
     ) -> None:
         super().__init__(
             f"Expected default status {default_status.value} {default_status.phrase}, "
@@ -150,17 +133,33 @@ class AdminAPIClientNotDefaultStatusError(Exception):
         self.result = result
 
 
+class AdminAPIClientSecurityParam(NamedTuple):
+    kind: Literal[
+        "http_bearer",
+        "http_basic",
+        "api_key_header",
+        "api_key_cookie",
+        "api_key_query",
+    ]
+    name: str
+    value: str | tuple[str, str] | None
+
+
+class AdminAPIClientSSE[Data](ServerSentEvent):
+    data: Data | None = None
+
+
 ADMIN_API_CLIENT_NOT_REQUIRED: Any = ...
 
 
-class AdminAPIClient:  # noqa: RUF100,PLR0904
+class AdminAPIClient:
     def __init__(self, client: Client) -> None:
         self.client = client
 
     @classmethod
     @contextmanager
     def from_app(cls, app: FastAPI, base_url: str = "http://testserver") -> Iterator[Self]:
-        from fastapi.testclient import TestClient  # noqa: PLC0415
+        from fastapi.testclient import TestClient
 
         with TestClient(app, base_url=base_url) as client:
             yield cls(client)
@@ -177,6 +176,80 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
             if value is not ADMIN_API_CLIENT_NOT_REQUIRED
         } or None
 
+    @staticmethod
+    def _build_file_params(
+        file_params: Mapping[str, Any] | None,
+    ) -> list[tuple[str, Any]] | None:
+        if file_params is None:
+            return None
+        result: list[tuple[str, Any]] = []
+        for name, value in file_params.items():
+            if value is ADMIN_API_CLIENT_NOT_REQUIRED:
+                continue
+            values = value if isinstance(value, list) else [value]
+            for v in values:
+                if hasattr(v, "filename") and hasattr(v, "file"):
+                    # `UploadFile`-like; duck-typed so we need not import it here.
+                    result.append((name, (v.filename, v.file, v.content_type)))
+                else:
+                    # `bytes` / `str` / `IO[bytes]` / httpx `(name, content[, type])`.
+                    result.append((name, v))
+        return result or None
+
+    @staticmethod
+    def _build_form_params(
+        form_params: Mapping[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if form_params is None:
+            return None
+        form: dict[str, Any] = {}
+        for name, value in form_params.items():
+            if value is ADMIN_API_CLIENT_NOT_REQUIRED:
+                continue
+            encoded = jsonable_encoder(value)
+            if isinstance(encoded, dict):
+                # Model-as-`Form()`: flatten fields into top-level form fields
+                # (only flat models round-trip; nested dicts don't url-encode).
+                form.update(encoded)
+            else:
+                # Scalars get stringified by httpx; lists become repeated fields.
+                form[name] = encoded
+        return form or None
+
+    @staticmethod
+    def _apply_security_params(
+        security_params: Sequence[AdminAPIClientSecurityParam] | None,
+        header_params: MutableMapping[str, Any],
+        cookie_params: MutableMapping[str, Any],
+        query_params: MutableMapping[str, Any],
+    ) -> None:
+        for kind, name, value in security_params or ():
+            if value is ADMIN_API_CLIENT_NOT_REQUIRED or value is None:
+                continue
+            target: MutableMapping[str, Any]
+            encoded: str
+            if kind == "http_bearer" and isinstance(value, str):
+                target, encoded = header_params, f"Bearer {value}"
+            elif kind == "http_basic" and isinstance(value, tuple):
+                user_pass = b64encode(f"{value[0]}:{value[1]}".encode()).decode("ascii")
+                target, encoded = header_params, f"Basic {user_pass}"
+            elif kind == "api_key_header" and isinstance(value, str):
+                target, encoded = header_params, value
+            elif kind == "api_key_cookie" and isinstance(value, str):
+                target, encoded = cookie_params, value
+            elif kind == "api_key_query" and isinstance(value, str):
+                target, encoded = query_params, value
+            else:
+                raise TypeError(
+                    f"Security param `{name}` of kind `{kind}` has incompatible value type `{type(value).__name__}`."
+                )
+            if name in target and target[name] is not ADMIN_API_CLIENT_NOT_REQUIRED:
+                raise RuntimeError(
+                    f"Security param `{name}` conflicts with an already-set "
+                    f"{kind.split('_', 1)[0]} param of the same name."
+                )
+            target[name] = encoded
+
     def _route_handler(
         self,
         *,
@@ -189,11 +262,14 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         header_params: Mapping[str, Any] | None = None,
         cookie_params: Mapping[str, Any] | None = None,
         body_params: Mapping[str, Any] | None = None,
+        file_params: Mapping[str, Any] | None = None,
+        form_params: Mapping[str, Any] | None = None,
+        security_params: Sequence[AdminAPIClientSecurityParam] | None = None,
         is_body_embedded: bool = False,
-        is_streaming_json: bool = False,
+        streaming_kind: Literal["json_lines", "server_sent_events", "raw_bytes", "raw_str"] | None = None,
         raise_if_not_default_status: bool = False,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[HTTPStatus, Any, object]:
+    ) -> AdminAPIClientResult[HTTPStatus, Any]:
         if not client_exts:
             client_exts = {}
 
@@ -202,28 +278,28 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
             value_str = f"{value:0.20f}".rstrip("0").rstrip(".") if isinstance(value, float) else str(value)
             url = url.replace(f"{{{param}}}", value_str)
 
-        body = self._filter_and_encode_params(body_params)
-        if body and not is_body_embedded:
-            body = next(iter(body.values()))
-
-        cookies = self._filter_and_encode_params(cookie_params)
+        headers = self._filter_and_encode_params(header_params) or {}
+        cookies = self._filter_and_encode_params(cookie_params) or {}
+        queries = self._filter_and_encode_params(query_params) or {}
+        self._apply_security_params(security_params, headers, cookies, queries)
         if cookies:
+            # Mirror httpx's per-request-cookies DeprecationWarning ourselves
+            # (we bypass `Client.request()` via `build_request` + `send`).
             warn(
-                "Setting cookie parameters directly on an endpoint function is "
-                "experimental. (This is the cause for the DeprecationWarning by httpx "
-                "below.)",
-                UserWarning,
+                "Setting per-request cookie parameters is deprecated because cookie"
+                "persistence behaviour is ambiguous. Set cookies on the client"
+                "instead.",
+                DeprecationWarning,
                 stacklevel=3,
             )
 
-        timeout = client_exts.get("timeout")
-        request_timeout = timeout or USE_CLIENT_DEFAULT
+        timeout = client_exts.get("timeout", USE_CLIENT_DEFAULT)
         # Scuffed isinstance() check because we don't want to import
         # starlette.testclient.Testclient for users that don't need it.
         if (
             self.client.__class__.__name__ == "TestClient"
             and self.client.__class__.__module__ == "starlette.testclient"
-            and timeout
+            and timeout is not USE_CLIENT_DEFAULT
         ):
             warn(
                 "Starlette's TestClient (which you probably use via "
@@ -232,58 +308,159 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                 DeprecationWarning,
                 stacklevel=3,
             )
-            request_timeout = USE_CLIENT_DEFAULT
+            timeout = USE_CLIENT_DEFAULT  # Hide the warning generated by Starlette.
 
-        response = self.client.request(
-            method.name,
-            url,
-            params=self._filter_and_encode_params(query_params),
-            headers=self._filter_and_encode_params(header_params),
-            cookies=cookies,
-            json=body,
-            timeout=request_timeout,
-        )
-        status = HTTPStatus(response.status_code)
-
-        if status not in models:
-            model: object = Any
-            result: AdminAPIClientResult[HTTPStatus, Any, object] = AdminAPIClientResult(
-                status=status,
-                data=response.text,
-                model=model,
-                response=response,
+        files = self._build_file_params(file_params)
+        form = self._build_form_params(form_params)
+        if files is not None or form is not None:
+            request = self.client.build_request(
+                method.name,
+                url,
+                params=queries or None,
+                headers=headers or None,
+                cookies=cookies or None,
+                data=form,
+                files=files,
+                timeout=timeout,
             )
         else:
-            model = models[status]
-            if is_streaming_json and status == default_status:
+            body = self._filter_and_encode_params(body_params)
+            if body and not is_body_embedded:
+                body = next(iter(body.values()))
+            request = self.client.build_request(
+                method.name,
+                url,
+                params=queries or None,
+                headers=headers or None,
+                cookies=cookies or None,
+                json=body,
+                timeout=timeout,
+            )
 
-                def data_iter() -> Iterator[Any]:
-                    for part in response.iter_lines():
-                        yield TypeAdapter(model).validate_json(part)
+        response = self.client.send(request, stream=streaming_kind is not None)
+        status = HTTPStatus(response.status_code)
 
-                result = AdminAPIClientResult(
-                    status=status,
-                    data=data_iter(),
-                    model=model,
-                    response=response,
-                )
-            elif _is_no_body_response(method=method, status=status):
-                result = AdminAPIClientResult(
-                    status=status,
-                    data=None,
-                    model=model,
-                    response=response,
-                )
-            else:
-                result = AdminAPIClientResult(
-                    status=status,
-                    data=TypeAdapter(model).validate_json(response.text),
-                    model=model,
-                    response=response,
-                )
+        model = models[status]
+        if streaming_kind is not None and status == default_status:
+            data = self._build_streaming_data(streaming_kind, response, model)
+        elif streaming_kind is not None:
+            # Streaming endpoint returned a non-default status (typically a JSON
+            # error body). Drain it, then release the stream-mode response.
+            try:
+                text = "".join(response.iter_text())
+            finally:
+                response.close()
+            data = TypeAdapter(model).validate_json(text or "null")
+        else:
+            # An empty body (e.g. 204 NO_CONTENT) is treated as JSON `null` so the
+            # declared model still validatess.
+            data = TypeAdapter(model).validate_json(response.text or "null")
+
+        result = AdminAPIClientResult(
+            status=status,
+            data=data,
+            model=model,
+            response=response,
+        )
         if status != default_status and raise_if_not_default_status:
             raise AdminAPIClientNotDefaultStatusError(default_status=default_status, result=result)
         return result
+
+    @classmethod
+    def _build_streaming_data(
+        cls,
+        streaming_kind: Literal["json_lines", "server_sent_events", "raw_bytes", "raw_str"],
+        response: Response,
+        model: Any,  # noqa: ANN401
+    ) -> Iterator[Any]:
+        if streaming_kind == "raw_bytes":
+            return cls._close_response_after(response, response.iter_bytes())
+        if streaming_kind == "raw_str":
+            return cls._close_response_after(response, response.iter_text())
+        if streaming_kind == "json_lines":
+            return cls._close_response_after(response, cls._iter_json_lines(response, model))
+        return cls._close_response_after(response, cls._iter_sse(response, model))
+
+    @staticmethod
+    def _close_response_after(response: Response, source: Iterator[Any]) -> Iterator[Any]:
+        try:
+            yield from source
+        finally:
+            response.close()
+
+    @staticmethod
+    def _iter_json_lines(
+        response: Response,
+        model: Any,  # noqa: ANN401
+    ) -> Iterator[Any]:
+        adapter = TypeAdapter(model)
+        for part in response.iter_lines():
+            if part:
+                yield adapter.validate_json(part)
+
+    @classmethod
+    def _iter_sse(
+        cls,
+        response: Response,
+        model: Any,  # noqa: ANN401
+    ) -> Iterator[Any]:
+        adapter = TypeAdapter(model)
+        for fields in cls._iter_sse_event_fields(response.iter_lines()):
+            if "data" in fields:
+                fields = {**fields, "data": adapter.validate_json(fields["data"])}
+            yield AdminAPIClientSSE[model].model_validate(fields)
+
+    @classmethod
+    def _iter_sse_event_fields(cls, lines: Iterator[str]) -> Iterator[Mapping[str, Any]]:
+        fields: dict[str, Any] = {}
+        data_lines: list[str] = []
+        comment_lines: list[str] = []
+        for line in lines:
+            if line:
+                cls._accumulate_sse_line(line, fields, data_lines, comment_lines)
+                continue
+            event = cls._finalize_sse_event(fields, data_lines, comment_lines)
+            if event is not None:
+                yield event
+            # Spec deviation: `lastEventId` doesn't persist across events. Each
+            # yielded event reflects only what was on the wire for it; events
+            # without an `id:` line surface as `id=None`.
+            fields, data_lines, comment_lines = {}, [], []
+        event = cls._finalize_sse_event(fields, data_lines, comment_lines)
+        if event is not None:
+            yield event
+
+    @staticmethod
+    def _accumulate_sse_line(
+        line: str,
+        fields: dict[str, Any],
+        data_lines: list[str],
+        comment_lines: list[str],
+    ) -> None:
+        if line.startswith(":"):
+            comment_lines.append(line[1:].removeprefix(" "))
+            return
+        field, _, value = line.partition(":")
+        value = value.removeprefix(" ")
+        if field == "data":
+            data_lines.append(value)
+        elif field in ("event", "id"):
+            fields[field] = value
+        elif field == "retry" and value.isascii() and value.isdigit():
+            fields[field] = int(value)
+
+    @staticmethod
+    def _finalize_sse_event(
+        fields: dict[str, Any], data_lines: list[str], comment_lines: list[str]
+    ) -> dict[str, Any] | None:
+        if data_lines:
+            fields["data"] = "\n".join(data_lines)
+        if comment_lines:
+            fields["comment"] = "\n".join(comment_lines)
+        # Spec deviation: comment- or metadata-only events (no `data:` lines)
+        # are still dispatched. The spec says to drop them, but we surface them
+        # so `AdminAPIClientSSE.comment` is reachable from the client.
+        return fields or None
 
     @overload
     def caller_identity(
@@ -291,7 +468,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         *,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], CallerIdentity, type[CallerIdentity]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], CallerIdentity]: ...
     @overload
     def caller_identity(
         self,
@@ -299,11 +476,11 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], CallerIdentity, type[CallerIdentity]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], CallerIdentity]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
     ): ...
     def caller_identity(
         self,
@@ -311,19 +488,19 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], CallerIdentity, type[CallerIdentity]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], CallerIdentity]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.OK], CallerIdentity, type[CallerIdentity]]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], CallerIdentity]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
             ),
             self._route_handler(
                 path="/v1/m/caller-identity",
@@ -347,7 +524,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         *,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
     @overload
     def logout(
         self,
@@ -355,11 +532,11 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
     ): ...
     def logout(
         self,
@@ -367,26 +544,26 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
             ),
             self._route_handler(
                 path="/v1/m/logout",
                 method=HTTPMethod.POST,
                 default_status=HTTPStatus.NO_CONTENT,
                 models={
-                    HTTPStatus.NO_CONTENT: None,
+                    HTTPStatus.NO_CONTENT: Any,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -404,7 +581,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         body: CreateUserRequest,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], CreateUserResponse, type[CreateUserResponse]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], CreateUserResponse]: ...
     @overload
     def create_user(
         self,
@@ -413,16 +590,12 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateUserResponse, type[CreateUserResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateUserResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def create_user(
         self,
@@ -431,29 +604,21 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateUserResponse, type[CreateUserResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateUserResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.OK], CreateUserResponse, type[CreateUserResponse]]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], CreateUserResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
                 path="/v1/m/users",
@@ -480,70 +645,58 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         self,
         *,
         email_contains: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
-        scope: Literal["all", "mine"] = ADMIN_API_CLIENT_NOT_REQUIRED,
         page_size: int = ADMIN_API_CLIENT_NOT_REQUIRED,
         page_token: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        scope: Literal["all", "mine"] = ADMIN_API_CLIENT_NOT_REQUIRED,
         skip: int = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ListUsersResponse, type[ListUsersResponse]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ListUsersResponse]: ...
     @overload
     def list_users(
         self,
         *,
         email_contains: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
-        scope: Literal["all", "mine"] = ADMIN_API_CLIENT_NOT_REQUIRED,
         page_size: int = ADMIN_API_CLIENT_NOT_REQUIRED,
         page_token: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        scope: Literal["all", "mine"] = ADMIN_API_CLIENT_NOT_REQUIRED,
         skip: int = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], ListUsersResponse, type[ListUsersResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ListUsersResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def list_users(
         self,
         *,
         email_contains: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
-        scope: Literal["all", "mine"] = ADMIN_API_CLIENT_NOT_REQUIRED,
         page_size: int = ADMIN_API_CLIENT_NOT_REQUIRED,
         page_token: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        scope: Literal["all", "mine"] = ADMIN_API_CLIENT_NOT_REQUIRED,
         skip: int = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], ListUsersResponse, type[ListUsersResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ListUsersResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.OK], ListUsersResponse, type[ListUsersResponse]]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], ListUsersResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
                 path="/v1/m/users",
@@ -559,9 +712,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                 },
                 query_params={
                     "email_contains": email_contains,
-                    "scope": scope,
                     "page_size": page_size,
                     "page_token": page_token,
+                    "scope": scope,
                     "skip": skip,
                 },
                 raise_if_not_default_status=raise_if_not_default_status,
@@ -576,7 +729,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         user_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], GetUserResponse, type[GetUserResponse]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], GetUserResponse]: ...
     @overload
     def get_user(
         self,
@@ -585,16 +738,12 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], GetUserResponse, type[GetUserResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], GetUserResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def get_user(
         self,
@@ -603,32 +752,24 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], GetUserResponse, type[GetUserResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], GetUserResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.OK], GetUserResponse, type[GetUserResponse]]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], GetUserResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/users/{user_id}",  # noqa: RUF100,RUF027
+                path="/v1/m/users/{user_id}",
                 method=HTTPMethod.GET,
                 default_status=HTTPStatus.OK,
                 models={
@@ -651,69 +792,57 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def patch_user(
         self,
         *,
-        user_id: str,
         body: PatchUserRequest,
+        user_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
     @overload
     def patch_user(
         self,
         *,
-        user_id: str,
         body: PatchUserRequest,
+        user_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def patch_user(
         self,
         *,
-        user_id: str,
         body: PatchUserRequest,
+        user_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/users/{user_id}",  # noqa: RUF100,RUF027
+                path="/v1/m/users/{user_id}",
                 method=HTTPMethod.PATCH,
                 default_status=HTTPStatus.NO_CONTENT,
                 models={
-                    HTTPStatus.NO_CONTENT: None,
+                    HTTPStatus.NO_CONTENT: Any,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -738,7 +867,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         user_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
     @overload
     def delete_user(
         self,
@@ -747,16 +876,12 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def delete_user(
         self,
@@ -765,36 +890,28 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/users/{user_id}",  # noqa: RUF100,RUF027
+                path="/v1/m/users/{user_id}",
                 method=HTTPMethod.DELETE,
                 default_status=HTTPStatus.NO_CONTENT,
                 models={
-                    HTTPStatus.NO_CONTENT: None,
+                    HTTPStatus.NO_CONTENT: Any,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -813,71 +930,59 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def get_snapshot(
         self,
         *,
-        organization_id: str,
         datasource_id: str,
         experiment_id: str,
+        organization_id: str,
         snapshot_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], GetSnapshotResponse, type[GetSnapshotResponse]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], GetSnapshotResponse]: ...
     @overload
     def get_snapshot(
         self,
         *,
-        organization_id: str,
         datasource_id: str,
         experiment_id: str,
+        organization_id: str,
         snapshot_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], GetSnapshotResponse, type[GetSnapshotResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], GetSnapshotResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def get_snapshot(
         self,
         *,
-        organization_id: str,
         datasource_id: str,
         experiment_id: str,
+        organization_id: str,
         snapshot_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], GetSnapshotResponse, type[GetSnapshotResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], GetSnapshotResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.OK], GetSnapshotResponse, type[GetSnapshotResponse]]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], GetSnapshotResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/organizations/{organization_id}/datasources/{datasource_id}/experiments/{experiment_id}/snapshots/{snapshot_id}",  # noqa: RUF100,RUF027
+                path="/v1/m/organizations/{organization_id}/datasources/{datasource_id}/experiments/{experiment_id}/snapshots/{snapshot_id}",
                 method=HTTPMethod.GET,
                 default_status=HTTPStatus.OK,
                 models={
@@ -889,9 +994,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                     HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
                 },
                 path_params={
-                    "organization_id": organization_id,
                     "datasource_id": datasource_id,
                     "experiment_id": experiment_id,
+                    "organization_id": organization_id,
                     "snapshot_id": snapshot_id,
                 },
                 raise_if_not_default_status=raise_if_not_default_status,
@@ -903,80 +1008,68 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def list_snapshots(
         self,
         *,
-        organization_id: str,
         datasource_id: str,
         experiment_id: str,
-        status_: list[SnapshotStatus] | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        organization_id: str,
         page_size: int = ADMIN_API_CLIENT_NOT_REQUIRED,
         page_token: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         skip: int = ADMIN_API_CLIENT_NOT_REQUIRED,
+        status_: list[SnapshotStatus] | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ListSnapshotsResponse, type[ListSnapshotsResponse]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ListSnapshotsResponse]: ...
     @overload
     def list_snapshots(
         self,
         *,
-        organization_id: str,
         datasource_id: str,
         experiment_id: str,
-        status_: list[SnapshotStatus] | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        organization_id: str,
         page_size: int = ADMIN_API_CLIENT_NOT_REQUIRED,
         page_token: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         skip: int = ADMIN_API_CLIENT_NOT_REQUIRED,
+        status_: list[SnapshotStatus] | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], ListSnapshotsResponse, type[ListSnapshotsResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ListSnapshotsResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def list_snapshots(
         self,
         *,
-        organization_id: str,
         datasource_id: str,
         experiment_id: str,
-        status_: list[SnapshotStatus] | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        organization_id: str,
         page_size: int = ADMIN_API_CLIENT_NOT_REQUIRED,
         page_token: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         skip: int = ADMIN_API_CLIENT_NOT_REQUIRED,
+        status_: list[SnapshotStatus] | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], ListSnapshotsResponse, type[ListSnapshotsResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ListSnapshotsResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.OK], ListSnapshotsResponse, type[ListSnapshotsResponse]]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], ListSnapshotsResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/organizations/{organization_id}/datasources/{datasource_id}/experiments/{experiment_id}/snapshots",  # noqa: RUF100,RUF027
+                path="/v1/m/organizations/{organization_id}/datasources/{datasource_id}/experiments/{experiment_id}/snapshots",
                 method=HTTPMethod.GET,
                 default_status=HTTPStatus.OK,
                 models={
@@ -988,15 +1081,15 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                     HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
                 },
                 path_params={
-                    "organization_id": organization_id,
                     "datasource_id": datasource_id,
                     "experiment_id": experiment_id,
+                    "organization_id": organization_id,
                 },
                 query_params={
-                    "status": status_,
                     "page_size": page_size,
                     "page_token": page_token,
                     "skip": skip,
+                    "status": status_,
                 },
                 raise_if_not_default_status=raise_if_not_default_status,
                 client_exts=client_exts,
@@ -1007,78 +1100,66 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def delete_snapshot(
         self,
         *,
-        organization_id: str,
         datasource_id: str,
         experiment_id: str,
+        organization_id: str,
         snapshot_id: str,
         allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], Any, type[Any]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
     @overload
     def delete_snapshot(
         self,
         *,
-        organization_id: str,
         datasource_id: str,
         experiment_id: str,
+        organization_id: str,
         snapshot_id: str,
         allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], Any, type[Any]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def delete_snapshot(
         self,
         *,
-        organization_id: str,
         datasource_id: str,
         experiment_id: str,
+        organization_id: str,
         snapshot_id: str,
         allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], Any, type[Any]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.OK], Any, type[Any]]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/organizations/{organization_id}/datasources/{datasource_id}/experiments/{experiment_id}/snapshots/{snapshot_id}",  # noqa: RUF100,RUF027
+                path="/v1/m/organizations/{organization_id}/datasources/{datasource_id}/experiments/{experiment_id}/snapshots/{snapshot_id}",
                 method=HTTPMethod.DELETE,
-                default_status=HTTPStatus.OK,
+                default_status=HTTPStatus.NO_CONTENT,
                 models={
-                    HTTPStatus.OK: Any,
+                    HTTPStatus.NO_CONTENT: Any,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -1086,9 +1167,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                     HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
                 },
                 path_params={
-                    "organization_id": organization_id,
                     "datasource_id": datasource_id,
                     "experiment_id": experiment_id,
+                    "organization_id": organization_id,
                     "snapshot_id": snapshot_id,
                 },
                 query_params={
@@ -1103,68 +1184,56 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def create_snapshot(
         self,
         *,
-        organization_id: str,
         datasource_id: str,
         experiment_id: str,
+        organization_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], CreateSnapshotResponse, type[CreateSnapshotResponse]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], CreateSnapshotResponse]: ...
     @overload
     def create_snapshot(
         self,
         *,
-        organization_id: str,
         datasource_id: str,
         experiment_id: str,
+        organization_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateSnapshotResponse, type[CreateSnapshotResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateSnapshotResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def create_snapshot(
         self,
         *,
-        organization_id: str,
         datasource_id: str,
         experiment_id: str,
+        organization_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateSnapshotResponse, type[CreateSnapshotResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateSnapshotResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.OK], CreateSnapshotResponse, type[CreateSnapshotResponse]]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], CreateSnapshotResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/organizations/{organization_id}/datasources/{datasource_id}/experiments/{experiment_id}/snapshots",  # noqa: RUF100,RUF027
+                path="/v1/m/organizations/{organization_id}/datasources/{datasource_id}/experiments/{experiment_id}/snapshots",
                 method=HTTPMethod.POST,
                 default_status=HTTPStatus.OK,
                 models={
@@ -1176,9 +1245,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                     HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
                 },
                 path_params={
-                    "organization_id": organization_id,
                     "datasource_id": datasource_id,
                     "experiment_id": experiment_id,
+                    "organization_id": organization_id,
                 },
                 raise_if_not_default_status=raise_if_not_default_status,
                 client_exts=client_exts,
@@ -1189,74 +1258,62 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def list_organizations(
         self,
         *,
-        scope: Literal["mine", "all"] = ADMIN_API_CLIENT_NOT_REQUIRED,
-        name_contains: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         include_stats: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
+        name_contains: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         page_size: int = ADMIN_API_CLIENT_NOT_REQUIRED,
         page_token: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        scope: Literal["mine", "all"] = ADMIN_API_CLIENT_NOT_REQUIRED,
         skip: int = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ListOrganizationsResponse, type[ListOrganizationsResponse]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ListOrganizationsResponse]: ...
     @overload
     def list_organizations(
         self,
         *,
-        scope: Literal["mine", "all"] = ADMIN_API_CLIENT_NOT_REQUIRED,
-        name_contains: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         include_stats: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
+        name_contains: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         page_size: int = ADMIN_API_CLIENT_NOT_REQUIRED,
         page_token: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        scope: Literal["mine", "all"] = ADMIN_API_CLIENT_NOT_REQUIRED,
         skip: int = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], ListOrganizationsResponse, type[ListOrganizationsResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ListOrganizationsResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def list_organizations(
         self,
         *,
-        scope: Literal["mine", "all"] = ADMIN_API_CLIENT_NOT_REQUIRED,
-        name_contains: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         include_stats: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
+        name_contains: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         page_size: int = ADMIN_API_CLIENT_NOT_REQUIRED,
         page_token: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        scope: Literal["mine", "all"] = ADMIN_API_CLIENT_NOT_REQUIRED,
         skip: int = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], ListOrganizationsResponse, type[ListOrganizationsResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ListOrganizationsResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.OK], ListOrganizationsResponse, type[ListOrganizationsResponse]]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], ListOrganizationsResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
                 path="/v1/m/organizations",
@@ -1271,11 +1328,11 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                     HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
                 },
                 query_params={
-                    "scope": scope,
-                    "name_contains": name_contains,
                     "include_stats": include_stats,
+                    "name_contains": name_contains,
                     "page_size": page_size,
                     "page_token": page_token,
+                    "scope": scope,
                     "skip": skip,
                 },
                 raise_if_not_default_status=raise_if_not_default_status,
@@ -1290,7 +1347,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         body: CreateOrganizationRequest,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], CreateOrganizationResponse, type[CreateOrganizationResponse]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], CreateOrganizationResponse]: ...
     @overload
     def create_organizations(
         self,
@@ -1299,16 +1356,12 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateOrganizationResponse, type[CreateOrganizationResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateOrganizationResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def create_organizations(
         self,
@@ -1317,31 +1370,21 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateOrganizationResponse, type[CreateOrganizationResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateOrganizationResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[
-                    Literal[HTTPStatus.OK], CreateOrganizationResponse, type[CreateOrganizationResponse]
-                ]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], CreateOrganizationResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
                 path="/v1/m/organizations",
@@ -1367,73 +1410,53 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def add_webhook_to_organization(
         self,
         *,
-        organization_id: str,
         body: AddWebhookToOrganizationRequest,
+        organization_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[
-        Literal[HTTPStatus.OK], AddWebhookToOrganizationResponse, type[AddWebhookToOrganizationResponse]
-    ]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], AddWebhookToOrganizationResponse]: ...
     @overload
     def add_webhook_to_organization(
         self,
         *,
-        organization_id: str,
         body: AddWebhookToOrganizationRequest,
+        organization_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[
-            Literal[HTTPStatus.OK], AddWebhookToOrganizationResponse, type[AddWebhookToOrganizationResponse]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], AddWebhookToOrganizationResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def add_webhook_to_organization(
         self,
         *,
-        organization_id: str,
         body: AddWebhookToOrganizationRequest,
+        organization_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[
-            Literal[HTTPStatus.OK], AddWebhookToOrganizationResponse, type[AddWebhookToOrganizationResponse]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], AddWebhookToOrganizationResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[
-                    Literal[HTTPStatus.OK], AddWebhookToOrganizationResponse, type[AddWebhookToOrganizationResponse]
-                ]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], AddWebhookToOrganizationResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/organizations/{organization_id}/webhooks",  # noqa: RUF100,RUF027
+                path="/v1/m/organizations/{organization_id}/webhooks",
                 method=HTTPMethod.POST,
                 default_status=HTTPStatus.OK,
                 models={
@@ -1462,7 +1485,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         organization_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ListWebhooksResponse, type[ListWebhooksResponse]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ListWebhooksResponse]: ...
     @overload
     def list_organization_webhooks(
         self,
@@ -1471,16 +1494,12 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], ListWebhooksResponse, type[ListWebhooksResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ListWebhooksResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def list_organization_webhooks(
         self,
@@ -1489,32 +1508,24 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], ListWebhooksResponse, type[ListWebhooksResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ListWebhooksResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.OK], ListWebhooksResponse, type[ListWebhooksResponse]]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], ListWebhooksResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/organizations/{organization_id}/webhooks",  # noqa: RUF100,RUF027
+                path="/v1/m/organizations/{organization_id}/webhooks",
                 method=HTTPMethod.GET,
                 default_status=HTTPStatus.OK,
                 models={
@@ -1537,72 +1548,60 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def update_organization_webhook(
         self,
         *,
+        body: UpdateOrganizationWebhookRequest,
         organization_id: str,
         webhook_id: str,
-        body: UpdateOrganizationWebhookRequest,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
     @overload
     def update_organization_webhook(
         self,
         *,
+        body: UpdateOrganizationWebhookRequest,
         organization_id: str,
         webhook_id: str,
-        body: UpdateOrganizationWebhookRequest,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def update_organization_webhook(
         self,
         *,
+        body: UpdateOrganizationWebhookRequest,
         organization_id: str,
         webhook_id: str,
-        body: UpdateOrganizationWebhookRequest,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/organizations/{organization_id}/webhooks/{webhook_id}",  # noqa: RUF100,RUF027
+                path="/v1/m/organizations/{organization_id}/webhooks/{webhook_id}",
                 method=HTTPMethod.PATCH,
                 default_status=HTTPStatus.NO_CONTENT,
                 models={
-                    HTTPStatus.NO_CONTENT: None,
+                    HTTPStatus.NO_CONTENT: Any,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -1629,7 +1628,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         webhook_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
     @overload
     def regenerate_webhook_auth_token(
         self,
@@ -1639,16 +1638,12 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def regenerate_webhook_auth_token(
         self,
@@ -1658,36 +1653,28 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/organizations/{organization_id}/webhooks/{webhook_id}/authtoken",  # noqa: RUF100,RUF027
+                path="/v1/m/organizations/{organization_id}/webhooks/{webhook_id}/authtoken",
                 method=HTTPMethod.POST,
                 default_status=HTTPStatus.NO_CONTENT,
                 models={
-                    HTTPStatus.NO_CONTENT: None,
+                    HTTPStatus.NO_CONTENT: Any,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -1712,7 +1699,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
     @overload
     def delete_webhook_from_organization(
         self,
@@ -1723,16 +1710,12 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def delete_webhook_from_organization(
         self,
@@ -1743,36 +1726,28 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/organizations/{organization_id}/webhooks/{webhook_id}",  # noqa: RUF100,RUF027
+                path="/v1/m/organizations/{organization_id}/webhooks/{webhook_id}",
                 method=HTTPMethod.DELETE,
                 default_status=HTTPStatus.NO_CONTENT,
                 models={
-                    HTTPStatus.NO_CONTENT: None,
+                    HTTPStatus.NO_CONTENT: Any,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -1801,9 +1776,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         skip: int = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[
-        Literal[HTTPStatus.OK], ListOrganizationEventsResponse, type[ListOrganizationEventsResponse]
-    ]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ListOrganizationEventsResponse]: ...
     @overload
     def list_organization_events(
         self,
@@ -1815,18 +1788,12 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[
-            Literal[HTTPStatus.OK], ListOrganizationEventsResponse, type[ListOrganizationEventsResponse]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ListOrganizationEventsResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def list_organization_events(
         self,
@@ -1838,36 +1805,24 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[
-            Literal[HTTPStatus.OK], ListOrganizationEventsResponse, type[ListOrganizationEventsResponse]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ListOrganizationEventsResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[
-                    Literal[HTTPStatus.OK], ListOrganizationEventsResponse, type[ListOrganizationEventsResponse]
-                ]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], ListOrganizationEventsResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/organizations/{organization_id}/events",  # noqa: RUF100,RUF027
+                path="/v1/m/organizations/{organization_id}/events",
                 method=HTTPMethod.GET,
                 default_status=HTTPStatus.OK,
                 models={
@@ -1895,69 +1850,57 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def resend_organization_event(
         self,
         *,
-        organization_id: str,
         event_id: str,
+        organization_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
     @overload
     def resend_organization_event(
         self,
         *,
-        organization_id: str,
         event_id: str,
+        organization_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def resend_organization_event(
         self,
         *,
-        organization_id: str,
         event_id: str,
+        organization_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/organizations/{organization_id}/events/{event_id}/resend",  # noqa: RUF100,RUF027
+                path="/v1/m/organizations/{organization_id}/events/{event_id}/resend",
                 method=HTTPMethod.POST,
                 default_status=HTTPStatus.NO_CONTENT,
                 models={
-                    HTTPStatus.NO_CONTENT: None,
+                    HTTPStatus.NO_CONTENT: Any,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -1965,8 +1908,8 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                     HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
                 },
                 path_params={
-                    "organization_id": organization_id,
                     "event_id": event_id,
+                    "organization_id": organization_id,
                 },
                 raise_if_not_default_status=raise_if_not_default_status,
                 client_exts=client_exts,
@@ -1977,69 +1920,57 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def add_member_to_organization(
         self,
         *,
-        organization_id: str,
         body: AddMemberToOrganizationRequest,
+        organization_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
     @overload
     def add_member_to_organization(
         self,
         *,
-        organization_id: str,
         body: AddMemberToOrganizationRequest,
+        organization_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def add_member_to_organization(
         self,
         *,
-        organization_id: str,
         body: AddMemberToOrganizationRequest,
+        organization_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/organizations/{organization_id}/members",  # noqa: RUF100,RUF027
+                path="/v1/m/organizations/{organization_id}/members",
                 method=HTTPMethod.POST,
                 default_status=HTTPStatus.NO_CONTENT,
                 models={
-                    HTTPStatus.NO_CONTENT: None,
+                    HTTPStatus.NO_CONTENT: Any,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -2066,7 +1997,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
     @overload
     def remove_member_from_organization(
         self,
@@ -2077,16 +2008,12 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def remove_member_from_organization(
         self,
@@ -2097,36 +2024,28 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/organizations/{organization_id}/members/{user_id}",  # noqa: RUF100,RUF027
+                path="/v1/m/organizations/{organization_id}/members/{user_id}",
                 method=HTTPMethod.DELETE,
                 default_status=HTTPStatus.NO_CONTENT,
                 models={
-                    HTTPStatus.NO_CONTENT: None,
+                    HTTPStatus.NO_CONTENT: Any,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -2149,65 +2068,53 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def update_organization(
         self,
         *,
-        organization_id: str,
         body: UpdateOrganizationRequest,
+        organization_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], Any, type[Any]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], Any]: ...
     @overload
     def update_organization(
         self,
         *,
-        organization_id: str,
         body: UpdateOrganizationRequest,
+        organization_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], Any, type[Any]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def update_organization(
         self,
         *,
-        organization_id: str,
         body: UpdateOrganizationRequest,
+        organization_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], Any, type[Any]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.OK], Any, type[Any]]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], Any]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/organizations/{organization_id}",  # noqa: RUF100,RUF027
+                path="/v1/m/organizations/{organization_id}",
                 method=HTTPMethod.PATCH,
                 default_status=HTTPStatus.OK,
                 models={
@@ -2236,7 +2143,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         organization_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], GetOrganizationResponse, type[GetOrganizationResponse]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], GetOrganizationResponse]: ...
     @overload
     def get_organization(
         self,
@@ -2245,16 +2152,12 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], GetOrganizationResponse, type[GetOrganizationResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], GetOrganizationResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def get_organization(
         self,
@@ -2263,32 +2166,24 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], GetOrganizationResponse, type[GetOrganizationResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], GetOrganizationResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.OK], GetOrganizationResponse, type[GetOrganizationResponse]]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], GetOrganizationResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/organizations/{organization_id}",  # noqa: RUF100,RUF027
+                path="/v1/m/organizations/{organization_id}",
                 method=HTTPMethod.GET,
                 default_status=HTTPStatus.OK,
                 models={
@@ -2314,7 +2209,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         organization_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ListDatasourcesResponse, type[ListDatasourcesResponse]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ListDatasourcesResponse]: ...
     @overload
     def list_organization_datasources(
         self,
@@ -2323,16 +2218,12 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], ListDatasourcesResponse, type[ListDatasourcesResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ListDatasourcesResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def list_organization_datasources(
         self,
@@ -2341,32 +2232,24 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], ListDatasourcesResponse, type[ListDatasourcesResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ListDatasourcesResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.OK], ListDatasourcesResponse, type[ListDatasourcesResponse]]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], ListDatasourcesResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/organizations/{organization_id}/datasources",  # noqa: RUF100,RUF027
+                path="/v1/m/organizations/{organization_id}/datasources",
                 method=HTTPMethod.GET,
                 default_status=HTTPStatus.OK,
                 models={
@@ -2393,7 +2276,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         connectivity_check: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], CreateDatasourceResponse, type[CreateDatasourceResponse]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], CreateDatasourceResponse]: ...
     @overload
     def create_datasource(
         self,
@@ -2403,16 +2286,14 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateDatasourceResponse, type[CreateDatasourceResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError, type[XHTTPValidationError]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError, type[MessageError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError, type[MessageError]]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateDatasourceResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
     ): ...
     def create_datasource(
         self,
@@ -2422,29 +2303,25 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateDatasourceResponse, type[CreateDatasourceResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError, type[XHTTPValidationError]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError, type[MessageError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError, type[MessageError]]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateDatasourceResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.OK], CreateDatasourceResponse, type[CreateDatasourceResponse]]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError, type[XHTTPValidationError]
-                ]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError, type[MessageError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError, type[MessageError]]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], CreateDatasourceResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
+                | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
             ),
             self._route_handler(
                 path="/v1/m/datasources",
@@ -2475,69 +2352,57 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def update_datasource(
         self,
         *,
-        datasource_id: str,
         body: UpdateDatasourceRequest,
+        datasource_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
     @overload
     def update_datasource(
         self,
         *,
-        datasource_id: str,
         body: UpdateDatasourceRequest,
+        datasource_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def update_datasource(
         self,
         *,
-        datasource_id: str,
         body: UpdateDatasourceRequest,
+        datasource_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/datasources/{datasource_id}",  # noqa: RUF100,RUF027
+                path="/v1/m/datasources/{datasource_id}",
                 method=HTTPMethod.PATCH,
                 default_status=HTTPStatus.NO_CONTENT,
                 models={
-                    HTTPStatus.NO_CONTENT: None,
+                    HTTPStatus.NO_CONTENT: Any,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -2562,7 +2427,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         datasource_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], GetDatasourceResponse, type[GetDatasourceResponse]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], GetDatasourceResponse]: ...
     @overload
     def get_datasource(
         self,
@@ -2571,16 +2436,12 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], GetDatasourceResponse, type[GetDatasourceResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], GetDatasourceResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def get_datasource(
         self,
@@ -2589,32 +2450,24 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], GetDatasourceResponse, type[GetDatasourceResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], GetDatasourceResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.OK], GetDatasourceResponse, type[GetDatasourceResponse]]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], GetDatasourceResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/datasources/{datasource_id}",  # noqa: RUF100,RUF027
+                path="/v1/m/datasources/{datasource_id}",
                 method=HTTPMethod.GET,
                 default_status=HTTPStatus.OK,
                 models={
@@ -2641,7 +2494,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], InspectDatasourceResponse, type[InspectDatasourceResponse]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], InspectDatasourceResponse]: ...
     @overload
     def inspect_datasource(
         self,
@@ -2651,16 +2504,14 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], InspectDatasourceResponse, type[InspectDatasourceResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError, type[MessageError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError, type[XHTTPValidationError]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError, type[MessageError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError, type[MessageError]]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], InspectDatasourceResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
     ): ...
     def inspect_datasource(
         self,
@@ -2670,32 +2521,28 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], InspectDatasourceResponse, type[InspectDatasourceResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError, type[MessageError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError, type[XHTTPValidationError]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError, type[MessageError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError, type[MessageError]]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], InspectDatasourceResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.OK], InspectDatasourceResponse, type[InspectDatasourceResponse]]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError, type[MessageError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError, type[XHTTPValidationError]
-                ]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError, type[MessageError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError, type[MessageError]]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], InspectDatasourceResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
+                | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
             ),
             self._route_handler(
-                path="/v1/m/datasources/{datasource_id}/inspect",  # noqa: RUF100,RUF027
+                path="/v1/m/datasources/{datasource_id}/inspect",
                 method=HTTPMethod.GET,
                 default_status=HTTPStatus.OK,
                 models={
@@ -2728,9 +2575,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[
-        Literal[HTTPStatus.OK], InspectDatasourceTableResponse, type[InspectDatasourceTableResponse]
-    ]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], InspectDatasourceTableResponse]: ...
     @overload
     def inspect_table_in_datasource(
         self,
@@ -2741,18 +2586,14 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[
-            Literal[HTTPStatus.OK], InspectDatasourceTableResponse, type[InspectDatasourceTableResponse]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError, type[MessageError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError, type[XHTTPValidationError]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError, type[MessageError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError, type[MessageError]]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], InspectDatasourceTableResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
     ): ...
     def inspect_table_in_datasource(
         self,
@@ -2763,36 +2604,28 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[
-            Literal[HTTPStatus.OK], InspectDatasourceTableResponse, type[InspectDatasourceTableResponse]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError, type[MessageError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError, type[XHTTPValidationError]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError, type[MessageError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError, type[MessageError]]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], InspectDatasourceTableResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
     ):
         return cast(
             (
-                AdminAPIClientResult[
-                    Literal[HTTPStatus.OK], InspectDatasourceTableResponse, type[InspectDatasourceTableResponse]
-                ]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError, type[MessageError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError, type[XHTTPValidationError]
-                ]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError, type[MessageError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError, type[MessageError]]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], InspectDatasourceTableResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
+                | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
             ),
             self._route_handler(
-                path="/v1/m/datasources/{datasource_id}/inspect/{table_name}",  # noqa: RUF100,RUF027
+                path="/v1/m/datasources/{datasource_id}/inspect/{table_name}",
                 method=HTTPMethod.GET,
                 default_status=HTTPStatus.OK,
                 models={
@@ -2821,72 +2654,60 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def delete_datasource(
         self,
         *,
-        organization_id: str,
         datasource_id: str,
+        organization_id: str,
         allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
     @overload
     def delete_datasource(
         self,
         *,
-        organization_id: str,
         datasource_id: str,
+        organization_id: str,
         allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def delete_datasource(
         self,
         *,
-        organization_id: str,
         datasource_id: str,
+        organization_id: str,
         allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/organizations/{organization_id}/datasources/{datasource_id}",  # noqa: RUF100,RUF027
+                path="/v1/m/organizations/{organization_id}/datasources/{datasource_id}",
                 method=HTTPMethod.DELETE,
                 default_status=HTTPStatus.NO_CONTENT,
                 models={
-                    HTTPStatus.NO_CONTENT: None,
+                    HTTPStatus.NO_CONTENT: Any,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -2894,8 +2715,8 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                     HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
                 },
                 path_params={
-                    "organization_id": organization_id,
                     "datasource_id": datasource_id,
+                    "organization_id": organization_id,
                 },
                 query_params={
                     "allow_missing": allow_missing,
@@ -2912,9 +2733,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         datasource_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[
-        Literal[HTTPStatus.OK], ListParticipantsTypeResponse, type[ListParticipantsTypeResponse]
-    ]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ListParticipantsTypeResponse]: ...
     @overload
     def list_participant_types(
         self,
@@ -2923,16 +2742,12 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], ListParticipantsTypeResponse, type[ListParticipantsTypeResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ListParticipantsTypeResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def list_participant_types(
         self,
@@ -2941,34 +2756,24 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], ListParticipantsTypeResponse, type[ListParticipantsTypeResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ListParticipantsTypeResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[
-                    Literal[HTTPStatus.OK], ListParticipantsTypeResponse, type[ListParticipantsTypeResponse]
-                ]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], ListParticipantsTypeResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/datasources/{datasource_id}/participants",  # noqa: RUF100,RUF027
+                path="/v1/m/datasources/{datasource_id}/participants",
                 method=HTTPMethod.GET,
                 default_status=HTTPStatus.OK,
                 models={
@@ -2991,73 +2796,53 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def create_participant_type(
         self,
         *,
-        datasource_id: str,
         body: CreateParticipantsTypeRequest,
+        datasource_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[
-        Literal[HTTPStatus.OK], CreateParticipantsTypeResponse, type[CreateParticipantsTypeResponse]
-    ]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], CreateParticipantsTypeResponse]: ...
     @overload
     def create_participant_type(
         self,
         *,
-        datasource_id: str,
         body: CreateParticipantsTypeRequest,
+        datasource_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[
-            Literal[HTTPStatus.OK], CreateParticipantsTypeResponse, type[CreateParticipantsTypeResponse]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateParticipantsTypeResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def create_participant_type(
         self,
         *,
-        datasource_id: str,
         body: CreateParticipantsTypeRequest,
+        datasource_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[
-            Literal[HTTPStatus.OK], CreateParticipantsTypeResponse, type[CreateParticipantsTypeResponse]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateParticipantsTypeResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[
-                    Literal[HTTPStatus.OK], CreateParticipantsTypeResponse, type[CreateParticipantsTypeResponse]
-                ]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], CreateParticipantsTypeResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/datasources/{datasource_id}/participants",  # noqa: RUF100,RUF027
+                path="/v1/m/datasources/{datasource_id}/participants",
                 method=HTTPMethod.POST,
                 default_status=HTTPStatus.OK,
                 models={
@@ -3085,77 +2870,63 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         *,
         datasource_id: str,
         participant_id: str,
-        refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         expensive: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
+        refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[
-        Literal[HTTPStatus.OK], InspectParticipantTypesResponse, type[InspectParticipantTypesResponse]
-    ]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], InspectParticipantTypesResponse]: ...
     @overload
     def inspect_participant_types(
         self,
         *,
         datasource_id: str,
         participant_id: str,
-        refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         expensive: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
+        refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[
-            Literal[HTTPStatus.OK], InspectParticipantTypesResponse, type[InspectParticipantTypesResponse]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError, type[MessageError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError, type[XHTTPValidationError]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError, type[MessageError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError, type[MessageError]]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], InspectParticipantTypesResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
     ): ...
     def inspect_participant_types(
         self,
         *,
         datasource_id: str,
         participant_id: str,
-        refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         expensive: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
+        refresh: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[
-            Literal[HTTPStatus.OK], InspectParticipantTypesResponse, type[InspectParticipantTypesResponse]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError, type[MessageError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError, type[XHTTPValidationError]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError, type[MessageError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError, type[MessageError]]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], InspectParticipantTypesResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
     ):
         return cast(
             (
-                AdminAPIClientResult[
-                    Literal[HTTPStatus.OK], InspectParticipantTypesResponse, type[InspectParticipantTypesResponse]
-                ]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError, type[MessageError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError, type[XHTTPValidationError]
-                ]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError, type[MessageError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError, type[MessageError]]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], InspectParticipantTypesResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
+                | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
             ),
             self._route_handler(
-                path="/v1/m/datasources/{datasource_id}/participants/{participant_id}/inspect",  # noqa: RUF100,RUF027
+                path="/v1/m/datasources/{datasource_id}/participants/{participant_id}/inspect",
                 method=HTTPMethod.GET,
                 default_status=HTTPStatus.OK,
                 models={
@@ -3173,8 +2944,8 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                     "participant_id": participant_id,
                 },
                 query_params={
-                    "refresh": refresh,
                     "expensive": expensive,
+                    "refresh": refresh,
                 },
                 raise_if_not_default_status=raise_if_not_default_status,
                 client_exts=client_exts,
@@ -3189,9 +2960,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         participant_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[
-        Literal[HTTPStatus.OK], GetParticipantsTypeResponse, type[GetParticipantsTypeResponse]
-    ]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], GetParticipantsTypeResponse]: ...
     @overload
     def get_participant_type(
         self,
@@ -3201,16 +2970,14 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], GetParticipantsTypeResponse, type[GetParticipantsTypeResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError, type[MessageError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError, type[XHTTPValidationError]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError, type[MessageError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError, type[MessageError]]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], GetParticipantsTypeResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
     ): ...
     def get_participant_type(
         self,
@@ -3220,34 +2987,28 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], GetParticipantsTypeResponse, type[GetParticipantsTypeResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError, type[MessageError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError, type[XHTTPValidationError]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError, type[MessageError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError, type[MessageError]]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], GetParticipantsTypeResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
     ):
         return cast(
             (
-                AdminAPIClientResult[
-                    Literal[HTTPStatus.OK], GetParticipantsTypeResponse, type[GetParticipantsTypeResponse]
-                ]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError, type[MessageError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError, type[XHTTPValidationError]
-                ]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError, type[MessageError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError, type[MessageError]]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], GetParticipantsTypeResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
+                | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
             ),
             self._route_handler(
-                path="/v1/m/datasources/{datasource_id}/participants/{participant_id}",  # noqa: RUF100,RUF027
+                path="/v1/m/datasources/{datasource_id}/participants/{participant_id}",
                 method=HTTPMethod.GET,
                 default_status=HTTPStatus.OK,
                 models={
@@ -3273,76 +3034,56 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def update_participant_type(
         self,
         *,
+        body: UpdateParticipantsTypeRequest,
         datasource_id: str,
         participant_id: str,
-        body: UpdateParticipantsTypeRequest,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[
-        Literal[HTTPStatus.OK], UpdateParticipantsTypeResponse, type[UpdateParticipantsTypeResponse]
-    ]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], UpdateParticipantsTypeResponse]: ...
     @overload
     def update_participant_type(
         self,
         *,
+        body: UpdateParticipantsTypeRequest,
         datasource_id: str,
         participant_id: str,
-        body: UpdateParticipantsTypeRequest,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[
-            Literal[HTTPStatus.OK], UpdateParticipantsTypeResponse, type[UpdateParticipantsTypeResponse]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], UpdateParticipantsTypeResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def update_participant_type(
         self,
         *,
+        body: UpdateParticipantsTypeRequest,
         datasource_id: str,
         participant_id: str,
-        body: UpdateParticipantsTypeRequest,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[
-            Literal[HTTPStatus.OK], UpdateParticipantsTypeResponse, type[UpdateParticipantsTypeResponse]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], UpdateParticipantsTypeResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[
-                    Literal[HTTPStatus.OK], UpdateParticipantsTypeResponse, type[UpdateParticipantsTypeResponse]
-                ]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], UpdateParticipantsTypeResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/datasources/{datasource_id}/participants/{participant_id}",  # noqa: RUF100,RUF027
+                path="/v1/m/datasources/{datasource_id}/participants/{participant_id}",
                 method=HTTPMethod.PATCH,
                 default_status=HTTPStatus.OK,
                 models={
@@ -3374,7 +3115,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
     @overload
     def delete_participant(
         self,
@@ -3385,16 +3126,12 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def delete_participant(
         self,
@@ -3405,36 +3142,28 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/datasources/{datasource_id}/participants/{participant_id}",  # noqa: RUF100,RUF027
+                path="/v1/m/datasources/{datasource_id}/participants/{participant_id}",
                 method=HTTPMethod.DELETE,
                 default_status=HTTPStatus.NO_CONTENT,
                 models={
-                    HTTPStatus.NO_CONTENT: None,
+                    HTTPStatus.NO_CONTENT: Any,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -3460,7 +3189,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         datasource_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ListApiKeysResponse, type[ListApiKeysResponse]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ListApiKeysResponse]: ...
     @overload
     def list_api_keys(
         self,
@@ -3469,16 +3198,12 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], ListApiKeysResponse, type[ListApiKeysResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ListApiKeysResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def list_api_keys(
         self,
@@ -3487,32 +3212,24 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], ListApiKeysResponse, type[ListApiKeysResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ListApiKeysResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.OK], ListApiKeysResponse, type[ListApiKeysResponse]]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], ListApiKeysResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/datasources/{datasource_id}/apikeys",  # noqa: RUF100,RUF027
+                path="/v1/m/datasources/{datasource_id}/apikeys",
                 method=HTTPMethod.GET,
                 default_status=HTTPStatus.OK,
                 models={
@@ -3538,7 +3255,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         datasource_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], CreateApiKeyResponse, type[CreateApiKeyResponse]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], CreateApiKeyResponse]: ...
     @overload
     def create_api_key(
         self,
@@ -3547,16 +3264,12 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateApiKeyResponse, type[CreateApiKeyResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateApiKeyResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def create_api_key(
         self,
@@ -3565,32 +3278,24 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateApiKeyResponse, type[CreateApiKeyResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateApiKeyResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.OK], CreateApiKeyResponse, type[CreateApiKeyResponse]]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], CreateApiKeyResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/datasources/{datasource_id}/apikeys",  # noqa: RUF100,RUF027
+                path="/v1/m/datasources/{datasource_id}/apikeys",
                 method=HTTPMethod.POST,
                 default_status=HTTPStatus.OK,
                 models={
@@ -3613,72 +3318,60 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def delete_api_key(
         self,
         *,
-        datasource_id: str,
         api_key_id: str,
+        datasource_id: str,
         allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
     @overload
     def delete_api_key(
         self,
         *,
-        datasource_id: str,
         api_key_id: str,
+        datasource_id: str,
         allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def delete_api_key(
         self,
         *,
-        datasource_id: str,
         api_key_id: str,
+        datasource_id: str,
         allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/datasources/{datasource_id}/apikeys/{api_key_id}",  # noqa: RUF100,RUF027
+                path="/v1/m/datasources/{datasource_id}/apikeys/{api_key_id}",
                 method=HTTPMethod.DELETE,
                 default_status=HTTPStatus.NO_CONTENT,
                 models={
-                    HTTPStatus.NO_CONTENT: None,
+                    HTTPStatus.NO_CONTENT: Any,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -3686,8 +3379,8 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                     HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
                 },
                 path_params={
-                    "datasource_id": datasource_id,
                     "api_key_id": api_key_id,
+                    "datasource_id": datasource_id,
                 },
                 query_params={
                     "allow_missing": allow_missing,
@@ -3701,71 +3394,59 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def create_experiment(
         self,
         *,
-        datasource_id: str,
         body: CreateExperimentRequest,
-        stratify_on_metrics: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
+        datasource_id: str,
         random_state: int | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        stratify_on_metrics: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], CreateExperimentResponse, type[CreateExperimentResponse]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], CreateExperimentResponse]: ...
     @overload
     def create_experiment(
         self,
         *,
-        datasource_id: str,
         body: CreateExperimentRequest,
-        stratify_on_metrics: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
+        datasource_id: str,
         random_state: int | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        stratify_on_metrics: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateExperimentResponse, type[CreateExperimentResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateExperimentResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def create_experiment(
         self,
         *,
-        datasource_id: str,
         body: CreateExperimentRequest,
-        stratify_on_metrics: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
+        datasource_id: str,
         random_state: int | None = ADMIN_API_CLIENT_NOT_REQUIRED,
+        stratify_on_metrics: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateExperimentResponse, type[CreateExperimentResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateExperimentResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.OK], CreateExperimentResponse, type[CreateExperimentResponse]]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], CreateExperimentResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/datasources/{datasource_id}/experiments",  # noqa: RUF100,RUF027
+                path="/v1/m/datasources/{datasource_id}/experiments",
                 method=HTTPMethod.POST,
                 default_status=HTTPStatus.OK,
                 models={
@@ -3780,8 +3461,8 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                     "datasource_id": datasource_id,
                 },
                 query_params={
-                    "stratify_on_metrics": stratify_on_metrics,
                     "random_state": random_state,
+                    "stratify_on_metrics": stratify_on_metrics,
                 },
                 body_params={
                     "body": body,
@@ -3800,7 +3481,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         baseline_arm_id: str | None = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ExperimentAnalysisResponse, type[ExperimentAnalysisResponse]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ExperimentAnalysisResponse]: ...
     @overload
     def analyze_experiment(
         self,
@@ -3811,16 +3492,12 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], ExperimentAnalysisResponse, type[ExperimentAnalysisResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ExperimentAnalysisResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def analyze_experiment(
         self,
@@ -3831,34 +3508,24 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], ExperimentAnalysisResponse, type[ExperimentAnalysisResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ExperimentAnalysisResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[
-                    Literal[HTTPStatus.OK], ExperimentAnalysisResponse, type[ExperimentAnalysisResponse]
-                ]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], ExperimentAnalysisResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze",  # noqa: RUF100,RUF027
+                path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze",
                 method=HTTPMethod.GET,
                 default_status=HTTPStatus.OK,
                 models={
@@ -3885,70 +3552,56 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def analyze_cmab_experiment(
         self,
         *,
+        body: CMABContextInputRequest,
         datasource_id: str,
         experiment_id: str,
-        body: CMABContextInputRequest,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ExperimentAnalysisResponse, type[ExperimentAnalysisResponse]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ExperimentAnalysisResponse]: ...
     @overload
     def analyze_cmab_experiment(
         self,
         *,
+        body: CMABContextInputRequest,
         datasource_id: str,
         experiment_id: str,
-        body: CMABContextInputRequest,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], ExperimentAnalysisResponse, type[ExperimentAnalysisResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ExperimentAnalysisResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def analyze_cmab_experiment(
         self,
         *,
+        body: CMABContextInputRequest,
         datasource_id: str,
         experiment_id: str,
-        body: CMABContextInputRequest,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], ExperimentAnalysisResponse, type[ExperimentAnalysisResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ExperimentAnalysisResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[
-                    Literal[HTTPStatus.OK], ExperimentAnalysisResponse, type[ExperimentAnalysisResponse]
-                ]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], ExperimentAnalysisResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze_cmab",  # noqa: RUF100,RUF027
+                path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze_cmab",
                 method=HTTPMethod.POST,
                 default_status=HTTPStatus.OK,
                 models={
@@ -3979,7 +3632,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         experiment_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
     @overload
     def commit_experiment(
         self,
@@ -3989,17 +3642,13 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.CONFLICT], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.CONFLICT], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def commit_experiment(
         self,
@@ -4009,38 +3658,30 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.CONFLICT], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.CONFLICT], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.CONFLICT], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.CONFLICT], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/commit",  # noqa: RUF100,RUF027
+                path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/commit",
                 method=HTTPMethod.POST,
                 default_status=HTTPStatus.NO_CONTENT,
                 models={
-                    HTTPStatus.NO_CONTENT: None,
+                    HTTPStatus.NO_CONTENT: Any,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -4065,7 +3706,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         experiment_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
     @overload
     def abandon_experiment(
         self,
@@ -4075,17 +3716,13 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.CONFLICT], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.CONFLICT], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def abandon_experiment(
         self,
@@ -4095,38 +3732,30 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.CONFLICT], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.CONFLICT], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.CONFLICT], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.CONFLICT], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/abandon",  # noqa: RUF100,RUF027
+                path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/abandon",
                 method=HTTPMethod.POST,
                 default_status=HTTPStatus.NO_CONTENT,
                 models={
-                    HTTPStatus.NO_CONTENT: None,
+                    HTTPStatus.NO_CONTENT: Any,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -4150,7 +3779,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         organization_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ListExperimentsResponse, type[ListExperimentsResponse]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ListExperimentsResponse]: ...
     @overload
     def list_organization_experiments(
         self,
@@ -4159,16 +3788,12 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], ListExperimentsResponse, type[ListExperimentsResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ListExperimentsResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def list_organization_experiments(
         self,
@@ -4177,32 +3802,24 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], ListExperimentsResponse, type[ListExperimentsResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ListExperimentsResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.OK], ListExperimentsResponse, type[ListExperimentsResponse]]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], ListExperimentsResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/organizations/{organization_id}/experiments",  # noqa: RUF100,RUF027
+                path="/v1/m/organizations/{organization_id}/experiments",
                 method=HTTPMethod.GET,
                 default_status=HTTPStatus.OK,
                 models={
@@ -4229,7 +3846,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         experiment_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], GetExperimentForUiResponse, type[GetExperimentForUiResponse]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], GetExperimentForUiResponse]: ...
     @overload
     def get_experiment_for_ui(
         self,
@@ -4239,16 +3856,12 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], GetExperimentForUiResponse, type[GetExperimentForUiResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], GetExperimentForUiResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def get_experiment_for_ui(
         self,
@@ -4258,34 +3871,24 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], GetExperimentForUiResponse, type[GetExperimentForUiResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], GetExperimentForUiResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[
-                    Literal[HTTPStatus.OK], GetExperimentForUiResponse, type[GetExperimentForUiResponse]
-                ]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], GetExperimentForUiResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}",  # noqa: RUF100,RUF027
+                path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}",
                 method=HTTPMethod.GET,
                 default_status=HTTPStatus.OK,
                 models={
@@ -4313,7 +3916,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         experiment_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], Any, type[Any]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], Iterator[bytes]]: ...
     @overload
     def get_experiment_assignments_as_csv_for_ui(
         self,
@@ -4323,16 +3926,12 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], Any, type[Any]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], Iterator[bytes]]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def get_experiment_assignments_as_csv_for_ui(
         self,
@@ -4342,36 +3941,28 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], Any, type[Any]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], Iterator[bytes]]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.OK], Any, type[Any]]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], Iterator[bytes]]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/csv",  # noqa: RUF100,RUF027
+                path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/csv",
                 method=HTTPMethod.GET,
                 default_status=HTTPStatus.OK,
                 models={
-                    HTTPStatus.OK: Any,
+                    HTTPStatus.OK: bytes,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -4382,6 +3973,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                     "datasource_id": datasource_id,
                     "experiment_id": experiment_id,
                 },
+                streaming_kind="raw_bytes",
                 raise_if_not_default_status=raise_if_not_default_status,
                 client_exts=client_exts,
             ),
@@ -4391,72 +3983,60 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def update_experiment(
         self,
         *,
+        body: UpdateExperimentRequest,
         datasource_id: str,
         experiment_id: str,
-        body: UpdateExperimentRequest,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
     @overload
     def update_experiment(
         self,
         *,
+        body: UpdateExperimentRequest,
         datasource_id: str,
         experiment_id: str,
-        body: UpdateExperimentRequest,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def update_experiment(
         self,
         *,
+        body: UpdateExperimentRequest,
         datasource_id: str,
         experiment_id: str,
-        body: UpdateExperimentRequest,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}",  # noqa: RUF100,RUF027
+                path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}",
                 method=HTTPMethod.PATCH,
                 default_status=HTTPStatus.NO_CONTENT,
                 models={
-                    HTTPStatus.NO_CONTENT: None,
+                    HTTPStatus.NO_CONTENT: Any,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -4484,7 +4064,7 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
     @overload
     def delete_experiment(
         self,
@@ -4495,16 +4075,12 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def delete_experiment(
         self,
@@ -4515,36 +4091,28 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}",  # noqa: RUF100,RUF027
+                path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}",
                 method=HTTPMethod.DELETE,
                 default_status=HTTPStatus.NO_CONTENT,
                 models={
-                    HTTPStatus.NO_CONTENT: None,
+                    HTTPStatus.NO_CONTENT: Any,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -4567,72 +4135,60 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def delete_experiment_data(
         self,
         *,
+        body: DeleteExperimentDataRequest,
         datasource_id: str,
         experiment_id: str,
-        body: DeleteExperimentDataRequest,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
     @overload
     def delete_experiment_data(
         self,
         *,
+        body: DeleteExperimentDataRequest,
         datasource_id: str,
         experiment_id: str,
-        body: DeleteExperimentDataRequest,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def delete_experiment_data(
         self,
         *,
+        body: DeleteExperimentDataRequest,
         datasource_id: str,
         experiment_id: str,
-        body: DeleteExperimentDataRequest,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/data",  # noqa: RUF100,RUF027
+                path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/data",
                 method=HTTPMethod.DELETE,
                 default_status=HTTPStatus.NO_CONTENT,
                 models={
-                    HTTPStatus.NO_CONTENT: None,
+                    HTTPStatus.NO_CONTENT: Any,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -4655,75 +4211,63 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def update_arm(
         self,
         *,
-        datasource_id: str,
-        experiment_id: str,
         arm_id: str,
         body: UpdateArmRequest,
+        datasource_id: str,
+        experiment_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
     @overload
     def update_arm(
         self,
         *,
-        datasource_id: str,
-        experiment_id: str,
         arm_id: str,
         body: UpdateArmRequest,
+        datasource_id: str,
+        experiment_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ): ...
     def update_arm(
         self,
         *,
-        datasource_id: str,
-        experiment_id: str,
         arm_id: str,
         body: UpdateArmRequest,
+        datasource_id: str,
+        experiment_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-            AdminAPIClientHTTPValidationError,
-            type[AdminAPIClientHTTPValidationError],
-        ]
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
-                    AdminAPIClientHTTPValidationError,
-                    type[AdminAPIClientHTTPValidationError],
-                ]
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
             ),
             self._route_handler(
-                path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/arms/{arm_id}",  # noqa: RUF100,RUF027
+                path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/arms/{arm_id}",
                 method=HTTPMethod.PATCH,
                 default_status=HTTPStatus.NO_CONTENT,
                 models={
-                    HTTPStatus.NO_CONTENT: None,
+                    HTTPStatus.NO_CONTENT: Any,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
@@ -4731,9 +4275,9 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
                     HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
                 },
                 path_params={
+                    "arm_id": arm_id,
                     "datasource_id": datasource_id,
                     "experiment_id": experiment_id,
-                    "arm_id": arm_id,
                 },
                 body_params={
                     "body": body,
@@ -4747,65 +4291,59 @@ class AdminAPIClient:  # noqa: RUF100,PLR0904
     def power_check(
         self,
         *,
-        datasource_id: str,
         body: PowerRequest,
+        datasource_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], PowerResponse, type[PowerResponse]]: ...
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], PowerResponse]: ...
     @overload
     def power_check(
         self,
         *,
-        datasource_id: str,
         body: PowerRequest,
+        datasource_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], PowerResponse, type[PowerResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError, type[MessageError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError, type[XHTTPValidationError]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError, type[MessageError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError, type[MessageError]]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], PowerResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
     ): ...
     def power_check(
         self,
         *,
-        datasource_id: str,
         body: PowerRequest,
+        datasource_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
     ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], PowerResponse, type[PowerResponse]]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError, type[MessageError]]
-        | AdminAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError, type[XHTTPValidationError]
-        ]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError, type[MessageError]]
-        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError, type[MessageError]]
+        AdminAPIClientResult[Literal[HTTPStatus.OK], PowerResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
     ):
         return cast(
             (
-                AdminAPIClientResult[Literal[HTTPStatus.OK], PowerResponse, type[PowerResponse]]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError, type[HTTPExceptionError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError, type[MessageError]]
-                | AdminAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError, type[XHTTPValidationError]
-                ]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError, type[MessageError]]
-                | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError, type[MessageError]]
+                AdminAPIClientResult[Literal[HTTPStatus.OK], PowerResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
+                | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
             ),
             self._route_handler(
-                path="/v1/m/datasources/{datasource_id}/power",  # noqa: RUF100,RUF027
+                path="/v1/m/datasources/{datasource_id}/power",
                 method=HTTPMethod.POST,
                 default_status=HTTPStatus.OK,
                 models={

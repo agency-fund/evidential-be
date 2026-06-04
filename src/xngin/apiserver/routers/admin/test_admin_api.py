@@ -3295,13 +3295,12 @@ def test_snapshots(aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
             snapshot_id=success_snapshot.id,
         )
 
-    with expect_status_code(204):
-        aclient.delete_snapshot(
-            organization_id=create_organization_response.id,
-            datasource_id=create_datasource_response.id,
-            experiment_id=experiment_id,
-            snapshot_id=success_snapshot.id,
-        )
+    aclient.delete_snapshot(
+        organization_id=create_organization_response.id,
+        datasource_id=create_datasource_response.id,
+        experiment_id=experiment_id,
+        snapshot_id=success_snapshot.id,
+    )
 
     with expect_status_code(404):
         aclient.delete_snapshot(
