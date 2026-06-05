@@ -693,20 +693,15 @@ async def test_get_experiment_assignments_as_csv_success(
 
 
 async def test_get_assignment_preassigned(
-    xngin_session,
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
 ):
     preassigned_experiment = await create_preassigned_experiment(testing_datasource, aclient)
-    assignment = tables.ArmAssignment(
+    assigned = eclient.get_experiment_assignments(
+        api_key=testing_datasource.key,
         experiment_id=preassigned_experiment.experiment_id,
-        participant_id="assigned_id",
-        arm_id=preassigned_experiment.design_spec.arms[0].arm_id,
-        strata=[],
-    )
-    xngin_session.add(assignment)
-    await xngin_session.commit()
+    ).data.assignments[0]
 
     parsed = eclient.get_assignment(
         api_key=testing_datasource.key,
@@ -720,12 +715,12 @@ async def test_get_assignment_preassigned(
     parsed = eclient.get_assignment(
         api_key=testing_datasource.key,
         experiment_id=preassigned_experiment.experiment_id,
-        participant_id="assigned_id",
+        participant_id=assigned.participant_id,
     ).data
     assert parsed.experiment_id == preassigned_experiment.experiment_id
-    assert parsed.participant_id == "assigned_id"
+    assert parsed.participant_id == assigned.participant_id
     assert parsed.assignment is not None
-    assert parsed.assignment.arm_name == "control"
+    assert parsed.assignment.arm_name == assigned.arm_name
 
 
 async def test_get_assignment_online(testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient):
@@ -987,7 +982,6 @@ async def test_assign_cmab_wrong_experiment_type(
 
 
 async def test_assign_with_filters_wrong_experiment_type(
-    xngin_session,
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
@@ -1057,21 +1051,16 @@ async def test_assign_with_filters_ignores_missing_content_type_header(
 
 
 async def test_get_assignment_preassigned_cache_headers(
-    xngin_session,
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
 ):
     """Test Cache-Control headers for preassigned experiments."""
     preassigned_experiment = await create_preassigned_experiment(testing_datasource, aclient)
-    assignment = tables.ArmAssignment(
+    assigned = eclient.get_experiment_assignments(
+        api_key=testing_datasource.key,
         experiment_id=preassigned_experiment.experiment_id,
-        participant_id="assigned_id",
-        arm_id=preassigned_experiment.design_spec.arms[0].arm_id,
-        strata=[],
-    )
-    xngin_session.add(assignment)
-    await xngin_session.commit()
+    ).data.assignments[0]
 
     # No assignment = no cache header
     response = eclient.get_assignment(
@@ -1085,7 +1074,7 @@ async def test_get_assignment_preassigned_cache_headers(
     response = eclient.get_assignment(
         api_key=testing_datasource.key,
         experiment_id=preassigned_experiment.experiment_id,
-        participant_id="assigned_id",
+        participant_id=assigned.participant_id,
     )
     assert response.response.headers["Cache-Control"] == "private, max-age=3600"
 
