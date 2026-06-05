@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 from pydantic import TypeAdapter
 
+from xngin.apiserver.conftest import DatasourceMetadata
 from xngin.apiserver.routers.common_api_types import (
     AnyFrequentistDesignSpec,
     Arm,
@@ -43,7 +44,7 @@ if TYPE_CHECKING:
 
 
 async def create_experiment(
-    datasource_metadata,
+    datasource_metadata: DatasourceMetadata,
     aclient: AdminAPIClient,
     *,
     experiment_type: ExperimentsType = ExperimentsType.FREQ_ONLINE,
