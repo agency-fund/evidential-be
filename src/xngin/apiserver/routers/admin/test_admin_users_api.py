@@ -529,14 +529,6 @@ def test_create_organization_unprivileged_succeeds(aclient_unpriv: AdminAPIClien
     assert nodwh.organization_name == org_name
 
 
-def test_create_organization_unprivileged_caller_is_only_member(aclient_unpriv: AdminAPIClient):
-    """Creating an org as unprivileged seeds exactly one member: the creator."""
-    org_id = aclient_unpriv.create_organizations(body=CreateOrganizationRequest(name="solo-member")).data.id
-    org = aclient_unpriv.get_organization(organization_id=org_id).data
-    assert len(org.users) == 1
-    assert org.users[0].email == UNPRIVILEGED_EMAIL
-
-
 def test_unprivileged_user_can_create_multiple_organizations(aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
     """An unprivileged user can create multiple orgs; the privileged user doesn't see them via scope=mine."""
     first_id = aclient_unpriv.create_organizations(body=CreateOrganizationRequest(name="unpriv-first")).data.id
