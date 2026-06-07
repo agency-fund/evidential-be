@@ -7,6 +7,10 @@ class CannotFindDatasourceError(Exception):
     """Error raised when an invalid Datasource-ID is provided in a request."""
 
 
+class CannotFindOrganizationError(Exception):
+    """Error raised when an invalid Organization-ID is provided in a request."""
+
+
 def random_seed_dependency():
     """Returns None; to be overridden by tests."""
     return

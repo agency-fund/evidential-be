@@ -1459,6 +1459,12 @@ class TurnConfigResponse(ApiBaseModel):
     arm_journey_map: dict[str, str]
 
 
+class TurnJourneysWebhookRequest(ApiBaseModel):
+    """Request body for the webhook that receives updates about Turn.io journeys."""
+
+    journeys_uuid_digest: str
+
+
 def validate_gcp_service_account_info_json(serviceaccount_json):
     """Raises a ValueError if decoded does not resemble a JSON string containing GCP Service Account info."""
     try:

@@ -32,7 +32,10 @@ from pydantic import (
     TypeAdapter,
 )
 
-from xngin.apiserver.routers.common_api_types import TurnConfigResponse
+from xngin.apiserver.routers.common_api_types import (
+    TurnConfigResponse,
+    TurnJourneysWebhookRequest,
+)
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -303,6 +306,90 @@ class IntegrationsAPIClient:  # noqa: RUF100,PLR0904
                 },
                 header_params={
                     "X-API-Key": api_key,
+                },
+                raise_if_not_default_status=raise_if_not_default_status,
+                client_exts=client_exts,
+            ),
+        )
+
+    @overload
+    def turn_journeys_webhook(
+        self,
+        *,
+        request: TurnJourneysWebhookRequest,
+        datasource_id: str,
+        api_key: str,
+        raise_if_not_default_status: Literal[True] = True,
+        client_exts: IntegrationsAPIClientExtensions | None = None,
+    ) -> IntegrationsAPIClientResult[Literal[HTTPStatus.OK], dict, type[dict]]: ...
+    @overload
+    def turn_journeys_webhook(
+        self,
+        *,
+        request: TurnJourneysWebhookRequest,
+        datasource_id: str,
+        api_key: str,
+        raise_if_not_default_status: Literal[False],
+        client_exts: IntegrationsAPIClientExtensions | None = None,
+    ) -> (
+        IntegrationsAPIClientResult[Literal[HTTPStatus.OK], dict, type[dict]]
+        | IntegrationsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], dict, type[dict]]
+        | IntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], dict, type[dict]]
+        | IntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], dict, type[dict]]
+        | IntegrationsAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+            IntegrationsAPIClientHTTPValidationError,
+            type[IntegrationsAPIClientHTTPValidationError],
+        ]
+    ): ...
+    def turn_journeys_webhook(
+        self,
+        *,
+        request: TurnJourneysWebhookRequest,
+        datasource_id: str,
+        api_key: str,
+        raise_if_not_default_status: bool = True,
+        client_exts: IntegrationsAPIClientExtensions | None = None,
+    ) -> (
+        IntegrationsAPIClientResult[Literal[HTTPStatus.OK], dict, type[dict]]
+        | IntegrationsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], dict, type[dict]]
+        | IntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], dict, type[dict]]
+        | IntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], dict, type[dict]]
+        | IntegrationsAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+            IntegrationsAPIClientHTTPValidationError,
+            type[IntegrationsAPIClientHTTPValidationError],
+        ]
+    ):
+        return cast(
+            (
+                IntegrationsAPIClientResult[Literal[HTTPStatus.OK], dict, type[dict]]
+                | IntegrationsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], dict, type[dict]]
+                | IntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], dict, type[dict]]
+                | IntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], dict, type[dict]]
+                | IntegrationsAPIClientResult[
+                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
+                    IntegrationsAPIClientHTTPValidationError,
+                    type[IntegrationsAPIClientHTTPValidationError],
+                ]
+            ),
+            self._route_handler(
+                path="/v1/integrations/turn-journeys-webhook",
+                method=HTTPMethod.POST,
+                default_status=HTTPStatus.OK,
+                models={
+                    HTTPStatus.OK: dict,
+                    HTTPStatus.BAD_REQUEST: dict,
+                    HTTPStatus.FORBIDDEN: dict,
+                    HTTPStatus.NOT_FOUND: dict,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: IntegrationsAPIClientHTTPValidationError,
+                },
+                header_params={
+                    "Datasource-ID": datasource_id,
+                    "X-API-Key": api_key,
+                },
+                body_params={
+                    "request": request,
                 },
                 raise_if_not_default_status=raise_if_not_default_status,
                 client_exts=client_exts,

@@ -62,7 +62,7 @@ async def datasource_dependency(
     if from_db := await xngin_session.get(tables.Datasource, datasource_id):
         await require_valid_api_key(xngin_session, api_key, datasource_id)
         dsconfig = from_db.get_config()
-        return Datasource(id=datasource_id, config=dsconfig)
+        return Datasource(id=datasource_id, organization_id=from_db.organization_id, config=dsconfig)
 
     raise CannotFindDatasourceError("Datasource not found.")
 

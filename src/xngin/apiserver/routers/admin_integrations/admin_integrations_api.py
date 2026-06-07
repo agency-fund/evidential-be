@@ -403,11 +403,12 @@ async def get_turn_arm_journey_mapping(
         )
     )
     turn_journeys = turn_journeys_row.scalar_one_or_none()
+    uuids = list(turn_journeys.values()) if turn_journeys else []
 
     stale_arm_ids = []
     if turn_journeys:
         stale_arm_ids = [
-            arm_id for arm_id, journey_uuid in mapping.arm_journey_map.items() if journey_uuid not in turn_journeys
+            arm_id for arm_id, journey_uuid in mapping.arm_journey_map.items() if journey_uuid not in uuids
         ]
 
     return GetTurnArmJourneyMappingResponse(arm_to_journeys=mapping.arm_journey_map, stale_arm_ids=stale_arm_ids)
