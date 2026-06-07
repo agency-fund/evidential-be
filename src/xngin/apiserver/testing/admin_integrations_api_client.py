@@ -244,7 +244,7 @@ class AdminIntegrationsAPIClient:  # noqa: RUF100,PLR0904
         body: SetConnectionToTurnRequest,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminIntegrationsAPIClientExtensions | None = None,
-    ) -> AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
+    ) -> AdminIntegrationsAPIClientResult[Literal[HTTPStatus.OK], Any, type[Any]]: ...
     @overload
     def set_organization_turn_connection(
         self,
@@ -254,7 +254,7 @@ class AdminIntegrationsAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminIntegrationsAPIClientExtensions | None = None,
     ) -> (
-        AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
+        AdminIntegrationsAPIClientResult[Literal[HTTPStatus.OK], Any, type[Any]]
         | AdminIntegrationsAPIClientResult[
             Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]
         ]
@@ -267,6 +267,9 @@ class AdminIntegrationsAPIClient:  # noqa: RUF100,PLR0904
             Literal[HTTPStatus.UNPROCESSABLE_CONTENT],
             AdminIntegrationsAPIClientHTTPValidationError,
             type[AdminIntegrationsAPIClientHTTPValidationError],
+        ]
+        | AdminIntegrationsAPIClientResult[
+            Literal[HTTPStatus.BAD_GATEWAY], HTTPExceptionError, type[HTTPExceptionError]
         ]
     ): ...
     def set_organization_turn_connection(
@@ -277,7 +280,7 @@ class AdminIntegrationsAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminIntegrationsAPIClientExtensions | None = None,
     ) -> (
-        AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
+        AdminIntegrationsAPIClientResult[Literal[HTTPStatus.OK], Any, type[Any]]
         | AdminIntegrationsAPIClientResult[
             Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]
         ]
@@ -291,10 +294,13 @@ class AdminIntegrationsAPIClient:  # noqa: RUF100,PLR0904
             AdminIntegrationsAPIClientHTTPValidationError,
             type[AdminIntegrationsAPIClientHTTPValidationError],
         ]
+        | AdminIntegrationsAPIClientResult[
+            Literal[HTTPStatus.BAD_GATEWAY], HTTPExceptionError, type[HTTPExceptionError]
+        ]
     ):
         return cast(
             (
-                AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
+                AdminIntegrationsAPIClientResult[Literal[HTTPStatus.OK], Any, type[Any]]
                 | AdminIntegrationsAPIClientResult[
                     Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]
                 ]
@@ -312,18 +318,22 @@ class AdminIntegrationsAPIClient:  # noqa: RUF100,PLR0904
                     AdminIntegrationsAPIClientHTTPValidationError,
                     type[AdminIntegrationsAPIClientHTTPValidationError],
                 ]
+                | AdminIntegrationsAPIClientResult[
+                    Literal[HTTPStatus.BAD_GATEWAY], HTTPExceptionError, type[HTTPExceptionError]
+                ]
             ),
             self._route_handler(
                 path="/v1/m/integrations/turn-connection/{organization_id}",  # noqa: RUF100,RUF027
                 method=HTTPMethod.PUT,
-                default_status=HTTPStatus.NO_CONTENT,
+                default_status=HTTPStatus.OK,
                 models={
-                    HTTPStatus.NO_CONTENT: None,
+                    HTTPStatus.OK: Any,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
                     HTTPStatus.NOT_FOUND: HTTPExceptionError,
                     HTTPStatus.UNPROCESSABLE_CONTENT: AdminIntegrationsAPIClientHTTPValidationError,
+                    HTTPStatus.BAD_GATEWAY: HTTPExceptionError,
                 },
                 path_params={
                     "organization_id": organization_id,

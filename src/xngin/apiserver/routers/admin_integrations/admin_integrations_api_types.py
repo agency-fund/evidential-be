@@ -71,3 +71,14 @@ class SetTurnArmJourneyMappingRequest(AdminApiBaseModel):
 
 class GetTurnArmJourneyMappingResponse(SetTurnArmJourneyMappingRequest):
     """Response describing the mapping between experiment arms and Turn.io journeys."""
+
+    stale_arm_ids: Annotated[
+        list[str],
+        Field(
+            description=(
+                "List of experiment arm IDs that are no longer valid based on the "
+                "most recent data from the Turn API. This can be used to identify and clean up stale mappings "
+                "after changes to Turn.io journeys or API tokens."
+            )
+        ),
+    ]

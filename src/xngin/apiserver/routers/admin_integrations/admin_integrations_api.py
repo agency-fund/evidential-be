@@ -9,8 +9,9 @@ the mapping from experiment arms to Turn.io journeys.
 (See integrations_api.py for endpoints that specific third-party tools can hit.)
 """
 
+import hashlib
+import json
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
 import httpx
@@ -29,7 +30,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import constants
 from xngin.apiserver.dependencies import retrying_httpx_dependency, xngin_db_session
-from xngin.apiserver.limits import TURN_JOURNEYS_CACHE_TTL_SECONDS
 from xngin.apiserver.routers.admin import authz
 from xngin.apiserver.routers.admin.admin_api import (
     GENERIC_SUCCESS,
@@ -114,6 +114,42 @@ async def _call_turn_api(
     return response
 
 
+def compute_journeys_digest(journey_uuids: list[str]) -> str:
+    """Computes a SHA-256 hex digest of the given journey UUIDs to determine staleness."""
+    canonical_str = json.dumps(sorted(journey_uuids))
+    return hashlib.sha256(canonical_str.encode()).hexdigest()
+
+
+async def refresh_journeys_dict(
+    session: AsyncSession,
+    turn_connection: tables.TurnConnection,
+    httpx_client: httpx.AsyncClient,
+    commit_session: bool = True,
+) -> dict[str, str]:
+    """Refreshes the cached Turn.io journeys and their digest on the TurnConnection.
+
+    Optionally commits the session after updating the TurnConnection (defaults to True).
+    This can be set to False when this function is called within a larger transaction that
+    should be committed all at once, such as when setting/rotating the API token, since that
+    operation also updates the TurnConnection and we want to avoid committing twice in a row.
+
+    Returns the updated journey list.
+    """
+    response = await _call_turn_api(
+        httpx_client=httpx_client, turn_api_token=turn_connection.get_turn_api_token(), method="GET"
+    )
+    journeys_dict = {journey["name"]: journey["uuid"] for journey in response.json()}
+    new_digest = compute_journeys_digest(list(journeys_dict.values()))
+    if new_digest != turn_connection.journeys_uuid_digest:
+        turn_connection.journeys_dict = journeys_dict
+        turn_connection.journeys_uuid_digest = new_digest
+
+    if commit_session:
+        await session.commit()
+
+    return journeys_dict
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     logger.info(f"Starting router: {__name__} (prefix={router.prefix})")
@@ -128,17 +164,27 @@ router = APIRouter(
 )
 
 
-@router.put("/integrations/turn-connection/{organization_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.put("/integrations/turn-connection/{organization_id}", responses=TURN_JOURNEYS_RESPONSES)
 async def set_organization_turn_connection(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
     body: Annotated[SetConnectionToTurnRequest, Body(...)],
+    httpx_client: Annotated[httpx.AsyncClient, Depends(retrying_httpx_dependency)],
 ):
     """Sets (or rotates) the Turn.io API token for an organization.
 
     Creates a Turn connection for the organization if one does not yet exist, otherwise
     overwrites the existing token. An organization has at most one Turn connection.
+
+    Whenever the token is set or rotated, the stored list of Turn.io journeys for the
+    organization is automatically refreshed (alongside a SHA-256 hex dig), and any arm->journey mappings for
+    experiments under the organization are checked for staleness based on the new
+    journey list.
+
+    NB: It's important to maintain the order of setting token -> refreshing journeys in a single transaction, since
+    the validity of the journeys list depends on the token. This ensures that we don't end up in a state
+    where the token is updated but the journeys list is out of sync with the new token.
     """
     org = await get_organization_or_raise(session, user, organization_id)
 
@@ -149,27 +195,23 @@ async def set_organization_turn_connection(
         turn_connection = tables.TurnConnection(organization_id=org.id)
         turn_connection.set_turn_api_token(body.turn_api_token)
         session.add(turn_connection)
-        await session.commit()
 
     elif turn_connection.get_turn_api_token() != body.turn_api_token:
         turn_connection.set_turn_api_token(body.turn_api_token)
 
-        # Journey UUIDs belong to a specific Turn workspace, so any stored arm->journey
-        # mappings become stale the moment the token changes. Wipe them for every
-        # experiment under this organization's datasources.
-        await session.execute(
-            delete(tables.ExperimentTurnConfig).where(
-                tables.ExperimentTurnConfig.experiment_id.in_(
-                    select(tables.Experiment.id)
-                    .join(tables.Datasource, tables.Experiment.datasource_id == tables.Datasource.id)
-                    .where(tables.Datasource.organization_id == org.id)
-                )
-            )
+    else:
+        logger.info(
+            f"Turn.io API token provided in request is the same as the existing token for organization {org.id}. "
+            f"Not updating token."
         )
 
-        await session.commit()
-    else:
-        logger.debug(f"Turn.io API token for organization {org.id} is unchanged. No update performed.")
+    # Refresh the stored journeys and their digest
+    await refresh_journeys_dict(session, turn_connection, httpx_client, commit_session=False)
+
+    # Only commit after refreshing happens succesfully,
+    # otherwise we discard both token and journeys updates.
+    await session.commit()
+
     return GENERIC_SUCCESS
 
 
@@ -245,12 +287,10 @@ async def get_organization_turn_journeys(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
-    httpx_client: Annotated[httpx.AsyncClient, Depends(retrying_httpx_dependency)],
 ) -> GetTurnJourneysResponse:
     """Returns a {name: uuid} map of Turn.io journeys available to the organization.
 
-    The result is cached on the TurnConnection row and refreshed when older than
-    TURN_JOURNEYS_CACHE_TTL_SECONDS, or when the API token is rotated.
+    The stored Journey list is returned to avoid repeatedly calling the Turn.io API.
     """
     org = await get_organization_or_raise(session, user, organization_id)
 
@@ -260,23 +300,16 @@ async def get_organization_turn_journeys(
     if turn_connection is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Turn connection not found")
 
-    now = datetime.now(UTC)
-    if (
-        turn_connection.cached_journeys is not None
-        and turn_connection.cached_journeys_updated_at is not None
-        and now - turn_connection.cached_journeys_updated_at < timedelta(seconds=TURN_JOURNEYS_CACHE_TTL_SECONDS)
-    ):
-        return GetTurnJourneysResponse(journeys=turn_connection.cached_journeys)
+    if turn_connection.journeys_dict is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No stored journeys found for Turn connection. "
+            "Please set refetch_journeys to true to fetch from the Turn API OR reset the Turn.io API key.",
+        )
 
-    response = await _call_turn_api(
-        httpx_client=httpx_client, turn_api_token=turn_connection.get_turn_api_token(), method="GET"
-    )
+    journeys_dict = turn_connection.journeys_dict
 
-    journey_dict = {journey["name"]: journey["uuid"] for journey in response.json()}
-    turn_connection.cached_journeys = journey_dict
-    turn_connection.cached_journeys_updated_at = now
-    await session.commit()
-    return GetTurnJourneysResponse(journeys=journey_dict)
+    return GetTurnJourneysResponse(journeys=journeys_dict)
 
 
 @router.put(
@@ -364,7 +397,20 @@ async def get_turn_arm_journey_mapping(
             detail="No Turn.io journey mapping found for experiment.",
         )
 
-    return GetTurnArmJourneyMappingResponse(arm_to_journeys=mapping.arm_journey_map)
+    turn_journeys_row = await session.execute(
+        select(tables.TurnConnection.journeys_dict).where(
+            tables.TurnConnection.organization_id == ds.organization_id,
+        )
+    )
+    turn_journeys = turn_journeys_row.scalar_one_or_none()
+
+    stale_arm_ids = []
+    if turn_journeys:
+        stale_arm_ids = [
+            arm_id for arm_id, journey_uuid in mapping.arm_journey_map.items() if journey_uuid not in turn_journeys
+        ]
+
+    return GetTurnArmJourneyMappingResponse(arm_to_journeys=mapping.arm_journey_map, stale_arm_ids=stale_arm_ids)
 
 
 @router.delete(
