@@ -439,9 +439,7 @@ class AdminIntegrationsAPIClient:
         | AdminIntegrationsAPIClientResult[
             Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminIntegrationsAPIClientHTTPValidationError
         ]
-        | AdminIntegrationsAPIClientResult[
-            Literal[HTTPStatus.BAD_GATEWAY], HTTPExceptionError, type[HTTPExceptionError]
-        ]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], HTTPExceptionError]
     ): ...
     def set_organization_turn_connection(
         self,
@@ -459,9 +457,7 @@ class AdminIntegrationsAPIClient:
         | AdminIntegrationsAPIClientResult[
             Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminIntegrationsAPIClientHTTPValidationError
         ]
-        | AdminIntegrationsAPIClientResult[
-            Literal[HTTPStatus.BAD_GATEWAY], HTTPExceptionError, type[HTTPExceptionError]
-        ]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], HTTPExceptionError]
     ):
         return cast(
             (
@@ -473,9 +469,7 @@ class AdminIntegrationsAPIClient:
                 | AdminIntegrationsAPIClientResult[
                     Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminIntegrationsAPIClientHTTPValidationError
                 ]
-                | AdminIntegrationsAPIClientResult[
-                    Literal[HTTPStatus.BAD_GATEWAY], HTTPExceptionError, type[HTTPExceptionError]
-                ]
+                | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], HTTPExceptionError]
             ),
             self._route_handler(
                 path="/v1/m/integrations/turn-connection/{organization_id}",
