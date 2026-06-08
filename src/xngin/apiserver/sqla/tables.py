@@ -158,8 +158,7 @@ class TurnConnection(Base):
     organization: Mapped[Organization] = relationship(back_populates="turn_connection")
 
     def set_turn_api_token(self, token: str) -> Self:
-        """Encrypts and stores the Turn.io API token, records its preview, and invalidates
-        the cached journey list so the next read refetches from Turn."""
+        """Encrypts and stores the Turn.io API token, records its preview."""
         self.encrypted_turn_api_token = secretservice.get_symmetric().encrypt(token, f"turn.{self.organization_id}")
         self.turn_api_token_preview = token[-4:]
         return self

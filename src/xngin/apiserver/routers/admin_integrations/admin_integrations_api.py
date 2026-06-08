@@ -171,13 +171,14 @@ async def set_organization_turn_connection(
     overwrites the existing token. An organization has at most one Turn connection.
 
     Whenever the token is set or rotated, the stored list of Turn.io journeys for the
-    organization is automatically refreshed. Right now, this is ONLY way to refresh journeys.
+    organization is automatically refreshed. Right now, this is the ONLY way to refresh journeys.
     However, there are planned subsequent updates to add a separate webhook endpoint for
     refreshing journeys without rotating the token, that the Turn.io App can automatically call.
 
-    NB: It's important to maintain the order of setting token -> refreshing journeys in a single transaction, since
-    the validity of the journeys list depends on the token. This ensures that we don't end up in a state
-    where the token is updated but the journeys list is out of sync with the new token.
+    NB: It's important to maintain the order of setting token -> refreshing journeys in a single
+    transaction, since the validity of the journeys list depends on the token. This ensures that
+    we don't end up in a state where the token is updated but the journeys list is out of sync
+    with the new token.
     """
     org = await get_organization_or_raise(session, user, organization_id)
 
@@ -201,7 +202,7 @@ async def set_organization_turn_connection(
     # Refresh the stored journeys
     await refresh_journeys_dict(session, turn_connection, httpx_client, commit_session=False)
 
-    # Only commit after refreshing happens succesfully,
+    # Only commit after refreshing happens successfully,
     # otherwise we discard both token and journeys updates.
     await session.commit()
 
@@ -297,7 +298,7 @@ async def get_organization_turn_journeys(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No stored journeys found for Turn connection. "
-            "Please set refetch_journeys to true to fetch from the Turn API OR reset the Turn.io API key.",
+            "Re-set the Turn.io API token to fetch Journeys from Turn.io and store them.",
         )
 
     journeys_dict = turn_connection.journeys_dict

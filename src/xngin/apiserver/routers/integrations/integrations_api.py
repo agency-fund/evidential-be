@@ -14,11 +14,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import constants
+from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.routers.common_api_types import TurnConfigResponse
-from xngin.apiserver.routers.experiments.dependencies import (
-    experiment_dependency,
-    xngin_db_session,
-)
+from xngin.apiserver.routers.experiments.dependencies import experiment_dependency
 from xngin.apiserver.routers.experiments.experiments_api import STANDARD_INTEGRATION_RESPONSES
 from xngin.apiserver.sqla import tables
 
