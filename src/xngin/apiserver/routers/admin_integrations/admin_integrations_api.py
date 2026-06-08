@@ -171,9 +171,9 @@ async def set_organization_turn_connection(
     overwrites the existing token. An organization has at most one Turn connection.
 
     Whenever the token is set or rotated, the stored list of Turn.io journeys for the
-    organization is automatically refreshed (alongside a SHA-256 hex dig), and any arm->journey mappings for
-    experiments under the organization are checked for staleness based on the new
-    journey list.
+    organization is automatically refreshed. Right now, this is ONLY way to refresh journeys.
+    However, there are planned subsequent updates to add a separate webhook endpoint for
+    refreshing journeys without rotating the token, that the Turn.io App can automatically call.
 
     NB: It's important to maintain the order of setting token -> refreshing journeys in a single transaction, since
     the validity of the journeys list depends on the token. This ensures that we don't end up in a state
