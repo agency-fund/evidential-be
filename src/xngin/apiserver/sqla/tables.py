@@ -138,9 +138,7 @@ class TurnConnection(Base):
     get_turn_api_token() to retrieve the plaintext when making outbound requests
     to Turn, and set_turn_api_token() to configure or rotate it.
 
-    Also stores a list of Journeys retrieved from the Turn API, and a corresponding
-    SHA-256 hex digest to determine staleness.
-    The list of journeys is refreshed via a webhook call from the Turn.io App.
+    Also stores a list of Journeys retrieved from the Turn API
     """
 
     __tablename__ = "turn_connections"
@@ -149,7 +147,6 @@ class TurnConnection(Base):
     encrypted_turn_api_token: Mapped[str] = mapped_column()
     turn_api_token_preview: Mapped[str] = mapped_column(String(4))
 
-    journeys_uuid_digest: Mapped[str | None] = mapped_column(String(64))
     journeys_dict: Mapped[dict | None] = mapped_column(postgresql.JSONB)
 
     created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())

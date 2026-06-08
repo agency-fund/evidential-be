@@ -9,8 +9,6 @@ the mapping from experiment arms to Turn.io journeys.
 (See integrations_api.py for endpoints that specific third-party tools can hit.)
 """
 
-import hashlib
-import json
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
@@ -114,19 +112,13 @@ async def _call_turn_api(
     return response
 
 
-def compute_journeys_digest(journey_uuids: list[str]) -> str:
-    """Computes a SHA-256 hex digest of the given journey UUIDs to determine staleness."""
-    canonical_str = json.dumps(sorted(journey_uuids))
-    return hashlib.sha256(canonical_str.encode()).hexdigest()
-
-
 async def refresh_journeys_dict(
     session: AsyncSession,
     turn_connection: tables.TurnConnection,
     httpx_client: httpx.AsyncClient,
     commit_session: bool = True,
 ) -> dict[str, str]:
-    """Refreshes the cached Turn.io journeys and their digest on the TurnConnection.
+    """Refreshes the cached Turn.io journeys on the TurnConnection.
 
     Optionally commits the session after updating the TurnConnection (defaults to True).
     This can be set to False when this function is called within a larger transaction that
@@ -139,10 +131,7 @@ async def refresh_journeys_dict(
         httpx_client=httpx_client, turn_api_token=turn_connection.get_turn_api_token(), method="GET"
     )
     journeys_dict = {journey["name"]: journey["uuid"] for journey in response.json()}
-    new_digest = compute_journeys_digest(list(journeys_dict.values()))
-    if new_digest != turn_connection.journeys_uuid_digest:
-        turn_connection.journeys_dict = journeys_dict
-        turn_connection.journeys_uuid_digest = new_digest
+    turn_connection.journeys_dict = journeys_dict
 
     if commit_session:
         await session.commit()
@@ -209,7 +198,7 @@ async def set_organization_turn_connection(
             f"Not updating token."
         )
 
-    # Refresh the stored journeys and their digest
+    # Refresh the stored journeys
     await refresh_journeys_dict(session, turn_connection, httpx_client, commit_session=False)
 
     # Only commit after refreshing happens succesfully,

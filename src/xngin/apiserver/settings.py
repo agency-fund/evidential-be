@@ -399,7 +399,6 @@ class Datasource(ConfigBaseModel):
     """Datasource describes data warehouse configuration and policy."""
 
     id: str
-    organization_id: str
     config: DatasourceConfig
 
 
