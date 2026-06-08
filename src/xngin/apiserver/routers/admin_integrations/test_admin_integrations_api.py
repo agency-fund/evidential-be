@@ -67,8 +67,14 @@ async def fixture_testing_design_spec() -> MABExperimentSpec:
     )
 
 
-async def test_turn_connection_lifecycle(aclient: AdminAPIClient, iaclient: AdminIntegrationsAPIClient):
+async def test_turn_connection_lifecycle(
+    monkeypatch: pytest.MonkeyPatch, aclient: AdminAPIClient, iaclient: AdminIntegrationsAPIClient
+):
     """Test creating, rotating, previewing, and deleting an organization's Turn.io connection."""
+    monkeypatch.setattr(FakeAsyncClient, "call_log", 0)
+    monkeypatch.setattr(FakeAsyncClient, "stacks", [{"name": "Arm A", "uuid": "arm-a-uuid"}])
+    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+
     org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="test_turn_connection_lifecycle")).data.id
 
     # GET before a connection exists -> 404.
@@ -91,6 +97,11 @@ async def test_turn_connection_lifecycle(aclient: AdminAPIClient, iaclient: Admi
     preview = iaclient.get_organization_turn_connection(organization_id=org_id).data.token_preview
     assert preview == initial_token[-4:]
 
+    # Check that Journeys were also fetched from client
+    journeys = iaclient.get_organization_turn_journeys(organization_id=org_id).data.journeys
+    assert FakeAsyncClient.call_log == 1
+    assert journeys == {"Arm A": "arm-a-uuid"}
+
     # Rotate: PUT with a new token.
     rotated_token = "fghij" * 67  # 335 chars
     iaclient.set_organization_turn_connection(
@@ -102,12 +113,25 @@ async def test_turn_connection_lifecycle(aclient: AdminAPIClient, iaclient: Admi
     preview = iaclient.get_organization_turn_connection(organization_id=org_id).data.token_preview
     assert preview == rotated_token[-4:]
 
+    # Check that Journeys were refetched from client after rotation
+    journeys = iaclient.get_organization_turn_journeys(organization_id=org_id).data.journeys
+    assert FakeAsyncClient.call_log == 2
+    assert journeys == {"Arm A": "arm-a-uuid"}
+
     # Delete.
     iaclient.delete_turn_connection_from_organization(organization_id=org_id)
 
     # GET after delete with allow_missing=False -> 404.
     with expect_status_code(404):
         iaclient.get_organization_turn_connection(organization_id=org_id)
+
+    # GET Journeys after delete -> 404.
+    with expect_status_code(404):
+        iaclient.get_organization_turn_journeys(organization_id=org_id)
+
+    # Get Journeys with  after delete -> 200 with empty journeys.
+    # journeys = iaclient.get_organization_turn_journeys(organization_id=org_id).data.journeys
+    # assert journeys == {}
 
     # Delete again without allow_missing -> 404.
     with expect_status_code(404):
@@ -118,9 +142,16 @@ async def test_turn_connection_lifecycle(aclient: AdminAPIClient, iaclient: Admi
 
 
 async def test_turn_connection_encrypted_at_rest(
-    xngin_session: AsyncSession, aclient: AdminAPIClient, iaclient: AdminIntegrationsAPIClient
+    monkeypatch: pytest.MonkeyPatch,
+    xngin_session: AsyncSession,
+    aclient: AdminAPIClient,
+    iaclient: AdminIntegrationsAPIClient,
 ):
     """The Turn.io API token must be encrypted at rest and recoverable via get_turn_api_token()."""
+    monkeypatch.setattr(FakeAsyncClient, "call_log", 0)
+    monkeypatch.setattr(FakeAsyncClient, "stacks", [{"name": "Arm A", "uuid": "arm-a-uuid"}])
+    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+
     org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="test_turn_connection_encrypted")).data.id
 
     token = "abcde" * 67  # 335 chars
@@ -140,43 +171,6 @@ async def test_turn_connection_encrypted_at_rest(
     assert row.get_turn_api_token() == token
 
 
-async def test_turn_journeys_caching(
-    monkeypatch: pytest.MonkeyPatch, aclient: AdminAPIClient, iaclient: AdminIntegrationsAPIClient
-):
-    """GET /turn-connection/journeys serves from cache until TTL expires or the token is rotated."""
-    # Reset the FakeAsyncClient's class-level state before the test.
-    monkeypatch.setattr(FakeAsyncClient, "call_log", 0)
-    monkeypatch.setattr(FakeAsyncClient, "stacks", [{"name": "Arm A", "uuid": "arm-a-uuid"}])
-    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
-
-    org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="test_turn_journeys_caching")).data.id
-    iaclient.set_organization_turn_connection(
-        organization_id=org_id,
-        body=SetConnectionToTurnRequest(turn_api_token="a" * 335),
-    )
-
-    # First call: cache miss, one hit on the Turn API
-    journeys = iaclient.get_organization_turn_journeys(organization_id=org_id).data.journeys
-    assert FakeAsyncClient.call_log == 1
-    assert journeys == {"Arm A": "arm-a-uuid"}
-
-    # Second call inside the TTL: served from the DB cache.
-    journeys = iaclient.get_organization_turn_journeys(organization_id=org_id).data.journeys
-    assert FakeAsyncClient.call_log == 1
-    assert journeys == {"Arm A": "arm-a-uuid"}
-
-    # Rotating the token must invalidate the cache.
-    iaclient.set_organization_turn_connection(
-        organization_id=org_id,
-        body=SetConnectionToTurnRequest(turn_api_token="b" * 335),
-    )
-    FakeAsyncClient.stacks[:] = [{"name": "Arm B", "uuid": "arm-b-uuid"}]
-
-    journeys = iaclient.get_organization_turn_journeys(organization_id=org_id).data.journeys
-    assert FakeAsyncClient.call_log == 2
-    assert journeys == {"Arm B": "arm-b-uuid"}
-
-
 async def test_turn_journeys_api_error_handling(
     monkeypatch: pytest.MonkeyPatch, aclient: AdminAPIClient, iaclient: AdminIntegrationsAPIClient
 ):
@@ -188,15 +182,17 @@ async def test_turn_journeys_api_error_handling(
     org_id = aclient.create_organizations(
         body=CreateOrganizationRequest(name="test_turn_journeys_api_error_handling")
     ).data.id
-    iaclient.set_organization_turn_connection(
-        organization_id=org_id,
-        body=SetConnectionToTurnRequest(turn_api_token="a" * 335),
-    )
 
     # Simulate a non-2xx response.
     monkeypatch.setattr(FakeAsyncClient, "expected_status", 403)
     with expect_status_code(502, text="Turn.io API returned non-2xx status"):
-        iaclient.get_organization_turn_journeys(organization_id=org_id)
+        iaclient.set_organization_turn_connection(
+            organization_id=org_id,
+            body=SetConnectionToTurnRequest(turn_api_token="a" * 335),
+        )
+    # Check that API key is not set
+    with expect_status_code(404):
+        iaclient.get_organization_turn_connection(organization_id=org_id)
 
     # Simulate a network error.
     async def _raise_request_error(self, method, url, headers=None):
@@ -204,7 +200,13 @@ async def test_turn_journeys_api_error_handling(
 
     monkeypatch.setattr(FakeAsyncClient, "request", _raise_request_error)
     with expect_status_code(502, text="Failed to reach Turn.io API"):
-        iaclient.get_organization_turn_journeys(organization_id=org_id)
+        iaclient.set_organization_turn_connection(
+            organization_id=org_id,
+            body=SetConnectionToTurnRequest(turn_api_token="a" * 335),
+        )
+    # Check that API key is not set
+    with expect_status_code(404):
+        iaclient.get_organization_turn_connection(organization_id=org_id)
 
 
 async def test_turn_journey_mapping_lifecycle(
@@ -212,6 +214,7 @@ async def test_turn_journey_mapping_lifecycle(
     testing_design_spec: MABExperimentSpec,
     aclient: AdminAPIClient,
     iaclient: AdminIntegrationsAPIClient,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     """Full lifecycle of the per-experiment arm->journey mapping: PUT, GET, update, DELETE."""
     ds_id = testing_datasource.datasource_id
@@ -221,6 +224,13 @@ async def test_turn_journey_mapping_lifecycle(
     ).data
     experiment_id = experiment.experiment_id
     arm_ids = [arm.arm_id for arm in experiment.design_spec.arms]
+    monkeypatch.setattr(FakeAsyncClient, "call_log", 0)
+    monkeypatch.setattr(
+        FakeAsyncClient,
+        "stacks",
+        [{"name": "journey-0", "uuid": "journey-0-uuid"}, {"name": "journey-1", "uuid": "journey-1-uuid"}],
+    )
+    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
 
     # PUT without a Turn connection configured for the org -> 409.
     with expect_status_code(409, text="No Turn.io connection"):
@@ -251,25 +261,44 @@ async def test_turn_journey_mapping_lifecycle(
     )
 
     # GET returns the saved mapping.
-    got = iaclient.get_turn_arm_journey_mapping(datasource_id=ds_id, experiment_id=experiment_id).data.arm_to_journeys
-    assert got == initial_mapping
+    got = iaclient.get_turn_arm_journey_mapping(datasource_id=ds_id, experiment_id=experiment_id).data
+    assert got.arm_to_journeys == initial_mapping
+    assert got.stale_arm_ids == []
 
-    # PUT again with new values.
+    # PUT again with new values updates the mapping
     rotated_mapping = {arm_ids[0]: "new-j0", arm_ids[1]: "new-j1"}
     iaclient.set_turn_arm_journey_mapping(
         datasource_id=ds_id,
         experiment_id=experiment_id,
         body=SetTurnArmJourneyMappingRequest(arm_to_journeys=rotated_mapping),
     )
-    got = iaclient.get_turn_arm_journey_mapping(datasource_id=ds_id, experiment_id=experiment_id).data.arm_to_journeys
-    assert got == rotated_mapping
+    got = iaclient.get_turn_arm_journey_mapping(datasource_id=ds_id, experiment_id=experiment_id).data
+    assert got.arm_to_journeys == rotated_mapping
+    assert set(got.stale_arm_ids) == set(arm_ids)
 
-    # DELETE.
-    iaclient.delete_turn_arm_journey_mapping(datasource_id=ds_id, experiment_id=experiment_id)
+    # DELETE turn connection from org, which should also delete the mapping.
+    iaclient.delete_turn_connection_from_organization(organization_id=org_id)
 
     # GET after delete -> 404.
     with expect_status_code(404):
         iaclient.get_turn_arm_journey_mapping(datasource_id=ds_id, experiment_id=experiment_id)
+
+    # Re-establish the Turn connection
+    iaclient.set_organization_turn_connection(
+        organization_id=org_id,
+        body=SetConnectionToTurnRequest(turn_api_token="a" * 335),
+    )
+
+    # PUT mapping again.
+    initial_mapping = {arm_ids[0]: "journey-0-uuid", arm_ids[1]: "journey-1-uuid"}
+    iaclient.set_turn_arm_journey_mapping(
+        datasource_id=ds_id,
+        experiment_id=experiment_id,
+        body=SetTurnArmJourneyMappingRequest(arm_to_journeys=initial_mapping),
+    )
+
+    # Then DELETE the mapping directly.
+    iaclient.delete_turn_arm_journey_mapping(datasource_id=ds_id, experiment_id=experiment_id)
 
     # DELETE again without allow_missing -> 404.
     with expect_status_code(404):
@@ -284,6 +313,7 @@ async def test_turn_journey_mapping_rejects_mismatched_arm_ids(
     testing_design_spec: MABExperimentSpec,
     aclient: AdminAPIClient,
     iaclient: AdminIntegrationsAPIClient,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     """PUT rejects a mapping whose keys do not exactly match the experiment's arm IDs."""
     ds_id = testing_datasource.datasource_id
@@ -293,6 +323,13 @@ async def test_turn_journey_mapping_rejects_mismatched_arm_ids(
     ).data
     experiment_id = experiment.experiment_id
     arm_ids = [arm.arm_id for arm in experiment.design_spec.arms]
+    monkeypatch.setattr(FakeAsyncClient, "call_log", 0)
+    monkeypatch.setattr(
+        FakeAsyncClient,
+        "stacks",
+        [{"name": "journey-0", "uuid": "journey-0-uuid"}, {"name": "journey-1", "uuid": "journey-1-uuid"}],
+    )
+    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
 
     iaclient.set_organization_turn_connection(
         organization_id=org_id,
@@ -305,7 +342,7 @@ async def test_turn_journey_mapping_rejects_mismatched_arm_ids(
             datasource_id=ds_id,
             experiment_id=experiment_id,
             body=SetTurnArmJourneyMappingRequest(
-                arm_to_journeys={arm_ids[0]: "journey-0"},
+                arm_to_journeys={arm_ids[0]: "journey-0-uuid"},
             ),
         )
     assert arm_ids[1] in match.http_response().text
@@ -318,8 +355,8 @@ async def test_turn_journey_mapping_rejects_mismatched_arm_ids(
             experiment_id=experiment_id,
             body=SetTurnArmJourneyMappingRequest(
                 arm_to_journeys={
-                    arm_ids[0]: "journey-0",
-                    arm_ids[1]: "journey-1",
+                    arm_ids[0]: "journey-0-uuid",
+                    arm_ids[1]: "journey-1-uuid",
                     extra_id: "journey-extra",
                 },
             ),
@@ -327,63 +364,12 @@ async def test_turn_journey_mapping_rejects_mismatched_arm_ids(
     assert extra_id in match.http_response().text
 
 
-async def test_rotating_or_deleting_token_wipes_arm_journey_mapping(
-    testing_datasource,
-    testing_design_spec: MABExperimentSpec,
-    aclient: AdminAPIClient,
-    iaclient: AdminIntegrationsAPIClient,
-):
-    """Rotating an org's Turn token deletes the org's arm->journey mappings."""
-    ds_id = testing_datasource.datasource_id
-    org_id = testing_datasource.organization_id
-    experiment = aclient.create_experiment(
-        datasource_id=ds_id, body=CreateExperimentRequest(design_spec=testing_design_spec)
-    ).data
-    experiment_id = experiment.experiment_id
-    arm_ids = [arm.arm_id for arm in experiment.design_spec.arms]
-
-    iaclient.set_organization_turn_connection(
-        organization_id=org_id,
-        body=SetConnectionToTurnRequest(turn_api_token="a" * 335),
-    )
-    iaclient.set_turn_arm_journey_mapping(
-        datasource_id=ds_id,
-        experiment_id=experiment_id,
-        body=SetTurnArmJourneyMappingRequest(
-            arm_to_journeys={arm_ids[0]: "journey-0", arm_ids[1]: "journey-1"},
-        ),
-    )
-
-    # Rotate the token.
-    iaclient.set_organization_turn_connection(
-        organization_id=org_id,
-        body=SetConnectionToTurnRequest(turn_api_token="b" * 335),
-    )
-
-    # Mapping is wiped.
-    with expect_status_code(404):
-        iaclient.get_turn_arm_journey_mapping(datasource_id=ds_id, experiment_id=experiment_id)
-
-    iaclient.set_turn_arm_journey_mapping(
-        datasource_id=ds_id,
-        experiment_id=experiment_id,
-        body=SetTurnArmJourneyMappingRequest(
-            arm_to_journeys={arm_ids[0]: "journey-2", arm_ids[1]: "journey-3"},
-        ),
-    )
-    # Delete the token.
-    iaclient.delete_turn_connection_from_organization(organization_id=org_id)
-
-    # Mapping is wiped.
-    with expect_status_code(404):
-        iaclient.get_turn_arm_journey_mapping(datasource_id=ds_id, experiment_id=experiment_id)
-
-
 async def test_resetting_same_token_preserves_arm_journey_mapping(
     testing_datasource,
     testing_design_spec: MABExperimentSpec,
     aclient: AdminAPIClient,
     iaclient: AdminIntegrationsAPIClient,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     """PUT with the same token must be idempotent: arm->journey mappings are preserved.
 
@@ -397,6 +383,13 @@ async def test_resetting_same_token_preserves_arm_journey_mapping(
     ).data
     experiment_id = experiment.experiment_id
     arm_ids = [arm.arm_id for arm in experiment.design_spec.arms]
+    monkeypatch.setattr(FakeAsyncClient, "call_log", 0)
+    monkeypatch.setattr(
+        FakeAsyncClient,
+        "stacks",
+        [{"name": "journey-0", "uuid": "journey-0-uuid"}, {"name": "journey-1", "uuid": "journey-1-uuid"}],
+    )
+    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
 
     token = "a" * 335
     iaclient.set_organization_turn_connection(
@@ -417,40 +410,5 @@ async def test_resetting_same_token_preserves_arm_journey_mapping(
         body=SetConnectionToTurnRequest(turn_api_token=token),
     )
 
-    got = iaclient.get_turn_arm_journey_mapping(datasource_id=ds_id, experiment_id=experiment_id).data.arm_to_journeys
-    assert got == mapping
-
-
-async def test_resetting_same_token_preserves_journeys_cache(
-    monkeypatch: pytest.MonkeyPatch,
-    aclient: AdminAPIClient,
-    iaclient: AdminIntegrationsAPIClient,
-):
-    """PUT with the same token must not invalidate the cached Turn.io journey list."""
-    org_id = aclient.create_organizations(
-        body=CreateOrganizationRequest(name="test_resetting_same_token_preserves_journeys_cache")
-    ).data.id
-
-    token = "a" * 335
-    iaclient.set_organization_turn_connection(
-        organization_id=org_id,
-        body=SetConnectionToTurnRequest(turn_api_token=token),
-    )
-
-    # Reset the FakeAsyncClient's class-level state before the test.
-    monkeypatch.setattr(FakeAsyncClient, "call_log", 0)
-    monkeypatch.setattr(FakeAsyncClient, "stacks", [{"name": "Arm A", "uuid": "arm-a-uuid"}])
-    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
-
-    # Prime the cache.
-    iaclient.get_organization_turn_journeys(organization_id=org_id)
-    assert FakeAsyncClient.call_log == 1
-
-    # Replay the PUT with the same token; cache must remain valid.
-    iaclient.set_organization_turn_connection(
-        organization_id=org_id,
-        body=SetConnectionToTurnRequest(turn_api_token=token),
-    )
-
-    iaclient.get_organization_turn_journeys(organization_id=org_id)
-    assert FakeAsyncClient.call_log == 1, "Same-token PUT must not invalidate the journeys cache"
+    got = iaclient.get_turn_arm_journey_mapping(datasource_id=ds_id, experiment_id=experiment_id).data
+    assert got.arm_to_journeys == mapping

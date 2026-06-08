@@ -244,7 +244,7 @@ class AdminIntegrationsAPIClient:  # noqa: RUF100,PLR0904
         body: SetConnectionToTurnRequest,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminIntegrationsAPIClientExtensions | None = None,
-    ) -> AdminIntegrationsAPIClientResult[Literal[HTTPStatus.OK], Any, type[Any]]: ...
+    ) -> AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]: ...
     @overload
     def set_organization_turn_connection(
         self,
@@ -254,7 +254,7 @@ class AdminIntegrationsAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: Literal[False],
         client_exts: AdminIntegrationsAPIClientExtensions | None = None,
     ) -> (
-        AdminIntegrationsAPIClientResult[Literal[HTTPStatus.OK], Any, type[Any]]
+        AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
         | AdminIntegrationsAPIClientResult[
             Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]
         ]
@@ -280,7 +280,7 @@ class AdminIntegrationsAPIClient:  # noqa: RUF100,PLR0904
         raise_if_not_default_status: bool = True,
         client_exts: AdminIntegrationsAPIClientExtensions | None = None,
     ) -> (
-        AdminIntegrationsAPIClientResult[Literal[HTTPStatus.OK], Any, type[Any]]
+        AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
         | AdminIntegrationsAPIClientResult[
             Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]
         ]
@@ -300,7 +300,7 @@ class AdminIntegrationsAPIClient:  # noqa: RUF100,PLR0904
     ):
         return cast(
             (
-                AdminIntegrationsAPIClientResult[Literal[HTTPStatus.OK], Any, type[Any]]
+                AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], None, None]
                 | AdminIntegrationsAPIClientResult[
                     Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError, type[HTTPExceptionError]
                 ]
@@ -325,9 +325,9 @@ class AdminIntegrationsAPIClient:  # noqa: RUF100,PLR0904
             self._route_handler(
                 path="/v1/m/integrations/turn-connection/{organization_id}",  # noqa: RUF100,RUF027
                 method=HTTPMethod.PUT,
-                default_status=HTTPStatus.OK,
+                default_status=HTTPStatus.NO_CONTENT,
                 models={
-                    HTTPStatus.OK: Any,
+                    HTTPStatus.NO_CONTENT: None,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,

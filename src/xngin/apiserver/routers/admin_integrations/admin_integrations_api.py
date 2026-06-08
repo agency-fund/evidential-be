@@ -164,7 +164,11 @@ router = APIRouter(
 )
 
 
-@router.put("/integrations/turn-connection/{organization_id}", responses=TURN_JOURNEYS_RESPONSES)
+@router.put(
+    "/integrations/turn-connection/{organization_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=TURN_JOURNEYS_RESPONSES,
+)
 async def set_organization_turn_connection(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
