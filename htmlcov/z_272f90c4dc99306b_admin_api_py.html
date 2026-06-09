@@ -55,8 +55,8 @@
         </aside>
         <h2>
             <span class="text">735 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">689<span class="text"> run</span></button>
-            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">46<span class="text"> missing</span></button>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">688<span class="text"> run</span></button>
+            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">47<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
         <p class="text">
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_272f90c4dc99306b_admin_api_converters_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.14.1">coverage.py v7.14.1</a>,
-            created at 2026-06-09 17:40 +0000
+            created at 2026-06-09 17:54 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -2088,7 +2088,7 @@
     <p class="run"><span class="n"><a id="t2006" href="#t2006">2006</a></span><span class="t">    <span class="nam">experiment</span> <span class="op">=</span> <span class="key">await</span> <span class="nam">get_experiment_via_ds_or_raise</span><span class="op">(</span><span class="nam">session</span><span class="op">,</span> <span class="nam">ds</span><span class="op">,</span> <span class="nam">experiment_id</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t2007" href="#t2007">2007</a></span><span class="t">    <span class="nam">result</span> <span class="op">=</span> <span class="key">await</span> <span class="nam">experiments_common</span><span class="op">.</span><span class="nam">commit_experiment_impl</span><span class="op">(</span><span class="nam">session</span><span class="op">,</span> <span class="nam">experiment</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t2008" href="#t2008">2008</a></span><span class="t">    <span class="key">if</span> <span class="nam">result</span> <span class="op">==</span> <span class="nam">experiments_common</span><span class="op">.</span><span class="nam">CommitExperimentResult</span><span class="op">.</span><span class="nam">INVALID_STATE</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t2009" href="#t2009">2009</a></span><span class="t">        <span class="key">raise</span> <span class="nam">HTTPException</span><span class="op">(</span><span class="nam">status_code</span><span class="op">=</span><span class="nam">status</span><span class="op">.</span><span class="nam">HTTP_409_CONFLICT</span><span class="op">,</span> <span class="nam">detail</span><span class="op">=</span><span class="fst">f"</span><span class="fst">Invalid state: </span><span class="op">{</span><span class="nam">experiment</span><span class="op">.</span><span class="nam">state</span><span class="op">}</span><span class="fst">"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t2009" href="#t2009">2009</a></span><span class="t">        <span class="key">raise</span> <span class="nam">HTTPException</span><span class="op">(</span><span class="nam">status_code</span><span class="op">=</span><span class="nam">status</span><span class="op">.</span><span class="nam">HTTP_409_CONFLICT</span><span class="op">,</span> <span class="nam">detail</span><span class="op">=</span><span class="fst">f"</span><span class="fst">Invalid state: </span><span class="op">{</span><span class="nam">experiment</span><span class="op">.</span><span class="nam">state</span><span class="op">}</span><span class="fst">"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t2010" href="#t2010">2010</a></span><span class="t">    <span class="key">await</span> <span class="nam">session</span><span class="op">.</span><span class="nam">commit</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t2011" href="#t2011">2011</a></span><span class="t">    <span class="key">return</span> <span class="nam">GENERIC_SUCCESS</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t2012" href="#t2012">2012</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -2414,7 +2414,7 @@
             <a class="nav" href="z_272f90c4dc99306b_admin_api_converters_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.14.1">coverage.py v7.14.1</a>,
-            created at 2026-06-09 17:40 +0000
+            created at 2026-06-09 17:54 +0000
         </p>
     </div>
 </footer>
