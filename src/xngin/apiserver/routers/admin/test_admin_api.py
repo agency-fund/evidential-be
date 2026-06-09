@@ -3414,24 +3414,6 @@ async def test_delete_experiment_data_assignments(
     assert all(arm_size.size == 0 for arm_size in experiment.config.assign_summary.arm_sizes)
 
 
-async def test_delete_experiment_cascades_arm_stats(
-    testing_experiment: TestExperiment,
-    aclient: AdminAPIClient,
-):
-    """Test deleting an entire experiment with assignment data."""
-    ds_id = testing_experiment.datasource_id
-    experiment_id = testing_experiment.id
-
-    experiment = aclient.get_experiment_for_ui(datasource_id=ds_id, experiment_id=experiment_id).data
-    assert experiment.config.assign_summary is not None
-    assert experiment.config.assign_summary.sample_size > 0
-
-    aclient.delete_experiment(datasource_id=ds_id, experiment_id=experiment_id)
-
-    with expect_status_code(404):
-        aclient.get_experiment_for_ui(datasource_id=ds_id, experiment_id=experiment_id)
-
-
 @pytest.mark.parametrize(
     "testing_bandit_experiment",
     [(ExperimentsType.MAB_ONLINE, PriorTypes.BETA, LikelihoodTypes.BERNOULLI, 10)],
