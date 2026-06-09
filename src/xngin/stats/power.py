@@ -145,25 +145,29 @@ def check_power(
 
             # Optional desired_n MDE calculation added to the min sample size analysis:
             if desired_n is not None:
-                try:
-                    mde_analysis = analyze_metric_power(
-                        metric=metric,
-                        n_arms=n_arms,
-                        arm_weights=arm_weights,
-                        desired_n=desired_n,
-                        power=power,
-                        alpha=alpha,
-                    )
-                    # pct_change_possible may be None if there was any error created with
-                    # power_analysis_error().
-                    if mde_analysis.pct_change_possible is not None:
-                        analysis.pct_change_with_desired_n = mde_analysis.pct_change_possible
-                except ValueError:
-                    # Preserve the primary minimum-sample-size result when the optional MDE cannot
-                    # be computed.
-                    pass
+                mde_analysis = analyze_metric_power(
+                    metric=metric,
+                    n_arms=n_arms,
+                    arm_weights=arm_weights,
+                    desired_n=desired_n,
+                    power=power,
+                    alpha=alpha,
+                )
+                # pct_change_possible may be None if there was any error created with
+                # power_analysis_error().
+                if mde_analysis.pct_change_possible is not None:
+                    analysis.pct_change_with_desired_n = mde_analysis.pct_change_possible
 
             analyses.append(analysis)
+
+        except ZeroDivisionError as zde:
+            raise StatsPowerError("Zero division - You likely have too few samples.") from zde
         except ValueError as verr:
-            raise StatsPowerError(verr, metric.field_name) from verr
+            if "f(a) and f(b) must have different signs" in str(verr):
+                raise StatsPowerError(
+                    "Unable to solve. Check your sample size, effect size, or significance parameters."
+                ) from verr
+
+            raise StatsPowerError.from_error(verr, metric.field_name) from verr
+
     return analyses

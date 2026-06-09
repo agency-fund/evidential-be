@@ -12,8 +12,12 @@ class StatsPowerError(StatsError):
     - metric_type must be NUMERIC or BINARY.
     """
 
-    def __init__(self, verr: ValueError, metric_field_name: str):
-        super().__init__(f"Power calc error for metric {metric_field_name}: {verr}")
+    def __init__(self, message: str):
+        super().__init__(message)
+
+    @classmethod
+    def from_error(cls, verr: Exception, metric_field_name: str):
+        return cls(f"Power calc error for metric {metric_field_name}: {verr}")
 
 
 class StatsBalanceError(StatsError):

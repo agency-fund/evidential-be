@@ -1845,7 +1845,7 @@ async def test_power_check_when_sample_size_insufficient_and_desired_n_has_data_
 
 
 def test_power_check_when_sample_size_sufficient_and_desired_n_fails(testing_datasource, aclient: AdminAPIClient):
-    """Although desired_n enrichment fails, we still preserve the minimum sample size result."""
+    """Invalid desired_n raises StatsPowerError."""
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
         experiment_name="test power check desired_n failure",
@@ -1864,17 +1864,8 @@ def test_power_check_when_sample_size_sufficient_and_desired_n_fails(testing_dat
         desired_n=0,  # This should raise a ValueError as a precheck during the MDE calculation.
     )
 
-    power_response = aclient.power_check(
-        datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=design_spec),
-    ).data
-    assert len(power_response.analyses) == 1
-    analysis = power_response.analyses[0]
-    # Primary analysis result (min sample size) still present even though desired_n MDE failed.
-    assert analysis.target_n == 474
-    assert analysis.msg is not None
-    assert analysis.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
-    assert analysis.pct_change_with_desired_n is None
+    with expect_status_code(422, detail_contains="Chosen sample size must be positive"):
+        aclient.power_check(datasource_id=testing_datasource.datasource_id, body=PowerRequest(design_spec=design_spec))
 
 
 async def test_power_check_validations(testing_datasource, aclient: AdminAPIClient):
