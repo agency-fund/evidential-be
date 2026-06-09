@@ -3575,7 +3575,9 @@ async def test_delete_experiment_data_none_specified(
     assert [item.id for item in snapshots_after.items] == [snapshot.id]
 
 
-async def test_create_experiment_with_table_name_and_primary_key(testing_datasource, aclient: AdminAPIClient):
+async def test_create_freq_online_experiment_with_table_name_and_primary_key(
+    testing_datasource, aclient: AdminAPIClient
+):
     """Test creating an experiment with table_name and primary_key."""
     ds_id = testing_datasource.datasource_id
 
