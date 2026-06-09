@@ -1011,7 +1011,7 @@ def test_delete_datasource_scopes_resource_to_organization(
     aclient: AdminAPIClient,
     aclient_unpriv: AdminAPIClient,
 ):
-    caller_org_id, _caller_datasource_id = create_org_with_default_datasource(
+    caller_org_id, caller_datasource_id = create_org_with_default_datasource(
         aclient_unpriv, "datasource-delete-caller-org"
     )
 
@@ -1023,6 +1023,20 @@ def test_delete_datasource_scopes_resource_to_organization(
 
     response = aclient.get_datasource(datasource_id=testing_datasource.datasource_id).data
     assert response.id == testing_datasource.datasource_id
+
+    # aclient is privileged but still needs to be a member of caller_org_id
+    with expect_status_code(403):
+        aclient.delete_datasource(
+            organization_id=caller_org_id,
+            datasource_id=caller_datasource_id,
+        )
+
+    # aclient can access datasource_id but not via caller_org_id
+    with expect_status_code(403):
+        aclient.delete_datasource(
+            organization_id=caller_org_id,
+            datasource_id=testing_datasource.datasource_id,
+        )
 
 
 async def test_webhook_lifecycle(aclient: AdminAPIClient):
