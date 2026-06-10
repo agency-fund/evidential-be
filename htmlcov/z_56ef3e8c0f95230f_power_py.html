@@ -62,10 +62,10 @@
         <p class="text">
             <a id="prevFileLink" class="nav" href="z_56ef3e8c0f95230f_individual_power_py.html">&#xab; prev</a> &nbsp; &nbsp;
             <a id="indexLink" class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
-            <a id="nextFileLink" class="nav" href="z_06f0985033d3ce98_handlers_py.html">&#xbb; next</a>
+            <a id="nextFileLink" class="nav" href="z_56ef3e8c0f95230f_stats_errors_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.14.1">coverage.py v7.14.1</a>,
-            created at 2026-06-10 17:03 +0000
+            created at 2026-06-10 17:49 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -243,26 +243,29 @@
     <p class="run"><span class="n"><a id="t161" href="#t161">161</a></span><span class="t">            <span class="nam">analyses</span><span class="op">.</span><span class="nam">append</span><span class="op">(</span><span class="nam">analysis</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t162" href="#t162">162</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t163" href="#t163">163</a></span><span class="t">        <span class="key">except</span> <span class="nam">ZeroDivisionError</span> <span class="key">as</span> <span class="nam">zde</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t164" href="#t164">164</a></span><span class="t">            <span class="key">raise</span> <span class="nam">StatsPowerError</span><span class="op">(</span><span class="str">"Zero division - You likely have too few samples."</span><span class="op">)</span> <span class="key">from</span> <span class="nam">zde</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t165" href="#t165">165</a></span><span class="t">        <span class="key">except</span> <span class="nam">ValueError</span> <span class="key">as</span> <span class="nam">verr</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t166" href="#t166">166</a></span><span class="t">            <span class="key">if</span> <span class="str">"f(a) and f(b) must have different signs"</span> <span class="key">in</span> <span class="nam">str</span><span class="op">(</span><span class="nam">verr</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t167" href="#t167">167</a></span><span class="t">                <span class="key">raise</span> <span class="nam">StatsPowerError</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t168" href="#t168">168</a></span><span class="t">                    <span class="str">"Unable to solve. Check your sample size, effect size, or significance parameters."</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t169" href="#t169">169</a></span><span class="t">                <span class="op">)</span> <span class="key">from</span> <span class="nam">verr</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t170" href="#t170">170</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t171" href="#t171">171</a></span><span class="t">            <span class="key">raise</span> <span class="nam">StatsPowerError</span><span class="op">.</span><span class="nam">from_error</span><span class="op">(</span><span class="nam">verr</span><span class="op">,</span> <span class="nam">metric</span><span class="op">.</span><span class="nam">field_name</span><span class="op">)</span> <span class="key">from</span> <span class="nam">verr</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t172" href="#t172">172</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t173" href="#t173">173</a></span><span class="t">    <span class="key">return</span> <span class="nam">analyses</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t164" href="#t164">164</a></span><span class="t">            <span class="key">raise</span> <span class="nam">StatsPowerError</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t165" href="#t165">165</a></span><span class="t">                <span class="str">"Your sample size is too small for the power calculation. Increase it and try again."</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t166" href="#t166">166</a></span><span class="t">            <span class="op">)</span> <span class="key">from</span> <span class="nam">zde</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t167" href="#t167">167</a></span><span class="t">        <span class="key">except</span> <span class="nam">ValueError</span> <span class="key">as</span> <span class="nam">verr</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t168" href="#t168">168</a></span><span class="t">            <span class="key">if</span> <span class="str">"f(a) and f(b) must have different signs"</span> <span class="key">in</span> <span class="nam">str</span><span class="op">(</span><span class="nam">verr</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t169" href="#t169">169</a></span><span class="t">                <span class="key">raise</span> <span class="nam">StatsPowerError</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t170" href="#t170">170</a></span><span class="t">                    <span class="str">"Unable to perform the power calculation. "</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t171" href="#t171">171</a></span><span class="t">                    <span class="str">"Adjust your sample, effect size, power, or confidence values and try again."</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t172" href="#t172">172</a></span><span class="t">                <span class="op">)</span> <span class="key">from</span> <span class="nam">verr</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t173" href="#t173">173</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t174" href="#t174">174</a></span><span class="t">            <span class="key">raise</span> <span class="nam">StatsPowerError</span><span class="op">.</span><span class="nam">from_error</span><span class="op">(</span><span class="nam">verr</span><span class="op">,</span> <span class="nam">metric</span><span class="op">.</span><span class="nam">field_name</span><span class="op">)</span> <span class="key">from</span> <span class="nam">verr</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t175" href="#t175">175</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t176" href="#t176">176</a></span><span class="t">    <span class="key">return</span> <span class="nam">analyses</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
         <p>
             <a class="nav" href="z_56ef3e8c0f95230f_individual_power_py.html">&#xab; prev</a> &nbsp; &nbsp;
             <a class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
-            <a class="nav" href="z_06f0985033d3ce98_handlers_py.html">&#xbb; next</a>
+            <a class="nav" href="z_56ef3e8c0f95230f_stats_errors_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.14.1">coverage.py v7.14.1</a>,
-            created at 2026-06-10 17:03 +0000
+            created at 2026-06-10 17:49 +0000
         </p>
     </div>
 </footer>
