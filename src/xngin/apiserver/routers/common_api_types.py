@@ -641,7 +641,7 @@ class MetricPowerAnalysis(ApiBaseModel):
 
     msg: Annotated[
         MetricPowerAnalysisMessage | None,
-        Field(description="A human-friendly message describing these results."),
+        Field(description="A human-friendly summary of the power analysis results."),
     ] = None
 
     # Cluster randomization results (None for non-cluster designs)
