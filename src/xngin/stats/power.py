@@ -161,11 +161,14 @@ def check_power(
             analyses.append(analysis)
 
         except ZeroDivisionError as zde:
-            raise StatsPowerError("Zero division - You likely have too few samples.") from zde
+            raise StatsPowerError(
+                "Your sample size is too small for the power calculation. Increase it and try again."
+            ) from zde
         except ValueError as verr:
             if "f(a) and f(b) must have different signs" in str(verr):
                 raise StatsPowerError(
-                    "Unable to solve. Check your sample size, effect size, or significance parameters."
+                    "Unable to perform the power calculation. "
+                    "Adjust your sample, effect size, power, or confidence values and try again."
                 ) from verr
 
             raise StatsPowerError.from_error(verr, metric.field_name) from verr
