@@ -32,7 +32,7 @@
 | src/xngin/apiserver/routers/admin/admin\_api.py                                    |      735 |       47 |     94% |404, 416, 427, 431, 669, 1168, 1235-1241, 1427, 1464, 1585-1663, 1710, 1712-1715, 1755, 1876, 1939-1945, 1970, 1977, 2009, 2252 |
 | src/xngin/apiserver/routers/admin/admin\_api\_converters.py                        |       62 |        8 |     87% |29, 73-74, 84, 110-111, 123-124 |
 | src/xngin/apiserver/routers/admin/admin\_api\_types.py                             |      143 |        2 |     99% |    40, 42 |
-| src/xngin/apiserver/routers/admin/test\_admin\_api.py                              |     1679 |        3 |     99% |2790, 2803-2804 |
+| src/xngin/apiserver/routers/admin/test\_admin\_api.py                              |     1674 |        3 |     99% |2781, 2794-2795 |
 | src/xngin/apiserver/routers/admin/test\_admin\_extra.py                            |      111 |        5 |     95% |99, 130-131, 159-160 |
 | src/xngin/apiserver/routers/admin/test\_admin\_users\_api.py                       |      378 |        1 |     99% |        34 |
 | src/xngin/apiserver/routers/admin\_integrations/admin\_integrations\_api.py        |      119 |        1 |     99% |       261 |
@@ -79,7 +79,7 @@
 | src/xngin/stats/cluster\_icc.py                                                    |       40 |        2 |     95% |    33, 57 |
 | src/xngin/stats/cluster\_power.py                                                  |      106 |        2 |     98% |  221, 224 |
 | src/xngin/stats/individual\_power.py                                               |      103 |        5 |     95% |77, 80, 124-125, 200 |
-| src/xngin/stats/power.py                                                           |       34 |        1 |     97% |        84 |
+| src/xngin/stats/power.py                                                           |       35 |        3 |     91% |84, 164, 167 |
 | src/xngin/tq/handlers.py                                                           |       58 |        9 |     84% |54-55, 101, 109-110, 121-130 |
 | src/xngin/tq/task\_queue.py                                                        |       96 |        2 |     98% |   237-238 |
 | src/xngin/tq/tq\_test\_support.py                                                  |       49 |        5 |     90% |28-29, 47, 49, 71 |
@@ -89,7 +89,7 @@
 | src/xngin/xsecrets/secretservice.py                                                |       63 |        5 |     92% |37, 49-50, 108, 130 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                                     |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                                         |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                                          | **14871** | **1170** | **92%** |           |
+| **TOTAL**                                                                          | **14867** | **1172** | **92%** |           |
 
 79 files skipped due to complete coverage.
 
