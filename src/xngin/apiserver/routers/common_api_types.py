@@ -1036,7 +1036,8 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
 class PreassignedFrequentistExperimentSpec(BaseFrequentistDesignSpec):
     """Describes a Preassigned A/B experiment.
 
-    Preassigned experiments assign participants to arms when the experiment is created.
+    Preassigned experiments create participants from existing users and assign them to arms when the experiment is
+    created.
     """
 
     experiment_type: Literal[ExperimentsType.FREQ_PREASSIGNED] = ExperimentsType.FREQ_PREASSIGNED
