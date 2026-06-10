@@ -63,7 +63,7 @@ def setup(app):
 
     @app.exception_handler(StatsError)
     async def exception_handler_statsmodelerror(_request: Request, exc: StatsError):
-        return JSONResponse(status_code=422, content=as_fastapi_http_validation_error(str(exc), exc.__class__.__name__))
+        return JSONResponse(status_code=422, content=as_fastapi_http_validation_error(str(exc), exc.type))
 
     @app.exception_handler(sqlalchemy.exc.OperationalError)
     async def exception_handler_sqlalchemy_opex(_request: Request, exc: sqlalchemy.exc.OperationalError):
