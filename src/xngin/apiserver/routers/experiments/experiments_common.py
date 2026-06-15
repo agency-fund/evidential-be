@@ -159,25 +159,9 @@ async def fetch_mab_dwh_fields_or_raise(
     async with DwhSession(datasource.get_config().dwh) as dwh:
         sa_table = await dwh.inspect_table(design_spec.table_name)
 
-    schema_supported_fields_map: dict[str, DataType] = {}
-    for column in sa_table.columns.values():
-        data_type = DataType.match(column.type)
-        if data_type.is_supported():
-            schema_supported_fields_map[column.name] = data_type
-
-    referenced_fields = {design_spec.primary_key, design_spec.target_field_name}
-    referenced_fields_and_types = {
-        field_name: schema_supported_fields_map[field_name]
-        for field_name in referenced_fields
-        if field_name in schema_supported_fields_map
-    }
-
-    missing_fields = referenced_fields - referenced_fields_and_types.keys()
-    if missing_fields:
-        raise LateValidationError(
-            "The .design_spec field refers to columns that do not exist in the table: "
-            f"{', '.join(sorted(missing_fields))}"
-        )
+    referenced_fields_and_types = _resolve_referenced_field_types(
+        sa_table, {design_spec.primary_key, design_spec.target_field_name}
+    )
 
     target_type = referenced_fields_and_types[design_spec.target_field_name]
     if not target_type.is_supported_as_metric():
@@ -189,22 +173,17 @@ async def fetch_mab_dwh_fields_or_raise(
     return referenced_fields_and_types
 
 
-def convert_table_to_fields_or_raise(table: Table, design_spec: AnyFrequentistDesignSpec) -> dict[str, DataType]:
-    """Helper to fetch_fields_or_raise that operates on a pre-inspected SQLAlchemy table."""
+def _resolve_referenced_field_types(table: Table, referenced_fields: set[str]) -> dict[str, DataType]:
+    """Map each referenced column name to its supported DataType in a pre-inspected table.
+
+    Raises: LateValidationError if any referenced field is missing from the table (or present
+    but of an unsupported data type).
+    """
     schema_supported_fields_map: dict[str, DataType] = {}
     for column in table.columns.values():
         data_type = DataType.match(column.type)
         if data_type.is_supported():
             schema_supported_fields_map[column.name] = data_type
-
-    referenced_fields = {
-        *[metric.field_name for metric in design_spec.metrics],
-        *[filter_.field_name for filter_ in design_spec.filters],
-        *[stratum.field_name for stratum in design_spec.strata],
-        design_spec.primary_key,
-    }
-    if isinstance(design_spec, PreassignedFrequentistExperimentSpec) and design_spec.cluster_key is not None:
-        referenced_fields.add(design_spec.cluster_key)
 
     referenced_fields_and_types = {
         field_name: schema_supported_fields_map[field_name]
@@ -218,6 +197,21 @@ def convert_table_to_fields_or_raise(table: Table, design_spec: AnyFrequentistDe
             "The .design_spec field refers to columns that do not exist in the table: "
             f"{', '.join(sorted(missing_fields))}"
         )
+    return referenced_fields_and_types
+
+
+def convert_table_to_fields_or_raise(table: Table, design_spec: AnyFrequentistDesignSpec) -> dict[str, DataType]:
+    """Helper to fetch_fields_or_raise that operates on a pre-inspected SQLAlchemy table."""
+    referenced_fields = {
+        *[metric.field_name for metric in design_spec.metrics],
+        *[filter_.field_name for filter_ in design_spec.filters],
+        *[stratum.field_name for stratum in design_spec.strata],
+        design_spec.primary_key,
+    }
+    if isinstance(design_spec, PreassignedFrequentistExperimentSpec) and design_spec.cluster_key is not None:
+        referenced_fields.add(design_spec.cluster_key)
+
+    referenced_fields_and_types = _resolve_referenced_field_types(table, referenced_fields)
 
     bad_metric_types = [
         m.field_name
