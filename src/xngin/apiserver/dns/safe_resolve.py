@@ -52,18 +52,19 @@ def lookup_v4(host: str) -> list[str] | None:
         return None
 
 
-def is_safe_ip(ip):
-    """Returns true iff the ip is a safe IPv4 address to try to connect to.
+def is_safe_ip(ip: str):
+    """Returns true iff the ip is a safe unicast IPv4 address to try to connect to.
 
-    Only IPv4 is supported; IPv6 addresses are always rejected (see safe_resolve). If
-    ALLOW_CONNECTING_TO_PRIVATE_IPS is enabled, any valid IPv4 address is accepted without checking whether it is
+    Only unicast IPv4 is supported. IPv6 and multicast addresses are always rejected.
+
+    If ALLOW_CONNECTING_TO_PRIVATE_IPS is enabled, any unicast IPv4 address is accepted without checking whether it is
     globally routable.
     """
     try:
         parsed = ipaddress.ip_address(ip)
     except ValueError:
         return False
-    if parsed.version != 4:
+    if parsed.version != 4 or parsed.is_multicast:
         return False
     if ALLOW_CONNECTING_TO_PRIVATE_IPS:
         return True
@@ -74,11 +75,12 @@ def is_safe_ipset(ips: set[str]):
     return all(is_safe_ip(address) for address in ips)
 
 
-def _is_ipv6_literal(host: str) -> bool:
+def _is_ip_literal(host: str) -> bool:
     try:
-        return ipaddress.ip_address(host).version == 6
+        ipaddress.ip_address(host)
     except ValueError:
         return False
+    return True
 
 
 def safe_resolve(host: str | None):
@@ -88,16 +90,15 @@ def safe_resolve(host: str | None):
     if host == UNSAFE_IP_FOR_TESTING:
         raise DnsLookupError("Detected sentinel value of invalid IP used for testing purposes.")
 
-    # Only IPv4 is supported. Reject IPv6 literals outright (this also closes IPv6-only evasions such as
-    # NAT64/6to4 and IPv4-mapped addresses). Hostnames are resolved to A (IPv4) records below, so a host with
-    # only AAAA records fails the "no answers" check.
-    if _is_ipv6_literal(host):
-        raise DnsLookupUnsafeError(host)
-
-    # If it is a safe IP address, return it immediately.
+    # IP literals are decided directly and never resolved as a name.
     if is_safe_ip(host):
         return host
 
+    # If host contains an IP literal, reject it outright so that we do not send an IP address to the resolver.
+    if _is_ip_literal(host):
+        raise DnsLookupUnsafeError(host)
+
+    # Find an IPv4 A record for host.
     answers = lookup_v4(host)
     if not answers:
         raise DnsLookupError(host)
