@@ -23,6 +23,7 @@ from xngin.apiserver.common_field_types import FieldName
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.limits import (
     MAX_GCP_SERVICE_ACCOUNT_LEN,
+    MAX_LENGTH_OF_CLUSTER_KEY_VALUE,
     MAX_LENGTH_OF_DESCRIPTION_VALUE,
     MAX_LENGTH_OF_NAME_VALUE,
     MAX_LENGTH_OF_PARTICIPANT_ID_VALUE,
@@ -876,19 +877,6 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         Field(description="Column name in table_name that uniquely identifies each participant."),
     ]
 
-    cluster_key: Annotated[
-        str | None,
-        Field(
-            default=None,
-            description=(
-                "Column name in table_name that identifies clusters for a cluster-randomized design. "
-                "When set, per-metric icc, avg_cluster_size, and cv are either supplied on each "
-                "metric or computed from this column at power_check time. "
-                "When None, the design is assumed to be individual-randomized."
-            ),
-        ),
-    ] = None
-
     # Frequentist config params
     strata: Annotated[
         list[Stratum],
@@ -1072,6 +1060,25 @@ class PreassignedFrequentistExperimentSpec(BaseFrequentistDesignSpec):
 
     experiment_type: Literal[ExperimentsType.FREQ_PREASSIGNED] = ExperimentsType.FREQ_PREASSIGNED
 
+    cluster_key: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "Column name in table_name that identifies clusters for a cluster-randomized design. "
+                "When set, per-metric icc, avg_cluster_size, and cv are either supplied on each "
+                "metric or computed from this column at power_check time. "
+                "When None, the design is assumed to be individual-randomized."
+            ),
+        ),
+    ] = None
+
+    @model_validator(mode="after")
+    def validate_cluster_randomization(self) -> Self:
+        if self.cluster_key is not None and self.strata:
+            raise ValueError("Cluster-randomized frequentist designs cannot also set strata.")
+        return self
+
 
 class OnlineFrequentistExperimentSpec(BaseFrequentistDesignSpec):
     """Use this type to randomly assign participants into arms during live experiment execution with
@@ -1197,6 +1204,7 @@ class AssignmentTypedDict(TypedDict):
 
     arm_id: str
     participant_id: str
+    cluster_key: NotRequired[str | None]
     arm_name: str
     created_at: NotRequired[str | None]
     strata: NotRequired[list[StrataTypedDict] | None]
@@ -1223,6 +1231,15 @@ class Assignment(ApiBaseModel):
             max_length=MAX_LENGTH_OF_PARTICIPANT_ID_VALUE,
         ),
     ]
+    cluster_key: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Cluster identifier for this participant. Present for cluster-randomized preassigned experiments."
+            ),
+            max_length=MAX_LENGTH_OF_CLUSTER_KEY_VALUE,
+        ),
+    ] = None
     arm_name: Annotated[
         str,
         Field(

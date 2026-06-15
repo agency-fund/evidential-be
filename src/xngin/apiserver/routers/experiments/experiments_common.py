@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from fastapi import HTTPException, status
 from pandas import DataFrame
+from psycopg import sql
 from sqlalchemy import Select, Table, func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
@@ -18,7 +19,7 @@ from sqlalchemy.orm import selectinload
 
 from xngin.apiserver import constants, flags
 from xngin.apiserver.dwh.dwh_session import DwhSession
-from xngin.apiserver.dwh.inspection_types import FieldDescriptor
+from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.dwh.participant_metrics_queries import get_participant_metrics
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.assignment_adapters import (
@@ -40,6 +41,7 @@ from xngin.apiserver.routers.common_api_types import (
     CreateExperimentRequest,
     CreateExperimentResponse,
     DesignSpecMetricRequest,
+    Filter,
     FreqExperimentAnalysisResponse,
     GetExperimentResponse,
     GetParticipantAssignmentResponse,
@@ -57,12 +59,13 @@ from xngin.apiserver.routers.common_enums import (
     ExperimentState,
     ExperimentsType,
     LikelihoodTypes,
+    Relation,
     StopAssignmentReason,
     UpdateTypeBeta,
     UpdateTypeNormal,
 )
 from xngin.apiserver.routers.experiments.property_filters import passes_filters, validate_filter_value
-from xngin.apiserver.settings import DatasourceConfig, ParticipantsDef
+from xngin.apiserver.settings import DatasourceConfig
 from xngin.apiserver.sql.queries import select_as_csv
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
@@ -97,8 +100,8 @@ class AbandonExperimentResult(enum.StrEnum):
     INVALID_STATE = "invalid_state"
 
 
-def make_participants_def_from_experiment(experiment: tables.Experiment) -> ParticipantsDef | None:
-    """Build a ParticipantsDef from stored experiment fields."""
+def make_schema_from_experiment(experiment: tables.Experiment) -> ParticipantsSchema | None:
+    """Build a ParticipantsSchema from stored experiment fields."""
     if experiment.experiment_type not in {ExperimentsType.FREQ_ONLINE.value, ExperimentsType.FREQ_PREASSIGNED.value}:
         return None
 
@@ -122,11 +125,8 @@ def make_participants_def_from_experiment(experiment: tables.Experiment) -> Part
         if ef.is_strata:
             fd.is_strata = True
 
-    return ParticipantsDef(
-        type="schema",
+    return ParticipantsSchema(
         table_name=table_name,
-        participant_type="",
-        hidden=True,
         fields=list(sorted(schema.values(), key=lambda x: x.field_name)),
     )
 
@@ -203,6 +203,8 @@ def convert_table_to_fields_or_raise(table: Table, design_spec: AnyFrequentistDe
         *[stratum.field_name for stratum in design_spec.strata],
         design_spec.primary_key,
     }
+    if isinstance(design_spec, PreassignedFrequentistExperimentSpec) and design_spec.cluster_key is not None:
+        referenced_fields.add(design_spec.cluster_key)
 
     referenced_fields_and_types = {
         field_name: schema_supported_fields_map[field_name]
@@ -260,13 +262,21 @@ async def create_experiment_impl(
             metric_names = [m.field_name for m in request.design_spec.metrics]
             strata_names = [s.field_name for s in request.design_spec.strata]
             stratum_cols = strata_names + metric_names if stratify_on_metrics else strata_names
+            select_columns = {*stratum_cols, primary_key}
+            eligibility_filters = request.design_spec.filters
+            if preassigned_spec.cluster_key is not None:
+                select_columns.add(preassigned_spec.cluster_key)
+                eligibility_filters = [
+                    *eligibility_filters,
+                    Filter(field_name=preassigned_spec.cluster_key, relation=Relation.EXCLUDES, value=[None]),
+                ]
 
             ds_config = datasource.get_config()
             async with DwhSession(ds_config.dwh) as dwh:
                 result = await dwh.get_participants(
                     table_name,
-                    select_columns={*stratum_cols, primary_key},
-                    filters=request.design_spec.filters,
+                    select_columns=select_columns,
+                    filters=eligibility_filters,
                     n=desired_n,
                 )
                 sa_table, participants = result.sa_table, result.participants
@@ -372,6 +382,7 @@ async def create_preassigned_experiment_impl(
         quantiles=4,
         random_state=random_state,
         arm_weights=arm_weights,
+        cluster_col=design_spec.cluster_key,
     )
     balance_check = make_balance_check(assignment_result.balance_result, design_spec.fstat_thresh)
 
@@ -399,6 +410,7 @@ async def create_preassigned_experiment_impl(
         experiment_id=experiment.id,
         arm_ids=[arm.id for arm in experiment.arms],
         participant_id_col=unique_id_name,
+        cluster_key_col=design_spec.cluster_key,
         data=dwh_participants,
         assignments=assignment_result,
     )
@@ -617,7 +629,7 @@ async def get_existing_assignment_for_participant(
     Returns: None if no assignment exists.
     """
     stmt: (
-        Select[tuple[str, str, str, datetime]]
+        Select[tuple[str, str | None, str, str, datetime]]
         | Select[
             tuple[
                 str,
@@ -636,6 +648,7 @@ async def get_existing_assignment_for_participant(
             stmt = (
                 select(
                     tables.ArmAssignment.participant_id,
+                    tables.ArmAssignment.cluster_key,
                     tables.Arm.id.label("arm_id"),
                     tables.Arm.name.label("arm_name"),
                     tables.ArmAssignment.created_at,
@@ -679,6 +692,7 @@ async def get_existing_assignment_for_participant(
     if existing_assignment:
         return Assignment(
             participant_id=existing_assignment.participant_id,
+            cluster_key=existing_assignment.cluster_key if hasattr(existing_assignment, "cluster_key") else None,
             arm_id=existing_assignment.arm_id,
             arm_name=existing_assignment.arm_name,
             created_at=existing_assignment.created_at,
@@ -789,21 +803,6 @@ async def create_assignment_for_participant(
     if len(experiment.arms) == 0:
         raise ExperimentsAssignmentError("Experiment has no arms")
 
-    experiment_type = ExperimentsType(experiment.experiment_type)
-    if experiment_type == ExperimentsType.FREQ_PREASSIGNED:
-        # Preassigned experiments are not allowed to have new assignments added.
-        return None
-
-    if experiment_type == ExperimentsType.CMAB_ONLINE:
-        if not sorted_context_vals:
-            raise ExperimentsAssignmentError(
-                "Context values are required for contextual multi-armed bandit experiments"
-            )
-        if len(sorted_context_vals) != len(experiment.contexts):
-            raise ExperimentsAssignmentError(
-                f"Expected {len(experiment.contexts)} context values, got {len(sorted_context_vals)}"
-            )
-
     # Don't allow new assignments for experiments that have ended.
     if experiment.end_date < datetime.now(UTC):
         experiment.stopped_assignments_at = datetime.now(UTC)
@@ -811,45 +810,54 @@ async def create_assignment_for_participant(
         await xngin_session.commit()
         return None
 
-    # For online frequentist, create a new assignment
-    # with simple random assignment or weighted random assignment if arm_weights are specified.
-    match experiment_type:
-        case ExperimentsType.FREQ_ONLINE:
-            chosen_arm = choose_online_arm(experiment=experiment, random_state=random_state)
-        case ExperimentsType.MAB_ONLINE | ExperimentsType.MAB_ONLINE_DWH | ExperimentsType.CMAB_ONLINE:
-            chosen_arm = choose_bandit_arm(
-                experiment=experiment,
-                sorted_context_vals=sorted_context_vals,
-                random_state=random_state,
-            )
-
-    chosen_arm_id = chosen_arm.id
-
-    # Create and save the new assignment. We use the insert() API because it allows us to read
-    # the database-generated created_at value without needing to refresh the object in the SQLAlchemy cache.
     try:
+        # Create and save the new assignment. The insert() API allows us to read the
+        # database-generated created_at value without needing to refresh the object in the
+        # SQLAlchemy cache.
+        experiment_type = ExperimentsType(experiment.experiment_type)
         match experiment_type:
-            case ExperimentsType.FREQ_ONLINE | ExperimentsType.FREQ_PREASSIGNED:
+            case ExperimentsType.FREQ_PREASSIGNED:
+                # Preassigned experiments are not allowed to have new assignments added.
+                return None
+            case ExperimentsType.FREQ_ONLINE:
+                # For online frequentist, create a new assignment
+                # with simple random assignment or weighted random assignment if arm_weights are specified.
+                chosen_arm = choose_online_arm(experiment=experiment, random_state=random_state)
                 result = (
                     await xngin_session.execute(
                         insert(tables.ArmAssignment)
                         .values(
                             experiment_id=experiment.id,
                             participant_id=participant_id,
-                            arm_id=chosen_arm_id,
+                            arm_id=chosen_arm.id,
                             strata=[],
                         )
                         .returning(tables.ArmAssignment.created_at)
                     )
                 ).fetchone()
             case ExperimentsType.MAB_ONLINE | ExperimentsType.MAB_ONLINE_DWH | ExperimentsType.CMAB_ONLINE:
+                if experiment_type == ExperimentsType.CMAB_ONLINE:
+                    if not sorted_context_vals:
+                        raise ExperimentsAssignmentError(
+                            "Context values are required for contextual multi-armed bandit experiments"
+                        )
+                    if len(sorted_context_vals) != len(experiment.contexts):
+                        raise ExperimentsAssignmentError(
+                            f"Expected {len(experiment.contexts)} context values, got {len(sorted_context_vals)}"
+                        )
+
+                chosen_arm = choose_bandit_arm(
+                    experiment=experiment,
+                    sorted_context_vals=sorted_context_vals,
+                    random_state=random_state,
+                )
                 result = (
                     await xngin_session.execute(
                         insert(tables.Draw)
                         .values(
                             experiment_id=experiment.id,
                             participant_id=participant_id,
-                            arm_id=chosen_arm_id,
+                            arm_id=chosen_arm.id,
                             context_vals=sorted_context_vals,
                         )
                         .returning(tables.Draw.created_at)
@@ -863,7 +871,7 @@ async def create_assignment_for_participant(
         created_at = result[0]
         stmt = (
             pg_insert(tables.ArmStats)
-            .values(arm_id=chosen_arm_id, population=1)
+            .values(arm_id=chosen_arm.id, population=1)
             .on_conflict_do_update(
                 index_elements=[tables.ArmStats.arm_id],
                 set_={"population": tables.ArmStats.population + 1},
@@ -873,13 +881,12 @@ async def create_assignment_for_participant(
         await xngin_session.commit()
     except IntegrityError as e:
         await xngin_session.rollback()
-        raise ExperimentsAssignmentError(
-            f"Failed to assign participant '{participant_id}' to arm '{chosen_arm_id}': {e}"
-        ) from e
+        raise ExperimentsAssignmentError(f"Failed to assign participant '{participant_id}': {e}") from e
 
     return Assignment(
         participant_id=participant_id,
-        arm_id=chosen_arm_id,
+        cluster_key=None,
+        arm_id=chosen_arm.id,
         arm_name=chosen_arm.name,
         created_at=created_at,
         strata=[],
@@ -1103,9 +1110,13 @@ async def analyze_experiment_freq_impl(
     if experiment.datasource_table is None or unique_id_field is None:
         raise StatsAnalysisError("Experiment must have a datasource table and unique ID field to analyze.")
 
-    participant_ids, assignments_df = await read_assignments_efficiently(xngin_session, experiment.id)
+    include_cluster = experiment.cluster_key_field() is not None
+    participant_ids, assignments_df = await read_assignments_efficiently(
+        xngin_session, experiment.id, include_cluster_key=include_cluster
+    )
     if assignments_df.empty:
         raise StatsAnalysisError("No participants found for experiment.")
+
     async with DwhSession(dsconfig.dwh) as dwh:
         sa_table = await dwh.inspect_table(experiment.datasource_table)
 
@@ -1136,7 +1147,10 @@ async def analyze_experiment_freq_impl(
     analyze_results = analyze_freq_experiment(
         assignments_df,
         participant_outcomes,
-        baseline_arm_id,
+        unit_col=tables.ArmAssignment.participant_id.name,
+        arm_col=tables.ArmAssignment.arm_id.name,
+        cluster_col=tables.ArmAssignment.cluster_key.name if include_cluster else None,
+        baseline_arm_id=baseline_arm_id,
         alpha=experiment.alpha,
     )
 
@@ -1194,14 +1208,27 @@ async def analyze_experiment_freq_impl(
     )
 
 
-async def read_assignments_efficiently(xngin_session: AsyncSession, experiment_id: str) -> tuple[list[str], DataFrame]:
+async def read_assignments_efficiently(
+    xngin_session: AsyncSession,
+    experiment_id: str,
+    *,
+    include_cluster_key: bool = False,
+) -> tuple[list[str], DataFrame]:
     """Reads assignments directly from Postgres via a COPY statement.
 
     Reads CSV output in row-bounded chunks and concatenates the parsed frames.
     """
-    select_query = t"SELECT arm_id, participant_id FROM arm_assignments WHERE experiment_id = {experiment_id}"  # type: ignore
+    column_names = [
+        tables.ArmAssignment.arm_id.name,
+        tables.ArmAssignment.participant_id.name,
+    ]
+    if include_cluster_key:
+        column_names.append(tables.ArmAssignment.cluster_key.name)
+
+    joined_column_names = sql.SQL(", ").join(sql.Identifier(name) for name in column_names)
+    select_query = t"SELECT {joined_column_names:q} FROM arm_assignments WHERE experiment_id = {experiment_id}"  # type: ignore
     dfs = [
-        pd.read_csv(io.BytesIO(chunk), names=["arm_id", "participant_id"], dtype=str)
+        pd.read_csv(io.BytesIO(chunk), names=column_names, dtype=str)
         async for chunk in select_as_csv(
             xngin_session, select_query, buffer_size_bytes=CSV_PARSE_CHUNK_SIZE_BYTES, newline_framed=True
         )
@@ -1209,8 +1236,8 @@ async def read_assignments_efficiently(xngin_session: AsyncSession, experiment_i
     if dfs:
         df = pd.concat(dfs, ignore_index=True)
     else:
-        df = pd.DataFrame(columns=["arm_id", "participant_id"]).astype(str)
-    return df["participant_id"].to_list(), df
+        df = pd.DataFrame(columns=column_names).astype(str)
+    return df[tables.ArmAssignment.participant_id.name].to_list(), df
 
 
 @dataclass(frozen=True, slots=True)

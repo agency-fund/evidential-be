@@ -28,6 +28,7 @@ from xngin.apiserver.testing.admin_integrations_api_client import AdminIntegrati
 class FakeAsyncClient:
     call_log: ClassVar[int] = 0
     stacks: ClassVar[list[dict]] = [{"name": "Arm A", "uuid": "arm-a-uuid"}]
+    expected_status: ClassVar[int] = 200
 
     def __init__(self, *args, **kwargs):
         pass
@@ -38,12 +39,12 @@ class FakeAsyncClient:
     async def __aexit__(self, *_):
         return None
 
-    async def get(self, url, headers=None):
+    async def request(self, method, url, headers=None):
         FakeAsyncClient.call_log += 1
         return httpx.Response(
-            status_code=200,
+            status_code=FakeAsyncClient.expected_status,
             json=list(FakeAsyncClient.stacks),
-            request=httpx.Request("GET", url),
+            request=httpx.Request(method, url),
         )
 
 
@@ -176,6 +177,36 @@ async def test_turn_journeys_caching(
     assert journeys == {"Arm B": "arm-b-uuid"}
 
 
+async def test_turn_journeys_api_error_handling(
+    monkeypatch: pytest.MonkeyPatch, aclient: AdminAPIClient, iaclient: AdminIntegrationsAPIClient
+):
+    """GET /turn-connection/journeys must handle errors from the Turn API gracefully."""
+    # Reset the FakeAsyncClient's class-level state before the test.
+    monkeypatch.setattr(FakeAsyncClient, "call_log", 0)
+    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+
+    org_id = aclient.create_organizations(
+        body=CreateOrganizationRequest(name="test_turn_journeys_api_error_handling")
+    ).data.id
+    iaclient.set_organization_turn_connection(
+        organization_id=org_id,
+        body=SetConnectionToTurnRequest(turn_api_token="a" * 335),
+    )
+
+    # Simulate a non-2xx response.
+    monkeypatch.setattr(FakeAsyncClient, "expected_status", 403)
+    with expect_status_code(502, text="Turn.io API returned non-2xx status"):
+        iaclient.get_organization_turn_journeys(organization_id=org_id)
+
+    # Simulate a network error.
+    async def _raise_request_error(self, method, url, headers=None):
+        raise httpx.RequestError("Network error", request=httpx.Request(method, url))
+
+    monkeypatch.setattr(FakeAsyncClient, "request", _raise_request_error)
+    with expect_status_code(502, text="Failed to reach Turn.io API"):
+        iaclient.get_organization_turn_journeys(organization_id=org_id)
+
+
 async def test_turn_journey_mapping_lifecycle(
     testing_datasource,
     testing_design_spec: MABExperimentSpec,
@@ -191,7 +222,7 @@ async def test_turn_journey_mapping_lifecycle(
     experiment_id = experiment.experiment_id
     arm_ids = [arm.arm_id for arm in experiment.design_spec.arms]
 
-    # PUT without a Turn connection configured for the org -> 400.
+    # PUT without a Turn connection configured for the org -> 409.
     with expect_status_code(409, text="No Turn.io connection"):
         iaclient.set_turn_arm_journey_mapping(
             datasource_id=ds_id,

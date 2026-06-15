@@ -210,6 +210,49 @@ def test_assign_treatments_with_balance_basic(sample_table, sample_rows):
     assert result.balance_result.f_pvalue == pytest.approx(0.99990, abs=1e-4)
 
 
+@dataclass
+class ClusterRow(RowProtocolMixin):
+    id: int
+    cluster: int
+    age: float
+    region: str
+
+
+def test_assign_treatments_with_balance_clustered():
+    """Cluster column assigns every member of a cluster to the same arm."""
+    cluster_ids = [0, 0, 0, 1, 1, 1]
+    rows = [
+        ClusterRow(id=i, cluster=cluster_id, age=30.0, region="North")
+        for i, cluster_id in enumerate(cluster_ids, start=1)
+    ]
+    metadata_obj = MetaData()
+    table = Table(
+        "clustered",
+        metadata_obj,
+        Column("id", Integer, primary_key=True),
+        Column("cluster", Integer),
+    )
+
+    result = assign_treatments_with_balance(
+        sa_table=table,
+        data=rows,
+        stratum_cols=["region"],
+        id_col="id",
+        n_arms=2,
+        random_state=42,
+        cluster_col="cluster",
+    )
+
+    # Strata are ignored in a cluster-randomized design.
+    assert result.stratum_cols == []
+    # Verify that each member of a cluster is assigned to the same treatment.
+    treatments_by_cluster: dict[int, set[int]] = defaultdict(set)
+    for cluster_id, treatment in zip(cluster_ids, result.treatment_ids, strict=True):
+        treatments_by_cluster[cluster_id].add(treatment)
+    assert treatments_by_cluster[0] == {0}
+    assert treatments_by_cluster[1] == {1}
+
+
 async def test_bulk_insert_arm_assignments_basic(
     xngin_session: AsyncSession,
     testing_datasource: DatasourceMetadata,
@@ -258,12 +301,50 @@ async def test_bulk_insert_arm_assignments_basic(
     # Verify arm assignments
     for assignment in assignments:
         assert assignment.experiment_id == experiment.id
+        assert assignment.cluster_key is None
         assert assignment.arm_id in arm_ids
 
         # Verify strata are properly stored
         assert len(assignment.strata) == 1
         assert assignment.strata[0]["field_name"] == "gender"
         assert assignment.strata[0]["strata_value"] in {"M", "F"}
+
+
+async def test_bulk_insert_arm_assignments_stores_cluster_key(
+    xngin_session: AsyncSession,
+    testing_datasource: DatasourceMetadata,
+    sample_rows,
+):
+    """Cluster keys are copied from the source assignment rows when configured."""
+    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
+    arm_ids = [arm.id for arm in experiment.arms]
+    unique_id_field = experiment.unique_id_field()
+    assert unique_id_field is not None
+
+    treatment_ids = [0, 1] * (len(sample_rows) // 2)
+    fake_assignment_results = AssignmentResult(
+        treatment_ids=treatment_ids,
+        stratum_ids=[0] * len(sample_rows),
+        balance_result=None,
+        stratum_cols=[],
+        arm_pop=np.bincount(treatment_ids),
+    )
+
+    await bulk_insert_arm_assignments(
+        xngin_session=xngin_session,
+        experiment_id=experiment.id,
+        arm_ids=arm_ids,
+        participant_id_col=unique_id_field.field_name,
+        data=sample_rows,
+        assignments=fake_assignment_results,
+        cluster_key_col="region",
+    )
+
+    assignments = (await xngin_session.scalars(select(tables.ArmAssignment))).all()
+    clusters_by_participant = {str(row.id): row.region for row in sample_rows}
+    assert {assignment.cluster_key for assignment in assignments} <= set(clusters_by_participant.values())
+    for assignment in assignments:
+        assert assignment.cluster_key == clusters_by_participant[assignment.participant_id]
 
 
 MAX_SAFE_INTEGER = (1 << 53) - 1  # 9007199254740991

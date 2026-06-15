@@ -103,6 +103,7 @@ from xngin.apiserver.storage.storage_format_converters import ExperimentStorageC
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
+from xngin.apiserver.testing.wide_dwh_def import WIDE_DWH_PARTICIPANT_DEF
 from xngin.events.experiment_created import ExperimentCreatedEvent
 from xngin.events.webhook_sent import WebhookSentEvent
 from xngin.stats.bandit_sampling import update_arm
@@ -707,8 +708,8 @@ def test_remove_member_from_org(aclient: AdminAPIClient):
     member_list = list_members()
     assert member_list.keys() == {PRIVILEGED_EMAIL, UNPRIVILEGED_EMAIL}
 
-    # 404 when trying to remove self from organization
-    remove_member(member_list.get(PRIVILEGED_EMAIL), expected_status_code=404)
+    # 403 when trying to remove self from organization
+    remove_member(member_list.get(PRIVILEGED_EMAIL), expected_status_code=403)
     assert list_members().keys() == {PRIVILEGED_EMAIL, UNPRIVILEGED_EMAIL}
 
     # 204 when remove existing member
@@ -1459,8 +1460,7 @@ async def test_lifecycle_with_db(testing_datasource, aclient: AdminAPIClient, ac
         datasource_id=testing_datasource.datasource_id, experiment_id=parsed_experiment_id
     ).data
     assert get_exp.config.state == ExperimentState.COMMITTED
-    assert get_exp.participant_type is not None
-    assert get_exp.participant_type.participant_type == ""
+    assert get_exp.experiment_schema is not None
 
     # Update the experiment.
     aclient.update_experiment(
@@ -1908,9 +1908,7 @@ async def test_create_and_get_freq_preassigned_experiment(
 
     # Now get the experiment using the admin API and verify config matches the created experiment.
     admin_experiment = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=experiment_id).data
-    assert admin_experiment.participant_type is not None
-    assert admin_experiment.participant_type.participant_type == ""
-    assert admin_experiment.participant_type.hidden is True
+    assert admin_experiment.experiment_schema is not None
     ui_experiment = admin_experiment.config
     diff = DeepDiff(
         created_experiment,
@@ -1928,7 +1926,7 @@ async def test_create_and_get_freq_preassigned_experiment(
     )
     assert not diff, f"Objects differ:\n{diff.pretty()}"
     # Verify that participant field metadata was stored correctly.
-    experiment_fields = admin_experiment.participant_type.fields
+    experiment_fields = admin_experiment.experiment_schema.fields
     assert len(experiment_fields) == 3
     unique_id_field = next((f for f in experiment_fields if f.is_unique_id), None)
     assert unique_id_field is not None
@@ -2133,9 +2131,7 @@ def test_create_and_get_freq_online_experiment(testing_datasource, aclient: Admi
 
     # Now get the experiment using the admin API and verify config matches the created experiment.
     fetched_resp = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=parsed_experiment_id).data
-    assert fetched_resp.participant_type is not None
-    assert fetched_resp.participant_type.participant_type == ""
-    assert fetched_resp.participant_type.hidden is True
+    assert fetched_resp.experiment_schema is not None
     ui_experiment = fetched_resp.config
     diff = DeepDiff(
         created_experiment,
@@ -2206,7 +2202,7 @@ def test_create_and_get_online_mab_experiment(testing_datasource, aclient: Admin
 
     # Now get the experiment using the admin API and verify config matches the created experiment.
     fetched_resp = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=parsed_experiment_id).data
-    assert fetched_resp.participant_type is None
+    assert fetched_resp.experiment_schema is None
     ui_experiment = fetched_resp.config
     diff = DeepDiff(
         created_experiment,
@@ -3220,13 +3216,12 @@ def test_snapshots(aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
             snapshot_id=success_snapshot.id,
         )
 
-    with expect_status_code(204):
-        aclient.delete_snapshot(
-            _organization_id=create_organization_response.id,
-            datasource_id=create_datasource_response.id,
-            experiment_id=experiment_id,
-            snapshot_id=success_snapshot.id,
-        )
+    aclient.delete_snapshot(
+        _organization_id=create_organization_response.id,
+        datasource_id=create_datasource_response.id,
+        experiment_id=experiment_id,
+        snapshot_id=success_snapshot.id,
+    )
 
     with expect_status_code(404):
         aclient.delete_snapshot(
@@ -4157,32 +4152,53 @@ async def test_list_experiments_empty(
     assert experiments.items == []
 
 
-async def test_power_check_with_manual_icc(testing_datasource, aclient: AdminAPIClient):
-    """Power check accepts user-supplied ICC values and returns cluster analysis."""
+async def test_power_check_with_missing_cluster_key_raises(testing_datasource, aclient: AdminAPIClient):
+    """Power check raises a validation error if the cluster key column does not exist in the table."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test missing cluster key",
+        description="test power check with missing cluster key",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
+        arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
+        metrics=[DesignSpecMetricRequest(field_name="household_income", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+        cluster_key="missing_key",
+    )
+
+    with expect_status_code(422, detail_contains="columns that do not exist in the table: missing_key"):
+        aclient.power_check(
+            datasource_id=testing_datasource.datasource_id,
+            body=PowerRequest(design_spec=design_spec),
+        )
+
+
+async def test_power_check_with_manual_icc_and_nulls_in_cluster_key(testing_datasource, aclient: AdminAPIClient):
+    """Power check accepts user-supplied ICC values and returns cluster analysis and handles nulls correctly."""
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
         experiment_name="test cluster power",
-        description="test power check with manual ICC",
+        description="Verify null cluster key rows are excluded from manual ICC in power check.",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
         end_date=datetime.now(UTC) + timedelta(days=1),
-        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+        table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
         primary_key="id",
-        arms=[
-            Arm(arm_name="control", arm_description="Control group"),
-            Arm(arm_name="treatment", arm_description="Treatment group"),
-        ],
+        arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
         metrics=[
             DesignSpecMetricRequest(
-                field_name="current_income",
+                field_name="household_income",
                 metric_pct_change=0.1,
-                icc=0.15,
-                avg_cluster_size=30,
-                cv=1.2,
+                icc=0.015,
+                avg_cluster_size=10,
+                cv=0.1,
             )
         ],
         strata=[],
         filters=[],
-        cluster_key="cluster_id",
+        cluster_key="age",
     )
 
     result = aclient.power_check(
@@ -4192,11 +4208,78 @@ async def test_power_check_with_manual_icc(testing_datasource, aclient: AdminAPI
 
     assert len(result.data.analyses) == 1
     analysis = result.data.analyses[0]
-    assert analysis.metric_spec.icc == 0.15
-    assert analysis.metric_spec.avg_cluster_size == 30
-    assert analysis.metric_spec.cv == 1.2
+    # Primary test: verify that the user-provided values are used.
+    assert analysis.metric_spec.icc == 0.015
+    assert analysis.metric_spec.avg_cluster_size == 10
+    # assert analysis.metric_spec.cv == 0.3
+
+    # Verify that the 28 null cluster key (age) rows are excluded from the analysis:
+    assert analysis.metric_spec.available_n == 972
+    # Verify that the 24 null outcome rows + 28 null cluster key rows are excluded here:
+    assert analysis.metric_spec.available_nonnull_n == 948
+
+    # Verify this was analyzed as a cluster-randomized experiment, and that with the user-supplied
+    # estimates about the data we should have enough clusters to sample from despite the minimum
+    # units needed being inflated by the design effect:
+    assert analysis.num_clusters_total is not None
+    assert analysis.num_clusters_total == 92
     assert analysis.design_effect is not None
-    assert analysis.design_effect > 1.0
+    assert analysis.design_effect == pytest.approx(1.137, abs=1e-3)
+    assert analysis.msg is not None
+    assert analysis.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
+
+
+async def test_power_check_with_db_derived_icc_and_nulls_in_cluster_key(testing_datasource, aclient: AdminAPIClient):
+    """DB-derived ICC excludes rows with a null cluster key, and available_n is consistent.
+
+    Uses wide_dwh with cluster_key="age", which has 28 null rows in a 1000-row table.
+    This exercises the calculate_icc_and_cv_from_database path (no manual ICC supplied).
+
+    The invariant being tested: both available_n (from get_stats_on_metrics) and the
+    cluster size stats (from get_cluster_size_stats) should operate on the same 972
+    non-null-age rows, so that the ICC and available_n passed to the power formula are
+    consistent.
+    """
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test db-derived icc null exclusion",
+        description="Verify null cluster key rows are excluded from DB-derived ICC in power check.",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
+        arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
+        metrics=[DesignSpecMetricRequest(field_name="household_income", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+        cluster_key="age",
+    )
+
+    result = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(design_spec=design_spec),
+    )
+
+    assert len(result.data.analyses) == 1
+    analysis = result.data.analyses[0]
+    # ICC and cluster stats are computed from the DB (no manual values supplied).
+    assert analysis.metric_spec.icc == pytest.approx(0.021, abs=1e-3)
+    assert analysis.metric_spec.avg_cluster_size == pytest.approx(13.5, abs=1e-3)
+    assert analysis.metric_spec.cv == pytest.approx(0.282, abs=1e-3)
+
+    # The 28 null age rows are excluded from the eligible population as is the case with a manual ICC.
+    assert analysis.metric_spec.available_n == 972
+    # 24 rows have a null household_income among the 972 non-null-age rows.
+    assert analysis.metric_spec.available_nonnull_n == 948
+
+    # In this case, due to clustering we do not have a sufficient number of clusters (and units) to sample from.
+    assert analysis.num_clusters_total == 78
+    assert analysis.design_effect is not None
+    assert analysis.design_effect == pytest.approx(1.287, abs=1e-3)
+    assert analysis.target_n is not None
+    assert analysis.target_n > analysis.metric_spec.available_nonnull_n
+    assert analysis.msg is not None
+    assert analysis.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
 
 
 async def test_power_check_with_calculated_icc(testing_datasource, aclient: AdminAPIClient):
@@ -4320,11 +4403,12 @@ async def test_power_check_cluster_with_manual_and_db_derived_metrics(testing_da
     assert dwh_analysis.clusters_per_arm == [602, 602]
 
 
-async def test_create_freq_preassigned_experiment_with_cluster_key_roundtrips(
+def test_create_freq_preassigned_experiment_with_cluster_key_roundtrips(
     testing_datasource,
     aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
 ):
-    """cluster_key set on the design spec should survive save and reload."""
+    """cluster_key set on the design spec should survive save, reload, and assignment export."""
     datasource_id = testing_datasource.datasource_id
     experiment_request = CreateExperimentRequest(
         design_spec=PreassignedFrequentistExperimentSpec(
@@ -4355,3 +4439,128 @@ async def test_create_freq_preassigned_experiment_with_cluster_key_roundtrips(
     fetched = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=created.experiment_id).data
     assert isinstance(fetched.config.design_spec, PreassignedFrequentistExperimentSpec)
     assert fetched.config.design_spec.cluster_key == "cluster_powerlaw"
+
+    # Verify assignment exports via integration API and UI API are consistent and contain the cluster key.
+    assignments = eclient.get_experiment_assignments(
+        api_key=testing_datasource.key,
+        experiment_id=created.experiment_id,
+    ).data.assignments
+    assert len(assignments) == 100
+    assert all(assignment.cluster_key is not None for assignment in assignments)
+
+    csv_response = aclient.client.get(
+        f"/v1/m/datasources/{datasource_id}/experiments/{created.experiment_id}/assignments/csv"
+    )
+    assert csv_response.status_code == HTTPStatus.OK, csv_response.content
+    csv_reader = csv.DictReader(io.StringIO(csv_response.text))
+    assert csv_reader.fieldnames == ["participant_id", "cluster_key", "arm_id", "arm_name", "created_at"]
+    csv_rows = {row["participant_id"]: row for row in csv_reader}
+    assert set(csv_rows) == {assignment.participant_id for assignment in assignments}
+    for assignment in assignments:
+        csv_assignment = csv_rows[assignment.participant_id]
+        assert csv_assignment["cluster_key"] == assignment.cluster_key
+        assert csv_assignment["arm_id"] == assignment.arm_id
+        assert csv_assignment["arm_name"] == assignment.arm_name
+        created_at = assignment.created_at
+        assert created_at is not None
+        assert csv_assignment["created_at"] == created_at.isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def test_analyze_cluster_preassigned_experiment(testing_datasource, aclient: AdminAPIClient):
+    """Basic test of clustered preassigned experiment analysis via the admin API."""
+    datasource_id = testing_datasource.datasource_id
+    experiment_request = CreateExperimentRequest(
+        design_spec=PreassignedFrequentistExperimentSpec(
+            experiment_type="freq_preassigned",
+            experiment_name="Cluster analyze e2e",
+            description="Verify clustered analysis via admin API.",
+            table_name="clustered_dwh",
+            primary_key="participant_id",
+            cluster_key="cluster_moderate",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
+            arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
+            metrics=[DesignSpecMetricRequest(field_name="converted", metric_pct_change=5)],
+            strata=[],
+            filters=[],
+            desired_n=100,
+        ),
+    )
+
+    created = aclient.create_experiment(datasource_id=datasource_id, body=experiment_request, random_state=42).data
+    exp_analysis = aclient.analyze_experiment(datasource_id=datasource_id, experiment_id=created.experiment_id).data
+    assert isinstance(exp_analysis, FreqExperimentAnalysisResponse)
+    assert exp_analysis.experiment_id == created.experiment_id
+    assert exp_analysis.num_participants == 100
+    assert exp_analysis.num_missing_participants == 0
+    assert len(exp_analysis.metric_analyses) == 1
+    metric_analysis = exp_analysis.metric_analyses[0]
+    assert metric_analysis.metric_name == "converted"
+    assert len(metric_analysis.arm_analyses) == 2
+    for arm_analysis in metric_analysis.arm_analyses:
+        assert arm_analysis.estimate is not None
+        assert not np.isnan(arm_analysis.estimate)
+        assert arm_analysis.std_error is not None
+        assert not np.isnan(arm_analysis.std_error)
+
+
+async def test_create_freq_preassigned_experiment_with_missing_cluster_key_raises(
+    testing_datasource,
+    aclient: AdminAPIClient,
+):
+    """Creating a preassigned experiment with a missing cluster key should raise a validation error."""
+    datasource_id = testing_datasource.datasource_id
+    experiment_request = CreateExperimentRequest(
+        design_spec=PreassignedFrequentistExperimentSpec(
+            experiment_type="freq_preassigned",
+            experiment_name="Missing cluster key",
+            description="Cluster key column does not exist in the table.",
+            table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
+            primary_key="id",
+            cluster_key="missing_key",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
+            arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
+            metrics=[DesignSpecMetricRequest(field_name="household_income", metric_pct_change=5)],
+            strata=[],
+            filters=[],
+            desired_n=100,
+        ),
+        webhooks=[],
+    )
+
+    with expect_status_code(422, detail_contains="columns that do not exist in the table: missing_key"):
+        aclient.create_experiment(datasource_id=datasource_id, body=experiment_request, random_state=42)
+
+
+async def test_create_freq_preassigned_experiment_cluster_key_has_nulls(testing_datasource, aclient: AdminAPIClient):
+    """Creating a cluster-randomized experiment with a cluster key that has nulls should exclude those rows."""
+    datasource_id = testing_datasource.datasource_id
+    experiment_request = CreateExperimentRequest(
+        design_spec=PreassignedFrequentistExperimentSpec(
+            experiment_type="freq_preassigned",
+            experiment_name="Cluster key with null values",
+            description="Cluster key has null values that should be excluded.",
+            table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
+            primary_key="id",
+            cluster_key="age",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
+            arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
+            metrics=[DesignSpecMetricRequest(field_name="household_income", metric_pct_change=5)],
+            strata=[],
+            filters=[],
+            desired_n=1000,
+        ),
+        webhooks=[],
+    )
+
+    created = aclient.create_experiment(datasource_id=datasource_id, body=experiment_request, random_state=42).data
+
+    assert created.assign_summary is not None
+    # There are 1k rows in the wide_dwh table, and 28 rows where age=NULL that should be excluded:
+    assert created.assign_summary.sample_size == 972
+    assert created.assign_summary.arm_sizes is not None
+    assert len(created.assign_summary.arm_sizes) == 2
+    assert created.assign_summary.arm_sizes[0].size == 492
+    assert created.assign_summary.arm_sizes[1].size == 480

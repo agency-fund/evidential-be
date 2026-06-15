@@ -1,3 +1,4 @@
+from collections import defaultdict
 from contextlib import AbstractContextManager
 from contextlib import nullcontext as does_not_raise
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.schema import CreateTable
 
 from xngin.apiserver.conftest import RowProtocolMixin
+from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import (
     Arm,
@@ -57,7 +59,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     get_existing_assignment_for_participant,
     get_experiment_impl,
     get_or_create_assignment_for_participant,
-    make_participants_def_from_experiment,
+    make_schema_from_experiment,
     update_bandit_arm_with_outcome_impl,
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import get_experiment_assignments_as_csv_impl
@@ -239,6 +241,27 @@ def make_createexperimentrequest_json(
             }
         case _:
             raise ValueError(f"Invalid experiment type: {experiment_type}")
+
+
+def make_design_spec_clustered(*, cluster_key: str | None = "cluster_equal") -> PreassignedFrequentistExperimentSpec:
+    return PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="cluster analyze test",
+        description="test",
+        table_name="clustered_dwh",
+        primary_key="participant_id",
+        cluster_key=cluster_key,
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime(2024, 12, 31, 23, 59, 59, tzinfo=UTC),
+        arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
+        strata=[],
+        metrics=[DesignSpecMetricRequest(field_name="test_score", metric_pct_change=0.1)],
+        filters=[],
+        desired_n=100,
+        power=0.8,
+        alpha=0.05,
+        fstat_thresh=0.2,
+    )
 
 
 def make_create_preassigned_experiment_request(desired_n: int | None = None) -> CreateExperimentRequest:
@@ -449,30 +472,30 @@ def _make_experiment(
     return exp
 
 
-def test_make_participants_def_from_experiment_non_frequentist_returns_none():
+def test_make_schema_from_experiment_non_frequentist_returns_none():
     exp = _make_experiment(ExperimentsType.MAB_ONLINE)
-    assert make_participants_def_from_experiment(exp) is None
+    assert make_schema_from_experiment(exp) is None
 
 
-def test_make_participants_def_from_experiment_missing_uid_returns_none():
+def test_make_schema_from_experiment_missing_uid_returns_none():
     # No field has is_unique_id=True, so unique_id_field() returns None.
     exp = _make_experiment(
         ExperimentsType.FREQ_ONLINE,
         fields=[_make_experiment_field("revenue", DataType.DOUBLE_PRECISION, metric_pct_change=0.1)],
     )
-    assert make_participants_def_from_experiment(exp) is None
+    assert make_schema_from_experiment(exp) is None
 
 
-def test_make_participants_def_from_experiment_missing_table_returns_none():
+def test_make_schema_from_experiment_missing_table_returns_none():
     exp = _make_experiment(
         ExperimentsType.FREQ_PREASSIGNED,
         datasource_table=None,
         fields=[_make_experiment_field("id", DataType.INTEGER, is_unique_id=True)],
     )
-    assert make_participants_def_from_experiment(exp) is None
+    assert make_schema_from_experiment(exp) is None
 
 
-def test_make_participants_def_from_experiment_builds_participants_def():
+def test_make_schema_from_experiment_builds_participants_schema():
     fields = [
         _make_experiment_field("id", DataType.INTEGER, is_unique_id=True),
         _make_experiment_field("revenue", DataType.DOUBLE_PRECISION, metric_pct_change=0.05),
@@ -496,12 +519,10 @@ def test_make_participants_def_from_experiment_builds_participants_def():
         fields=fields,
     )
 
-    result = make_participants_def_from_experiment(exp)
+    result = make_schema_from_experiment(exp)
 
     assert result is not None
     assert result.table_name == "my_table"
-    assert result.participant_type == ""
-    assert result.hidden is True
     field_names = [f.field_name for f in result.fields]
     assert field_names == ["country", "id", "revenue"]  # sorted by name
     id_fd = next(f for f in result.fields if f.field_name == "id")
@@ -675,6 +696,142 @@ async def test_create_preassigned_experiment_impl(
     num_treat = sum(1 for a in assignments if a.arm_id == arm2_id)
     # Allow for group sizes to be unequal by up to 2.
     assert abs(num_control - num_treat) <= 2
+
+
+async def test_create_preassigned_experiment_impl_cluster_assignment(xngin_session, testing_datasource):
+    """Preassigned create with cluster_key assigns all members of a cluster to the same arm."""
+    design_spec = make_design_spec_clustered()
+    request = CreateExperimentRequest(design_spec=design_spec)
+    field_type_map = await fetch_fields_or_raise(testing_datasource.ds, design_spec)
+    assert design_spec.desired_n is not None
+    assert design_spec.cluster_key is not None
+
+    async with DwhSession(testing_datasource.ds.get_config().dwh) as dwh:
+        participant_result = await dwh.get_participants(
+            design_spec.table_name,
+            select_columns={design_spec.primary_key, design_spec.cluster_key, "test_score"},
+            filters=design_spec.filters,
+            n=design_spec.desired_n,
+        )
+        sa_table = participant_result.sa_table
+        dwh_participants = participant_result.participants
+
+    assert dwh_participants is not None
+    response = await create_preassigned_experiment_impl(
+        request=request,
+        datasource_id=testing_datasource.ds.id,
+        organization_id=testing_datasource.ds.organization_id,
+        dwh_sa_table=sa_table,
+        dwh_participants=dwh_participants,
+        random_state=42,
+        xngin_session=xngin_session,
+        stratify_on_metrics=False,
+        validated_webhooks=[],
+        field_type_map=field_type_map,
+    )
+
+    # Verify that each participant in a cluster was assigned to the same arm.
+    assignment_rows = (
+        await xngin_session.scalars(
+            select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == response.experiment_id)
+        )
+    ).all()
+    arm_by_participant = {row.participant_id: row.arm_id for row in assignment_rows}
+    arms_by_cluster: dict[str, set[str]] = defaultdict(set)
+    for participant in dwh_participants:
+        participant_id = str(getattr(participant, design_spec.primary_key))
+        cluster_id = str(getattr(participant, design_spec.cluster_key))
+        arms_by_cluster[cluster_id].add(arm_by_participant[participant_id])
+
+    assert len(arms_by_cluster) > 1
+    assert all(len(arm_ids) == 1 for arm_ids in arms_by_cluster.values())
+    assert len(set.union(*arms_by_cluster.values())) == 2
+
+
+async def _create_clustered_preassigned_experiment(
+    xngin_session: AsyncSession,
+    testing_datasource,
+    *,
+    cluster_key: str | None = "cluster_equal",
+    metric_name: str = "test_score",
+) -> tables.Experiment:
+    design_spec = make_design_spec_clustered(cluster_key=cluster_key)
+    request = CreateExperimentRequest(design_spec=design_spec)
+    field_type_map = await fetch_fields_or_raise(testing_datasource.ds, design_spec)
+    assert design_spec.desired_n is not None
+
+    select_columns = {design_spec.primary_key, metric_name}
+    if cluster_key is not None:
+        select_columns.add(cluster_key)
+    async with DwhSession(testing_datasource.ds.get_config().dwh) as dwh:
+        participant_result = await dwh.get_participants(
+            design_spec.table_name,
+            select_columns=select_columns,
+            filters=design_spec.filters,
+            n=design_spec.desired_n,
+        )
+        sa_table = participant_result.sa_table
+        dwh_participants = participant_result.participants
+
+    assert dwh_participants is not None
+    response = await create_preassigned_experiment_impl(
+        request=request,
+        datasource_id=testing_datasource.ds.id,
+        organization_id=testing_datasource.ds.organization_id,
+        dwh_sa_table=sa_table,
+        dwh_participants=dwh_participants,
+        random_state=42,
+        xngin_session=xngin_session,
+        stratify_on_metrics=False,
+        validated_webhooks=[],
+        field_type_map=field_type_map,
+    )
+    return await get_experiment_preloaded(xngin_session, response.experiment_id)
+
+
+async def test_analyze_experiment_freq_impl_with_cluster_key(
+    xngin_session,
+    testing_datasource,
+    use_deterministic_random,
+):
+    """``analyze_experiment_freq_impl`` uses cluster-robust SEs when the experiment has a cluster key.
+
+    Uses ``clustered_dwh`` with ``cluster_powerlaw`` and metric ``test_score`` (ICC ~0.20 on that
+    cluster id per ``tools/generate_clustered_data.py``). Runs analysis twice on the same
+    assignments and outcomes: first with cluster-robust SEs, then after clearing ``is_cluster_key``
+    on the experiment field so the second pass uses only basic heteroskedasticity-robust SEs.
+    Expect coefficients to be the same, but CRSE should usually be larger than HC1 SE in this case.
+    """
+    dsconfig = testing_datasource.ds.get_config()
+    experiment = await _create_clustered_preassigned_experiment(
+        xngin_session,
+        testing_datasource,
+        cluster_key="cluster_powerlaw",
+        metric_name="test_score",
+    )
+    baseline_arm_id = experiment.arms[0].id
+    treatment_arm_id = experiment.arms[1].id
+    metrics = [DesignSpecMetricRequest(field_name="test_score", metric_pct_change=0.1)]
+
+    crse_analysis = await analyze_experiment_freq_impl(xngin_session, dsconfig, experiment, baseline_arm_id, metrics)
+    crse_treatment = next(a for a in crse_analysis.metric_analyses[0].arm_analyses if a.arm_id == treatment_arm_id)
+    assert crse_treatment.std_error is not None
+    assert not np.isnan(crse_treatment.std_error)
+    assert crse_treatment.std_error > 0
+
+    # Same assignments/outcomes; uses HC1 instead of cluster-robust SEs. Unsets is_cluster_key only
+    # so cluster_key_field() is None on re-analysis.
+    field = experiment.cluster_key_field()
+    assert field is not None
+    field.is_cluster_key = False
+
+    hc1_analysis = await analyze_experiment_freq_impl(xngin_session, dsconfig, experiment, baseline_arm_id, metrics)
+    hc1_treatment = next(a for a in hc1_analysis.metric_analyses[0].arm_analyses if a.arm_id == treatment_arm_id)
+    assert hc1_treatment.std_error is not None
+    assert not np.isnan(hc1_treatment.std_error)
+    assert hc1_treatment.std_error > 0
+    assert crse_treatment.estimate == hc1_treatment.estimate
+    assert crse_treatment.std_error > hc1_treatment.std_error
 
 
 async def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
