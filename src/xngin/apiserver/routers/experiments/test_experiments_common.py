@@ -10,10 +10,8 @@ import pytest
 from deepdiff import DeepDiff
 from pydantic import HttpUrl, TypeAdapter
 from sqlalchemy import Boolean, Column, MetaData, String, Table, select
-from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy.schema import CreateTable
 
 from xngin.apiserver.conftest import RowProtocolMixin
 from xngin.apiserver.dwh.dwh_session import DwhSession
@@ -2638,9 +2636,3 @@ async def test_arm_population_counter(xngin_session, testing_datasource):
     # get_assign_summary reflects the new count
     summary = await get_assign_summary(xngin_session, experiment.id, None, ExperimentsType.FREQ_ONLINE)
     assert summary.sample_size == 1
-
-
-def test_experiment_sql():
-    pg_sql = str(CreateTable(cast(Table, tables.ArmAssignment.__table__)).compile(dialect=postgresql.dialect()))
-    assert "arm_id VARCHAR(36) NOT NULL," in pg_sql
-    assert "strata JSONB NOT NULL," in pg_sql

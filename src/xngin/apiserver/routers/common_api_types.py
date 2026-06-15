@@ -77,7 +77,7 @@ class DesignSpecMetricBase(ApiBaseModel):
     ] = None
     metric_target: Annotated[
         float | None,
-        Field(description="Absolute target value = metric_baseline*(1 + metric_pct_change)"),
+        Field(description="Absolute target value = metric_baseline * (1 + metric_pct_change)."),
     ] = None
 
     # Cluster randomization design parameters (all must be set together, or none).
@@ -87,7 +87,7 @@ class DesignSpecMetricBase(ApiBaseModel):
     ] = None
     avg_cluster_size: Annotated[
         float | None,
-        Field(description="Average number of individuals per cluster."),
+        Field(description="Average number of participants per cluster."),
     ] = None
     cv: Annotated[
         float | None,
@@ -106,13 +106,13 @@ class DesignSpecMetricBase(ApiBaseModel):
 class DesignSpecMetric(DesignSpecMetricBase):
     """Defines a metric to measure in an experiment with its baseline stats."""
 
-    metric_type: Annotated[MetricType | None, Field(description="Inferred from dwh type.")] = None
+    metric_type: Annotated[MetricType | None, Field(description="Inferred from the data warehouse column type.")] = None
     metric_baseline: Annotated[float | None, Field(description="Mean of the tracked metric.")] = None
     metric_stddev: Annotated[
         float | None,
         Field(
             description=(
-                "Standard deviation is set only for metric_type.NUMERIC metrics. Must be set for "
+                "Standard deviation is set only for MetricType.NUMERIC metrics. Must be set for "
                 "numeric metrics when available_n > 0."
             )
         ),
@@ -121,7 +121,7 @@ class DesignSpecMetric(DesignSpecMetricBase):
         int | None,
         Field(
             description=(
-                "The number of participants meeting the filtering criteria with a *non-null* value for this metric."
+                "The number of participants who meet the filtering criteria and have a non-null value for this metric."
             )
         ),
     ] = None
@@ -129,18 +129,18 @@ class DesignSpecMetric(DesignSpecMetricBase):
         int | None,
         Field(
             description=(
-                "The number of participants meeting the filtering criteria regardless of whether or "
-                "not this metric's value is NULL. NOTE: Assignments are made from the targeted "
-                "aviailable_n population, so be sure you are ok with participants potentially having "
-                "this value missing during assignment if available_n != available_nonnull_n."
+                "The number of participants who meet the filtering criteria, whether or not this metric's "
+                "value is NULL. Note: assignments are made from the available_n population. When "
+                "available_n is greater than available_nonnull_n, some assigned participants may have a "
+                "missing value for this metric."
             )
         ),
     ] = None
 
     @model_validator(mode="after")
     def stddev_check(self):
-        """Enforce that metric_stddev is empty for non-NUMERICs. FE will handle numerics without stddev
-        (due to all nulls)"""
+        """Enforce that metric_stddev is empty for non-NUMERICs. The frontend handles numerics without a
+        stddev (the all-null case)."""
         if self.metric_type is not MetricType.NUMERIC and self.metric_stddev is not None:
             raise ValueError("should not have stddev")
         return self
@@ -156,13 +156,16 @@ class DesignSpecMetricRequest(DesignSpecMetricBase):
     metric_pct_change: Annotated[
         float | None,
         Field(
-            description="Specify a meaningful min percent change relative to the metric_baseline "
-            "you want to detect. Cannot be set if you set metric_target."
+            description="The smallest percent change, relative to metric_baseline, that you want to be "
+            "able to detect. Cannot be set together with metric_target."
         ),
     ] = None
     metric_target: Annotated[
         float | None,
-        Field(description="Specify the absolute value you want to detect. Cannot be set if you set metric_pct_change."),
+        Field(
+            description="The absolute value you want to be able to detect. Cannot be set together with "
+            "metric_pct_change."
+        ),
     ] = None
 
     @model_validator(mode="after")
@@ -175,43 +178,35 @@ class DesignSpecMetricRequest(DesignSpecMetricBase):
 
 
 class ParticipantProperty(ApiBaseModel):
-    """
-    Properties about a participant that are used to filter the assignment.
+    """A single participant property used when applying the experiment's filters.
+
+    All provided values will be compared using the filter criteria defined on the experiment. Omitted values will be
+    evaluated as null.
     """
 
-    field_name: FieldName
-    value: PropertyValueTypes
+    field_name: Annotated[
+        FieldName,
+        Field(description="The name of the property. This must match a field_name defined on the experiment."),
+    ]
+    value: Annotated[PropertyValueTypes, Field(description="The value of the property.")]
 
 
 class OnlineAssignmentWithFiltersRequest(ApiBaseModel):
-    """Request model for creating a new frequentist online assignment with server-side filtering.
-
-    Usage notes:
-    1. Currently only used for FREQ_ONLINE experiments.
-    2. If the experiment defines no filters, use the corresponding GET endpoint instead.
-    3. If an assignment already exists for a given participant, the property list is ignored and assignment returned.
-    4. Property names must reference a valid field_name from the experiment's fields.
-    5. Property list may be empty.
-    6. If a filter is specified but no value is found, it is treated as NULL.
-    7. Other differences from the SQL-based filtering logic:
-        - NO support for special experiment_id-based filters.
-    """
+    """Request body for callers to supply property values for server-side evaluation of filters participant filters."""
 
     properties: Annotated[
         list[ParticipantProperty],
-        Field(description="List of participant properties to potentially filter against the experiment's filters."),
+        Field(description="Participant properties to match against the experiment's filters."),
     ]
 
 
 class Context(ApiBaseModel):
-    """
-    Pydantic model for context of the experiment.
-    """
+    """A context variable that a Contextual Multi-armed Bandit (CMAB) conditions on."""
 
     context_id: Annotated[
         str | None,
         Field(
-            description="Unique identifier for the context, you should NOT set this when creating a new context.",
+            description="Unique identifier for the context. Do not set this when you create a new context.",
             examples=["1"],
         ),
     ] = None
@@ -219,14 +214,12 @@ class Context(ApiBaseModel):
     context_description: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)] = None
     value_type: Annotated[
         ContextType,
-        Field(description="Type of value the context can take", default=ContextType.BINARY),
+        Field(description="Type of value the context can take.", default=ContextType.BINARY),
     ]
 
 
 class ContextInput(ApiBaseModel):
-    """
-    Pydantic model for a context input
-    """
+    """A single context value supplied at assignment time."""
 
     context_id: Annotated[
         str,
@@ -238,25 +231,24 @@ class ContextInput(ApiBaseModel):
     context_value: Annotated[
         float,
         Field(
-            description="Value of the context",
+            description="Value of the context.",
             examples=[2.5],
         ),
     ]
 
 
 class CMABContextInputRequest(ApiBaseModel):
-    """Request model for creating a new CMAB assignment or a CMAB experiment analysis.
+    """Request body for creating a CMAB assignment or running a CMAB experiment analysis.
 
-    When submitting context values for a CMAB experiment, the following rules apply:
-    1. Each context_input must reference a valid context_id from the experiment's defined contexts
-    2. The order of context_inputs does not need to match the order of contexts in the experiment
-    3. You must provide values for all contexts defined in the experiment
-    4. Number of input context values must match the number of contexts defined in the experiment
-    5. The context value input can be None, but only in the case of retrieving a pre-existing assignment.
+    When you submit context values for a CMAB experiment, these rules apply:
+    1. Provide one value for every context defined on the experiment.
+    2. Each context_input must reference a valid context_id defined on the experiment.
+    3. The order does not matter. Values are matched to contexts by context_id, not by position.
+    4. context_inputs may be null only when you retrieve an existing assignment.
 
     Example:
         If an experiment defines contexts with IDs ["ctx_1", "ctx_2"], your request must include
-        both of these context_ids in the context_inputs list, but they can be in any order.
+        both context_ids in the context_inputs list, in any order.
     """
 
     type: Literal["cmab_assignment"] = (
@@ -266,11 +258,9 @@ class CMABContextInputRequest(ApiBaseModel):
         list[ContextInput] | None,
         Field(
             description="""
-            List of context values for the assignment.
-            Must include exactly the same number contexts defined in the experiment.
-            The values are matched to the experiment's contexts by context_id, not by position in the list.
-            Each context_id must correspond to one of the IDs of the contexts defined in the experiment.
-            Can be None, when simply retrieving pre-existing assignments; must have valid inputs otherwise.
+            The context values for the assignment, one for each context defined on the experiment.
+            Values are matched to contexts by context_id, not by position in the list.
+            May be null when you retrieve an existing assignment. Otherwise, valid inputs are required.
             """
         ),
     ]
@@ -281,14 +271,7 @@ class Arm(ApiBaseModel):
 
     arm_id: Annotated[
         str | None,
-        Field(
-            description=(
-                "ID of the arm. If creating a new experiment (POST /datasources/{datasource_id}/experiments), "
-                "this is generated for you and made available in the response; you should NOT set this. "
-                "Only generate ids of your own if using the stateless Experiment Design API as you will "
-                "do your own persistence."
-            )
-        ),
+        Field(description="Unique ID of the arm. Leave unset when creating an arm."),
     ] = None
     arm_name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
     arm_description: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)] = None
@@ -296,8 +279,8 @@ class Arm(ApiBaseModel):
         ArmWeight | None,
         Field(
             description=(
-                "Optional weight for this arm for unequal allocation. Weight must be a float in (0, 100). "
-                "If provided, all arms must have weights that sum to 100."
+                "Optional weight for this arm, used for unequal allocation. The weight must be greater than 0 "
+                "and less than 100. If you set a weight, all arms must have weights, and they must sum to 100."
             )
         ),
     ] = None
@@ -312,8 +295,8 @@ class ArmAnalysis(Arm):
         float | None,
         Field(
             description=(
-                "The p-value indicating statistical significance of the treatment effect. Value may be "
-                "None if the t-stat is not available, e.g. due to inability to calculate the standard error."
+                "The p-value indicating statistical significance of the treatment effect. May be None "
+                "when the t-statistic is not available, for example when the standard error cannot be computed."
             )
         ),
     ]
@@ -321,8 +304,8 @@ class ArmAnalysis(Arm):
         float | None,
         Field(
             description=(
-                "The t-statistic from the statistical test. If the value is actually NaN, e.g. due to "
-                "inability to calculate the standard error, we return None."
+                "The t-statistic from the statistical test. Returned as None when the value is NaN, for "
+                "example when the standard error cannot be computed."
             )
         ),
     ]
@@ -384,56 +367,56 @@ class ArmBandit(Arm):
         float | None,
         Field(
             examples=[None, 1.0],
-            description="Initial alpha parameter for Beta prior",
+            description="Initial alpha parameter for the Beta prior.",
         ),
     ] = None
     beta_init: Annotated[
         float | None,
         Field(
             examples=[None, 1.0],
-            description="Initial beta parameter for Beta prior",
+            description="Initial beta parameter for the Beta prior.",
         ),
     ] = None
     mu_init: Annotated[
         float | None,
         Field(
             examples=[None, 0.0],
-            description="Initial mean parameter for Normal prior",
+            description="Initial mean parameter for the Normal prior.",
         ),
     ] = None
     sigma_init: Annotated[
         float | None,
         Field(
             examples=[None, 1.0],
-            description="Initial standard deviation parameter for Normal prior",
+            description="Initial standard deviation parameter for the Normal prior.",
         ),
     ] = None
     alpha: Annotated[
         float | None,
         Field(
             examples=[None, 1.0],
-            description="Updated alpha parameter for Beta prior",
+            description="Updated alpha parameter for the Beta prior.",
         ),
     ] = None
     beta: Annotated[
         float | None,
         Field(
             examples=[None, 1.0],
-            description="Updated beta parameter for Beta prior",
+            description="Updated beta parameter for the Beta prior.",
         ),
     ] = None
     mu: Annotated[
         list[float] | None,
         Field(
             examples=[None, [0.0]],
-            description="Updated mean vector for Normal prior",
+            description="Updated mean vector for the Normal prior.",
         ),
     ] = None
     covariance: Annotated[
         list[list[float]] | None,
         Field(
             examples=[None, [[1.0]]],
-            description="Updated covariance matrix for Normal prior",
+            description="Updated covariance matrix for the Normal prior.",
         ),
     ] = None
 
@@ -530,8 +513,8 @@ class FreqExperimentAnalysisResponse(ApiBaseModel):
         int,
         Field(
             description=(
-                "The number of participants assigned to the experiment pulled from the dwh across all arms. "
-                "Metric outcomes are not guaranteed to be present for all participants."
+                "The number of participants assigned to the experiment across all "
+                "arms. Metric outcomes are not guaranteed to be present for all participants."
             )
         ),
     ]
@@ -551,7 +534,7 @@ class FreqExperimentAnalysisResponse(ApiBaseModel):
 
 
 class BanditExperimentAnalysisResponse(ApiBaseModel):
-    """Describes changes in arms for a bandit experiment"""
+    """Describes changes in arms for a bandit experiment."""
 
     type: Literal[ExperimentAnalysisType.BANDIT] = ExperimentAnalysisType.BANDIT
 
@@ -621,16 +604,16 @@ class MetricPowerAnalysis(ApiBaseModel):
 
     sufficient_n: Annotated[
         bool | None,
-        Field(description="Whether or not there are enough available units to sample from to meet target_n."),
+        Field(description="Whether there are enough available participants to sample to reach target_n."),
     ] = None
 
     target_possible: Annotated[
         float | None,
         Field(
             description=(
-                "If there is an insufficient sample size to meet the desired metric_target, we report what is possible "
-                "given the available_n. This value is equivalent to the relative pct_change_possible. "
-                "This is None when there is a sufficient sample size to detect the desired change."
+                "When the sample size is too small to reach the desired metric_target, this is the target "
+                "that is possible given available_n. It is the absolute counterpart of pct_change_possible. "
+                "None when the sample size is large enough to detect the desired change."
             )
         ),
     ] = None
@@ -639,9 +622,9 @@ class MetricPowerAnalysis(ApiBaseModel):
         float | None,
         Field(
             description=(
-                "If there is an insufficient sample size to meet the desired metric_pct_change, we report what is "
-                "possible given the available_n. This value is equivalent to the absolute target_possible. "
-                "This is None when there is a sufficient sample size to detect the desired change."
+                "When the sample size is too small to reach the desired metric_pct_change, this is the percent "
+                "change that is possible given available_n. It is the relative counterpart of target_possible. "
+                "None when the sample size is large enough to detect the desired change."
             )
         ),
     ] = None
@@ -650,37 +633,37 @@ class MetricPowerAnalysis(ApiBaseModel):
         float | None,
         Field(
             description=(
-                "The MDE achievable given design_spec.desired_n, confidence, and power. "
-                "Only present when design_spec.desired_n is set (frequentist design specs)."
+                "The minimum detectable effect (MDE) achievable for design_spec.desired_n at the chosen "
+                "confidence and power. Present only when design_spec.desired_n is set (frequentist design specs)."
             )
         ),
     ] = None
 
     msg: Annotated[
         MetricPowerAnalysisMessage | None,
-        Field(description="Human friendly message about the above results."),
+        Field(description="A human-friendly summary of the power analysis results."),
     ] = None
 
     # Cluster randomization results (None for non-cluster designs)
     num_clusters_total: Annotated[
         int | None,
-        Field(description="Total number of clusters needed across all arms"),
+        Field(description="Total number of clusters needed across all arms."),
     ] = None
     clusters_per_arm: Annotated[
         list[int] | None,
-        Field(description="Number of clusters needed for each arm (one entry per arm)"),
+        Field(description="Number of clusters needed for each arm (one entry per arm)."),
     ] = None
     n_per_arm: Annotated[
         list[int] | None,
-        Field(description="Number of participants for each arm (one entry per arm)"),
+        Field(description="Number of participants for each arm (one entry per arm)."),
     ] = None
     design_effect: Annotated[
         float | None,
-        Field(description="Design effect (DEFF) - clustering penalty multiplier"),
+        Field(description="Design effect (DEFF), the clustering penalty multiplier."),
     ] = None
     effective_sample_size: Annotated[
         int | None,
-        Field(description="Effective sample size accounting for clustering (total_n / DEFF)"),
+        Field(description="Effective sample size accounting for clustering (total_n / DEFF)."),
     ] = None
 
 
@@ -703,9 +686,9 @@ class GetMetricsResponseElement(ApiBaseModel):
 class Filter(ApiBaseModel):
     """Defines criteria for filtering rows by value.
 
-    ## Examples
+    ### Examples
 
-    | Relation | Value             | logical Result                                    |
+    | Relation | Value             | Logical result                                    |
     |----------|-------------------|---------------------------------------------------|
     | INCLUDES | [None]            | Match when `x IS NULL`                            |
     | INCLUDES | ["a"]             | Match when `x IN ("a")`                           |
@@ -722,13 +705,13 @@ class Filter(ApiBaseModel):
 
     String comparisons are case-sensitive.
 
-    ## Special Handling for BETWEEN support of including NULL
+    ### Special Handling for BETWEEN support of including NULL
 
     When the relation is BETWEEN, we allow for up to 3 values to support the special case of
     including null in addition to the values in the between range via an OR IS NULL clause, as
     indicated by a 3rd value of None. Any other 3rd value is invalid.
 
-    ## Handling of DATE, DATETIME and TIMESTAMP values
+    ### Handling of DATE, DATETIME and TIMESTAMP values
 
     DATE, DATETIME or TIMESTAMP-type columns support INCLUDES/EXCLUDES/BETWEEN, similar to numerics.
 
@@ -869,7 +852,7 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         str,
         Field(
             max_length=MAX_LENGTH_OF_NAME_VALUE,
-            description="Datasource table used to resolve participant field metadata.",
+            description="Data source table used to resolve participant field metadata.",
         ),
     ]
     primary_key: Annotated[
@@ -900,8 +883,7 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         list[Filter],
         Field(
             description=(
-                "Optional filters that constrain a general eligible audience to a specific subset "
-                "who can participate in an experiment."
+                "Optional filters that narrow the eligible audience to the participants you want in the experiment."
             ),
             max_length=MAX_NUMBER_OF_FILTERS,
         ),
@@ -913,9 +895,9 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
             default=None,
             ge=0,
             description="Used in both power calculations and experiment creation. "
-            "Required for *creation* of preassigned experiments. "
-            "Optional for power calculations; if set, calculates minimum detectable effect for the "
-            "desired size in addition to the min sample size. ",
+            "Required when creating preassigned experiments. Optional for power calculations. "
+            "When set, the power check also returns the minimum detectable effect for this size, "
+            "along with the minimum sample size.",
         ),
     ] = None
 
@@ -925,7 +907,7 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         Field(
             ge=0,
             le=1,
-            description="The chance of detecting a real non-null effect, i.e. 1 - false negative rate.",
+            description="The chance of detecting a real effect when one truly exists (1 - the false negative rate).",
         ),
     ] = 0.8
     alpha: Annotated[
@@ -933,10 +915,7 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         Field(
             ge=0,
             le=1,
-            description=(
-                "The chance of a false positive, i.e. there is no real non-null effect, but we "
-                "mistakenly think there is one."
-            ),
+            description="The chance of a false positive: concluding there is an effect when there is none.",
         ),
     ] = 0.05
     fstat_thresh: Annotated[
@@ -945,8 +924,8 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
             ge=0,
             le=1,
             description=(
-                "Threshold on the p-value of joint significance in doing the omnibus balance check, "
-                'above which we declare the data to be "balanced".'
+                "The p-value threshold for the balance check. When the balance check's p-value is above "
+                'this threshold, we treat the assignment as "balanced".'
             ),
         ),
     ] = 0.6
@@ -973,8 +952,8 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
         list[Context] | None,
         Field(
             description=(
-                "Optional list of contexts that can be used to condition the bandit assignment. "
-                "Required for contextual bandit experiments."
+                "Optional list of contexts that can be used to condition the assignment. "
+                "Required for Contextual Multi-armed Bandit (CMAB) experiments."
             ),
             max_length=MAX_NUMBER_OF_FIELDS,
         ),
@@ -991,7 +970,7 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
     reward_type: Annotated[
         LikelihoodTypes,
         Field(
-            description="The type of reward we observe from the experiment.",
+            description="The type of outcome observed from the experiment.",
             default=LikelihoodTypes.BERNOULLI,
         ),
     ]
@@ -1055,8 +1034,11 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
 
 
 class PreassignedFrequentistExperimentSpec(BaseFrequentistDesignSpec):
-    """Use this type to randomly select and assign from existing participants at design time with
-    frequentist A/B experiments."""
+    """Describes a Preassigned A/B experiment.
+
+    Preassigned experiments create participants from existing users and assign them to arms when the experiment is
+    created.
+    """
 
     experiment_type: Literal[ExperimentsType.FREQ_PREASSIGNED] = ExperimentsType.FREQ_PREASSIGNED
 
@@ -1081,19 +1063,19 @@ class PreassignedFrequentistExperimentSpec(BaseFrequentistDesignSpec):
 
 
 class OnlineFrequentistExperimentSpec(BaseFrequentistDesignSpec):
-    """Use this type to randomly assign participants into arms during live experiment execution with
-    frequentist A/B experiments.
+    """Describes an Online A/B experiment.
 
-    For example, you may wish to experiment on new users. Assignments are issued via API request.
+    Online experiments assign participants to arms in response to API calls from your application, in real time.
     """
 
     experiment_type: Literal[ExperimentsType.FREQ_ONLINE] = ExperimentsType.FREQ_ONLINE
 
 
 class MABExperimentSpec(BaseBanditExperimentSpec):
-    """Use this type to randomly assign participants into arms during live experiment execution with MAB experiments.
+    """Describes a Multi-armed Bandit (MAB) experiment.
 
-    For example, you may wish to experiment on new users. Assignments are issued via API request.
+    Multi-armed Bandit experiments assign participants to arms in response to API calls from your application, in real
+    time.
     """
 
     experiment_type: Literal[ExperimentsType.MAB_ONLINE] = ExperimentsType.MAB_ONLINE
@@ -1134,10 +1116,10 @@ class MABDwhExperimentSpec(BaseBanditExperimentSpec):
 
 
 class CMABExperimentSpec(BaseBanditExperimentSpec):
-    """Use this type to randomly assign participants into arms during live experiment execution with
-    contextual MAB experiments.
+    """Describes a Contextual Multi-armed Bandit (CMAB) experiment.
 
-    For example, you may wish to experiment on new users. Assignments are issued via API request.
+    Contextual Multi-armed Bandit experiments assign participants to arms in response to API calls from your
+    application, in real time.
     """
 
     experiment_type: Literal[ExperimentsType.CMAB_ONLINE] = ExperimentsType.CMAB_ONLINE
@@ -1302,8 +1284,8 @@ class BalanceCheck(ApiBaseModel):
         float,
         Field(
             description=(
-                "Probability of observing these data if strata do not predict treatment assignment, "
-                "i.e. our randomization is balanced."
+                "Probability of observing these data if the strata do not predict treatment assignment. "
+                "A high value means the randomization is balanced."
             )
         ),
     ]
@@ -1352,7 +1334,7 @@ class AssignSummary(ApiBaseModel):
 
     balance_check: Annotated[
         BalanceCheck | None,
-        Field(description="Balance test results if available. 'online' experiments do not have balance checks."),
+        Field(description="Balance test results if available. Online experiments do not have balance checks."),
     ] = None
     sample_size: Annotated[int, Field(description="The number of participants across all arms in total.")]
     arm_sizes: Annotated[
@@ -1442,7 +1424,7 @@ class GetExperimentAssignmentsResponse(ApiBaseModel):
 
     balance_check: Annotated[
         BalanceCheck | None,
-        Field(description="Balance test results if available. 'online' experiments do not have balance checks."),
+        Field(description="Balance test results if available. Online experiments do not have balance checks."),
     ] = None
 
     experiment_id: str
