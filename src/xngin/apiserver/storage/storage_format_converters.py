@@ -479,6 +479,7 @@ class ExperimentStorageConverter:
 
                 if isinstance(design_spec, capi.MABDwhExperimentSpec):
                     experiment.datasource_table = design_spec.table_name
+                    experiment.experiment_fields = _make_experiment_fields_from_design_spec(design_spec, field_type_map)
 
                 # Set bandit fields
                 context_len = len(design_spec.contexts) if design_spec.contexts else 1
@@ -533,9 +534,6 @@ class ExperimentStorageConverter:
                     )
                     for i, arm in enumerate(design_spec.arms, start=1)
                 ]
-
-                if isinstance(design_spec, capi.MABDwhExperimentSpec):
-                    experiment.experiment_fields = _make_experiment_fields_from_design_spec(design_spec, field_type_map)
 
                 return cls(experiment)
             case _:
