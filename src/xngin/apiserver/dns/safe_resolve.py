@@ -53,25 +53,32 @@ def lookup_v4(host: str) -> list[str] | None:
 
 
 def is_safe_ip(ip):
-    """Returns true iff the ip is safe to try to connect to.
+    """Returns true iff the ip is a safe IPv4 address to try to connect to.
 
-    If ALLOW_CONNECTING_TO_PRIVATE_IPS is enabled, we will validate the IP address but not check whether it is
+    Only IPv4 is supported; IPv6 addresses are always rejected (see safe_resolve). If
+    ALLOW_CONNECTING_TO_PRIVATE_IPS is enabled, any valid IPv4 address is accepted without checking whether it is
     globally routable.
     """
     try:
         parsed = ipaddress.ip_address(ip)
-        if ALLOW_CONNECTING_TO_PRIVATE_IPS:
-            return True
-        return parsed.is_global and (
-            (parsed.version == 4 and parsed.packed[0] != 192)
-            or (parsed.version == 6 and parsed.exploded.split(":")[0] not in {"2001", "2620", "64"})
-        )
     except ValueError:
         return False
+    if parsed.version != 4:
+        return False
+    if ALLOW_CONNECTING_TO_PRIVATE_IPS:
+        return True
+    return parsed.is_global
 
 
 def is_safe_ipset(ips: set[str]):
     return all(is_safe_ip(address) for address in ips)
+
+
+def _is_ipv6_literal(host: str) -> bool:
+    try:
+        return ipaddress.ip_address(host).version == 6
+    except ValueError:
+        return False
 
 
 def safe_resolve(host: str | None):
@@ -80,6 +87,12 @@ def safe_resolve(host: str | None):
 
     if host == UNSAFE_IP_FOR_TESTING:
         raise DnsLookupError("Detected sentinel value of invalid IP used for testing purposes.")
+
+    # Only IPv4 is supported. Reject IPv6 literals outright (this also closes IPv6-only evasions such as
+    # NAT64/6to4 and IPv4-mapped addresses). Hostnames are resolved to A (IPv4) records below, so a host with
+    # only AAAA records fails the "no answers" check.
+    if _is_ipv6_literal(host):
+        raise DnsLookupUnsafeError(host)
 
     # If it is a safe IP address, return it immediately.
     if is_safe_ip(host):
