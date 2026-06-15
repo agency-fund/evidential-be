@@ -29,7 +29,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute, joinedload, selectinload
 
-from xngin.apiserver import constants, flags
+from xngin.apiserver import constants
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
@@ -2313,8 +2313,6 @@ async def power_check(
 
 def raise_unless_safe_hostname(dsn):
     """Raises a 400 if the DNS name in dsn is possibly attempting to connect to resources on local network."""
-    if flags.DISABLE_SAFEDNS_CHECK:
-        return
     if isinstance(dsn, PostgresDsn | RedshiftDsn):
         try:
             safe_resolve(dsn.host)

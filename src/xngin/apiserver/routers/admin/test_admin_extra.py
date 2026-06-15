@@ -80,7 +80,6 @@ _PERSISTED_WEBHOOK_TOKEN = "sample-token"
     ids=lambda d: type(d),
 )
 async def test_datasources_hide_credentials(
-    disable_safe_resolve_check,
     dsn: PostgresDsn | RedshiftDsn | BqDsn,
     xngin_session: AsyncSession,
     aclient: AdminAPIClient,

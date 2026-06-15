@@ -4,6 +4,7 @@ from sys import platform
 
 from dns.exception import DNSException
 from dns.resolver import resolve
+from loguru import logger
 
 from xngin.apiserver.flags import ALLOW_CONNECTING_TO_PRIVATE_IPS
 
@@ -11,6 +12,12 @@ DNS_TIMEOUT_SECS = 5
 
 # Sentinel value that unit tests can use to ensure a host is treated as invalid.
 UNSAFE_IP_FOR_TESTING = "127.0.0.9"
+
+# When True, lookup_v4() never performs real DNS resolution and instead returns 127.0.0.1 for every host. An autouse
+# fixture flips this on so unit tests never depend on a working resolver. Hosts not in INTERCEPT_DNS_ALLOWLIST are
+# logged so we can spot tests that should be using a literal IP or a mock instead.
+INTERCEPT_DNS_FOR_TESTING = False
+INTERCEPT_DNS_ALLOWLIST = frozenset({"localhost", "example.com"})
 
 
 class DnsLookupError(Exception):
@@ -27,6 +34,10 @@ class DnsLookupUnsafeError(DnsLookupError):
 
 def lookup_v4(host: str) -> list[str] | None:
     """Returns the IP addresses for a hostname, or None if there was some kind of failure."""
+    if INTERCEPT_DNS_FOR_TESTING:
+        if host not in INTERCEPT_DNS_ALLOWLIST:
+            logger.warning(f"Intercepting unit test DNS lookup for unexpected host {host!r}; returning 127.0.0.1.")
+        return ["127.0.0.1"]
     if platform == "darwin":
         # dnspython doesn't function properly on OSX machines so call socket.getaddrinfo directly.
         try:
