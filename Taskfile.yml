@@ -20,6 +20,7 @@ env:
 
   # Disable Atlas telemetry.
   ATLAS_NO_ANON_TELEMETRY: "true"
+  ATLAS_NO_UPDATE_NOTIFIER: "true"
   DO_NOT_TRACK: "1"
 
   # Allow connecting to data warehouses residing in private IP ranges.
