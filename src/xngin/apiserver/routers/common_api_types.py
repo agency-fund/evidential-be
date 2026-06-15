@@ -1114,6 +1114,12 @@ class MABDwhExperimentSpec(BaseBanditExperimentSpec):
         ),
     ]
 
+    @model_validator(mode="after")
+    def check_primary_key_and_target_differ(self) -> Self:
+        if self.primary_key == self.target_field_name:
+            raise ValueError("primary_key and target_field_name must refer to different columns")
+        return self
+
 
 class CMABExperimentSpec(BaseBanditExperimentSpec):
     """Describes a Contextual Multi-armed Bandit (CMAB) experiment.
