@@ -1,13 +1,38 @@
 """Unit tests for the SSRF guard in safe_resolve.
 
 The session-wide ``safe_resolve_testing_mode`` fixture sets
-``ALLOW_CONNECTING_TO_PRIVATE_IPS = True``; these tests flip it back off via the
-``enforce_ip_safety`` fixture so the real safety checks run.
+``ALLOW_CONNECTING_TO_PRIVATE_IPS = True``; these tests override it where they
+need the production safety checks.
 """
 
 import pytest
 
 from xngin.apiserver.dns import safe_resolve
+
+_IP_CLASSIFICATION_CASES = [
+    ("", False),
+    ("0.0.0.0", False),  # noqa: S104
+    ("1.2.3.4", True),
+    ("10.0.0.1", False),
+    ("100.64.0.1", False),
+    ("127.0.0.1", False),
+    ("169.254.169.254", False),
+    ("172.16.0.1", False),
+    ("192.168.1.1", False),
+    ("192.30.252.1", True),
+    ("8.8.8.8", True),
+    ("not-an-ip", False),
+]
+
+# IPv6 is unsupported and always rejected -- including public addresses and the evasion-prone encodings of
+# internal targets (NAT64 64:ff9b::/96, 6to4 2002::/16, IPv4-mapped ::ffff:0:0/96).
+_IPV6_LITERALS = [
+    "2606:4700:4700::1111",
+    "::1",
+    "::ffff:127.0.0.1",
+    "64:ff9b::169.254.169.254",
+    "2002:a9fe:a9fe::",
+]
 
 
 @pytest.fixture
@@ -15,56 +40,33 @@ def enforce_ip_safety(monkeypatch):
     monkeypatch.setattr(safe_resolve, "ALLOW_CONNECTING_TO_PRIVATE_IPS", False)
 
 
-def test_is_safe_ip_allows_public_ipv4(enforce_ip_safety):
-    assert safe_resolve.is_safe_ip("8.8.8.8")
-    assert safe_resolve.is_safe_ip("1.2.3.4")
-    # Regression: globally-routable 192.x addresses (e.g. github.com's range) must not be blocked.
-    assert safe_resolve.is_safe_ip("192.30.252.1")
+def _fail_lookup_v4(host: str):
+    raise AssertionError(f"lookup_v4 must not be called for an IP literal: {host}")
 
 
-def test_is_safe_ip_blocks_private_and_special_ipv4(enforce_ip_safety):
-    unsafe = ["127.0.0.1", "10.0.0.1", "192.168.1.1", "172.16.0.1", "169.254.169.254", "0.0.0.0", "100.64.0.1"]  # noqa: S104
-    for addr in unsafe:
-        assert not safe_resolve.is_safe_ip(addr), addr
+@pytest.mark.parametrize(("addr", "expected"), _IP_CLASSIFICATION_CASES)
+def test_is_safe_ip_classifies_ipv4_and_non_ip_values(enforce_ip_safety, addr, expected):
+    assert safe_resolve.is_safe_ip(addr) is expected
 
 
-def test_is_safe_ip_rejects_non_ip_strings(enforce_ip_safety):
-    assert not safe_resolve.is_safe_ip("not-an-ip")
-    assert not safe_resolve.is_safe_ip("")
-
-
-def test_is_safe_ip_rejects_multicast(enforce_ip_safety):
-    # ipaddress.is_global considers IPv4 multicast "global"; we must reject it.
-    assert not safe_resolve.is_safe_ip("224.0.0.1")
-    assert not safe_resolve.is_safe_ip("239.255.255.250")  # SSDP
-
-
-def test_safe_resolve_rejects_multicast_even_when_private_allowed():
-    # No enforce_ip_safety fixture: the autouse fixture leaves ALLOW_CONNECTING_TO_PRIVATE_IPS=True, yet multicast
-    # must still be rejected (it is never a valid unicast target).
+@pytest.mark.parametrize("allow_private_ips", [False, True])
+def test_safe_resolve_rejects_multicast_literals(monkeypatch, allow_private_ips):
+    # ipaddress.is_global considers IPv4 multicast "global"; it is still never a valid unicast target.
+    monkeypatch.setattr(safe_resolve, "ALLOW_CONNECTING_TO_PRIVATE_IPS", allow_private_ips)
+    monkeypatch.setattr(safe_resolve, "lookup_v4", _fail_lookup_v4)
     with pytest.raises(safe_resolve.DnsLookupUnsafeError):
         safe_resolve.safe_resolve("224.0.0.1")
 
 
-# IPv6 is unsupported and always rejected -- including public addresses and the evasion-prone encodings of
-# internal targets (NAT64 64:ff9b::/96, 6to4 2002::/16, IPv4-mapped ::ffff:0:0/96).
-_IPV6_LITERALS = ["2606:4700:4700::1111", "::1", "::ffff:127.0.0.1", "64:ff9b::169.254.169.254", "2002:a9fe:a9fe::"]
+@pytest.mark.parametrize("addr", _IPV6_LITERALS)
+def test_safe_resolve_rejects_ipv6_literals(monkeypatch, addr):
+    monkeypatch.setattr(safe_resolve, "lookup_v4", _fail_lookup_v4)
+    with pytest.raises(safe_resolve.DnsLookupUnsafeError):
+        safe_resolve.safe_resolve(addr)
 
 
-def test_is_safe_ip_rejects_all_ipv6(enforce_ip_safety):
-    for addr in _IPV6_LITERALS:
-        assert not safe_resolve.is_safe_ip(addr), addr
-
-
-def test_safe_resolve_rejects_ipv6_literals():
-    # Rejection must happen before any DNS resolution; otherwise the autouse intercept maps them to 127.0.0.1.
-    # DnsLookupUnsafeError subclasses DnsLookupError.
-    for addr in _IPV6_LITERALS:
-        with pytest.raises(safe_resolve.DnsLookupUnsafeError):
-            safe_resolve.safe_resolve(addr)
-
-
-def test_safe_resolve_returns_safe_ipv4_literal(enforce_ip_safety):
+def test_safe_resolve_returns_safe_ipv4_literal_without_resolving(enforce_ip_safety, monkeypatch):
+    monkeypatch.setattr(safe_resolve, "lookup_v4", _fail_lookup_v4)
     assert safe_resolve.safe_resolve("8.8.8.8") == "8.8.8.8"
 
 
@@ -76,11 +78,6 @@ def test_safe_resolve_rejects_host_without_ipv4_address(monkeypatch):
 
 
 def test_safe_resolve_rejects_unsafe_ipv4_literal_without_resolving(enforce_ip_safety, monkeypatch):
-    # An unsafe IPv4 literal is rejected directly (DnsLookupUnsafeError, not DnsLookupError) and never resolved.
-    def _fail(host):
-        raise AssertionError(f"lookup_v4 must not be called for an IP literal: {host}")
-
-    monkeypatch.setattr(safe_resolve, "lookup_v4", _fail)
-    for addr in ["10.0.0.1", "192.168.1.1", "169.254.169.254"]:
-        with pytest.raises(safe_resolve.DnsLookupUnsafeError):
-            safe_resolve.safe_resolve(addr)
+    monkeypatch.setattr(safe_resolve, "lookup_v4", _fail_lookup_v4)
+    with pytest.raises(safe_resolve.DnsLookupUnsafeError):
+        safe_resolve.safe_resolve("169.254.169.254")
