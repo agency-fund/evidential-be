@@ -9,6 +9,19 @@ import pytest
 
 from xngin.apiserver.dns import safe_resolve
 
+# IPv4 multicast is never a valid unicast target.
+_MULTICAST_LITERAL = "224.0.0.1"
+
+# IPv6 is unsupported and always rejected -- including public addresses and the evasion-prone encodings of
+# internal targets (NAT64 64:ff9b::/96, 6to4 2002::/16, IPv4-mapped ::ffff:0:0/96).
+_IPV6_LITERALS = [
+    "2606:4700:4700::1111",
+    "::1",
+    "::ffff:127.0.0.1",
+    "64:ff9b::169.254.169.254",
+    "2002:a9fe:a9fe::",
+]
+
 _IP_CLASSIFICATION_CASES = [
     ("", False),
     ("0.0.0.0", False),  # noqa: S104
@@ -22,16 +35,8 @@ _IP_CLASSIFICATION_CASES = [
     ("192.30.252.1", True),
     ("8.8.8.8", True),
     ("not-an-ip", False),
-]
-
-# IPv6 is unsupported and always rejected -- including public addresses and the evasion-prone encodings of
-# internal targets (NAT64 64:ff9b::/96, 6to4 2002::/16, IPv4-mapped ::ffff:0:0/96).
-_IPV6_LITERALS = [
-    "2606:4700:4700::1111",
-    "::1",
-    "::ffff:127.0.0.1",
-    "64:ff9b::169.254.169.254",
-    "2002:a9fe:a9fe::",
+    (_MULTICAST_LITERAL, False),
+    *((addr, False) for addr in _IPV6_LITERALS),
 ]
 
 
@@ -46,7 +51,7 @@ def _fail_lookup_v4(host: str):
 
 @pytest.mark.parametrize(("addr", "expected"), _IP_CLASSIFICATION_CASES)
 def test_is_safe_ip_classifies_ipv4_and_non_ip_values(enforce_ip_safety, addr, expected):
-    assert safe_resolve.is_safe_ip(addr) is expected
+    assert safe_resolve._is_safe_ip(addr) is expected
 
 
 @pytest.mark.parametrize("allow_private_ips", [False, True])
@@ -55,7 +60,7 @@ def test_safe_resolve_rejects_multicast_literals(monkeypatch, allow_private_ips)
     monkeypatch.setattr(safe_resolve, "ALLOW_CONNECTING_TO_PRIVATE_IPS", allow_private_ips)
     monkeypatch.setattr(safe_resolve, "lookup_v4", _fail_lookup_v4)
     with pytest.raises(safe_resolve.DnsLookupUnsafeError):
-        safe_resolve.safe_resolve("224.0.0.1")
+        safe_resolve.safe_resolve(_MULTICAST_LITERAL)
 
 
 @pytest.mark.parametrize("addr", _IPV6_LITERALS)

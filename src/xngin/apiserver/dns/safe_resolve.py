@@ -52,7 +52,7 @@ def lookup_v4(host: str) -> list[str] | None:
         return None
 
 
-def is_safe_ip(ip: str):
+def _is_safe_ip(ip: str):
     """Returns true iff the ip is a safe unicast IPv4 address to try to connect to.
 
     Only unicast IPv4 is supported. IPv6 and multicast addresses are always rejected.
@@ -71,8 +71,8 @@ def is_safe_ip(ip: str):
     return parsed.is_global
 
 
-def is_safe_ipset(ips: set[str]):
-    return all(is_safe_ip(address) for address in ips)
+def _is_safe_ipset(ips: set[str]):
+    return all(_is_safe_ip(address) for address in ips)
 
 
 def _is_ip_literal(host: str) -> bool:
@@ -91,7 +91,7 @@ def safe_resolve(host: str | None):
         raise DnsLookupError("Detected sentinel value of invalid IP used for testing purposes.")
 
     # IP literals are decided directly and never resolved as a name.
-    if is_safe_ip(host):
+    if _is_safe_ip(host):
         return host
 
     # If host contains an IP literal, reject it outright so that we do not send an IP address to the resolver.
@@ -102,7 +102,7 @@ def safe_resolve(host: str | None):
     answers = lookup_v4(host)
     if not answers:
         raise DnsLookupError(host)
-    safe = is_safe_ipset(set(answers))
+    safe = _is_safe_ipset(set(answers))
     if not safe:
         raise DnsLookupUnsafeError(host)
     return answers.pop()
