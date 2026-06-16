@@ -54,8 +54,8 @@
             </div>
         </aside>
         <h2>
-            <span class="text">735 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">688<span class="text"> run</span></button>
+            <span class="text">733 statements &nbsp;</span>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">686<span class="text"> run</span></button>
             <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">47<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_272f90c4dc99306b_admin_api_converters_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.14.1">coverage.py v7.14.1</a>,
-            created at 2026-06-16 06:34 +0000
+            created at 2026-06-16 14:42 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -111,7 +111,7 @@
     <p class="run"><span class="n"><a id="t29" href="#t29">29</a></span><span class="t"><span class="key">from</span> <span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">ext</span><span class="op">.</span><span class="nam">asyncio</span> <span class="key">import</span> <span class="nam">AsyncSession</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t30" href="#t30">30</a></span><span class="t"><span class="key">from</span> <span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">orm</span> <span class="key">import</span> <span class="nam">QueryableAttribute</span><span class="op">,</span> <span class="nam">joinedload</span><span class="op">,</span> <span class="nam">selectinload</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t31" href="#t31">31</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t32" href="#t32">32</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span> <span class="key">import</span> <span class="nam">constants</span><span class="op">,</span> <span class="nam">flags</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t32" href="#t32">32</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span> <span class="key">import</span> <span class="nam">constants</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t33" href="#t33">33</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span><span class="op">.</span><span class="nam">apikeys</span> <span class="key">import</span> <span class="nam">hash_key_or_raise</span><span class="op">,</span> <span class="nam">make_key</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t34" href="#t34">34</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span><span class="op">.</span><span class="nam">dependencies</span> <span class="key">import</span> <span class="nam">xngin_db_session</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t35" href="#t35">35</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span><span class="op">.</span><span class="nam">dns</span><span class="op">.</span><span class="nam">safe_resolve</span> <span class="key">import</span> <span class="nam">DnsLookupError</span><span class="op">,</span> <span class="nam">safe_resolve</span>&nbsp;</span><span class="r"></span></p>
@@ -2395,16 +2395,14 @@
     <p class="pln"><span class="n"><a id="t2313" href="#t2313">2313</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t2314" href="#t2314">2314</a></span><span class="t"><span class="key">def</span> <span class="nam">raise_unless_safe_hostname</span><span class="op">(</span><span class="nam">dsn</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t2315" href="#t2315">2315</a></span><span class="t">    <span class="str">"""Raises a 400 if the DNS name in dsn is possibly attempting to connect to resources on local network."""</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t2316" href="#t2316">2316</a></span><span class="t">    <span class="key">if</span> <span class="nam">flags</span><span class="op">.</span><span class="nam">DISABLE_SAFEDNS_CHECK</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t2317" href="#t2317">2317</a></span><span class="t">        <span class="key">return</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t2318" href="#t2318">2318</a></span><span class="t">    <span class="key">if</span> <span class="nam">isinstance</span><span class="op">(</span><span class="nam">dsn</span><span class="op">,</span> <span class="nam">PostgresDsn</span> <span class="op">|</span> <span class="nam">RedshiftDsn</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t2319" href="#t2319">2319</a></span><span class="t">        <span class="key">try</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t2320" href="#t2320">2320</a></span><span class="t">            <span class="nam">safe_resolve</span><span class="op">(</span><span class="nam">dsn</span><span class="op">.</span><span class="nam">host</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t2321" href="#t2321">2321</a></span><span class="t">        <span class="key">except</span> <span class="nam">DnsLookupError</span> <span class="key">as</span> <span class="nam">err</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t2322" href="#t2322">2322</a></span><span class="t">            <span class="key">raise</span> <span class="nam">HTTPException</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t2323" href="#t2323">2323</a></span><span class="t">                <span class="nam">status_code</span><span class="op">=</span><span class="num">400</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t2324" href="#t2324">2324</a></span><span class="t">                <span class="nam">detail</span><span class="op">=</span><span class="str">"DNS resolution failed. Check datasource hostname and try again."</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t2325" href="#t2325">2325</a></span><span class="t">            <span class="op">)</span> <span class="key">from</span> <span class="nam">err</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t2316" href="#t2316">2316</a></span><span class="t">    <span class="key">if</span> <span class="nam">isinstance</span><span class="op">(</span><span class="nam">dsn</span><span class="op">,</span> <span class="nam">PostgresDsn</span> <span class="op">|</span> <span class="nam">RedshiftDsn</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t2317" href="#t2317">2317</a></span><span class="t">        <span class="key">try</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t2318" href="#t2318">2318</a></span><span class="t">            <span class="nam">safe_resolve</span><span class="op">(</span><span class="nam">dsn</span><span class="op">.</span><span class="nam">host</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t2319" href="#t2319">2319</a></span><span class="t">        <span class="key">except</span> <span class="nam">DnsLookupError</span> <span class="key">as</span> <span class="nam">err</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t2320" href="#t2320">2320</a></span><span class="t">            <span class="key">raise</span> <span class="nam">HTTPException</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t2321" href="#t2321">2321</a></span><span class="t">                <span class="nam">status_code</span><span class="op">=</span><span class="num">400</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t2322" href="#t2322">2322</a></span><span class="t">                <span class="nam">detail</span><span class="op">=</span><span class="str">"DNS resolution failed. Check datasource hostname and try again."</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t2323" href="#t2323">2323</a></span><span class="t">            <span class="op">)</span> <span class="key">from</span> <span class="nam">err</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -2414,7 +2412,7 @@
             <a class="nav" href="z_272f90c4dc99306b_admin_api_converters_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.14.1">coverage.py v7.14.1</a>,
-            created at 2026-06-16 06:34 +0000
+            created at 2026-06-16 14:42 +0000
         </p>
     </div>
 </footer>
