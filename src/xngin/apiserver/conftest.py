@@ -152,18 +152,10 @@ def get_random_seed_for_test():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def allow_connecting_to_private_ips():
+def safe_resolve_testing_mode():
+    """Configure safe_resolve for unit tests: never perform real DNS resolution and allow private IPs."""
     safe_resolve.ALLOW_CONNECTING_TO_PRIVATE_IPS = True
-
-
-@pytest.fixture
-def disable_safe_resolve_check():
-    prev = flags.DISABLE_SAFEDNS_CHECK
-    flags.DISABLE_SAFEDNS_CHECK = True
-    try:
-        yield
-    finally:
-        flags.DISABLE_SAFEDNS_CHECK = prev
+    safe_resolve.INTERCEPT_DNS_FOR_TESTING = True
 
 
 def get_test_uri_info(connection_uri: str) -> TestUriInfo:
