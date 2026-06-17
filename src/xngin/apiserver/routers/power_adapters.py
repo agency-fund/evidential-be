@@ -40,7 +40,7 @@ def calculate_icc_and_cv_from_database(
     try:
         icc = calculate_icc_from_dataframe(df, cluster_column=cluster_column, outcome_column=outcome_column)
     except ValueError as verr:
-        raise StatsPowerError(verr, outcome_column) from verr
+        raise StatsPowerError.from_error(verr, outcome_column) from verr
 
     return {
         "icc": icc,

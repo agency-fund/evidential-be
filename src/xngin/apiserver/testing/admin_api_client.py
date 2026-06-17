@@ -1100,9 +1100,9 @@ class AdminAPIClient:
     def delete_snapshot(
         self,
         *,
-        _organization_id: str,
         datasource_id: str,
         experiment_id: str,
+        organization_id: str,
         snapshot_id: str,
         allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
@@ -1112,9 +1112,9 @@ class AdminAPIClient:
     def delete_snapshot(
         self,
         *,
-        _organization_id: str,
         datasource_id: str,
         experiment_id: str,
+        organization_id: str,
         snapshot_id: str,
         allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
@@ -1130,9 +1130,9 @@ class AdminAPIClient:
     def delete_snapshot(
         self,
         *,
-        _organization_id: str,
         datasource_id: str,
         experiment_id: str,
+        organization_id: str,
         snapshot_id: str,
         allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
@@ -1167,9 +1167,9 @@ class AdminAPIClient:
                     HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
                 },
                 path_params={
-                    "organization_id": _organization_id,
                     "datasource_id": datasource_id,
                     "experiment_id": experiment_id,
+                    "organization_id": organization_id,
                     "snapshot_id": snapshot_id,
                 },
                 query_params={

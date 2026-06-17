@@ -29,7 +29,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute, joinedload, selectinload
 
-from xngin.apiserver import constants, flags
+from xngin.apiserver import constants
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
@@ -758,7 +758,7 @@ async def list_snapshots(
 async def delete_snapshot(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
-    _organization_id: Annotated[str, Path(alias="organization_id")],
+    organization_id: Annotated[str, Path()],
     datasource_id: Annotated[str, Path()],
     experiment_id: Annotated[str, Path()],
     snapshot_id: Annotated[str, Path()],
@@ -768,8 +768,16 @@ async def delete_snapshot(
     ] = False,
 ):
     """Deletes a snapshot."""
-    resource_query = select(tables.Snapshot).where(
-        tables.Snapshot.experiment_id == experiment_id, tables.Snapshot.id == snapshot_id
+    resource_query = (
+        select(tables.Snapshot)
+        .join(tables.Experiment, tables.Snapshot.experiment_id == tables.Experiment.id)
+        .join(tables.Datasource, tables.Experiment.datasource_id == tables.Datasource.id)
+        .where(
+            tables.Datasource.organization_id == organization_id,
+            tables.Experiment.datasource_id == datasource_id,
+            tables.Snapshot.experiment_id == experiment_id,
+            tables.Snapshot.id == snapshot_id,
+        )
     )
     response = await handle_delete(
         session, allow_missing, authz.is_user_authorized_on_datasource(user, datasource_id), resource_query
@@ -1052,7 +1060,10 @@ async def delete_webhook_from_organization(
     ] = False,
 ):
     """Removes a Webhook from an organization."""
-    resource_query = select(tables.Webhook).where(tables.Webhook.id == webhook_id)
+    resource_query = select(tables.Webhook).where(
+        tables.Webhook.organization_id == organization_id,
+        tables.Webhook.id == webhook_id,
+    )
     response = await handle_delete(
         session,
         allow_missing,
@@ -1499,7 +1510,11 @@ async def delete_datasource(
 
     The user must be a member of the organization that owns the datasource.
     """
-    resource_query = select(tables.Datasource).where(tables.Datasource.id == datasource_id)
+    resource_query = select(tables.Datasource).where(
+        tables.Datasource.organization_id == organization_id,
+        tables.Datasource.id == datasource_id,
+    )
+
     response = await handle_delete(
         session,
         allow_missing,
@@ -2142,7 +2157,10 @@ async def delete_experiment(
     ] = False,
 ):
     """Deletes the experiment with the specified ID."""
-    resource_query = select(tables.Experiment).where(tables.Experiment.id == experiment_id)
+    resource_query = select(tables.Experiment).where(
+        tables.Experiment.datasource_id == datasource_id,
+        tables.Experiment.id == experiment_id,
+    )
     response = await handle_delete(
         session, allow_missing, authz.is_user_authorized_on_datasource(user, datasource_id), resource_query
     )
@@ -2295,8 +2313,6 @@ async def power_check(
 
 def raise_unless_safe_hostname(dsn):
     """Raises a 400 if the DNS name in dsn is possibly attempting to connect to resources on local network."""
-    if flags.DISABLE_SAFEDNS_CHECK:
-        return
     if isinstance(dsn, PostgresDsn | RedshiftDsn):
         try:
             safe_resolve(dsn.host)

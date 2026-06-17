@@ -467,8 +467,8 @@ def test_check_power_with_desired_n():
     assert results[1].pct_change_with_desired_n == pytest.approx(-0.7998, abs=1e-4)
 
 
-def test_check_power_with_invalid_desired_n_preserves_primary_result():
-    """Invalid desired_n should not discard the minimum-sample-size analysis."""
+def test_check_power_with_invalid_desired_n_raises():
+    """Invalid desired_n raises StatsPowerError."""
     metric = DesignSpecMetric(
         field_name="metric1",
         metric_type=MetricType.NUMERIC,
@@ -479,13 +479,9 @@ def test_check_power_with_invalid_desired_n_preserves_primary_result():
         available_nonnull_n=10000,
     )
 
-    result = check_power([metric], n_arms=2, desired_n=0)[0]
-
-    assert result.target_n == 506
-    assert result.sufficient_n is True
-    assert result.msg is not None
-    assert result.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
-    assert result.pct_change_with_desired_n is None
+    with pytest.raises(StatsPowerError) as excinfo:
+        check_power([metric], n_arms=2, desired_n=0)
+    assert "Chosen sample size must be positive" in str(excinfo.value)
 
 
 def test_analyze_metric_power_without_desired_n_still_works():

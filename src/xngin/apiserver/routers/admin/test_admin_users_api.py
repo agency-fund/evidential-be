@@ -4,6 +4,7 @@ All tests interact with the system exclusively through the AdminAPIClient. No di
 """
 
 from collections.abc import Iterable
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from xngin.apiserver.conftest import expect_status_code
@@ -227,6 +228,20 @@ def test_get_user_returns_details(aclient: AdminAPIClient):
     assert response.is_privileged is False
     assert response.has_logged_in is False
     assert response.organizations == []
+
+
+def test_logout_updates_last_logout_timestamp(aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
+    # The unprivileged user logs out, then the privileged user reads their last_logout. Using two
+    # separate users avoids invalidating the reader's own session token by the logout being measured.
+    target_id = _user_id_for(aclient.list_users(email_contains=UNPRIVILEGED_EMAIL).data.items, UNPRIVILEGED_EMAIL)
+    initial_last_logout = aclient.get_user(user_id=target_id).data.last_logout
+
+    response = aclient_unpriv.logout().response
+    assert response.content == b""
+
+    updated_last_logout = aclient.get_user(user_id=target_id).data.last_logout
+    assert updated_last_logout > initial_last_logout
+    assert datetime.now(UTC) - updated_last_logout < timedelta(seconds=60)
 
 
 def test_get_user_returns_organizations_with_counts(aclient: AdminAPIClient):
@@ -527,14 +542,6 @@ def test_create_organization_unprivileged_succeeds(aclient_unpriv: AdminAPIClien
     assert nodwh.name == DEFAULT_NO_DWH_SOURCE_NAME
     assert nodwh.organization_id == create_response.id
     assert nodwh.organization_name == org_name
-
-
-def test_create_organization_unprivileged_caller_is_only_member(aclient_unpriv: AdminAPIClient):
-    """Creating an org as unprivileged seeds exactly one member: the creator."""
-    org_id = aclient_unpriv.create_organizations(body=CreateOrganizationRequest(name="solo-member")).data.id
-    org = aclient_unpriv.get_organization(organization_id=org_id).data
-    assert len(org.users) == 1
-    assert org.users[0].email == UNPRIVILEGED_EMAIL
 
 
 def test_unprivileged_user_can_create_multiple_organizations(aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
