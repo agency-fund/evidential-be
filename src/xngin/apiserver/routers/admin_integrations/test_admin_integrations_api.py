@@ -100,7 +100,7 @@ async def test_turn_connection_lifecycle(
     # Check that Journeys were also fetched from client
     journeys = iaclient.get_organization_turn_journeys(organization_id=org_id).data.journeys
     assert FakeAsyncClient.call_log == 1
-    assert journeys == {"Arm A": "arm-a-uuid"}
+    assert {journey.name: journey.uuid for journey in journeys} == {"Arm A": "arm-a-uuid"}
 
     # Rotate: PUT with a new token.
     rotated_token = "fghij" * 67  # 335 chars
@@ -116,7 +116,7 @@ async def test_turn_connection_lifecycle(
     # Check that Journeys were refetched from client after rotation
     journeys = iaclient.get_organization_turn_journeys(organization_id=org_id).data.journeys
     assert FakeAsyncClient.call_log == 2
-    assert journeys == {"Arm A": "arm-a-uuid"}
+    assert {journey.name: journey.uuid for journey in journeys} == {"Arm A": "arm-a-uuid"}
 
     # Delete.
     iaclient.delete_turn_connection_from_organization(organization_id=org_id)
@@ -193,6 +193,15 @@ async def test_turn_journeys_api_error_handling(
     # Check that API key is not set
     with expect_status_code(404):
         iaclient.get_organization_turn_connection(organization_id=org_id)
+
+    # Simulate an incorrect response structure (missing 'name' and 'uuid').
+    monkeypatch.setattr(FakeAsyncClient, "stacks", [{"wrong_field": "value"}])
+    monkeypatch.setattr(FakeAsyncClient, "expected_status", 200)
+    with expect_status_code(422, text="The retrieved journeys from Turn.io did not have the expected fields"):
+        iaclient.set_organization_turn_connection(
+            organization_id=org_id,
+            body=SetConnectionToTurnRequest(turn_api_token="a" * 335),
+        )
 
     # Simulate a network error.
     async def _raise_request_error(self, method, url, headers=None):

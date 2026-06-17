@@ -23,6 +23,7 @@ from fastapi import (
     status,
 )
 from loguru import logger
+from pydantic import ValidationError
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,6 +43,7 @@ from xngin.apiserver.routers.admin_integrations.admin_integrations_api_types imp
     GetTurnArmJourneyMappingResponse,
     GetTurnConnectionResponse,
     GetTurnJourneysResponse,
+    Journey,
     SetConnectionToTurnRequest,
     SetTurnArmJourneyMappingRequest,
 )
@@ -58,6 +60,10 @@ TURN_JOURNEYS_RESPONSES: dict[str | int, dict[str, Any]] = {
     "502": {
         "model": HTTPExceptionError,
         "description": "Failed to reach Turn.io API, or Turn.io returned a non-200 response.",
+    },
+    "422": {
+        "model": HTTPExceptionError,
+        "description": "The retrieved journeys from Turn.io did not have the expected fields 'name' and 'uuid'.",
     },
 }
 
@@ -77,7 +83,7 @@ async def _call_turn_api(
     httpx_client: httpx.AsyncClient,
     turn_api_token: str,
     method: str,
-) -> httpx.Response:
+) -> list[Journey]:
     """
     Wrapper for outbound Turn.io API calls to standardize error handling.
 
@@ -94,6 +100,8 @@ async def _call_turn_api(
             headers=headers,
         )
         response.raise_for_status()
+        journeys_dict = [Journey.model_validate(journey) for journey in response.json()]
+
     except httpx.RequestError as exc:
         logger.error(f"Error calling Turn.io API at {method} {TURN_JOURNEYS_URL}: {exc}")
         raise HTTPException(
@@ -109,34 +117,22 @@ async def _call_turn_api(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Turn.io API returned non-2xx status. Details: {exc.response.status_code} - {exc.response.text}",
         ) from exc
-    return response
+    except ValidationError as exc:
+        logger.error(f"Turn.io API returned unexpected response structure at {method} {TURN_JOURNEYS_URL}: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"The retrieved journeys from Turn.io did not have the expected fields 'name' and 'uuid'. "
+            f"Details: {exc}",
+        ) from exc
+    return journeys_dict
 
 
-async def refresh_journeys_dict(
-    session: AsyncSession,
-    turn_connection: tables.TurnConnection,
-    httpx_client: httpx.AsyncClient,
-    commit_session: bool = True,
-) -> dict[str, str]:
+async def refresh_journeys_dict(turn_api_token: str, httpx_client: httpx.AsyncClient) -> list[Journey]:
     """Refreshes the cached Turn.io journeys on the TurnConnection.
-
-    Optionally commits the session after updating the TurnConnection (defaults to True).
-    This can be set to False when this function is called within a larger transaction that
-    should be committed all at once, such as when setting/rotating the API token, since that
-    operation also updates the TurnConnection and we want to avoid committing twice in a row.
 
     Returns the updated journey list.
     """
-    response = await _call_turn_api(
-        httpx_client=httpx_client, turn_api_token=turn_connection.get_turn_api_token(), method="GET"
-    )
-    journeys_dict = {journey["name"]: journey["uuid"] for journey in response.json()}
-    turn_connection.journeys_dict = journeys_dict
-
-    if commit_session:
-        await session.commit()
-
-    return journeys_dict
+    return await _call_turn_api(httpx_client=httpx_client, turn_api_token=turn_api_token, method="GET")
 
 
 @asynccontextmanager
@@ -191,6 +187,8 @@ async def set_organization_turn_connection(
         session.add(turn_connection)
 
     elif turn_connection.get_turn_api_token() != body.turn_api_token:
+        # This could make the arm_journey_ids stored in ExperimentTurnConfig.arm_journey_map invalid.
+        # We expose that drift to the UI via get_..mapping()'s reporting of stale journey IDs.
         turn_connection.set_turn_api_token(body.turn_api_token)
 
     else:
@@ -200,7 +198,9 @@ async def set_organization_turn_connection(
         )
 
     # Refresh the stored journeys
-    await refresh_journeys_dict(session, turn_connection, httpx_client, commit_session=False)
+    journeys = await refresh_journeys_dict(turn_api_token=body.turn_api_token, httpx_client=httpx_client)
+
+    turn_connection.journeys_dict = {journey.name: journey.uuid for journey in journeys}
 
     # Only commit after refreshing happens successfully,
     # otherwise we discard both token and journeys updates.
@@ -301,9 +301,9 @@ async def get_organization_turn_journeys(
             "Re-set the Turn.io API token to fetch Journeys from Turn.io and store them.",
         )
 
-    journeys_dict = turn_connection.journeys_dict
+    journeys = [Journey(name=name, uuid=uuid) for name, uuid in turn_connection.journeys_dict.items()]
 
-    return GetTurnJourneysResponse(journeys=journeys_dict)
+    return GetTurnJourneysResponse(journeys=journeys)
 
 
 @router.put(
@@ -397,10 +397,10 @@ async def get_turn_arm_journey_mapping(
         )
     )
     turn_journeys = turn_journeys_row.scalar_one_or_none()
-    uuids = list(turn_journeys.values()) if turn_journeys else []
+    uuids = list(turn_journeys.values()) if turn_journeys is not None else []
 
     stale_arm_ids = []
-    if turn_journeys:
+    if turn_journeys is not None:
         stale_arm_ids = [
             arm_id for arm_id, journey_uuid in mapping.arm_journey_map.items() if journey_uuid not in uuids
         ]

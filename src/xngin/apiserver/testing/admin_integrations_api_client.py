@@ -436,9 +436,7 @@ class AdminIntegrationsAPIClient:
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
-        | AdminIntegrationsAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminIntegrationsAPIClientHTTPValidationError
-        ]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], HTTPExceptionError]
     ): ...
     def set_organization_turn_connection(
@@ -454,9 +452,7 @@ class AdminIntegrationsAPIClient:
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
-        | AdminIntegrationsAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminIntegrationsAPIClientHTTPValidationError
-        ]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], HTTPExceptionError]
     ):
         return cast(
@@ -466,9 +462,7 @@ class AdminIntegrationsAPIClient:
                 | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
                 | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
                 | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
-                | AdminIntegrationsAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminIntegrationsAPIClientHTTPValidationError
-                ]
+                | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], HTTPExceptionError]
                 | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], HTTPExceptionError]
             ),
             self._route_handler(
@@ -481,7 +475,7 @@ class AdminIntegrationsAPIClient:
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
                     HTTPStatus.NOT_FOUND: HTTPExceptionError,
-                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminIntegrationsAPIClientHTTPValidationError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: HTTPExceptionError,
                     HTTPStatus.BAD_GATEWAY: HTTPExceptionError,
                 },
                 path_params={
@@ -672,9 +666,7 @@ class AdminIntegrationsAPIClient:
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
-        | AdminIntegrationsAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminIntegrationsAPIClientHTTPValidationError
-        ]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], HTTPExceptionError]
     ): ...
     def get_organization_turn_journeys(
@@ -689,9 +681,7 @@ class AdminIntegrationsAPIClient:
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
-        | AdminIntegrationsAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminIntegrationsAPIClientHTTPValidationError
-        ]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], HTTPExceptionError]
     ):
         return cast(
@@ -701,9 +691,7 @@ class AdminIntegrationsAPIClient:
                 | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
                 | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
                 | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
-                | AdminIntegrationsAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminIntegrationsAPIClientHTTPValidationError
-                ]
+                | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], HTTPExceptionError]
                 | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], HTTPExceptionError]
             ),
             self._route_handler(
@@ -716,7 +704,7 @@ class AdminIntegrationsAPIClient:
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
                     HTTPStatus.NOT_FOUND: HTTPExceptionError,
-                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminIntegrationsAPIClientHTTPValidationError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: HTTPExceptionError,
                     HTTPStatus.BAD_GATEWAY: HTTPExceptionError,
                 },
                 path_params={
