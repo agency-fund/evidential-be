@@ -346,7 +346,7 @@ async def set_turn_arm_journey_mapping(
             detail=f"Error in arm IDs config. Missing: {missing_arm_ids}, Extra: {extra_arm_ids}",
         )
 
-    mapping = (
+    turn_config = (
         await session.execute(
             select(tables.ExperimentTurnConfig).where(
                 tables.ExperimentTurnConfig.experiment_id == experiment_id,
@@ -354,14 +354,14 @@ async def set_turn_arm_journey_mapping(
         )
     ).scalar_one_or_none()
 
-    if mapping is None:
-        mapping = tables.ExperimentTurnConfig(
+    if turn_config is None:
+        turn_config = tables.ExperimentTurnConfig(
             experiment_id=experiment_id,
             arm_journey_map=body.arm_to_journeys,
         )
-        session.add(mapping)
+        session.add(turn_config)
     else:
-        mapping.arm_journey_map = body.arm_to_journeys
+        turn_config.arm_journey_map = body.arm_to_journeys
 
     await session.commit()
     return GENERIC_SUCCESS
@@ -377,7 +377,7 @@ async def get_turn_arm_journey_mapping(
     """Returns the current mapping from each arm ID of the experiment to a Turn.io Journey ID, if it exists."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
     await get_experiment_via_ds_or_raise(session, ds, experiment_id)
-    mapping = (
+    turn_config = (
         await session.execute(
             select(tables.ExperimentTurnConfig).where(
                 tables.ExperimentTurnConfig.experiment_id == experiment_id,
@@ -385,7 +385,7 @@ async def get_turn_arm_journey_mapping(
         )
     ).scalar_one_or_none()
 
-    if mapping is None:
+    if turn_config is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No Turn.io journey mapping found for experiment.",
@@ -402,10 +402,10 @@ async def get_turn_arm_journey_mapping(
     stale_arm_ids = []
     if turn_journeys is not None:
         stale_arm_ids = [
-            arm_id for arm_id, journey_uuid in mapping.arm_journey_map.items() if journey_uuid not in uuids
+            arm_id for arm_id, journey_uuid in turn_config.arm_journey_map.items() if journey_uuid not in uuids
         ]
 
-    return GetTurnArmJourneyMappingResponse(arm_to_journeys=mapping.arm_journey_map, stale_arm_ids=stale_arm_ids)
+    return GetTurnArmJourneyMappingResponse(arm_to_journeys=turn_config.arm_journey_map, stale_arm_ids=stale_arm_ids)
 
 
 @router.delete(
@@ -425,7 +425,7 @@ async def delete_turn_arm_journey_mapping(
     """Deletes the mapping from each arm ID of the experiment to a Turn.io Journey ID, if it exists."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
     await get_experiment_via_ds_or_raise(session, ds, experiment_id)
-    mapping_query = select(tables.ExperimentTurnConfig).where(
+    turn_config_query = select(tables.ExperimentTurnConfig).where(
         tables.ExperimentTurnConfig.experiment_id == experiment_id
     )
 
@@ -433,7 +433,7 @@ async def delete_turn_arm_journey_mapping(
         session,
         allow_missing,
         authz.is_user_authorized_on_datasource(user, datasource_id),
-        mapping_query,
+        turn_config_query,
     )
     await session.commit()
     return response
