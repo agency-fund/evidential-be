@@ -54,13 +54,13 @@ async def get_turn_app_config(
 ) -> TurnConfigResponse:
     """Returns the current mapping from each arm ID of the experiment to a Turn.io Journey ID, if it exists."""
 
-    mapping = (
+    turn_config = (
         await session.execute(
             select(tables.ExperimentTurnConfig).where(tables.ExperimentTurnConfig.experiment_id == experiment.id)
         )
     ).scalar_one_or_none()
 
-    if not mapping:
+    if not turn_config:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="No Turn.io mapping configured for this experiment."
         )
@@ -68,5 +68,5 @@ async def get_turn_app_config(
     return TurnConfigResponse(
         experiment_id=experiment.id,
         experiment_name=experiment.name,
-        arm_journey_map=mapping.arm_journey_map,
+        arm_journey_map=turn_config.arm_journey_map,
     )
