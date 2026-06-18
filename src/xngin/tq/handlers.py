@@ -2,7 +2,7 @@
 
 from urllib.parse import urlparse, urlunparse
 
-import httpx
+import httpx2
 import sqlalchemy
 from loguru import logger
 from sqlalchemy import NullPool
@@ -33,13 +33,13 @@ def _record_webhook_sent_event(
     )
 
 
-def make_webhook_outbound_handler(dsn: str, *, transport: httpx.BaseTransport | None = None):
+def make_webhook_outbound_handler(dsn: str, *, transport: httpx2.BaseTransport | None = None):
     """Returns a webhook outbound handler bound with the DSN via a SQLAlchemy engine.
 
     Also creates an entry in the Event table with information that will be useful for
     customers when debugging.
 
-    ``transport`` is forwarded to ``httpx.Client`` and exists primarily for testing.
+    ``transport`` is forwarded to ``httpx2.Client`` and exists primarily for testing.
     """
     engine = sqlalchemy.create_engine(
         dsn, connect_args={"application_name": TQ_DB_APPLICATION_NAME}, poolclass=NullPool
@@ -85,8 +85,8 @@ def make_webhook_outbound_handler(dsn: str, *, transport: httpx.BaseTransport | 
 
                 extensions = {"sni_hostname": hostname} if scheme == "https" else None
 
-                response: httpx.Response | None = None
-                with httpx.Client(timeout=10.0, transport=transport) as client:
+                response: httpx2.Response | None = None
+                with httpx2.Client(timeout=10.0, transport=transport) as client:
                     response = client.request(
                         request.method,
                         connect_url,
@@ -118,7 +118,7 @@ def make_webhook_outbound_handler(dsn: str, *, transport: httpx.BaseTransport | 
                     log_exc_message=message,
                 )
                 raise
-            except httpx.HTTPError as err:
+            except httpx2.HTTPError as err:
                 message = f"status={response.status_code} message={err!s}" if response else str(err)
                 _record_webhook_sent_event(
                     session,

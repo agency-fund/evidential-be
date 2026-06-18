@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from typing import ClassVar
 
-import httpx
+import httpx2
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,10 +41,10 @@ class FakeAsyncClient:
 
     async def request(self, method, url, headers=None):
         FakeAsyncClient.call_log += 1
-        return httpx.Response(
+        return httpx2.Response(
             status_code=FakeAsyncClient.expected_status,
             json=list(FakeAsyncClient.stacks),
-            request=httpx.Request(method, url),
+            request=httpx2.Request(method, url),
         )
 
 
@@ -147,7 +147,7 @@ async def test_turn_journeys_caching(
     # Reset the FakeAsyncClient's class-level state before the test.
     monkeypatch.setattr(FakeAsyncClient, "call_log", 0)
     monkeypatch.setattr(FakeAsyncClient, "stacks", [{"name": "Arm A", "uuid": "arm-a-uuid"}])
-    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(httpx2, "AsyncClient", FakeAsyncClient)
 
     org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="test_turn_journeys_caching")).data.id
     iaclient.set_organization_turn_connection(
@@ -183,7 +183,7 @@ async def test_turn_journeys_api_error_handling(
     """GET /turn-connection/journeys must handle errors from the Turn API gracefully."""
     # Reset the FakeAsyncClient's class-level state before the test.
     monkeypatch.setattr(FakeAsyncClient, "call_log", 0)
-    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(httpx2, "AsyncClient", FakeAsyncClient)
 
     org_id = aclient.create_organizations(
         body=CreateOrganizationRequest(name="test_turn_journeys_api_error_handling")
@@ -200,7 +200,7 @@ async def test_turn_journeys_api_error_handling(
 
     # Simulate a network error.
     async def _raise_request_error(self, method, url, headers=None):
-        raise httpx.RequestError("Network error", request=httpx.Request(method, url))
+        raise httpx2.RequestError("Network error", request=httpx2.Request(method, url))
 
     monkeypatch.setattr(FakeAsyncClient, "request", _raise_request_error)
     with expect_status_code(502, text="Failed to reach Turn.io API"):
@@ -440,7 +440,7 @@ async def test_resetting_same_token_preserves_journeys_cache(
     # Reset the FakeAsyncClient's class-level state before the test.
     monkeypatch.setattr(FakeAsyncClient, "call_log", 0)
     monkeypatch.setattr(FakeAsyncClient, "stacks", [{"name": "Arm A", "uuid": "arm-a-uuid"}])
-    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(httpx2, "AsyncClient", FakeAsyncClient)
 
     # Prime the cache.
     iaclient.get_organization_turn_journeys(organization_id=org_id)

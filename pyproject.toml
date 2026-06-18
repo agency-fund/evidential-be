@@ -9,7 +9,6 @@ dependencies = [
     "email-validator>=2.2.0",
     "fastapi[standard-no-fastapi-cloud-cli]>=0.137.1,<0.138",
     "google-cloud-kms>=3.7.0,<4",
-    "httpx>=0.28.1,<0.29.0",
     "httpx2>=2.4.0,<3",
     "loguru>=0.7.3,<0.8.0",
     "numpy>=2.3,<2.4",

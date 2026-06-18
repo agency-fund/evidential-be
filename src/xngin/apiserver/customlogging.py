@@ -139,6 +139,6 @@ def _configure_third_party_levels():
     )
 
     logging.getLogger("httpcore").setLevel(logging.WARN)
-    logging.getLogger("httpx").setLevel(logging.WARN)
+    logging.getLogger("httpx2").setLevel(logging.WARN)
     logging.getLogger("urllib3").setLevel(logging.WARN)
     logging.getLogger("watchfiles.main").setLevel(logging.WARN)
