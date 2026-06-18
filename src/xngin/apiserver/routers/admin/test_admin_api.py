@@ -2016,6 +2016,8 @@ def test_preassigned_experiment_assign_summary_matches_get(testing_datasource, a
 
     assert create_summary.sample_size == get_summary.sample_size
     assert create_summary.balance_check == get_summary.balance_check
+    assert create_summary.arm_cluster_counts is None
+    assert get_summary.arm_cluster_counts is None
     assert create_summary.arm_sizes is not None
     assert get_summary.arm_sizes is not None
     assert len(create_summary.arm_sizes) == len(get_summary.arm_sizes)
@@ -4371,3 +4373,13 @@ async def test_create_freq_preassigned_experiment_cluster_key_has_nulls(testing_
     assert len(created.assign_summary.arm_sizes) == 2
     assert created.assign_summary.arm_sizes[0].size == 492
     assert created.assign_summary.arm_sizes[1].size == 480
+    assert created.assign_summary.arm_cluster_counts is not None
+    assert len(created.assign_summary.arm_cluster_counts) == 2
+    assert sum(arm_cluster.size for arm_cluster in created.assign_summary.arm_cluster_counts) > 0
+
+    aclient.commit_experiment(datasource_id=datasource_id, experiment_id=created.experiment_id)
+    get_summary = aclient.get_experiment_for_ui(
+        datasource_id=datasource_id, experiment_id=created.experiment_id
+    ).data.config.assign_summary
+    assert get_summary is not None
+    assert get_summary.arm_cluster_counts == created.assign_summary.arm_cluster_counts

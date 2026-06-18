@@ -503,6 +503,7 @@ async def get_experiment_impl(
         experiment.id,
         converter.get_balance_check(),
         experiment_type=ExperimentsType(experiment.experiment_type),
+        include_cluster_counts=experiment.cluster_key_field() is not None,
     )
     webhook_ids = [webhook.id for webhook in experiment.webhooks]
     return await converter.get_experiment_response(assign_summary, webhook_ids)
@@ -553,7 +554,11 @@ async def list_organization_or_datasource_experiments_impl(
         converter = ExperimentStorageConverter(e)
         balance_check = converter.get_balance_check()
         assign_summary = await get_assign_summary(
-            xngin_session, e.id, balance_check, experiment_type=ExperimentsType(e.experiment_type)
+            xngin_session,
+            e.id,
+            balance_check,
+            experiment_type=ExperimentsType(e.experiment_type),
+            include_cluster_counts=e.cluster_key_field() is not None,
         )
         webhook_ids = [webhook.id for webhook in e.webhooks]
         items.append(await converter.get_experiment_config(assign_summary, webhook_ids))
@@ -1001,6 +1006,8 @@ async def get_assign_summary(
     experiment_id: str,
     balance_check: BalanceCheck | None,
     experiment_type: ExperimentsType,
+    *,
+    include_cluster_counts: bool = False,
 ) -> AssignSummary:
     """Constructs an AssignSummary from the experiment's arms and arm_assignments."""
     result = await xngin_session.execute(
@@ -1021,11 +1028,36 @@ async def get_assign_summary(
         for arm_id, name, count in result
     ]
 
+    arm_cluster_counts = None
+    if include_cluster_counts:
+        cluster_result = await xngin_session.execute(
+            select(
+                tables.Arm.id,
+                tables.Arm.name,
+                func.count(tables.ArmAssignment.cluster_key.distinct()),
+            )
+            .outerjoin(
+                tables.ArmAssignment,
+                (tables.Arm.id == tables.ArmAssignment.arm_id) & (tables.ArmAssignment.experiment_id == experiment_id),
+            )
+            .where(tables.Arm.experiment_id == experiment_id)
+            .group_by(tables.Arm.id, tables.Arm.name, tables.Arm.position)
+            .order_by(tables.Arm.position)
+        )
+        arm_cluster_counts = [
+            ArmSize(
+                arm=Arm(arm_id=arm_id, arm_name=name),
+                size=cluster_count,
+            )
+            for arm_id, name, cluster_count in cluster_result
+        ]
+
     if experiment_type in {ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE}:
         balance_check = None
     return AssignSummary(
         balance_check=balance_check,
         arm_sizes=arm_sizes,
+        arm_cluster_counts=arm_cluster_counts,
         sample_size=sum(arm_size.size for arm_size in arm_sizes),
     )
 

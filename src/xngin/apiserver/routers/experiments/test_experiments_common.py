@@ -696,6 +696,25 @@ async def test_create_preassigned_experiment_impl_cluster_assignment(xngin_sessi
     assert all(len(arm_ids) == 1 for arm_ids in arms_by_cluster.values())
     assert len(set.union(*arms_by_cluster.values())) == 2
 
+    create_summary = response.assign_summary
+    assert create_summary is not None
+    assert create_summary.arm_cluster_counts is not None
+    clusters_by_arm: dict[str, set[str]] = defaultdict(set)
+    for row in assignment_rows:
+        assert row.cluster_key is not None
+        clusters_by_arm[row.arm_id].add(row.cluster_key)
+    for arm_cluster in create_summary.arm_cluster_counts:
+        arm_id = arm_cluster.arm.arm_id
+        assert arm_id is not None
+        assert arm_cluster.size == len(clusters_by_arm[arm_id])
+    assert sum(arm_cluster.size for arm_cluster in create_summary.arm_cluster_counts) == len(arms_by_cluster)
+
+    experiment = await get_experiment_preloaded(xngin_session, response.experiment_id)
+    get_response = await get_experiment_impl(xngin_session, experiment)
+    get_summary = get_response.assign_summary
+    assert get_summary is not None
+    assert get_summary.arm_cluster_counts == create_summary.arm_cluster_counts
+
 
 async def _create_clustered_preassigned_experiment(
     xngin_session: AsyncSession,
