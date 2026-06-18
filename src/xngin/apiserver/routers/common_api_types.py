@@ -1310,6 +1310,13 @@ class AssignSummary(ApiBaseModel):
             max_length=MAX_NUMBER_OF_ARMS,
         ),
     ] = None
+    arm_cluster_counts: Annotated[
+        list[ArmSize] | None,
+        Field(
+            description="For each arm, the number of clusters assigned.",
+            max_length=MAX_NUMBER_OF_ARMS,
+        ),
+    ] = None
 
 
 type Impact = Literal["high", "medium", "low", "negative", "unclear", ""]

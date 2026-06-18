@@ -45,6 +45,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     ExperimentsAssignmentError,
     analyze_experiment_freq_impl,
     commit_experiment_impl,
+    convert_assignment_results_to_assign_summary,
     create_assignment_for_participant,
     create_bandit_online_experiment_impl,
     create_experiment_impl,
@@ -63,6 +64,7 @@ from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.assertions import assert_dates_equal
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
+from xngin.stats.assignment import AssignmentResult
 
 
 def make_createexperimentrequest_json(
@@ -2428,6 +2430,33 @@ async def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_
         assert arm_analysis.mean_ci_lower is not None and np.isnan(arm_analysis.mean_ci_lower)
         assert arm_analysis.mean_ci_upper is not None and np.isnan(arm_analysis.mean_ci_upper)
         assert arm_analysis.num_missing_values == -1
+
+
+def test_convert_assignment_results_to_assign_summary_includes_cluster_counts():
+    """Cluster counts are mapped to arm metadata when present."""
+    arms = [
+        tables.Arm(id="arm_1", name="control", description="Control", position=1),
+        tables.Arm(id="arm_2", name="treatment", description="Treatment", position=2),
+    ]
+    assignment_result = AssignmentResult(
+        treatment_ids=[0, 0, 1, 1, 1],
+        stratum_ids=[0, 0, 1, 1, 1],
+        balance_result=None,
+        stratum_cols=[],
+        arm_pop=np.array([2, 3]),
+        arm_cluster_pop=np.array([1, 2]),
+    )
+
+    summary = convert_assignment_results_to_assign_summary(arms, assignment_result, balance_check=None)
+
+    assert summary.sample_size == 5
+    assert summary.arm_sizes is not None
+    assert [(arm_size.arm.arm_id, arm_size.size) for arm_size in summary.arm_sizes] == [("arm_1", 2), ("arm_2", 3)]
+    assert summary.arm_cluster_counts is not None
+    assert [(arm_size.arm.arm_id, arm_size.size) for arm_size in summary.arm_cluster_counts] == [
+        ("arm_1", 1),
+        ("arm_2", 2),
+    ]
 
 
 async def test_arm_population_counter(xngin_session, testing_datasource):

@@ -27,6 +27,8 @@ class AssignmentResult:
 
     # arm_pop[i] is the count of participants assigned to arm i.
     arm_pop: npt.NDArray[np.intp]
+    # arm_cluster_pop[i] is the count of clusters assigned to arm i.
+    arm_cluster_pop: npt.NDArray[np.intp] | None = None
 
     stratum_ids: list[int] | None
     balance_result: BalanceResult | None
@@ -222,9 +224,9 @@ def _assign_clusters_to_arms(
                      not participants.
 
     Returns:
-        AssignmentResult containing treatment_ids, stratum_ids, balance_result, and arm_pop.
-        ``stratum_cols`` is always empty because cluster assignment does not support
-        caller-provided stratification dimensions.
+        AssignmentResult containing treatment_ids, stratum_ids, balance_result, arm_pop,
+        and arm_cluster_pop. ``stratum_cols`` is always empty because cluster
+        assignment does not support caller-provided stratification dimensions.
     """
     # Build a cluster-level DataFrame with one row per cluster and its size.
     cluster_df = df.groupby(cluster_col).size().reset_index(name=CLUSTER_SIZE_COL_NAME)
@@ -290,6 +292,7 @@ def _assign_clusters_to_arms(
         balance_result=balance_result,
         stratum_cols=[],
         arm_pop=np.bincount(treatment_ids, minlength=n_arms),
+        arm_cluster_pop=np.bincount(cluster_df[STOCHATREAT_TREAT_NAME], minlength=n_arms),
     )
 
 

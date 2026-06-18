@@ -979,9 +979,19 @@ def convert_assignment_results_to_assign_summary(
         )
         for i, arm in enumerate(arms)
     ]
+    arm_cluster_counts = None
+    if assignment_result.arm_cluster_pop is not None:
+        arm_cluster_counts = [
+            ArmSize(
+                arm=Arm(arm_id=arm.id, arm_name=arm.name),
+                size=int(assignment_result.arm_cluster_pop[i]),
+            )
+            for i, arm in enumerate(arms)
+        ]
     return AssignSummary(
         balance_check=balance_check,
         arm_sizes=arm_sizes,
+        arm_cluster_counts=arm_cluster_counts,
         sample_size=len(assignment_result.treatment_ids),
     )
 
