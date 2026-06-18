@@ -233,6 +233,7 @@ ignore_missing_imports = true
 
 [tool.coverage.run]
 relative_files = true
+omit = ["src/xngin/apiserver/testing/*_api_client.py"]
 
 [tool.coverage.report]
 format = "markdown"
