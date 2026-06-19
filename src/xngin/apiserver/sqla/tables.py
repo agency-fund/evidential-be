@@ -664,6 +664,10 @@ class ExperimentField(Base):
     is_primary_metric: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
     metric_pct_change: Mapped[float | None] = mapped_column(Float)
     metric_target: Mapped[float | None] = mapped_column(Float)
+    # Bandit target metadata:
+    # is_target is true when this field is the DWH-backed outcome column that a bandit (e.g. MAB-DWH)
+    # optimises. The stored data_type is used to validate incoming outcome reports.
+    is_target: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
     # Filters metadata: not here, but determined by joining with ExperimentFilter
 
     @hybrid_property

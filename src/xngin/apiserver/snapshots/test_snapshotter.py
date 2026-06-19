@@ -23,6 +23,7 @@ from xngin.apiserver.routers.common_api_types import (
     ExperimentsType,
     FreqExperimentAnalysisResponse,
     LikelihoodTypes,
+    MABDwhExperimentSpec,
     MABExperimentSpec,
     OnlineFrequentistExperimentSpec,
     PreassignedFrequentistExperimentSpec,
@@ -30,7 +31,7 @@ from xngin.apiserver.routers.common_api_types import (
     UpdateBanditArmOutcomeRequest,
 )
 from xngin.apiserver.routers.common_enums import DataType, ExperimentState, StopAssignmentReason
-from xngin.apiserver.routers.experiments.experiments_common import fetch_fields_or_raise
+from xngin.apiserver.routers.experiments.experiments_common import fetch_fields_or_raise, fetch_mab_dwh_fields_or_raise
 from xngin.apiserver.snapshots.snapshotter import (
     SNAPSHOT_TIMEOUT_SECS,
     create_pending_snapshots,
@@ -59,6 +60,8 @@ async def make_experiment(
             field_type_map = await fetch_fields_or_raise(datasource, design_spec)
         case MABExperimentSpec() | CMABExperimentSpec():
             field_type_map = None
+        case MABDwhExperimentSpec():
+            field_type_map = await fetch_mab_dwh_fields_or_raise(datasource, design_spec)
         case _:
             assert_never(design_spec)
 

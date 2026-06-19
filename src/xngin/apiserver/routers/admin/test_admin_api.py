@@ -2522,6 +2522,51 @@ def test_cmab_experiments_analyze(testing_bandit_experiment, aclient: AdminAPICl
         assert analysis.post_pred_stdev is not None
 
 
+async def test_create_and_update_outcome_mab_dwh_happy_path(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+):
+    """End-to-end happy path for a MAB-DWH experiment through the public APIs: create it via the
+    admin client, assign a participant, push an outcome, and read the outcome back."""
+    experiment = await make_bandit_online_experiment(
+        aclient,
+        testing_datasource.datasource_id,
+        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
+        prior_type=PriorTypes.NORMAL,
+        reward_type=LikelihoodTypes.NORMAL,
+    )
+    experiment_id = experiment.config.experiment_id
+    assert experiment.config.design_spec.experiment_type == ExperimentsType.MAB_ONLINE_DWH
+
+    # Assign a participant via the experiments API.
+    assignment = eclient.get_assignment(
+        api_key=testing_datasource.key,
+        experiment_id=experiment_id,
+        participant_id="p1",
+    ).data.assignment
+    assert assignment is not None
+    assert assignment.outcome is None
+
+    # Push an outcome. The default target column ("is_onboarded") is boolean, so the outcome must be 0 or 1.
+    eclient.update_bandit_arm_with_participant_outcome(
+        api_key=testing_datasource.key,
+        body=UpdateBanditArmOutcomeRequest(outcome=1.0),
+        experiment_id=experiment_id,
+        participant_id="p1",
+    )
+
+    updated = eclient.get_assignment(
+        api_key=testing_datasource.key,
+        experiment_id=experiment_id,
+        participant_id="p1",
+        create_if_none=False,
+    ).data.assignment
+    assert updated is not None
+    assert updated.outcome == 1.0
+    assert updated.observed_at is not None
+
+
 async def test_mab_experiments_analyze_ignores_unobserved_draws_with_single_outcome(
     testing_datasource,
     aclient: AdminAPIClient,
