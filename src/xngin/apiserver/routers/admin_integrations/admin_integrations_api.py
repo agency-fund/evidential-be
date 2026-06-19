@@ -100,7 +100,7 @@ async def _call_turn_api(
             headers=headers,
         )
         response.raise_for_status()
-        journeys_dict = [Journey.model_validate(journey) for journey in response.json()]
+        journeys = [Journey.model_validate(journey) for journey in response.json()]
 
     except httpx.RequestError as exc:
         logger.error(f"Error calling Turn.io API at {method} {TURN_JOURNEYS_URL}: {exc}")
@@ -124,7 +124,7 @@ async def _call_turn_api(
             detail=f"The retrieved journeys from Turn.io did not have the expected fields 'name' and 'uuid'. "
             f"Details: {exc}",
         ) from exc
-    return journeys_dict
+    return journeys
 
 
 async def refresh_journeys_dict(turn_api_token: str, httpx_client: httpx.AsyncClient) -> list[Journey]:
@@ -301,7 +301,9 @@ async def get_organization_turn_journeys(
             "Re-set the Turn.io API token to fetch Journeys from Turn.io and store them.",
         )
 
-    journeys = [Journey(name=name, uuid=uuid) for name, uuid in turn_connection.journeys_dict.items()]
+    journeys = sorted(
+        [Journey(name=name, uuid=uuid) for name, uuid in turn_connection.journeys_dict.items()], key=lambda j: j.uuid
+    )
 
     return GetTurnJourneysResponse(journeys=journeys)
 

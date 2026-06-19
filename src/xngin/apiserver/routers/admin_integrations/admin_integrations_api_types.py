@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from xngin.apiserver.routers.admin.admin_api_types import AdminApiBaseModel
 
@@ -33,7 +33,6 @@ class Journey(BaseModel):
         str,
         Field(description=("The unique identifier (UUID) of the Turn.io journey, as defined in the Turn.io platform.")),
     ]
-    model_config = ConfigDict(extra="allow")
 
 
 class GetTurnJourneysResponse(AdminApiBaseModel):
