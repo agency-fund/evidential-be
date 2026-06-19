@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 from urllib.parse import urlparse
 
 from annotated_types import Ge, Le
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from xngin.apiserver.common_field_types import FieldName
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
@@ -262,7 +262,8 @@ class ListDatasourcesResponse(AdminApiBaseModel):
 
 
 class AddWebhookToOrganizationRequest(AdminApiBaseModel):
-    type: Literal["experiment.created"]
+    direction: Literal["inbound", "outbound"] = "outbound"
+    type: Literal["experiment.created", "turn.journey_changed"]
     name: Annotated[
         str,
         Field(
@@ -274,29 +275,26 @@ class AddWebhookToOrganizationRequest(AdminApiBaseModel):
         ),
     ]
     url: Annotated[
-        str,
+        str | None,
         Field(
             max_length=MAX_LENGTH_OF_URL_VALUE,
             description="The HTTP or HTTPS URL that will receive webhook notifications when events occur.",
         ),
     ]
 
-    @field_validator("url")
-    @classmethod
-    def validate_url(cls, v: str) -> str:
-        return validate_webhook_url(v)
+    @model_validator(mode="after")
+    def validate_url(self) -> AddWebhookToOrganizationRequest:
+        if self.url is not None:
+            self.url = validate_webhook_url(self.url)
+        if self.url is None and self.type == "experiment.created":
+            raise ValueError("URL must be provided for experiment.created webhooks.")
+        return self
 
 
-class AddWebhookToOrganizationResponse(AdminApiBaseModel):
+class AddWebhookToOrganizationResponse(AddWebhookToOrganizationRequest):
     """Information on the successfully created webhook."""
 
     id: Annotated[str, Field(description="The ID of the newly created webhook.")]
-    type: Annotated[str, Field(description="The type of webhook; e.g. experiment.created")]
-    name: Annotated[
-        str,
-        Field(description="User-friendly name for the webhook."),
-    ]
-    url: Annotated[str, Field(description="The URL to notify.")]
     auth_token: Annotated[
         str | None,
         Field(
@@ -307,24 +305,8 @@ class AddWebhookToOrganizationResponse(AdminApiBaseModel):
     ]
 
 
-class WebhookSummary(AdminApiBaseModel):
+class WebhookSummary(AddWebhookToOrganizationResponse):
     """Summarizes a Webhook configuration for an organization."""
-
-    id: Annotated[str, Field(description="The ID of the webhook.")]
-    type: Annotated[str, Field(description="The type of webhook; e.g. experiment.created")]
-    name: Annotated[
-        str,
-        Field(description="User-friendly name for the webhook."),
-    ]
-    url: Annotated[str, Field(description="The URL to notify.")]
-    auth_token: Annotated[
-        str | None,
-        Field(
-            description=(
-                "The value of the Webhook-Token: header that will be sent with the request to the configured URL."
-            )
-        ),
-    ]
 
 
 class UpdateOrganizationWebhookRequest(AdminApiBaseModel):

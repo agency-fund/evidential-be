@@ -112,10 +112,12 @@ class Webhook(Base):
     id: Mapped[str] = mapped_column(primary_key=True, default=webhook_id_factory)
     # User-friendly name for the webhook
     name: Mapped[str] = mapped_column(server_default="")
+    # direction of webhook
+    direction: Mapped[str] = mapped_column(server_default="outbound")
     # The type of webhook; e.g. experiment.created. These are user-visible arbitrary strings.
     type: Mapped[str] = mapped_column()
     # The URL to post the event to. The payload body depends on the type of webhook.
-    url: Mapped[str] = mapped_column()
+    url: Mapped[str | None] = mapped_column()
     # The token that will be sent in the Webhook-Token header.
     auth_token: Mapped[str | None] = mapped_column()
 

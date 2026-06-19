@@ -36,6 +36,7 @@ def create_webhook_impl(
     """Creates a webhook and returns its auth token and its entity."""
     auth_token = secrets.token_hex(16)
     entity = tables.Webhook(
+        direction=webhook.direction,
         type=webhook.type,
         name=webhook.name,
         url=webhook.url,
