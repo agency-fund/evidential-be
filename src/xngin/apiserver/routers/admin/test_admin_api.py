@@ -409,9 +409,7 @@ def test_list_orgs_unprivileged(aclient_unpriv: AdminAPIClient):
     ],
     ids=lambda d: type(d),
 )
-def test_create_datasource_without_credentials(
-    disable_safe_resolve_check, dsn: BqDsn | RedshiftDsn | PostgresDsn, aclient: AdminAPIClient
-):
+def test_create_datasource_without_credentials(dsn: BqDsn | RedshiftDsn | PostgresDsn, aclient: AdminAPIClient):
     org_id = aclient.create_organizations(
         body=CreateOrganizationRequest(name="test_create_datasource_without_credentials")
     ).data.id
@@ -450,9 +448,7 @@ def test_create_datasource_invalid_dns(testing_datasource, aclient: AdminAPIClie
         )
 
 
-def test_create_datasource_with_connectivity_check_connection_failure(
-    disable_safe_resolve_check, aclient: AdminAPIClient
-):
+def test_create_datasource_with_connectivity_check_connection_failure(aclient: AdminAPIClient):
     org_id = aclient.create_organizations(
         body=CreateOrganizationRequest(name="test_create_datasource_with_preflight")
     ).data.id
@@ -479,9 +475,7 @@ def test_create_datasource_with_connectivity_check_connection_failure(
     assert len(list_datasources.items) == 1
 
 
-def test_create_datasource_with_connectivity_check_disabled_by_default(
-    disable_safe_resolve_check, aclient: AdminAPIClient
-):
+def test_create_datasource_with_connectivity_check_disabled_by_default(aclient: AdminAPIClient):
     org_id = aclient.create_organizations(
         body=CreateOrganizationRequest(name="test_create_datasource_connectivity_check_default")
     ).data.id
@@ -503,7 +497,7 @@ def test_create_datasource_with_connectivity_check_disabled_by_default(
     )
 
 
-def test_create_datasource_with_connectivity_check_can_be_enabled(disable_safe_resolve_check, aclient: AdminAPIClient):
+def test_create_datasource_with_connectivity_check_can_be_enabled(aclient: AdminAPIClient):
     org_id = aclient.create_organizations(
         body=CreateOrganizationRequest(name="test_create_datasource_connectivity_check_enabled")
     ).data.id
