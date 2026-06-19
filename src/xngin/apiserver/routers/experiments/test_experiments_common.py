@@ -30,6 +30,7 @@ from xngin.apiserver.routers.common_api_types import (
     Filter,
     GetExperimentResponse,
     LikelihoodTypes,
+    MABDwhExperimentSpec,
     MABExperimentSpec,
     MetricPowerAnalysis,
     MetricType,
@@ -51,6 +52,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     create_freq_online_experiment_impl,
     create_preassigned_experiment_impl,
     fetch_fields_or_raise,
+    fetch_mab_dwh_fields_or_raise,
     get_assign_summary,
     get_existing_assignment_for_participant,
     get_experiment_impl,
@@ -74,6 +76,7 @@ def make_createexperimentrequest_json(
     table_name: str | None = None,
     primary_key: str | None = None,
     desired_n: int | None = None,
+    target_field_name: str = "is_onboarded",
 ):
     """Make a basic CreateExperimentRequest JSON object.
 
@@ -151,6 +154,43 @@ def make_createexperimentrequest_json(
                     "prior_type": prior_type,
                     "reward_type": reward_type,
                     "arms": arms,
+                }
+            }
+        case ExperimentsType.MAB_ONLINE_DWH:
+            arm_spec = {
+                "arm_name": "string",
+                "arm_description": "string",
+                "alpha_init": 50.0 if prior_type == PriorTypes.BETA else None,
+                "beta_init": 1.0 if prior_type == PriorTypes.BETA else None,
+                "mu_init": 10.0 if prior_type == PriorTypes.NORMAL else None,
+                "sigma_init": 1.0 if prior_type == PriorTypes.NORMAL else None,
+            }
+            arm_spec_2 = {
+                "arm_name": "string",
+                "arm_description": "string",
+                "alpha_init": 1.0 if prior_type == PriorTypes.BETA else None,
+                "beta_init": 50.0 if prior_type == PriorTypes.BETA else None,
+                "mu_init": -10.0 if prior_type == PriorTypes.NORMAL else None,
+                "sigma_init": 1.0 if prior_type == PriorTypes.NORMAL else None,
+            }
+            mab_dwh_arms = (
+                [arm_spec, arm_spec_2] + [arm_spec for _ in range(num_arms - 2)]
+                if num_arms > 2
+                else [arm_spec, arm_spec_2]
+            )
+            return {
+                "design_spec": {
+                    "experiment_name": "test",
+                    "description": "test",
+                    "start_date": "2024-01-01T00:00:00+00:00",
+                    "end_date": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+                    "experiment_type": "mab_online_dwh",
+                    "prior_type": prior_type,
+                    "reward_type": reward_type,
+                    "arms": mab_dwh_arms,
+                    "table_name": table_name or TESTING_DWH_PARTICIPANT_DEF.table_name,
+                    "primary_key": primary_key or "id",
+                    "target_field_name": target_field_name,
                 }
             }
         case ExperimentsType.CMAB_ONLINE:
@@ -236,9 +276,13 @@ def make_create_online_bandit_experiment_request(
     experiment_type: ExperimentsType = ExperimentsType.MAB_ONLINE,
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
     prior_type: PriorTypes = PriorTypes.NORMAL,
+    target_field_name: str = "is_onboarded",
 ) -> CreateExperimentRequest:
     request = make_createexperimentrequest_json(
-        experiment_type=experiment_type, prior_type=prior_type, reward_type=reward_type
+        experiment_type=experiment_type,
+        prior_type=prior_type,
+        reward_type=reward_type,
+        target_field_name=target_field_name,
     )
     return CreateExperimentRequest.model_validate(request)
 
@@ -252,6 +296,7 @@ async def make_insertable_experiment(
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
     table_name: str | None = None,
     primary_key: str | None = None,
+    target_field_name: str = "is_onboarded",
     design_spec: DesignSpec | None = None,
 ) -> tuple[tables.Experiment, DesignSpec]:
     """Make a minimal experiment with arms ready for insertion into the database for tests.
@@ -267,6 +312,7 @@ async def make_insertable_experiment(
             reward_type=reward_type,
             table_name=table_name,
             primary_key=primary_key,
+            target_field_name=target_field_name,
         )
         design_spec = TypeAdapter(DesignSpec).validate_python(request["design_spec"])
 
@@ -278,11 +324,14 @@ async def make_insertable_experiment(
         stopped_assignments_at = datetime.now(UTC)
         stopped_assignments_reason = StopAssignmentReason.PREASSIGNED
 
-    # Get participants schema from datasource for frequentist experiments
+    # Resolve DWH field types for experiments that bind to a table at design time.
     field_type_map = None
     if experiment_type in {ExperimentsType.FREQ_PREASSIGNED, ExperimentsType.FREQ_ONLINE}:
         assert isinstance(design_spec, PreassignedFrequentistExperimentSpec | OnlineFrequentistExperimentSpec)
         field_type_map = await fetch_fields_or_raise(datasource, design_spec)
+    elif experiment_type == ExperimentsType.MAB_ONLINE_DWH:
+        assert isinstance(design_spec, MABDwhExperimentSpec)
+        field_type_map = await fetch_mab_dwh_fields_or_raise(datasource, design_spec)
 
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
@@ -305,6 +354,7 @@ async def insert_experiment_and_arms(
     end_date: datetime | None = None,
     prior_type: PriorTypes = PriorTypes.NORMAL,
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
+    target_field_name: str = "is_onboarded",
 ) -> tables.Experiment:
     """Creates an experiment and arms and commits them to the database.
 
@@ -316,6 +366,7 @@ async def insert_experiment_and_arms(
         experiment_type=experiment_type,
         prior_type=prior_type,
         reward_type=reward_type,
+        target_field_name=target_field_name,
     )
     # Override the end date if provided.
     if end_date is not None:
@@ -1486,6 +1537,87 @@ async def test_create_experiment_impl_for_cmab_online(xngin_session, testing_dat
 
 
 @pytest.mark.parametrize(
+    ("target_field_name", "expected_data_type"),
+    [
+        ("is_onboarded", "boolean"),
+        ("current_income", "numeric"),
+    ],
+)
+async def test_create_experiment_impl_for_mab_dwh_online(
+    xngin_session, testing_datasource, target_field_name: str, expected_data_type: str
+):
+    """MAB-DWH happy path: target column type is resolved from DWH and persisted on ExperimentField rows."""
+    request = make_create_online_bandit_experiment_request(
+        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
+        target_field_name=target_field_name,
+    )
+
+    response = await create_experiment_impl(
+        request=request.model_copy(deep=True),
+        datasource=testing_datasource.ds,
+        xngin_session=xngin_session,
+        stratify_on_metrics=False,
+        random_state=42,
+        validated_webhooks=[],
+    )
+
+    assert isinstance(response.design_spec, MABDwhExperimentSpec)
+    assert response.design_spec.target_field_name == target_field_name
+
+    experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
+    assert experiment.experiment_type == ExperimentsType.MAB_ONLINE_DWH
+    assert experiment.datasource_table == TESTING_DWH_PARTICIPANT_DEF.table_name
+
+    # Two ExperimentField rows: one is_unique_id, one is_target.
+    experiment_fields = await experiment.awaitable_attrs.experiment_fields
+    assert len(experiment_fields) == 2
+    [unique_id_field] = [ef for ef in experiment_fields if ef.is_unique_id]
+    [target_field] = [ef for ef in experiment_fields if ef.is_target]
+    assert unique_id_field.field_name == "id"
+    assert unique_id_field.data_type == "bigint"
+    assert target_field.field_name == target_field_name
+    assert target_field.data_type == expected_data_type
+    assert not target_field.is_unique_id
+    assert not unique_id_field.is_target
+
+
+async def test_create_experiment_impl_for_mab_dwh_missing_target_raises(xngin_session, testing_datasource):
+    """MAB-DWH create with a target_field_name that doesn't exist in the DWH table fails loudly."""
+    request = make_create_online_bandit_experiment_request(
+        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
+        target_field_name="column_that_does_not_exist",
+    )
+
+    with pytest.raises(LateValidationError, match="column_that_does_not_exist"):
+        await create_experiment_impl(
+            request=request,
+            datasource=testing_datasource.ds,
+            xngin_session=xngin_session,
+            stratify_on_metrics=False,
+            random_state=42,
+            validated_webhooks=[],
+        )
+
+
+async def test_create_experiment_impl_for_mab_dwh_unsupported_target_type_raises(xngin_session, testing_datasource):
+    """MAB-DWH create with a non-bool/numeric target column fails at create-time."""
+    request = make_create_online_bandit_experiment_request(
+        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
+        target_field_name="gender",  # CHARACTER_VARYING — not supported as metric/target
+    )
+
+    with pytest.raises(LateValidationError, match="Only boolean or numeric data types are supported as targets"):
+        await create_experiment_impl(
+            request=request,
+            datasource=testing_datasource.ds,
+            xngin_session=xngin_session,
+            stratify_on_metrics=False,
+            random_state=42,
+            validated_webhooks=[],
+        )
+
+
+@pytest.mark.parametrize(
     ("experiment_type", "reward_type", "prior_type"),
     [
         (ExperimentsType.MAB_ONLINE, LikelihoodTypes.NORMAL, PriorTypes.NORMAL),
@@ -2367,6 +2499,52 @@ async def test_update_bandit_arm_with_outcome(
         match="Participant {participant_id} already has an outcome recorded.".format(participant_id="test_id"),
     ):
         await update_bandit_arm_with_outcome_impl(xngin_session, bandit_experiment, "test_id", 1.0)
+
+
+async def test_update_bandit_arm_with_outcome_mab_dwh_bool_target_rejects_non_binary(xngin_session, testing_datasource):
+    """MAB-DWH with a BOOL target rejects outcomes that aren't 0 or 1, even under NORMAL reward."""
+    bandit_experiment = await insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
+        prior_type=PriorTypes.NORMAL,
+        reward_type=LikelihoodTypes.NORMAL,
+        target_field_name="is_onboarded",
+    )
+    await create_assignment_for_participant(xngin_session, bandit_experiment, "p1", None, random_state=66)
+
+    with pytest.raises(LateValidationError, match="must be 0 or 1 for boolean targets"):
+        await update_bandit_arm_with_outcome_impl(
+            xngin_session=xngin_session, experiment=bandit_experiment, participant_id="p1", outcome=0.5
+        )
+
+    # A valid binary outcome is accepted.
+    updated_arm = await update_bandit_arm_with_outcome_impl(
+        xngin_session=xngin_session, experiment=bandit_experiment, participant_id="p1", outcome=1.0
+    )
+    draws = await updated_arm.awaitable_attrs.draws
+    assert draws[0].outcome == 1.0
+
+
+async def test_update_bandit_arm_with_outcome_mab_dwh_numeric_target_accepts_any_float(
+    xngin_session, testing_datasource
+):
+    """MAB-DWH with a numeric target accepts any float under NORMAL reward."""
+    bandit_experiment = await insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
+        prior_type=PriorTypes.NORMAL,
+        reward_type=LikelihoodTypes.NORMAL,
+        target_field_name="current_income",
+    )
+    await create_assignment_for_participant(xngin_session, bandit_experiment, "p1", None, random_state=66)
+
+    updated_arm = await update_bandit_arm_with_outcome_impl(
+        xngin_session=xngin_session, experiment=bandit_experiment, participant_id="p1", outcome=42.7
+    )
+    draws = await updated_arm.awaitable_attrs.draws
+    assert draws[0].outcome == 42.7
 
 
 async def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_session, testing_datasource):

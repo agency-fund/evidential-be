@@ -1167,6 +1167,20 @@ async def test_get_assignment_mab_cache_headers(
     assert response.response.headers["Cache-Control"] == "private, max-age=3600"
 
 
+async def test_update_bandit_arm_with_outcome_rejects_non_numeric_outcome(
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+):
+    """Non-numeric outcome in the request body is rejected"""
+    mab_experiment = await create_experiment(testing_datasource, aclient, experiment_type=ExperimentsType.MAB_ONLINE)
+
+    response = eclient.client.post(
+        f"/v1/experiments/{mab_experiment.experiment_id}/assignments/1/outcome",
+        headers={"X-API-Key": testing_datasource.key},
+        json={"outcome": "not-a-float"},
+    )
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_CONTENT, response.content
+
+
 async def test_get_assignment_cmab_cache_headers(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):

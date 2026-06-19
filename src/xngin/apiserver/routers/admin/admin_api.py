@@ -131,6 +131,7 @@ from xngin.apiserver.routers.common_api_types import (
     GetMetricsResponseElement,
     GetStrataResponseElement,
     ListExperimentsResponse,
+    MABDwhExperimentSpec,
     MABExperimentSpec,
     OnlineFrequentistExperimentSpec,
     PowerRequest,
@@ -1934,7 +1935,7 @@ async def analyze_experiment(
             return await experiments_common.analyze_experiment_freq_impl(
                 xngin_session, ds.get_config(), experiment, baseline_arm_id, design_spec.metrics
             )
-        case MABExperimentSpec():
+        case MABExperimentSpec() | MABDwhExperimentSpec():
             return await experiments_common.analyze_experiment_bandit_impl(xngin_session, experiment)
         case CMABExperimentSpec():
             raise LateValidationError(
@@ -1942,7 +1943,7 @@ async def analyze_experiment(
                 use the corresponding POST endpoint.""",
             )
         case _:
-            assert_never()
+            assert_never(design_spec)
 
 
 @router.post(
