@@ -10,7 +10,6 @@ the mapping from experiment arms to Turn.io journeys.
 """
 
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
 import httpx
@@ -24,12 +23,12 @@ from fastapi import (
     status,
 )
 from loguru import logger
+from pydantic import ValidationError
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import constants
 from xngin.apiserver.dependencies import retrying_httpx_dependency, xngin_db_session
-from xngin.apiserver.limits import TURN_JOURNEYS_CACHE_TTL_SECONDS
 from xngin.apiserver.routers.admin import authz
 from xngin.apiserver.routers.admin.admin_api import (
     GENERIC_SUCCESS,
@@ -44,6 +43,7 @@ from xngin.apiserver.routers.admin_integrations.admin_integrations_api_types imp
     GetTurnArmJourneyMappingResponse,
     GetTurnConnectionResponse,
     GetTurnJourneysResponse,
+    Journey,
     SetConnectionToTurnRequest,
     SetTurnArmJourneyMappingRequest,
 )
@@ -60,6 +60,10 @@ TURN_JOURNEYS_RESPONSES: dict[str | int, dict[str, Any]] = {
     "502": {
         "model": HTTPExceptionError,
         "description": "Failed to reach Turn.io API, or Turn.io returned a non-200 response.",
+    },
+    "422": {
+        "model": HTTPExceptionError,
+        "description": "The retrieved journeys from Turn.io did not have the expected fields 'name' and 'uuid'.",
     },
 }
 
@@ -79,7 +83,7 @@ async def _call_turn_api(
     httpx_client: httpx.AsyncClient,
     turn_api_token: str,
     method: str,
-) -> httpx.Response:
+) -> list[Journey]:
     """
     Wrapper for outbound Turn.io API calls to standardize error handling.
 
@@ -96,6 +100,8 @@ async def _call_turn_api(
             headers=headers,
         )
         response.raise_for_status()
+        journeys = [Journey.model_validate(journey) for journey in response.json()]
+
     except httpx.RequestError as exc:
         logger.error(f"Error calling Turn.io API at {method} {TURN_JOURNEYS_URL}: {exc}")
         raise HTTPException(
@@ -111,7 +117,22 @@ async def _call_turn_api(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Turn.io API returned non-2xx status. Details: {exc.response.status_code} - {exc.response.text}",
         ) from exc
-    return response
+    except ValidationError as exc:
+        logger.error(f"Turn.io API returned unexpected response structure at {method} {TURN_JOURNEYS_URL}: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"The retrieved journeys from Turn.io did not have the expected fields 'name' and 'uuid'. "
+            f"Details: {exc}",
+        ) from exc
+    return journeys
+
+
+async def refresh_journeys_dict(turn_api_token: str, httpx_client: httpx.AsyncClient) -> list[Journey]:
+    """Refreshes the cached Turn.io journeys on the TurnConnection.
+
+    Returns the updated journey list.
+    """
+    return await _call_turn_api(httpx_client=httpx_client, turn_api_token=turn_api_token, method="GET")
 
 
 @asynccontextmanager
@@ -128,17 +149,32 @@ router = APIRouter(
 )
 
 
-@router.put("/integrations/turn-connection/{organization_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.put(
+    "/integrations/turn-connection/{organization_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=TURN_JOURNEYS_RESPONSES,
+)
 async def set_organization_turn_connection(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
     body: Annotated[SetConnectionToTurnRequest, Body(...)],
+    httpx_client: Annotated[httpx.AsyncClient, Depends(retrying_httpx_dependency)],
 ):
     """Sets (or rotates) the Turn.io API token for an organization.
 
     Creates a Turn connection for the organization if one does not yet exist, otherwise
     overwrites the existing token. An organization has at most one Turn connection.
+
+    Whenever the token is set or rotated, the stored list of Turn.io journeys for the
+    organization is automatically refreshed. Right now, this is the ONLY way to refresh journeys.
+    However, there are planned subsequent updates to add a separate webhook endpoint for
+    refreshing journeys without rotating the token, that the Turn.io App can automatically call.
+
+    NB: It's important to maintain the order of setting token -> refreshing journeys in a single
+    transaction, since the validity of the journeys list depends on the token. This ensures that
+    we don't end up in a state where the token is updated but the journeys list is out of sync
+    with the new token.
     """
     org = await get_organization_or_raise(session, user, organization_id)
 
@@ -149,27 +185,27 @@ async def set_organization_turn_connection(
         turn_connection = tables.TurnConnection(organization_id=org.id)
         turn_connection.set_turn_api_token(body.turn_api_token)
         session.add(turn_connection)
-        await session.commit()
 
     elif turn_connection.get_turn_api_token() != body.turn_api_token:
+        # This could make the arm_journey_ids stored in ExperimentTurnConfig.arm_journey_map invalid.
+        # We expose that drift to the UI via get_..mapping()'s reporting of stale journey IDs.
         turn_connection.set_turn_api_token(body.turn_api_token)
 
-        # Journey UUIDs belong to a specific Turn workspace, so any stored arm->journey
-        # mappings become stale the moment the token changes. Wipe them for every
-        # experiment under this organization's datasources.
-        await session.execute(
-            delete(tables.ExperimentTurnConfig).where(
-                tables.ExperimentTurnConfig.experiment_id.in_(
-                    select(tables.Experiment.id)
-                    .join(tables.Datasource, tables.Experiment.datasource_id == tables.Datasource.id)
-                    .where(tables.Datasource.organization_id == org.id)
-                )
-            )
+    else:
+        logger.info(
+            f"Turn.io API token provided in request is the same as the existing token for organization {org.id}. "
+            f"Not updating token."
         )
 
-        await session.commit()
-    else:
-        logger.debug(f"Turn.io API token for organization {org.id} is unchanged. No update performed.")
+    # Refresh the stored journeys
+    journeys = await refresh_journeys_dict(turn_api_token=body.turn_api_token, httpx_client=httpx_client)
+
+    turn_connection.journeys_dict = {journey.name: journey.uuid for journey in journeys}
+
+    # Only commit after refreshing happens successfully,
+    # otherwise we discard both token and journeys updates.
+    await session.commit()
+
     return GENERIC_SUCCESS
 
 
@@ -245,12 +281,10 @@ async def get_organization_turn_journeys(
     organization_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
-    httpx_client: Annotated[httpx.AsyncClient, Depends(retrying_httpx_dependency)],
 ) -> GetTurnJourneysResponse:
     """Returns a {name: uuid} map of Turn.io journeys available to the organization.
 
-    The result is cached on the TurnConnection row and refreshed when older than
-    TURN_JOURNEYS_CACHE_TTL_SECONDS, or when the API token is rotated.
+    The stored Journey list is returned to avoid repeatedly calling the Turn.io API.
     """
     org = await get_organization_or_raise(session, user, organization_id)
 
@@ -260,23 +294,18 @@ async def get_organization_turn_journeys(
     if turn_connection is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Turn connection not found")
 
-    now = datetime.now(UTC)
-    if (
-        turn_connection.cached_journeys is not None
-        and turn_connection.cached_journeys_updated_at is not None
-        and now - turn_connection.cached_journeys_updated_at < timedelta(seconds=TURN_JOURNEYS_CACHE_TTL_SECONDS)
-    ):
-        return GetTurnJourneysResponse(journeys=turn_connection.cached_journeys)
+    if turn_connection.journeys_dict is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No stored journeys found for Turn connection. "
+            "Re-set the Turn.io API token to fetch Journeys from Turn.io and store them.",
+        )
 
-    response = await _call_turn_api(
-        httpx_client=httpx_client, turn_api_token=turn_connection.get_turn_api_token(), method="GET"
+    journeys = sorted(
+        [Journey(name=name, uuid=uuid) for name, uuid in turn_connection.journeys_dict.items()], key=lambda j: j.uuid
     )
 
-    journey_dict = {journey["name"]: journey["uuid"] for journey in response.json()}
-    turn_connection.cached_journeys = journey_dict
-    turn_connection.cached_journeys_updated_at = now
-    await session.commit()
-    return GetTurnJourneysResponse(journeys=journey_dict)
+    return GetTurnJourneysResponse(journeys=journeys)
 
 
 @router.put(
@@ -319,7 +348,7 @@ async def set_turn_arm_journey_mapping(
             detail=f"Error in arm IDs config. Missing: {missing_arm_ids}, Extra: {extra_arm_ids}",
         )
 
-    mapping = (
+    turn_config = (
         await session.execute(
             select(tables.ExperimentTurnConfig).where(
                 tables.ExperimentTurnConfig.experiment_id == experiment_id,
@@ -327,14 +356,14 @@ async def set_turn_arm_journey_mapping(
         )
     ).scalar_one_or_none()
 
-    if mapping is None:
-        mapping = tables.ExperimentTurnConfig(
+    if turn_config is None:
+        turn_config = tables.ExperimentTurnConfig(
             experiment_id=experiment_id,
             arm_journey_map=body.arm_to_journeys,
         )
-        session.add(mapping)
+        session.add(turn_config)
     else:
-        mapping.arm_journey_map = body.arm_to_journeys
+        turn_config.arm_journey_map = body.arm_to_journeys
 
     await session.commit()
     return GENERIC_SUCCESS
@@ -350,7 +379,7 @@ async def get_turn_arm_journey_mapping(
     """Returns the current mapping from each arm ID of the experiment to a Turn.io Journey ID, if it exists."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
     await get_experiment_via_ds_or_raise(session, ds, experiment_id)
-    mapping = (
+    turn_config = (
         await session.execute(
             select(tables.ExperimentTurnConfig).where(
                 tables.ExperimentTurnConfig.experiment_id == experiment_id,
@@ -358,13 +387,27 @@ async def get_turn_arm_journey_mapping(
         )
     ).scalar_one_or_none()
 
-    if mapping is None:
+    if turn_config is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No Turn.io journey mapping found for experiment.",
         )
 
-    return GetTurnArmJourneyMappingResponse(arm_to_journeys=mapping.arm_journey_map)
+    turn_journeys_row = await session.execute(
+        select(tables.TurnConnection.journeys_dict).where(
+            tables.TurnConnection.organization_id == ds.organization_id,
+        )
+    )
+    turn_journeys = turn_journeys_row.scalar_one_or_none()
+    uuids = list(turn_journeys.values()) if turn_journeys is not None else []
+
+    stale_arm_ids = []
+    if turn_journeys is not None:
+        stale_arm_ids = [
+            arm_id for arm_id, journey_uuid in turn_config.arm_journey_map.items() if journey_uuid not in uuids
+        ]
+
+    return GetTurnArmJourneyMappingResponse(arm_to_journeys=turn_config.arm_journey_map, stale_arm_ids=stale_arm_ids)
 
 
 @router.delete(
@@ -384,7 +427,7 @@ async def delete_turn_arm_journey_mapping(
     """Deletes the mapping from each arm ID of the experiment to a Turn.io Journey ID, if it exists."""
     ds = await get_datasource_or_raise(session, user, datasource_id)
     await get_experiment_via_ds_or_raise(session, ds, experiment_id)
-    mapping_query = select(tables.ExperimentTurnConfig).where(
+    turn_config_query = select(tables.ExperimentTurnConfig).where(
         tables.ExperimentTurnConfig.experiment_id == experiment_id
     )
 
@@ -392,7 +435,7 @@ async def delete_turn_arm_journey_mapping(
         session,
         allow_missing,
         authz.is_user_authorized_on_datasource(user, datasource_id),
-        mapping_query,
+        turn_config_query,
     )
     await session.commit()
     return response
