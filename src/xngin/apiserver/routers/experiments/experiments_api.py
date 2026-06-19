@@ -77,20 +77,20 @@ async def lifespan(_app: FastAPI):
 STANDARD_INTEGRATION_RESPONSES: dict[str | int, dict[str, Any]] = {
     "400": {
         "model": dict,
-        "description": "The request is invalid. This usually indicates your request doesn't match the required "
-        "structure of the request, or is missing a field or request header.",
+        "description": "The request is invalid. Check that the request body matches the required structure and "
+        "that all required fields and headers are present.",
     },
     "403": {
         "model": dict,
-        "description": "Requester does not have sufficient privileges to perform this operation or is not "
-        f"authenticated.\n\nTip: Check that the API key passed in the `{constants.HEADER_API_KEY}` header has "
-        f"access to the requested datasource or experiment.",
+        "description": "You did not provide a valid API key, or your API key does not have permission for this "
+        f"operation.\n\nTip: Check that the API key in the `{constants.HEADER_API_KEY}` header has "
+        f"access to the data source or experiment.",
     },
     "404": {
         "model": dict,
-        "description": "The requested resource was not found, or you do not have access to it.\n\nTip: Check that the "
-        f"API key passed in the `{constants.HEADER_API_KEY}` header has access to "
-        "the requested datasource or experiment.",
+        "description": "The resource was not found, or you do not have access to it.\n\nTip: Check that the "
+        f"API key in the `{constants.HEADER_API_KEY}` header has access to "
+        "the data source or experiment.",
     },
 }
 
@@ -102,7 +102,7 @@ router = APIRouter(
 )
 
 
-@router.get("/experiments", summary="List experiments on the datasource.")
+@router.get("/experiments", summary="List experiments on a data source.")
 async def list_experiments(
     datasource: Annotated[Datasource, Depends(datasource_dependency)],
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
@@ -146,7 +146,7 @@ async def _stream_experiment_assignments_response(
 
 @router.get(
     "/experiments/{experiment_id}",
-    summary="Get experiment metadata (design & assignment specs) for a single experiment.",
+    summary="Get an experiment's design.",
 )
 async def get_experiment(
     experiment: Annotated[tables.Experiment, Depends(experiment_response_dependency)],
@@ -157,7 +157,7 @@ async def get_experiment(
 
 @router.get(
     "/experiments/{experiment_id}/assignments",
-    summary="Fetch list of participant=>arm assignments for the given experiment id.",
+    summary="List an experiment's assignments.",
 )
 async def get_experiment_assignments(
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
@@ -178,15 +178,16 @@ async def get_experiment_assignments(
 
 @router.get(
     "/experiments/{experiment_id}/assignments/csv",
-    summary="Export experiment assignments as CSV.",
+    summary="Export an experiment's assignments as CSV.",
     description="""Returns a CSV stream with a header row.
 
     Output columns:
     - `participant_id`
+    - `cluster_key`, if the experiment design defines a cluster key
     - `arm_id`
     - `arm_name`
-    - `created_at`: UTC ISO 8601 timestamp in ISO8601 format
-    - one column for each configured strata field
+    - `created_at`: the time the assignment was created, as a UTC ISO 8601 timestamp
+    - one column for each strata field defined on the experiment
     """,
     response_class=CsvStreamingResponse,
 )
@@ -199,11 +200,15 @@ async def get_experiment_assignments_as_csv(
 
 @router.get(
     "/experiments/{experiment_id}/assignments/{participant_id}",
-    summary="Get the assignment for a specific participant, excluding strata if any.",
+    summary="Get or create a participant's assignment.",
     description="""
-    For preassigned experiments, the participant's Assignment is returned if it exists.
-    For all online experiments (except contextual bandits), returns the assignment if it exists,
-    else generates an assignment.
+    Gets or creates an arm assignment for a participant. The behavior depends on the experiment type:
+
+    - Preassigned A/B experiments: returns the assignment if one exists. `create_if_none` is ignored.
+    - Online A/B and Multi-armed Bandit experiments: returns the existing assignment, or creates one
+      when `create_if_none` is true.
+    - Contextual Multi-armed Bandit (CMAB) experiments: returns the assignment if one exists. To create
+      a new assignment, use the `assign_cmab` endpoint, which accepts the required context values.
     """,
 )
 async def get_assignment(
@@ -215,8 +220,8 @@ async def get_assignment(
         bool,
         Query(
             description=(
-                "Create an assignment if none exists. Does nothing for preassigned experiments. "
-                "Override if you just want to check if an assignment exists."
+                "Create an assignment if none exists. Set to false to check for an existing assignment "
+                "without creating one. Ignored for preassigned experiments."
             )
         ),
     ] = True,
@@ -225,8 +230,8 @@ async def get_assignment(
         int,
         Query(
             description=(
-                "Controls the Cache-Control header max-age value returned with stable assignments "
-                "(freq_preassigned, freq_online). Set to 0 to disable caching."
+                "Sets the Cache-Control max-age, in seconds, for Preassigned A/B and Online A/B experiments. "
+                "Set to 0 to disable caching."
             )
         ),
         Ge(0),
@@ -250,7 +255,7 @@ async def get_assignment(
             ExperimentsType.FREQ_ONLINE,
         }
         is_bandit_with_outcome = (
-            exp_type in {ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE}
+            exp_type in {ExperimentsType.MAB_ONLINE, ExperimentsType.MAB_ONLINE_DWH, ExperimentsType.CMAB_ONLINE}
             and assignment_response.assignment.outcome is not None
         )
         if is_stable_frequentist or is_bandit_with_outcome:
@@ -261,10 +266,12 @@ async def get_assignment(
 
 @router.post(
     "/experiments/{experiment_id}/assignments/{participant_id}/assign_with_filters",
+    summary="Get or create an Online A/B assignment with server-side filtering.",
     description="""
-    Get or create a frequentist online arm assignment for a participant that requires server-side
-    filtering. If an assignment already exists, the properties in the
-    OnlineAssignmentWithFiltersRequest are ignored and the existing assignment is returned.""",
+    Gets or creates an arm assignment for a participant on experiments using server-side filtering. If an assignment
+    already exists, that assignment is returned and the properties in the request body are ignored.
+
+    If there are no filters on the experiment, use the get_assignment endpoint.""",
 )
 async def get_assignment_filtered(
     experiment: Annotated[tables.Experiment, Depends(experiment_and_datasource_dependency)],
@@ -273,7 +280,12 @@ async def get_assignment_filtered(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     create_if_none: Annotated[
         bool,
-        Query(description="Create an assignment if none exists. Override to just check for existence."),
+        Query(
+            description=(
+                "Create an assignment if none exists. Set to false to check for an existing assignment "
+                "without creating one."
+            )
+        ),
     ] = True,
     random_state: Annotated[
         int | None,
@@ -301,10 +313,11 @@ async def get_assignment_filtered(
 
 @router.post(
     "/experiments/{experiment_id}/assignments/{participant_id}/assign_cmab",
+    summary="Get or create a CMAB assignment for a participant.",
     description="""
-    Get or create a CMAB arm assignment for a specific participant. This endpoint is used only for CMAB assignments.
-    If there is a pre-existing assignment for a given participant ID, the context inputs in the
-    CMABContextInputRequest can be None, and will be disregarded if they are not None.
+    Gets or creates an arm assignment for a participant. Used only for CMAB experiments. If an
+    assignment already exists, `context_inputs` in the request body may be null. If you provide it
+    anyway, it is ignored.
     """,
 )
 async def get_assignment_cmab(
@@ -314,7 +327,12 @@ async def get_assignment_cmab(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     create_if_none: Annotated[
         bool,
-        Query(description=("Create an assignment if none exists. Override to just check for existence.")),
+        Query(
+            description=(
+                "Create an assignment if none exists. Set to false to check for an existing assignment "
+                "without creating one."
+            )
+        ),
     ] = True,
     random_state: Annotated[
         int | None,
@@ -365,24 +383,18 @@ async def get_assignment_cmab(
 
 @router.post(
     "/experiments/{experiment_id}/assignments/{participant_id}/outcome",
+    summary="Record a bandit arm outcome for a participant.",
     description="""
-    Update the bandit arm with corresponding outcome for a specific participant.
+    Records the outcome for a participant's assigned arm and returns the updated arm parameters.
     Used only for bandit experiments.
 
-    On the first call for a given participant, this endpoint will update the assigned arm with the provided outcome,
-    and return the updated arm parameters.
-    For a participant without an existing assignment, this endpoint will return a 422 error,
-    as there is no arm to update.
-    Please use the GET assignment endpoint to first create an assignment for the participant.
-    For a participant with an existing assignment and previously recorded outcome, this endpoint
-    will return a 422 error.
-    Please use the GET assignment endpoint to check if an assignment with an outcome already exists
-    for the participant.
-    """,
-    summary="""
-    "Update the assigned arm with the provided outcome, and return the updated arm parameters.
-    Only participants with an existing assignment and no previously recorded outcome can be updated with this endpoint.
-    All other cases will return a 422 error, in which case, please use the GET assignment endpoint.
+    Prerequisites:
+    - The participant must already have an assignment. Create one with the GET assignment endpoint
+      first.
+    - The participant must not already have a recorded outcome. Use the GET assignment endpoint to
+      check whether an outcome is already recorded.
+
+    The endpoint returns a 422 error if a prerequisite is not met.
     """,
 )
 async def update_bandit_arm_with_participant_outcome(

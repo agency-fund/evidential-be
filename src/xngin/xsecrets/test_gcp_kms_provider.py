@@ -116,7 +116,7 @@ def test_unpack_envelope_ciphertext_invalid_format():
 
 
 @pytest.mark.parametrize(
-    "encrypted_dek,encrypted_data",
+    ("encrypted_dek", "encrypted_data"),
     [
         (b"", b""),
         (b"short_dek", b"short_data"),
@@ -152,7 +152,7 @@ def test_pack_envelope_ciphertext_large_dek():
 # Integration tests
 @pytest.mark.integration
 @pytest.mark.parametrize(
-    "plaintext,aad",
+    ("plaintext", "aad"),
     [
         (b"", b""),
         (b"", b"some_aad"),

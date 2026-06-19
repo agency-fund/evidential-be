@@ -2,6 +2,7 @@
 Power analysis for cluster-randomized designs.
 """
 
+import dataclasses
 import math
 
 from xngin.apiserver.routers.common_api_types import (
@@ -14,6 +15,36 @@ from xngin.stats.individual_power import (
     solve_for_mde_individual_impl,
     solve_for_sample_size_individual,
 )
+
+
+def _normalize_arm_weights(arm_weights: list[float] | None, n_arms: int) -> list[float]:
+    """Return per-arm allocation probabilities that sum to 1.
+
+    If arm_weights is None, returns an equal split across n_arms. Otherwise,
+    normalizes the provided weights so they sum to 1.
+    """
+    if arm_weights is None:
+        return [1.0 / n_arms] * n_arms
+    total_weight = sum(arm_weights)
+    return [w / total_weight for w in arm_weights]
+
+
+@dataclasses.dataclass(slots=True, kw_only=True, frozen=True)
+class MdeClusterResult:
+    """Result of an MDE-mode cluster-power calculation.
+
+    Returned by solve_for_mde_cluster_impl so callers can both use the MDE
+    values and surface the design-effect inputs without recomputing them.
+    """
+
+    # The minimum detectable effect in absolute terms
+    target_possible: float
+    # The minimum detectable effect as percent change from baseline
+    pct_change_possible: float
+    # The design effect (DEFF)
+    deff: float
+    # The effective sample size when accounting for clustering
+    effective_n: int
 
 
 def calculate_design_effect(
@@ -167,7 +198,7 @@ def solve_for_mde_cluster_impl(
     arm_weights: list[float] | None = None,
     alpha: float = 0.05,
     power: float = 0.8,
-) -> tuple[float, float]:
+) -> MdeClusterResult:
     """
     Given desired sample size, calculate minimum detectable effect (MDE) for a
     cluster-randomized design. Cluster parameters are read from the metric.
@@ -182,9 +213,8 @@ def solve_for_mde_cluster_impl(
         arm_weights: Optional allocation weights for unbalanced designs
 
     Returns:
-        Tuple of (target_value, pct_change):
-        - target_value: The minimum detectable effect in absolute terms
-        - pct_change: The minimum detectable effect as percent change from baseline
+        MdeClusterResult with the MDE values and the design effect / effective n
+        that were used to compute them.
 
     """
     if metric.icc is None:
@@ -197,13 +227,16 @@ def solve_for_mde_cluster_impl(
 
     effective_n = calculate_effective_sample_size(desired_n, deff)
 
-    return solve_for_mde_individual_impl(
+    target_possible, pct_change_possible = solve_for_mde_individual_impl(
         desired_n=effective_n,
         metric=metric,
         n_arms=n_arms,
+        arm_weights=arm_weights,
         alpha=alpha,
         power=power,
-        arm_weights=arm_weights,
+    )
+    return MdeClusterResult(
+        target_possible=target_possible, pct_change_possible=pct_change_possible, deff=deff, effective_n=effective_n
     )
 
 
@@ -218,7 +251,9 @@ def solve_for_mde_cluster(
 ) -> MetricPowerAnalysis:
     """Calculate the minimum detectable effect (MDE) for a cluster-randomized design."""
 
-    target_possible, pct_change_possible = solve_for_mde_cluster_impl(
+    assert metric.icc is not None and metric.avg_cluster_size is not None and metric.cv is not None
+
+    result = solve_for_mde_cluster_impl(
         metric=metric,
         desired_n=desired_n,
         arm_weights=arm_weights,
@@ -227,24 +262,46 @@ def solve_for_mde_cluster(
         power=power,
     )
 
+    # Compute DEFF, effective_n and numbers of clusters to add to MetricPowerAnalysis.
+    arm_probs = _normalize_arm_weights(arm_weights, n_arms)
+
+    clusters_per_arm_list: list[int] = []
+    n_per_arm_list: list[int] = []
+    for prob in arm_probs:
+        n_this_arm = desired_n * prob
+        clusters_this_arm = math.ceil(n_this_arm / metric.avg_cluster_size)
+        clusters_per_arm_list.append(clusters_this_arm)
+        n_per_arm_list.append(round(n_this_arm))
+
+    clusters_total = sum(clusters_per_arm_list)
+
     # Build response object for MDE calculation
-    analysis = MetricPowerAnalysis(metric_spec=metric)
-    analysis.target_n = desired_n
-    analysis.target_possible = target_possible
-    analysis.pct_change_possible = pct_change_possible
-    analysis.sufficient_n = None  # Not applicable in MDE mode
+    analysis = MetricPowerAnalysis(
+        metric_spec=metric,
+        target_n=desired_n,
+        target_possible=result.target_possible,
+        pct_change_possible=result.pct_change_possible,
+        sufficient_n=None,  # Not applicable in MDE mode
+        num_clusters_total=clusters_total,
+        clusters_per_arm=clusters_per_arm_list,
+        n_per_arm=n_per_arm_list,
+        design_effect=result.deff,
+        effective_sample_size=result.effective_n,
+    )
 
     # Create message
     assert metric.metric_baseline is not None
     values_map: dict[str, float | int] = {
         "desired_n": desired_n,
         "metric_baseline": round(metric.metric_baseline, 4),
-        "target_possible": round(target_possible, 4),
+        "target_possible": round(result.target_possible, 4),
+        "num_clusters_total": clusters_total,
     }
     msg_type = MetricPowerAnalysisMessageType.SUFFICIENT
     msg_body = (
-        "With a desired sample size of {desired_n} units and a metric baseline of "  # noqa: RUF027
-        "{metric_baseline}, the minimum detectable effect (MDE) is {target_possible}."
+        "With a desired sample size of {desired_n} units across {num_clusters_total} "
+        "clusters and a metric baseline of {metric_baseline}, the minimum detectable "
+        "effect (MDE) is {target_possible}."
     )
     analysis.msg = MetricPowerAnalysisMessage(
         type=msg_type,
@@ -300,16 +357,12 @@ def solve_for_sample_size_cluster(
         )
         assert available_nonnull_n is not None
 
-        if arm_weights is None:
-            arm_probs = [1.0 / n_arms] * n_arms
-        else:
-            total_weight = sum(arm_weights)
-            arm_probs = [w / total_weight for w in arm_weights]
+        arm_probs = _normalize_arm_weights(arm_weights, n_arms)
 
         deff = calculate_design_effect(metric.icc, metric.avg_cluster_size, metric.cv)
 
         # 3) Compute the number of clusters we need for each arm accounting for the design effect
-        # inflating the actual number of total units due to the correlation members of the cluster.
+        # inflating the actual number of total units due to their correlation within a cluster.
         clusters_per_arm_list = []
         n_per_arm_list = []
         for prob in arm_probs:
@@ -337,7 +390,7 @@ def solve_for_sample_size_cluster(
         pct_change_possible = None
         if not sufficient_n:
             # Let the user know: Given the clustering, what could you detect with what's available?
-            target_possible, pct_change_possible = solve_for_mde_cluster_impl(
+            mde_result = solve_for_mde_cluster_impl(
                 metric=metric,
                 desired_n=available_nonnull_n,
                 n_arms=n_arms,
@@ -345,6 +398,8 @@ def solve_for_sample_size_cluster(
                 alpha=alpha,
                 power=power,
             )
+            target_possible = mde_result.target_possible
+            pct_change_possible = mde_result.pct_change_possible
 
         final_msg = _build_cluster_sample_size_message(
             metric=metric,

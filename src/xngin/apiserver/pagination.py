@@ -1,7 +1,7 @@
 """Cursor-based pagination utilities following Google AIP-158."""
 
 import base64
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
@@ -85,29 +85,42 @@ class PaginationQuery:
     skip: int = 0
 
 
-def pagination_query_params(
-    page_size: Annotated[
-        int,
-        Query(
-            description="Maximum number of items to return per page.",
-            ge=1,
-            le=MAX_PAGE_SIZE,
-        ),
-    ] = DEFAULT_PAGE_SIZE,
-    page_token: Annotated[
-        str | None,
-        Query(description="Token from a previous response to fetch the next page."),
-    ] = None,
-    skip: Annotated[
-        int,
-        Query(
-            description="Number of items to skip after page_token (or from the start when page_token is omitted).",
-            ge=0,
-        ),
-    ] = 0,
-) -> PaginationQuery:
-    """Dependency describing pagination request parameters."""
-    return PaginationQuery(page_size=page_size, page_token=page_token or None, skip=skip)
+def _make_pagination_query_params(
+    *,
+    default_page_size: int = DEFAULT_PAGE_SIZE,
+    max_page_size: int | None = MAX_PAGE_SIZE,
+) -> Callable[..., PaginationQuery]:
+    """Build a FastAPI dependency for cursor pagination with per-endpoint limits.
+
+    Pass max_page_size=None to remove the upper bound entirely.
+    """
+    if max_page_size is not None and default_page_size > max_page_size:
+        raise ValueError("default_page_size must not exceed max_page_size")
+
+    limit: Mapping[str, Any] = {"le": max_page_size} if max_page_size is not None else {}
+    size_query = Query(description="Maximum number of items to return per page.", ge=1, **limit)
+
+    def dep(
+        page_size: Annotated[int, size_query] = default_page_size,
+        page_token: Annotated[
+            str | None, Query(description="Token from a previous response to fetch the next page.")
+        ] = None,
+        skip: Annotated[
+            int,
+            Query(
+                description="Number of items to skip after page_token (or from the start when page_token is omitted).",
+                ge=0,
+            ),
+        ] = 0,
+    ) -> PaginationQuery:
+        return PaginationQuery(page_size=page_size, page_token=page_token or None, skip=skip)
+
+    return dep
+
+
+pagination_query_params = _make_pagination_query_params()
+
+unbounded_pagination_query_params = _make_pagination_query_params(max_page_size=None)
 
 
 @dataclass(frozen=True)

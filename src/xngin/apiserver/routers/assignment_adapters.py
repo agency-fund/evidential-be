@@ -65,6 +65,7 @@ def assign_treatments_with_balance(
     quantiles: int = 4,
     random_state: int | None = None,
     arm_weights: list[float] | None = None,
+    cluster_col: str | None = None,
 ) -> AssignmentResult:
     """
     Perform stratified random assignment and balance checking.
@@ -80,6 +81,7 @@ def assign_treatments_with_balance(
         quantiles: number of buckets to use for stratification of numerics
         random_state: Random seed for reproducibility
         arm_weights: Optional list of weights (summing to 100) for unbalanced arm allocation
+        cluster_col: Optional cluster identifier column. When set, assignment is at cluster level.
 
     Returns:
         AssignmentResult containing assignments and balance check results
@@ -101,6 +103,7 @@ def assign_treatments_with_balance(
         quantiles=quantiles,
         random_state=random_state,
         arm_weights=arm_weights,
+        cluster_col=cluster_col,
     )
 
 
@@ -108,10 +111,10 @@ async def bulk_insert_arm_assignments(
     xngin_session: AsyncSession,
     experiment_id: str,
     arm_ids: list[str],
-    participant_type: str,
     participant_id_col: str,
     data: Sequence[RowProtocol],
     assignments: AssignmentResult,
+    cluster_key_col: str | None = None,
 ) -> None:
     """Bulk insert arm assignments into the database via async COPY.
 
@@ -119,8 +122,8 @@ async def bulk_insert_arm_assignments(
         xngin_session: sqlalchemy session
         experiment_id: Database ID of the experiment
         arm_ids: Database ID of each treatment arm, ordered by arm index used in assignment.
-        participant_type: Type of participant in the experiment
         participant_id_col: Name of column in `data` containing participant identifiers
+        cluster_key_col: Optional column in `data` containing cluster identifiers
         data: sqlalchemy result set of Rows representing units to be assigned
         assignments: AssignmentResult containing assignments and balance check results. AssignmentResult.arm_pop
           indexes are parallel to indexes on arm_ids.
@@ -130,8 +133,8 @@ async def bulk_insert_arm_assignments(
             xngin_session=xngin_session,
             experiment_id=experiment_id,
             arm_ids=arm_ids,
-            participant_type=participant_type,
             participant_id_col=participant_id_col,
+            cluster_key_col=cluster_key_col,
             data=data,
             assignments=assignments,
         )
@@ -145,21 +148,27 @@ async def _bulk_insert_async(
     xngin_session: AsyncSession,
     experiment_id: str,
     arm_ids: list[str],
-    participant_type: str,
     participant_id_col: str,
     data: Sequence[RowProtocol],
     assignments: AssignmentResult,
+    cluster_key_col: str | None = None,
 ) -> None:
     """Write arm assignments in bulk via COPY on the session's driver connection."""
     stratum_cols = assignments.stratum_cols
 
-    copy_sql = "COPY arm_assignments (experiment_id, participant_id, participant_type, arm_id, strata) FROM STDIN"
+    if cluster_key_col is None:
+        copy_sql = "COPY arm_assignments (experiment_id, participant_id, arm_id, strata) FROM STDIN"
+        copy_types = ["text", "text", "text", "jsonb"]
+    else:
+        copy_sql = "COPY arm_assignments (experiment_id, participant_id, cluster_key, arm_id, strata) FROM STDIN"
+        copy_types = ["text", "text", "text", "text", "jsonb"]
+
     async with (
         with_driver_connection(xngin_session) as driver_conn,
         driver_conn.cursor() as cur,
         cur.copy(copy_sql) as copy,
     ):
-        copy.set_types(["text", "text", "text", "text", "jsonb"])
+        copy.set_types(copy_types)
         for treatment_assignment, row in zip(assignments.treatment_ids, data, strict=True):
             row_mapping = row._mapping
 
@@ -174,10 +183,14 @@ async def _bulk_insert_async(
             ]
 
             arm_id = arm_ids[treatment_assignment]
-            await copy.write_row((
-                experiment_id,
-                str(row_mapping[participant_id_col]),
-                participant_type,
-                arm_id,
-                Jsonb(strata, dumps=orjson.dumps),
-            ))
+            participant_id = str(row_mapping[participant_id_col])
+            if cluster_key_col is None:
+                await copy.write_row((experiment_id, participant_id, arm_id, Jsonb(strata, dumps=orjson.dumps)))
+            else:
+                await copy.write_row((
+                    experiment_id,
+                    participant_id,
+                    str(row_mapping[cluster_key_col]),
+                    arm_id,
+                    Jsonb(strata, dumps=orjson.dumps),
+                ))

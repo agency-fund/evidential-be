@@ -5,6 +5,7 @@ import statsmodels.formula.api as smf
 from patsy.eval import EvalFactor
 
 from xngin.apiserver.dwh.analysis_types import ParticipantOutcome
+from xngin.stats.stats_errors import StatsAnalysisError
 
 
 @dataclasses.dataclass(slots=True)  # slots=True for performance
@@ -26,6 +27,10 @@ class ArmAnalysisResult:
 def analyze_experiment(
     assignments_df: pd.DataFrame,
     participant_outcomes: list[ParticipantOutcome],
+    *,
+    unit_col: str = "participant_id",
+    arm_col: str = "arm_id",
+    cluster_col: str | None = None,
     baseline_arm_id: str | None = None,
     alpha: float | None = None,
 ) -> dict[str, dict[str, ArmAnalysisResult]]:
@@ -33,8 +38,14 @@ def analyze_experiment(
     Perform statistical analysis with DesignSpec metrics and their values
 
     Args:
-    assignments_df: DataFrame of {assignment_id, participant_id} strings
-    participant_outcomes: list of participant outcomes
+    assignments_df: DataFrame of {unit_col, arm_col[, cluster_col]} strings containing ids
+            corresponding to a unit of analysis (a participant), its treatment assignment, and
+            optionally the cluster id this unit is a part of for cluster-randomized experiments.
+    participant_outcomes: list of outcomes for each unit in assignments_df, in the same order.
+    unit_col: Name of column in assignments_df to use for participant identifiers.
+    arm_col: Name of column in assignments_df to use for arm identifiers.
+    cluster_col: Name of column in assignments_df to use as cluster identifiers.
+            If provided, the analysis uses clustered SEs instead of HC SEs.
     baseline_arm_id: which arm to use as baseline; if not provided, uses the first arm seen
     alpha: significance level for confidence intervals (defaults to 0.05 if None for a 95% CI).
 
@@ -42,13 +53,20 @@ def analyze_experiment(
         map of metric name => map of arm_id (may be partial or empty!) => analysis results
         - If an arm is missing for a metric, it's because it had no valid data to process.
         - If *zero* arm analyses exist for a metric (e.g. since zero non-null outcomes were found
-          across all arms), the name will exist, but the inner dict will be empty.
+        across all arms), the name will exist, but the inner dict will be empty.
     """
-    expected_columns = {"participant_id", "arm_id"}
+    expected_id_columns = {unit_col, arm_col}
+    if cluster_col is not None:
+        expected_id_columns |= {cluster_col}
     actual_columns = set(assignments_df.columns)
-    if actual_columns != expected_columns:
+    if actual_columns != expected_id_columns:
         raise ValueError(
-            f"assignments_df shape is wrong: expected={','.join(expected_columns)}, actual={','.join(actual_columns)}"
+            f"assignments_df shape is wrong: expected={','.join(sorted(expected_id_columns))},"
+            f" got={','.join(sorted(actual_columns))}"
+        )
+    if cluster_col is not None and assignments_df[cluster_col].isna().any():
+        raise StatsAnalysisError(
+            f"One or more participants in a clustered experiment have a null {cluster_col}, which is disallowed."
         )
 
     if alpha is None:
@@ -56,27 +74,28 @@ def analyze_experiment(
 
     rows = []
     for outcome in participant_outcomes:
-        data_row: dict[str, float | str | None] = {"participant_id": outcome.participant_id}
+        data_row: dict[str, float | str | None] = {unit_col: outcome.participant_id}
         for metric_value in outcome.metric_values:
             data_row[metric_value.metric_name] = metric_value.metric_value
         rows.append(data_row)
     outcomes_df = pd.DataFrame(rows)
 
-    merged_df = assignments_df.merge(outcomes_df, on="participant_id", how="left")
+    merged_df = assignments_df.merge(outcomes_df, on=unit_col, how="left")
 
     # Make arm_id categorical and ensure baseline_arm_id is first in the categories
-    merged_df["arm_id"] = pd.Categorical(merged_df["arm_id"])
-    if baseline_arm_id in merged_df["arm_id"].cat.categories:
-        arm_ids = merged_df["arm_id"].cat.categories.tolist()
+    merged_df[arm_col] = pd.Categorical(merged_df[arm_col])
+    if baseline_arm_id in merged_df[arm_col].cat.categories:
+        arm_ids = merged_df[arm_col].cat.categories.tolist()
         arm_ids.remove(baseline_arm_id)
         arm_ids.insert(0, baseline_arm_id)
-        merged_df["arm_id"] = merged_df["arm_id"].cat.reorder_categories(arm_ids)
+        merged_df[arm_col] = merged_df[arm_col].cat.reorder_categories(arm_ids)
 
-    metric_columns = [col for col in merged_df.columns if col not in {"arm_id", "participant_id"}]
+    # Exclude various id columns
+    metric_columns = [col for col in merged_df.columns if col not in expected_id_columns]
 
     # Calculate NaN counts for all metrics. Since assignments_df may have participants that are not
     # yet in the dwh (e.g. in an online experiment) we're also counting missing participants as having NaN as well.
-    nan_counts_df = merged_df.groupby("arm_id", observed=False)[metric_columns].agg(lambda s: s.isna().sum())
+    nan_counts_df = merged_df.groupby(arm_col, observed=False)[metric_columns].agg(lambda s: s.isna().sum())
 
     # Prep our dict of analyses to return.
     metric_analyses: dict[str, dict[str, ArmAnalysisResult]] = {}
@@ -91,19 +110,26 @@ def analyze_experiment(
 
         # smf.ols internally actually drops missing values by default (see Model.from_formula),
         # but make it explicit here for developer clarity.
-        model = smf.ols(f"{metric_name} ~ arm_id", data=merged_df, missing="drop").fit(cov_type="HC1")
-        arm_ids = model.model.data.design_info.factor_infos[EvalFactor("arm_id")].categories
+        if cluster_col is not None:
+            merged_df_dropna = merged_df.dropna(subset=[metric_name])
+            model = smf.ols(f"{metric_name} ~ {arm_col}", data=merged_df_dropna).fit(
+                cov_type="cluster",
+                cov_kwds={"groups": merged_df_dropna[cluster_col]},
+            )
+        else:
+            model = smf.ols(f"{metric_name} ~ {arm_col}", data=merged_df, missing="drop").fit(cov_type="HC1")
+        arm_ids = model.model.data.design_info.factor_infos[EvalFactor(arm_col)].categories
 
         # Calculate CIs for coefficients
         confidence_intervals = model.conf_int(alpha=alpha)
         # Calculate predicted means and their CIs (will be extracted from the summary frame)
-        pred_input = pd.DataFrame({"arm_id": arm_ids})
+        pred_input = pd.DataFrame({arm_col: arm_ids})
         predictions = model.get_prediction(pred_input)
         pred_summary = predictions.summary_frame(alpha=alpha)
 
         for i, arm_id in enumerate(arm_ids):
             # Determine parameter name to use for lookingup the coefficient CIs
-            param_name = "Intercept" if i == 0 else f"arm_id[T.{arm_id}]"
+            param_name = "Intercept" if i == 0 else f"{arm_col}[T.{arm_id}]"
 
             arm_analyses[arm_id] = ArmAnalysisResult(
                 is_baseline=i == 0 if baseline_arm_id is None else arm_id == baseline_arm_id,

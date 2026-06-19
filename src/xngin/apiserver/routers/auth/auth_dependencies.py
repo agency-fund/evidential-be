@@ -36,6 +36,8 @@ PRIVILEGED_TOKEN_FOR_TESTING = secrets.token_urlsafe(32)
 TESTING_TOKENS_ENABLED = False
 UNPRIVILEGED_EMAIL = "testing-unprivileged@example.com"
 UNPRIVILEGED_TOKEN_FOR_TESTING = secrets.token_urlsafe(32)
+UNPRIVILEGED_EMAIL_2 = "testing-unprivileged-2@example.com"
+UNPRIVILEGED_TOKEN_FOR_TESTING_2 = secrets.token_urlsafe(32)
 TESTING_TOKENS: dict[str, Principal] = {
     AIRPLANE_TOKEN: Principal(
         email="testing@example.com",
@@ -46,6 +48,13 @@ TESTING_TOKENS: dict[str, Principal] = {
     ),
     UNPRIVILEGED_TOKEN_FOR_TESTING: Principal(
         email=UNPRIVILEGED_EMAIL,
+        hd="example.com",
+        iat=int(time.time()),
+        iss="testing",
+        sub="testing",
+    ),
+    UNPRIVILEGED_TOKEN_FOR_TESTING_2: Principal(
+        email=UNPRIVILEGED_EMAIL_2,
         hd="example.com",
         iat=int(time.time()),
         iss="testing",

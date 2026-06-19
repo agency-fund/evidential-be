@@ -23,6 +23,7 @@ from xngin.apiserver.routers.common_api_types import (
     ExperimentsType,
     FreqExperimentAnalysisResponse,
     LikelihoodTypes,
+    MABDwhExperimentSpec,
     MABExperimentSpec,
     OnlineFrequentistExperimentSpec,
     PreassignedFrequentistExperimentSpec,
@@ -30,7 +31,7 @@ from xngin.apiserver.routers.common_api_types import (
     UpdateBanditArmOutcomeRequest,
 )
 from xngin.apiserver.routers.common_enums import DataType, ExperimentState, StopAssignmentReason
-from xngin.apiserver.routers.experiments.experiments_common import fetch_fields_or_raise
+from xngin.apiserver.routers.experiments.experiments_common import fetch_fields_or_raise, fetch_mab_dwh_fields_or_raise
 from xngin.apiserver.snapshots.snapshotter import (
     SNAPSHOT_TIMEOUT_SECS,
     create_pending_snapshots,
@@ -59,6 +60,8 @@ async def make_experiment(
             field_type_map = await fetch_fields_or_raise(datasource, design_spec)
         case MABExperimentSpec() | CMABExperimentSpec():
             field_type_map = None
+        case MABDwhExperimentSpec():
+            field_type_map = await fetch_mab_dwh_fields_or_raise(datasource, design_spec)
         case _:
             assert_never(design_spec)
 
@@ -78,14 +81,12 @@ async def make_experiment(
     arm_assignments = [
         tables.ArmAssignment(
             experiment_id=experiment.id,
-            participant_type="",
             participant_id="1",
             arm_id=experiment.arms[0].id,
             strata=[],
         ),
         tables.ArmAssignment(
             experiment_id=experiment.id,
-            participant_type="",
             participant_id="2",
             arm_id=experiment.arms[1].id,
             strata=[],
@@ -146,10 +147,10 @@ def create_snapshot_experiment(
 ) -> str:
     design_spec = make_snapshot_design_spec(name, end_date=end_date).model_copy(update={"desired_n": desired_n})
     experiment_id = aclient.create_experiment(
-        datasource_id=testing_datasource.ds.id,
+        datasource_id=testing_datasource.datasource_id,
         body=CreateExperimentRequest(design_spec=design_spec),
     ).data.experiment_id
-    aclient.commit_experiment(datasource_id=testing_datasource.ds.id, experiment_id=experiment_id)
+    aclient.commit_experiment(datasource_id=testing_datasource.datasource_id, experiment_id=experiment_id)
     return experiment_id
 
 
@@ -160,8 +161,8 @@ def get_bandit_snapshot_analysis(
     snapshot_id: str,
 ) -> BanditExperimentAnalysisResponse:
     snapshot = aclient.get_snapshot(
-        organization_id=testing_datasource.org.id,
-        datasource_id=testing_datasource.ds.id,
+        organization_id=testing_datasource.organization_id,
+        datasource_id=testing_datasource.datasource_id,
         experiment_id=experiment_id,
         snapshot_id=snapshot_id,
     ).data.snapshot
@@ -191,7 +192,7 @@ def get_sorted_cmab_contexts(
     experiment_id: str,
 ) -> list[Context]:
     config = aclient.get_experiment_for_ui(
-        datasource_id=testing_datasource.ds.id,
+        datasource_id=testing_datasource.datasource_id,
         experiment_id=experiment_id,
     ).data.config
     assert isinstance(config.design_spec, CMABExperimentSpec)
@@ -328,8 +329,8 @@ async def test_make_first_snapshot_is_noop_when_missing_or_not_pending(
 
     def list_snapshots():
         return aclient.list_snapshots(
-            organization_id=testing_datasource.org.id,
-            datasource_id=testing_datasource.ds.id,
+            organization_id=testing_datasource.organization_id,
+            datasource_id=testing_datasource.datasource_id,
             experiment_id=experiment_id,
         ).data.items
 
@@ -356,14 +357,14 @@ async def test_handle_one_snapshot_safely_marks_failed_on_exception(
         side_effect=RuntimeError("boom"),
     )
     aclient.create_snapshot(
-        organization_id=testing_datasource.org.id,
-        datasource_id=testing_datasource.ds.id,
+        organization_id=testing_datasource.organization_id,
+        datasource_id=testing_datasource.datasource_id,
         experiment_id=experiment_id,
     )
 
     snapshots = aclient.list_snapshots(
-        organization_id=testing_datasource.org.id,
-        datasource_id=testing_datasource.ds.id,
+        organization_id=testing_datasource.organization_id,
+        datasource_id=testing_datasource.datasource_id,
         experiment_id=experiment_id,
     ).data.items
     assert [snapshot.status for snapshot in snapshots] == [SnapshotStatus.FAILED]
@@ -384,14 +385,14 @@ async def test_handle_one_snapshot_safely_marks_failed_on_timeout(
     mocker.patch("xngin.apiserver.snapshots.snapshotter._query_dwh_for_snapshot_data", side_effect=slow_query)
     mocker.patch("xngin.apiserver.snapshots.snapshotter.SNAPSHOT_TIMEOUT_SECS", 0)
     aclient.create_snapshot(
-        organization_id=testing_datasource.org.id,
-        datasource_id=testing_datasource.ds.id,
+        organization_id=testing_datasource.organization_id,
+        datasource_id=testing_datasource.datasource_id,
         experiment_id=experiment_id,
     )
 
     snapshots = aclient.list_snapshots(
-        organization_id=testing_datasource.org.id,
-        datasource_id=testing_datasource.ds.id,
+        organization_id=testing_datasource.organization_id,
+        datasource_id=testing_datasource.datasource_id,
         experiment_id=experiment_id,
     ).data.items
     assert [snapshot.status for snapshot in snapshots] == [SnapshotStatus.FAILED]
@@ -441,8 +442,8 @@ async def test_create_pending_snapshots_inserts_for_new_stale_and_failed_experim
 
     def list_snapshots(experiment_id: str):
         return aclient.list_snapshots(
-            organization_id=testing_datasource.org.id,
-            datasource_id=testing_datasource.ds.id,
+            organization_id=testing_datasource.organization_id,
+            datasource_id=testing_datasource.datasource_id,
             experiment_id=experiment_id,
         ).data.items
 
@@ -482,8 +483,8 @@ async def test_process_pending_snapshots_processes_until_empty(
 
     for experiment_id in experiment_ids:
         snapshots = aclient.list_snapshots(
-            organization_id=testing_datasource.org.id,
-            datasource_id=testing_datasource.ds.id,
+            organization_id=testing_datasource.organization_id,
+            datasource_id=testing_datasource.datasource_id,
             experiment_id=experiment_id,
         ).data.items
         assert len(snapshots) == 1
@@ -493,8 +494,8 @@ async def test_process_pending_snapshots_processes_until_empty(
 
     for experiment_id in experiment_ids:
         snapshots = aclient.list_snapshots(
-            organization_id=testing_datasource.org.id,
-            datasource_id=testing_datasource.ds.id,
+            organization_id=testing_datasource.organization_id,
+            datasource_id=testing_datasource.datasource_id,
             experiment_id=experiment_id,
         ).data.items
         assert len(snapshots) == 1
@@ -566,16 +567,16 @@ async def create_bandit_snapshot_experiment(
             raise ValueError(f"Unsupported experiment type: {experiment_type}")
 
     experiment_id = aclient.create_experiment(
-        datasource_id=testing_datasource.ds.id,
+        datasource_id=testing_datasource.datasource_id,
         body=CreateExperimentRequest(design_spec=design_spec),
         random_state=42,
     ).data.experiment_id
-    aclient.commit_experiment(datasource_id=testing_datasource.ds.id, experiment_id=experiment_id)
+    aclient.commit_experiment(datasource_id=testing_datasource.datasource_id, experiment_id=experiment_id)
     if not with_draws:
         return experiment_id
     if experiment_type == ExperimentsType.CMAB_ONLINE:
         config = aclient.get_experiment_for_ui(
-            datasource_id=testing_datasource.ds.id,
+            datasource_id=testing_datasource.datasource_id,
             experiment_id=experiment_id,
         ).data.config
         assert isinstance(config.design_spec, CMABExperimentSpec)
@@ -630,14 +631,14 @@ async def test_create_snapshot_bandit_succeeds(
     )
 
     aclient.create_snapshot(
-        organization_id=testing_datasource.org.id,
-        datasource_id=testing_datasource.ds.id,
+        organization_id=testing_datasource.organization_id,
+        datasource_id=testing_datasource.datasource_id,
         experiment_id=experiment_id,
     )
 
     snapshots = aclient.list_snapshots(
-        organization_id=testing_datasource.org.id,
-        datasource_id=testing_datasource.ds.id,
+        organization_id=testing_datasource.organization_id,
+        datasource_id=testing_datasource.datasource_id,
         experiment_id=experiment_id,
     ).data.items
     assert len(snapshots) == 1
@@ -705,7 +706,7 @@ async def test_create_snapshot_cmab_matches_admin_analysis_at_mean_contexts(
         for context in sorted_contexts
     ]
     admin_analysis = aclient.analyze_cmab_experiment(
-        datasource_id=testing_datasource.ds.id,
+        datasource_id=testing_datasource.datasource_id,
         experiment_id=experiment_id,
         body=CMABContextInputRequest(
             context_inputs=get_sorted_cmab_context_inputs(
@@ -719,8 +720,8 @@ async def test_create_snapshot_cmab_matches_admin_analysis_at_mean_contexts(
     assert isinstance(admin_analysis, BanditExperimentAnalysisResponse)
 
     create_snapshot_response = aclient.create_snapshot(
-        organization_id=testing_datasource.org.id,
-        datasource_id=testing_datasource.ds.id,
+        organization_id=testing_datasource.organization_id,
+        datasource_id=testing_datasource.datasource_id,
         experiment_id=experiment_id,
     ).data
     snapshot_analysis = get_bandit_snapshot_analysis(
@@ -750,7 +751,7 @@ async def test_create_snapshot_cmab_with_zero_draws_matches_zero_context_admin_a
 
     expected_contexts = [0.0, 0.0]
     admin_analysis = aclient.analyze_cmab_experiment(
-        datasource_id=testing_datasource.ds.id,
+        datasource_id=testing_datasource.datasource_id,
         experiment_id=experiment_id,
         body=CMABContextInputRequest(
             context_inputs=get_sorted_cmab_context_inputs(
@@ -764,8 +765,8 @@ async def test_create_snapshot_cmab_with_zero_draws_matches_zero_context_admin_a
     assert isinstance(admin_analysis, BanditExperimentAnalysisResponse)
 
     create_snapshot_response = aclient.create_snapshot(
-        organization_id=testing_datasource.org.id,
-        datasource_id=testing_datasource.ds.id,
+        organization_id=testing_datasource.organization_id,
+        datasource_id=testing_datasource.datasource_id,
         experiment_id=experiment_id,
     ).data
     snapshot_analysis = get_bandit_snapshot_analysis(

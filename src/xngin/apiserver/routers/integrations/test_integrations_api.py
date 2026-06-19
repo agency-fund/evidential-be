@@ -1,12 +1,16 @@
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 
+import httpx
 import pytest
 
 from xngin.apiserver.conftest import DatasourceMetadata, expect_status_code
 from xngin.apiserver.routers.admin_integrations.admin_integrations_api_types import (
     SetConnectionToTurnRequest,
     SetTurnArmJourneyMappingRequest,
+)
+from xngin.apiserver.routers.admin_integrations.test_admin_integrations_api import (
+    FakeAsyncClient,
 )
 from xngin.apiserver.routers.common_api_types import (
     ArmBandit,
@@ -49,9 +53,10 @@ def fixture_turn_config_response(
     iaclient: AdminIntegrationsAPIClient,
     testing_datasource: DatasourceMetadata,
     testing_design_spec: MABExperimentSpec,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> Generator[TurnConfigResponse]:
     """Configure a Turn connection for the org and save an arm→journey mapping for the experiment."""
-    ds_id = testing_datasource.ds.id
+    ds_id = testing_datasource.datasource_id
     experiment = aclient.create_experiment(
         datasource_id=ds_id, body=CreateExperimentRequest(design_spec=testing_design_spec)
     ).data
@@ -62,12 +67,24 @@ def fixture_turn_config_response(
         arm_ids[0]: f"journey-{arm_ids[0]}-uuid",
         arm_ids[1]: f"journey-{arm_ids[1]}-uuid",
     }
+
+    monkeypatch.setattr(FakeAsyncClient, "call_log", 0)
+    monkeypatch.setattr(
+        FakeAsyncClient,
+        "stacks",
+        [
+            {"name": "Journey 0", "uuid": f"journey-{arm_ids[0]}-uuid"},
+            {"name": "Journey 1", "uuid": f"journey-{arm_ids[1]}-uuid"},
+        ],
+    )
+    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+
     iaclient.set_organization_turn_connection(
-        organization_id=testing_datasource.org.id,
+        organization_id=testing_datasource.organization_id,
         body=SetConnectionToTurnRequest(turn_api_token="a" * 335),
     )
     iaclient.set_turn_arm_journey_mapping(
-        datasource_id=testing_datasource.ds.id,
+        datasource_id=testing_datasource.datasource_id,
         experiment_id=experiment.experiment_id,
         body=SetTurnArmJourneyMappingRequest(arm_to_journeys=arm_to_journeys),
     )
@@ -78,10 +95,9 @@ def fixture_turn_config_response(
         "arm_journey_map": arm_to_journeys,
     })
 
-    iaclient.delete_turn_arm_journey_mapping(
-        datasource_id=testing_datasource.ds.id, experiment_id=experiment.experiment_id, allow_missing=True
+    iaclient.delete_turn_connection_from_organization(
+        organization_id=testing_datasource.organization_id, allow_missing=True
     )
-    iaclient.delete_turn_connection_from_organization(organization_id=testing_datasource.org.id, allow_missing=True)
 
 
 async def test_get_turn_app_config_returns_mapping(
@@ -106,7 +122,7 @@ async def test_get_turn_app_config_404_when_no_mapping(
 ):
     """Experiment exists but has no ExperimentTurnConfig row."""
     iaclient.delete_turn_arm_journey_mapping(
-        datasource_id=testing_datasource.ds.id, experiment_id=turn_config_response.experiment_id
+        datasource_id=testing_datasource.datasource_id, experiment_id=turn_config_response.experiment_id
     )
     with expect_status_code(404):
         iclient.get_turn_app_config(experiment_id=turn_config_response.experiment_id, api_key=testing_datasource.key)

@@ -16,6 +16,9 @@ MAX_LENGTH_OF_NAME_VALUE = 100
 # Maximum length of fields that contain unique identifiers for participants.
 MAX_LENGTH_OF_PARTICIPANT_ID_VALUE = 64
 
+# Maximum length of fields that contain cluster identifiers.
+MAX_LENGTH_OF_CLUSTER_KEY_VALUE = 100
+
 # Maximum number of arms allowed in an experiment.
 MAX_NUMBER_OF_ARMS = 20
 
@@ -42,4 +45,3 @@ MAX_GCP_SERVICE_ACCOUNT_LEN = 8000
 
 # Turn.io related limits
 TURN_REQUEST_TIMEOUT_SECONDS = 10
-TURN_JOURNEYS_CACHE_TTL_SECONDS = 600

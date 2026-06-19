@@ -14,13 +14,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import constants
-from xngin.apiserver.dependencies import (
-    xngin_db_session,
-)
+from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.routers.common_api_types import TurnConfigResponse
-from xngin.apiserver.routers.experiments.dependencies import (
-    experiment_dependency,
-)
+from xngin.apiserver.routers.experiments.dependencies import experiment_dependency
 from xngin.apiserver.routers.experiments.experiments_api import STANDARD_INTEGRATION_RESPONSES
 from xngin.apiserver.sqla import tables
 
@@ -58,13 +54,13 @@ async def get_turn_app_config(
 ) -> TurnConfigResponse:
     """Returns the current mapping from each arm ID of the experiment to a Turn.io Journey ID, if it exists."""
 
-    mapping = (
+    turn_config = (
         await session.execute(
             select(tables.ExperimentTurnConfig).where(tables.ExperimentTurnConfig.experiment_id == experiment.id)
         )
     ).scalar_one_or_none()
 
-    if not mapping:
+    if not turn_config:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="No Turn.io mapping configured for this experiment."
         )
@@ -72,5 +68,5 @@ async def get_turn_app_config(
     return TurnConfigResponse(
         experiment_id=experiment.id,
         experiment_name=experiment.name,
-        arm_journey_map=mapping.arm_journey_map,
+        arm_journey_map=turn_config.arm_journey_map,
     )

@@ -9,6 +9,7 @@ import os
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, assert_never, cast
 
 import pytest
@@ -37,11 +38,12 @@ from xngin.apiserver.routers.auth.auth_dependencies import (
     PRIVILEGED_EMAIL,
     PRIVILEGED_TOKEN_FOR_TESTING,
     UNPRIVILEGED_EMAIL,
+    UNPRIVILEGED_EMAIL_2,
     UNPRIVILEGED_TOKEN_FOR_TESTING,
+    UNPRIVILEGED_TOKEN_FOR_TESTING_2,
 )
 from xngin.apiserver.settings import (
     Dsn,
-    ParticipantsDef,
 )
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing import (
@@ -150,18 +152,10 @@ def get_random_seed_for_test():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def allow_connecting_to_private_ips():
+def safe_resolve_testing_mode():
+    """Configure safe_resolve for unit tests: never perform real DNS resolution and allow private IPs."""
     safe_resolve.ALLOW_CONNECTING_TO_PRIVATE_IPS = True
-
-
-@pytest.fixture
-def disable_safe_resolve_check():
-    prev = flags.DISABLE_SAFEDNS_CHECK
-    flags.DISABLE_SAFEDNS_CHECK = True
-    try:
-        yield
-    finally:
-        flags.DISABLE_SAFEDNS_CHECK = prev
+    safe_resolve.INTERCEPT_DNS_FOR_TESTING = True
 
 
 def get_test_uri_info(connection_uri: str) -> TestUriInfo:
@@ -232,6 +226,13 @@ def fixture_admin_api_client_unpriv(xngin_session):
         yield admin_api_client.AdminAPIClient(client)
 
 
+@pytest.fixture(name="aclient_unpriv_2")
+def fixture_admin_api_client_unpriv_2(xngin_session):
+    """Returns a second generated API client for unprivileged Admin API requests, for cross-tenant tests."""
+    with TestClient(app, headers={"Authorization": f"Bearer {UNPRIVILEGED_TOKEN_FOR_TESTING_2}"}) as client:
+        yield admin_api_client.AdminAPIClient(client)
+
+
 @pytest.fixture(name="iaclient")
 def fixture_integrations_admin_api_client(xngin_session):
     """Returns a generated API client for privileged Admin API requests."""
@@ -261,8 +262,8 @@ async def fixture_xngin_db_session(fixture_initialize_xngin_db_schema):
 
     This will delete all rows from the application tables at the beginning of every test. The users table will be seeded
     with
-    a privileged user (pget, ppost, ...) and an unprivileged user (uget, upost, ...). These users can be removed by
-    individual tests by calling delete_seeded_users().
+    a privileged user (pget, ppost, ...) and two unprivileged users (uget/upost and the second unprivileged user for
+    cross-tenant tests). These users can be removed by individual tests by calling delete_seeded_users().
 
     Where possible, prefer using the API methods to test functionality rather than touching the database
     directly.
@@ -275,6 +276,7 @@ async def fixture_xngin_db_session(fixture_initialize_xngin_db_schema):
             session.add_all([
                 tables.User(email=PRIVILEGED_EMAIL, is_privileged=True),
                 tables.User(email=UNPRIVILEGED_EMAIL, is_privileged=False),
+                tables.User(email=UNPRIVILEGED_EMAIL_2, is_privileged=False),
             ])
             await session.commit()
         async with database.async_session() as sess:
@@ -319,7 +321,6 @@ class DatasourceMetadata:
     api_ds: aapi.GetDatasourceResponse
     organization_id: str
     datasource_id: str
-    pt: ParticipantsDef
 
     # An API key suitable for use in the Authorization: header.
     key: str
@@ -367,7 +368,7 @@ async def _make_datasource_metadata(
         body=aapi.CreateDatasourceRequest(
             organization_id=org_id,
             name=org_name,
-            dsn=_convert_dwh_to_create_api_dsn(dwh),
+            dsn=convert_dwh_to_create_api_dsn(dwh),
         )
     ).data.id
 
@@ -385,7 +386,6 @@ async def _make_datasource_metadata(
 
     org = await xngin_session.get_one(tables.Organization, org_id)
     datasource = await xngin_session.get_one(tables.Datasource, datasource_id)
-    datasource_config = datasource.get_config()
 
     return DatasourceMetadata(
         ds=datasource,
@@ -393,14 +393,13 @@ async def _make_datasource_metadata(
         api_ds=api_ds,
         organization_id=api_org.id,
         datasource_id=api_ds.id,
-        pt=datasource_config.participants[0],
         key=key_response.key,
         key_id=key_response.id,
         org=org,
     )
 
 
-def _convert_dwh_to_create_api_dsn(dwh: settings.Dwh) -> aapi.Dsn:
+def convert_dwh_to_create_api_dsn(dwh: settings.Dwh) -> aapi.Dsn:
     """Converts a trusted settings DWH config into a create_datasource request payload with revealed credentials."""
     match dwh:
         case Dsn():
@@ -427,8 +426,7 @@ def _convert_dwh_to_create_api_dsn(dwh: settings.Dwh) -> aapi.Dsn:
                 case settings.GcpServiceAccountInfo():
                     credentials_content = base64.standard_b64decode(dwh.credentials.content_base64).decode()
                 case settings.GcpServiceAccountFile():
-                    with open(dwh.credentials.path, encoding="utf-8") as credentials_file:
-                        credentials_content = credentials_file.read()
+                    credentials_content = Path(dwh.credentials.path).read_text(encoding="utf-8")
                 case _:
                     raise TypeError(f"Unsupported BigQuery credentials type: {type(dwh.credentials).__name__}")
             return aapi.BqDsn(

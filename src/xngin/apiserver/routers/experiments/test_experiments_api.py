@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 from pydantic import TypeAdapter
 
+from xngin.apiserver.conftest import DatasourceMetadata
 from xngin.apiserver.routers.common_api_types import (
     AnyFrequentistDesignSpec,
     Arm,
@@ -43,7 +44,7 @@ if TYPE_CHECKING:
 
 
 async def create_experiment(
-    datasource_metadata,
+    datasource_metadata: DatasourceMetadata,
     aclient: AdminAPIClient,
     *,
     experiment_type: ExperimentsType = ExperimentsType.FREQ_ONLINE,
@@ -181,7 +182,7 @@ def make_unvalidated_create_experiment_request(
 
 
 @pytest.mark.parametrize(
-    "key,expected_status,expected_message",
+    ("key", "expected_status", "expected_message"),
     [
         ("", 400, "request header is required"),
         ("a", 400, "must start with"),
@@ -237,7 +238,7 @@ async def test_get_experiment(testing_datasource, aclient: AdminAPIClient, eclie
 
 
 @pytest.mark.parametrize(
-    "experiment_type, table_name, primary_key, expected_status, expected_in_loc",
+    ("experiment_type", "table_name", "primary_key", "expected_status", "expected_in_loc"),
     [
         (ExperimentsType.FREQ_PREASSIGNED, None, None, 422, "table_name"),
         (ExperimentsType.FREQ_PREASSIGNED, "dwh", None, 422, "primary_key"),
@@ -390,7 +391,7 @@ async def test_both_get_experiment_assignments_endpoints_have_matching_strata_or
         strata=[Stratum(field_name="ethnicity"), Stratum(field_name="gender")],
     )
     created_experiment = aclient.create_experiment(
-        datasource_id=testing_datasource.ds.id,
+        datasource_id=testing_datasource.datasource_id,
         body=request,
     ).data
     aclient.commit_experiment(
@@ -407,6 +408,7 @@ async def test_both_get_experiment_assignments_endpoints_have_matching_strata_or
         headers={"X-API-Key": testing_datasource.key},
     )
     assert csv_response.status_code == HTTPStatus.OK, csv_response.content
+    assert "cluster_key" not in csv_response.text.splitlines()[0].split(",")
 
     csv_rows = {row["participant_id"]: row for row in csv.DictReader(StringIO(csv_response.text))}
     assert set(csv_rows) == {assignment.participant_id for assignment in data.assignments}
@@ -419,6 +421,77 @@ async def test_both_get_experiment_assignments_endpoints_have_matching_strata_or
             "ethnicity": csv_row["ethnicity"] or None,
             "gender": csv_row["gender"] or None,
         }
+
+    json_response = eclient.client.get(
+        f"/v1/experiments/{created_experiment.experiment_id}/assignments",
+        headers={"X-API-Key": testing_datasource.key},
+    )
+    assert json_response.status_code == HTTPStatus.OK, json_response.content
+    assert all("cluster_key" not in assignment for assignment in json_response.json()["assignments"])
+
+
+async def test_cluster_key_exports_with_preassigned_assignments(
+    testing_datasource,
+    use_deterministic_random,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+):
+    request = CreateExperimentRequest(
+        design_spec=PreassignedFrequentistExperimentSpec(
+            experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+            experiment_name="cluster-key export",
+            description="Verify cluster keys are exported with assignments (CSV, bulk JSON, and individual GETs).",
+            table_name="clustered_dwh",
+            primary_key="participant_id",
+            cluster_key="cluster_powerlaw",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime.now(UTC) + timedelta(days=1),
+            arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
+            metrics=[DesignSpecMetricRequest(field_name="test_score", metric_pct_change=0.1)],
+            strata=[],
+            filters=[],
+            desired_n=24,
+        ),
+        webhooks=[],
+    )
+    datasource_id = testing_datasource.datasource_id
+    created_experiment = aclient.create_experiment(datasource_id=datasource_id, body=request, random_state=42).data
+    experiment_id = created_experiment.experiment_id
+    aclient.commit_experiment(datasource_id=datasource_id, experiment_id=experiment_id)
+
+    eclient_headers = {"X-API-Key": testing_datasource.key}
+    json_response = eclient.client.get(f"/v1/experiments/{experiment_id}/assignments", headers=eclient_headers)
+    assert json_response.status_code == HTTPStatus.OK, json_response.content
+    json_assignments = json_response.json()["assignments"]
+    assert len(json_assignments) == 24
+    assert all("cluster_key" in assignment for assignment in json_assignments)
+    assert all(assignment["cluster_key"] is not None for assignment in json_assignments)
+
+    csv_response = eclient.client.get(f"/v1/experiments/{experiment_id}/assignments/csv", headers=eclient_headers)
+    assert csv_response.status_code == HTTPStatus.OK, csv_response.content
+
+    # Verify the rows returned via CSV match the JSON export.
+    csv_reader = csv.DictReader(StringIO(csv_response.text))
+    assert csv_reader.fieldnames == ["participant_id", "cluster_key", "arm_id", "arm_name", "created_at"]
+    csv_rows = {row["participant_id"]: row for row in csv_reader}
+    assert len(csv_rows) == len(json_assignments)
+    for assignment in json_assignments:
+        csv_row = csv_rows[assignment["participant_id"]]
+        assert csv_row["cluster_key"] == assignment["cluster_key"]
+        assert csv_row["arm_id"] == assignment["arm_id"]
+        assert csv_row["arm_name"] == assignment["arm_name"]
+        json_created_at = datetime.fromisoformat(assignment["created_at"])
+        assert csv_row["created_at"] == json_created_at.isoformat(timespec="seconds").replace("+00:00", "Z")
+
+        # And verify the single-assignment GET is consistent with the bulk exports.
+        single_assignment = eclient.get_assignment(
+            api_key=testing_datasource.key,
+            experiment_id=experiment_id,
+            participant_id=assignment["participant_id"],
+            create_if_none=False,
+        ).data.assignment
+        assert single_assignment is not None
+        assert single_assignment.cluster_key == assignment["cluster_key"]
 
 
 async def test_get_experiment_assignments_streams_bandit_assignments(
@@ -621,21 +694,15 @@ async def test_get_experiment_assignments_as_csv_success(
 
 
 async def test_get_assignment_preassigned(
-    xngin_session,
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
 ):
     preassigned_experiment = await create_preassigned_experiment(testing_datasource, aclient)
-    assignment = tables.ArmAssignment(
+    assigned = eclient.get_experiment_assignments(
+        api_key=testing_datasource.key,
         experiment_id=preassigned_experiment.experiment_id,
-        participant_id="assigned_id",
-        participant_type=preassigned_experiment.participant_type_deprecated,
-        arm_id=preassigned_experiment.design_spec.arms[0].arm_id,
-        strata=[],
-    )
-    xngin_session.add(assignment)
-    await xngin_session.commit()
+    ).data.assignments[0]
 
     parsed = eclient.get_assignment(
         api_key=testing_datasource.key,
@@ -649,12 +716,12 @@ async def test_get_assignment_preassigned(
     parsed = eclient.get_assignment(
         api_key=testing_datasource.key,
         experiment_id=preassigned_experiment.experiment_id,
-        participant_id="assigned_id",
+        participant_id=assigned.participant_id,
     ).data
     assert parsed.experiment_id == preassigned_experiment.experiment_id
-    assert parsed.participant_id == "assigned_id"
+    assert parsed.participant_id == assigned.participant_id
     assert parsed.assignment is not None
-    assert parsed.assignment.arm_name == "control"
+    assert parsed.assignment.arm_name == assigned.arm_name
 
 
 async def test_get_assignment_online(testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient):
@@ -916,7 +983,6 @@ async def test_assign_cmab_wrong_experiment_type(
 
 
 async def test_assign_with_filters_wrong_experiment_type(
-    xngin_session,
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
@@ -986,22 +1052,16 @@ async def test_assign_with_filters_ignores_missing_content_type_header(
 
 
 async def test_get_assignment_preassigned_cache_headers(
-    xngin_session,
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
 ):
     """Test Cache-Control headers for preassigned experiments."""
     preassigned_experiment = await create_preassigned_experiment(testing_datasource, aclient)
-    assignment = tables.ArmAssignment(
+    assigned = eclient.get_experiment_assignments(
+        api_key=testing_datasource.key,
         experiment_id=preassigned_experiment.experiment_id,
-        participant_id="assigned_id",
-        participant_type=preassigned_experiment.participant_type_deprecated,
-        arm_id=preassigned_experiment.design_spec.arms[0].arm_id,
-        strata=[],
-    )
-    xngin_session.add(assignment)
-    await xngin_session.commit()
+    ).data.assignments[0]
 
     # No assignment = no cache header
     response = eclient.get_assignment(
@@ -1015,7 +1075,7 @@ async def test_get_assignment_preassigned_cache_headers(
     response = eclient.get_assignment(
         api_key=testing_datasource.key,
         experiment_id=preassigned_experiment.experiment_id,
-        participant_id="assigned_id",
+        participant_id=assigned.participant_id,
     )
     assert response.response.headers["Cache-Control"] == "private, max-age=3600"
 
@@ -1105,6 +1165,20 @@ async def test_get_assignment_mab_cache_headers(
     assert response.data.assignment is not None
     assert response.data.assignment.outcome == 1.0
     assert response.response.headers["Cache-Control"] == "private, max-age=3600"
+
+
+async def test_update_bandit_arm_with_outcome_rejects_non_numeric_outcome(
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+):
+    """Non-numeric outcome in the request body is rejected"""
+    mab_experiment = await create_experiment(testing_datasource, aclient, experiment_type=ExperimentsType.MAB_ONLINE)
+
+    response = eclient.client.post(
+        f"/v1/experiments/{mab_experiment.experiment_id}/assignments/1/outcome",
+        headers={"X-API-Key": testing_datasource.key},
+        json={"outcome": "not-a-float"},
+    )
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_CONTENT, response.content
 
 
 async def test_get_assignment_cmab_cache_headers(

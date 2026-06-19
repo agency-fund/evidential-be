@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from fastapi import HTTPException, status
 from pandas import DataFrame
+from psycopg import sql
 from sqlalchemy import Select, Table, func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
@@ -18,7 +19,7 @@ from sqlalchemy.orm import selectinload
 
 from xngin.apiserver import constants, flags
 from xngin.apiserver.dwh.dwh_session import DwhSession
-from xngin.apiserver.dwh.inspection_types import FieldDescriptor
+from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.dwh.participant_metrics_queries import get_participant_metrics
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.assignment_adapters import (
@@ -40,10 +41,12 @@ from xngin.apiserver.routers.common_api_types import (
     CreateExperimentRequest,
     CreateExperimentResponse,
     DesignSpecMetricRequest,
+    Filter,
     FreqExperimentAnalysisResponse,
     GetExperimentResponse,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
+    MABDwhExperimentSpec,
     MABExperimentSpec,
     MetricAnalysis,
     OnlineFrequentistExperimentSpec,
@@ -52,15 +55,17 @@ from xngin.apiserver.routers.common_api_types import (
 )
 from xngin.apiserver.routers.common_enums import (
     DataType,
+    DataTypeStorageClass,
     ExperimentState,
     ExperimentsType,
     LikelihoodTypes,
+    Relation,
     StopAssignmentReason,
     UpdateTypeBeta,
     UpdateTypeNormal,
 )
 from xngin.apiserver.routers.experiments.property_filters import passes_filters, validate_filter_value
-from xngin.apiserver.settings import DatasourceConfig, ParticipantsDef
+from xngin.apiserver.settings import DatasourceConfig
 from xngin.apiserver.sql.queries import select_as_csv
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
@@ -95,8 +100,8 @@ class AbandonExperimentResult(enum.StrEnum):
     INVALID_STATE = "invalid_state"
 
 
-def make_participants_def_from_experiment(experiment: tables.Experiment) -> ParticipantsDef | None:
-    """Build a ParticipantsDef from stored experiment fields."""
+def make_schema_from_experiment(experiment: tables.Experiment) -> ParticipantsSchema | None:
+    """Build a ParticipantsSchema from stored experiment fields."""
     if experiment.experiment_type not in {ExperimentsType.FREQ_ONLINE.value, ExperimentsType.FREQ_PREASSIGNED.value}:
         return None
 
@@ -120,13 +125,8 @@ def make_participants_def_from_experiment(experiment: tables.Experiment) -> Part
         if ef.is_strata:
             fd.is_strata = True
 
-    hidden = experiment.participant_type.strip() == ""
-    ptype = experiment.participant_type if not hidden else ""
-    return ParticipantsDef(
-        type="schema",
+    return ParticipantsSchema(
         table_name=table_name,
-        participant_type=ptype,
-        hidden=hidden,
         fields=list(sorted(schema.values(), key=lambda x: x.field_name)),
     )
 
@@ -143,23 +143,47 @@ async def fetch_fields_or_raise(
     """
     async with DwhSession(datasource.get_config().dwh) as dwh:
         sa_table = await dwh.inspect_table(design_spec.table_name)
-        return await fetch_fields_from_table_or_raise(sa_table, design_spec)
+        return convert_table_to_fields_or_raise(sa_table, design_spec)
 
 
-async def fetch_fields_from_table_or_raise(table: Table, design_spec: AnyFrequentistDesignSpec) -> dict[str, DataType]:
-    """Helper to fetch_fields_or_raise that operates on a pre-inspected SQLAlchemy table."""
+async def fetch_mab_dwh_fields_or_raise(
+    datasource: tables.Datasource,
+    design_spec: MABDwhExperimentSpec,
+) -> dict[str, DataType]:
+    """Inspect the DWH table referenced by a MAB-DWH design spec and return field metadata
+    for the primary_key and target_field_name columns.
+
+    Returns: Field name => datatype map (covering primary_key and target_field_name only).
+    Raises: LateValidationError if either column is missing from the table.
+    """
+    async with DwhSession(datasource.get_config().dwh) as dwh:
+        sa_table = await dwh.inspect_table(design_spec.table_name)
+
+    referenced_fields_and_types = _resolve_referenced_field_types(
+        sa_table, {design_spec.primary_key, design_spec.target_field_name}
+    )
+
+    target_type = referenced_fields_and_types[design_spec.target_field_name]
+    if not target_type.is_supported_as_metric():
+        raise LateValidationError(
+            f"Invalid target field '{design_spec.target_field_name}' of type {target_type.value}. "
+            "Only boolean or numeric data types are supported as targets."
+        )
+
+    return referenced_fields_and_types
+
+
+def _resolve_referenced_field_types(table: Table, referenced_fields: set[str]) -> dict[str, DataType]:
+    """Map each referenced column name to its supported DataType in a pre-inspected table.
+
+    Raises: LateValidationError if any referenced field is missing from the table (or present
+    but of an unsupported data type).
+    """
     schema_supported_fields_map: dict[str, DataType] = {}
     for column in table.columns.values():
         data_type = DataType.match(column.type)
         if data_type.is_supported():
             schema_supported_fields_map[column.name] = data_type
-
-    referenced_fields = {
-        *[metric.field_name for metric in design_spec.metrics],
-        *[filter_.field_name for filter_ in design_spec.filters],
-        *[stratum.field_name for stratum in design_spec.strata],
-        design_spec.primary_key,
-    }
 
     referenced_fields_and_types = {
         field_name: schema_supported_fields_map[field_name]
@@ -173,6 +197,21 @@ async def fetch_fields_from_table_or_raise(table: Table, design_spec: AnyFrequen
             "The .design_spec field refers to columns that do not exist in the table: "
             f"{', '.join(sorted(missing_fields))}"
         )
+    return referenced_fields_and_types
+
+
+def convert_table_to_fields_or_raise(table: Table, design_spec: AnyFrequentistDesignSpec) -> dict[str, DataType]:
+    """Helper to fetch_fields_or_raise that operates on a pre-inspected SQLAlchemy table."""
+    referenced_fields = {
+        *[metric.field_name for metric in design_spec.metrics],
+        *[filter_.field_name for filter_ in design_spec.filters],
+        *[stratum.field_name for stratum in design_spec.strata],
+        design_spec.primary_key,
+    }
+    if isinstance(design_spec, PreassignedFrequentistExperimentSpec) and design_spec.cluster_key is not None:
+        referenced_fields.add(design_spec.cluster_key)
+
+    referenced_fields_and_types = _resolve_referenced_field_types(table, referenced_fields)
 
     bad_metric_types = [
         m.field_name
@@ -217,13 +256,21 @@ async def create_experiment_impl(
             metric_names = [m.field_name for m in request.design_spec.metrics]
             strata_names = [s.field_name for s in request.design_spec.strata]
             stratum_cols = strata_names + metric_names if stratify_on_metrics else strata_names
+            select_columns = {*stratum_cols, primary_key}
+            eligibility_filters = request.design_spec.filters
+            if preassigned_spec.cluster_key is not None:
+                select_columns.add(preassigned_spec.cluster_key)
+                eligibility_filters = [
+                    *eligibility_filters,
+                    Filter(field_name=preassigned_spec.cluster_key, relation=Relation.EXCLUDES, value=[None]),
+                ]
 
             ds_config = datasource.get_config()
             async with DwhSession(ds_config.dwh) as dwh:
                 result = await dwh.get_participants(
                     table_name,
-                    select_columns={*stratum_cols, primary_key},
-                    filters=request.design_spec.filters,
+                    select_columns=select_columns,
+                    filters=eligibility_filters,
                     n=desired_n,
                 )
                 sa_table, participants = result.sa_table, result.participants
@@ -254,6 +301,17 @@ async def create_experiment_impl(
                 organization_id=datasource.organization_id,
                 xngin_session=xngin_session,
                 validated_webhooks=validated_webhooks,
+                field_type_map=field_type_map,
+            )
+
+        case MABDwhExperimentSpec():
+            field_type_map = await fetch_mab_dwh_fields_or_raise(datasource, request.design_spec)
+            return await create_bandit_online_experiment_impl(
+                xngin_session=xngin_session,
+                organization_id=datasource.organization_id,
+                validated_webhooks=validated_webhooks,
+                request=request,
+                datasource_id=datasource.id,
                 field_type_map=field_type_map,
             )
 
@@ -318,6 +376,7 @@ async def create_preassigned_experiment_impl(
         quantiles=4,
         random_state=random_state,
         arm_weights=arm_weights,
+        cluster_col=design_spec.cluster_key,
     )
     balance_check = make_balance_check(assignment_result.balance_result, design_spec.fstat_thresh)
 
@@ -344,8 +403,8 @@ async def create_preassigned_experiment_impl(
         xngin_session=xngin_session,
         experiment_id=experiment.id,
         arm_ids=[arm.id for arm in experiment.arms],
-        participant_type=experiment.participant_type,
         participant_id_col=unique_id_name,
+        cluster_key_col=design_spec.cluster_key,
         data=dwh_participants,
         assignments=assignment_result,
     )
@@ -399,12 +458,13 @@ async def create_bandit_online_experiment_impl(
     validated_webhooks: list[tables.Webhook],
     request: CreateExperimentRequest,
     datasource_id: str,
+    field_type_map: dict[str, DataType] | None = None,
 ) -> CreateExperimentResponse:
     """Create a bandit experiment and persist it to the database."""
     design_spec = request.design_spec
 
     match design_spec:
-        case MABExperimentSpec() | CMABExperimentSpec():
+        case MABExperimentSpec() | MABDwhExperimentSpec() | CMABExperimentSpec():
             pass
         case _:
             raise MismatchedExperimentTypeError(f"can't create bandit exp of type: {design_spec.experiment_type}")
@@ -413,6 +473,7 @@ async def create_bandit_online_experiment_impl(
         datasource_id=datasource_id,
         organization_id=organization_id,
         design_spec=design_spec,
+        field_type_map=field_type_map,
     )
     experiment = experiment_converter.get_experiment()
     # Associate webhooks with the experiment
@@ -473,7 +534,7 @@ async def commit_experiment_impl(xngin_session: AsyncSession, experiment: tables
     return CommitExperimentResult.COMMITTED
 
 
-async def abandon_experiment_impl(experiment: tables.Experiment):
+def abandon_experiment_impl(experiment: tables.Experiment):
     if experiment.state == ExperimentState.ABANDONED:
         return AbandonExperimentResult.ABANDONED
     if experiment.state not in {ExperimentState.DESIGNING, ExperimentState.ASSIGNED}:
@@ -562,7 +623,7 @@ async def get_existing_assignment_for_participant(
     Returns: None if no assignment exists.
     """
     stmt: (
-        Select[tuple[str, str, str, datetime]]
+        Select[tuple[str, str | None, str, str, datetime]]
         | Select[
             tuple[
                 str,
@@ -581,6 +642,7 @@ async def get_existing_assignment_for_participant(
             stmt = (
                 select(
                     tables.ArmAssignment.participant_id,
+                    tables.ArmAssignment.cluster_key,
                     tables.Arm.id.label("arm_id"),
                     tables.Arm.name.label("arm_name"),
                     tables.ArmAssignment.created_at,
@@ -595,7 +657,7 @@ async def get_existing_assignment_for_participant(
                     tables.ArmAssignment.participant_id == participant_id,
                 )
             )
-        case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
+        case ExperimentsType.MAB_ONLINE | ExperimentsType.MAB_ONLINE_DWH | ExperimentsType.CMAB_ONLINE:
             stmt = (
                 select(
                     tables.Draw.participant_id,
@@ -624,6 +686,7 @@ async def get_existing_assignment_for_participant(
     if existing_assignment:
         return Assignment(
             participant_id=existing_assignment.participant_id,
+            cluster_key=existing_assignment.cluster_key if hasattr(existing_assignment, "cluster_key") else None,
             arm_id=existing_assignment.arm_id,
             arm_name=existing_assignment.arm_name,
             created_at=existing_assignment.created_at,
@@ -734,21 +797,6 @@ async def create_assignment_for_participant(
     if len(experiment.arms) == 0:
         raise ExperimentsAssignmentError("Experiment has no arms")
 
-    experiment_type = ExperimentsType(experiment.experiment_type)
-    if experiment_type == ExperimentsType.FREQ_PREASSIGNED:
-        # Preassigned experiments are not allowed to have new assignments added.
-        return None
-
-    if experiment_type == ExperimentsType.CMAB_ONLINE:
-        if not sorted_context_vals:
-            raise ExperimentsAssignmentError(
-                "Context values are required for contextual multi-armed bandit experiments"
-            )
-        if len(sorted_context_vals) != len(experiment.contexts):
-            raise ExperimentsAssignmentError(
-                f"Expected {len(experiment.contexts)} context values, got {len(sorted_context_vals)}"
-            )
-
     # Don't allow new assignments for experiments that have ended.
     if experiment.end_date < datetime.now(UTC):
         experiment.stopped_assignments_at = datetime.now(UTC)
@@ -756,47 +804,54 @@ async def create_assignment_for_participant(
         await xngin_session.commit()
         return None
 
-    # For online frequentist, create a new assignment
-    # with simple random assignment or weighted random assignment if arm_weights are specified.
-    match experiment_type:
-        case ExperimentsType.FREQ_ONLINE:
-            chosen_arm = choose_online_arm(experiment=experiment, random_state=random_state)
-        case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
-            chosen_arm = choose_bandit_arm(
-                experiment=experiment,
-                sorted_context_vals=sorted_context_vals,
-                random_state=random_state,
-            )
-
-    chosen_arm_id = chosen_arm.id
-
-    # Create and save the new assignment. We use the insert() API because it allows us to read
-    # the database-generated created_at value without needing to refresh the object in the SQLAlchemy cache.
     try:
+        # Create and save the new assignment. The insert() API allows us to read the
+        # database-generated created_at value without needing to refresh the object in the
+        # SQLAlchemy cache.
+        experiment_type = ExperimentsType(experiment.experiment_type)
         match experiment_type:
-            case ExperimentsType.FREQ_ONLINE | ExperimentsType.FREQ_PREASSIGNED:
+            case ExperimentsType.FREQ_PREASSIGNED:
+                # Preassigned experiments are not allowed to have new assignments added.
+                return None
+            case ExperimentsType.FREQ_ONLINE:
+                # For online frequentist, create a new assignment
+                # with simple random assignment or weighted random assignment if arm_weights are specified.
+                chosen_arm = choose_online_arm(experiment=experiment, random_state=random_state)
                 result = (
                     await xngin_session.execute(
                         insert(tables.ArmAssignment)
                         .values(
                             experiment_id=experiment.id,
                             participant_id=participant_id,
-                            participant_type=experiment.participant_type,
-                            arm_id=chosen_arm_id,
+                            arm_id=chosen_arm.id,
                             strata=[],
                         )
                         .returning(tables.ArmAssignment.created_at)
                     )
                 ).fetchone()
-            case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
+            case ExperimentsType.MAB_ONLINE | ExperimentsType.MAB_ONLINE_DWH | ExperimentsType.CMAB_ONLINE:
+                if experiment_type == ExperimentsType.CMAB_ONLINE:
+                    if not sorted_context_vals:
+                        raise ExperimentsAssignmentError(
+                            "Context values are required for contextual multi-armed bandit experiments"
+                        )
+                    if len(sorted_context_vals) != len(experiment.contexts):
+                        raise ExperimentsAssignmentError(
+                            f"Expected {len(experiment.contexts)} context values, got {len(sorted_context_vals)}"
+                        )
+
+                chosen_arm = choose_bandit_arm(
+                    experiment=experiment,
+                    sorted_context_vals=sorted_context_vals,
+                    random_state=random_state,
+                )
                 result = (
                     await xngin_session.execute(
                         insert(tables.Draw)
                         .values(
                             experiment_id=experiment.id,
                             participant_id=participant_id,
-                            participant_type=experiment.participant_type,
-                            arm_id=chosen_arm_id,
+                            arm_id=chosen_arm.id,
                             context_vals=sorted_context_vals,
                         )
                         .returning(tables.Draw.created_at)
@@ -810,7 +865,7 @@ async def create_assignment_for_participant(
         created_at = result[0]
         stmt = (
             pg_insert(tables.ArmStats)
-            .values(arm_id=chosen_arm_id, population=1)
+            .values(arm_id=chosen_arm.id, population=1)
             .on_conflict_do_update(
                 index_elements=[tables.ArmStats.arm_id],
                 set_={"population": tables.ArmStats.population + 1},
@@ -820,18 +875,31 @@ async def create_assignment_for_participant(
         await xngin_session.commit()
     except IntegrityError as e:
         await xngin_session.rollback()
-        raise ExperimentsAssignmentError(
-            f"Failed to assign participant '{participant_id}' to arm '{chosen_arm_id}': {e}"
-        ) from e
+        raise ExperimentsAssignmentError(f"Failed to assign participant '{participant_id}': {e}") from e
 
     return Assignment(
         participant_id=participant_id,
-        arm_id=chosen_arm_id,
+        cluster_key=None,
+        arm_id=chosen_arm.id,
         arm_name=chosen_arm.name,
         created_at=created_at,
         strata=[],
         context_values=sorted_context_vals,
     )
+
+
+def _check_outcome_against_mab_dwh_target(
+    experiment_fields: list[tables.ExperimentField],
+    outcome: float,
+) -> None:
+    """Reject outcomes that don't match the stored target column's data_type storage class."""
+    target_field = next(ef for ef in experiment_fields if ef.is_target)
+    target_type = DataType(target_field.data_type)
+    if target_type.storage_class() == DataTypeStorageClass.BOOLEAN and outcome not in {0, 1}:
+        raise LateValidationError(
+            f"Invalid outcome {outcome} for target field '{target_field.field_name}' "
+            f"of type {target_type.value}: must be 0 or 1 for boolean targets."
+        )
 
 
 async def update_bandit_arm_with_outcome_impl(
@@ -845,7 +913,7 @@ async def update_bandit_arm_with_outcome_impl(
     design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
 
     match design_spec:
-        case MABExperimentSpec() | CMABExperimentSpec():
+        case MABExperimentSpec() | MABDwhExperimentSpec() | CMABExperimentSpec():
             pass
         case PreassignedFrequentistExperimentSpec() | OnlineFrequentistExperimentSpec():
             raise LateValidationError("Cannot dynamically update arms for frequentist experiments.")
@@ -870,6 +938,11 @@ async def update_bandit_arm_with_outcome_impl(
         1,
     }:
         raise LateValidationError(f"Invalid outcome for binary reward type: {outcome}. Must be 0 or 1.")
+
+    # For DWH-backed bandits, type-check the outcome against the stored target column's data_type.
+    if isinstance(design_spec, MABDwhExperimentSpec):
+        experiment_fields = await experiment.awaitable_attrs.experiment_fields
+        _check_outcome_against_mab_dwh_target(experiment_fields, outcome)
 
     try:
         result = await xngin_session.execute(
@@ -1009,7 +1082,7 @@ async def get_assign_summary(
         for arm_id, name, count in result
     ]
 
-    if experiment_type in {ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE}:
+    if experiment_type in {ExperimentsType.MAB_ONLINE, ExperimentsType.MAB_ONLINE_DWH, ExperimentsType.CMAB_ONLINE}:
         balance_check = None
     return AssignSummary(
         balance_check=balance_check,
@@ -1031,9 +1104,13 @@ async def analyze_experiment_freq_impl(
     if experiment.datasource_table is None or unique_id_field is None:
         raise StatsAnalysisError("Experiment must have a datasource table and unique ID field to analyze.")
 
-    participant_ids, assignments_df = await read_assignments_efficiently(xngin_session, experiment.id)
+    include_cluster = experiment.cluster_key_field() is not None
+    participant_ids, assignments_df = await read_assignments_efficiently(
+        xngin_session, experiment.id, include_cluster_key=include_cluster
+    )
     if assignments_df.empty:
         raise StatsAnalysisError("No participants found for experiment.")
+
     async with DwhSession(dsconfig.dwh) as dwh:
         sa_table = await dwh.inspect_table(experiment.datasource_table)
 
@@ -1064,7 +1141,10 @@ async def analyze_experiment_freq_impl(
     analyze_results = analyze_freq_experiment(
         assignments_df,
         participant_outcomes,
-        baseline_arm_id,
+        unit_col=tables.ArmAssignment.participant_id.name,
+        arm_col=tables.ArmAssignment.arm_id.name,
+        cluster_col=tables.ArmAssignment.cluster_key.name if include_cluster else None,
+        baseline_arm_id=baseline_arm_id,
         alpha=experiment.alpha,
     )
 
@@ -1122,14 +1202,27 @@ async def analyze_experiment_freq_impl(
     )
 
 
-async def read_assignments_efficiently(xngin_session: AsyncSession, experiment_id: str) -> tuple[list[str], DataFrame]:
+async def read_assignments_efficiently(
+    xngin_session: AsyncSession,
+    experiment_id: str,
+    *,
+    include_cluster_key: bool = False,
+) -> tuple[list[str], DataFrame]:
     """Reads assignments directly from Postgres via a COPY statement.
 
     Reads CSV output in row-bounded chunks and concatenates the parsed frames.
     """
-    select_query = t"SELECT arm_id, participant_id FROM arm_assignments WHERE experiment_id = {experiment_id}"  # type: ignore
+    column_names = [
+        tables.ArmAssignment.arm_id.name,
+        tables.ArmAssignment.participant_id.name,
+    ]
+    if include_cluster_key:
+        column_names.append(tables.ArmAssignment.cluster_key.name)
+
+    joined_column_names = sql.SQL(", ").join(sql.Identifier(name) for name in column_names)
+    select_query = t"SELECT {joined_column_names:q} FROM arm_assignments WHERE experiment_id = {experiment_id}"  # type: ignore
     dfs = [
-        pd.read_csv(io.BytesIO(chunk), names=["arm_id", "participant_id"], dtype=str)
+        pd.read_csv(io.BytesIO(chunk), names=column_names, dtype=str)
         async for chunk in select_as_csv(
             xngin_session, select_query, buffer_size_bytes=CSV_PARSE_CHUNK_SIZE_BYTES, newline_framed=True
         )
@@ -1137,8 +1230,8 @@ async def read_assignments_efficiently(xngin_session: AsyncSession, experiment_i
     if dfs:
         df = pd.concat(dfs, ignore_index=True)
     else:
-        df = pd.DataFrame(columns=["arm_id", "participant_id"]).astype(str)
-    return df["participant_id"].to_list(), df
+        df = pd.DataFrame(columns=column_names).astype(str)
+    return df[tables.ArmAssignment.participant_id.name].to_list(), df
 
 
 @dataclass(frozen=True, slots=True)

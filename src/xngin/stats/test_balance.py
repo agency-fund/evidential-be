@@ -417,3 +417,97 @@ def test_check_balance_with_reserved_words_and_symbols():
     for t in treatment_cols:
         result = check_balance_of_preprocessed_df(data, treatment_col=t, exclude_col_set=treatment_cols)
         assert result.f_pvalue > 0.2
+
+
+def test_check_balance_with_cluster_col():
+    """Balance check using cluster-robust covariance produces the same point estimates as HC1 but different SEs."""
+    rng = np.random.default_rng(42)
+    n_clusters = 50
+    cluster_ids = np.repeat(range(n_clusters), 20)  # 20 people each cluster
+    cluster_arms = rng.binomial(1, 0.5, n_clusters)
+    treatment = cluster_arms[cluster_ids]
+    # Create some within-cluster correlation in 'age'
+    age = 30 + rng.normal(0, 2, n_clusters)[cluster_ids] + rng.normal(0, 1, len(cluster_ids))
+    data = pd.DataFrame({"treat": treatment, "age": age, "cluster": cluster_ids})
+
+    result_hc1 = check_balance(data, exclude_cols=["cluster"])
+
+    df_cleaned, exclude_cols_set, numeric_notnull_set = preprocess_for_balance_and_stratification(
+        data=data,
+        exclude_cols=["treat", "cluster"],
+    )
+    df_cleaned = restore_original_numeric_columns(
+        df_orig=data,
+        df_cleaned=df_cleaned,
+        numeric_notnull_set=numeric_notnull_set,
+    )
+    result_clustered = check_balance_of_preprocessed_df(
+        data=df_cleaned,
+        treatment_col="treat",
+        exclude_col_set=exclude_cols_set,
+        cluster_col="cluster",
+    )
+
+    assert result_hc1.model_params == pytest.approx(result_clustered.model_params, rel=1e-5)
+    for a, b in zip(result_hc1.model_param_std_errors, result_clustered.model_param_std_errors, strict=True):
+        assert a < b
+    assert result_hc1.f_statistic != pytest.approx(result_clustered.f_statistic, rel=1e-2)
+    assert result_clustered.model_param_std_errors == pytest.approx([0.9896, 0.0333], abs=1e-3)
+    assert result_clustered.f_statistic == pytest.approx(0.000555, abs=1e-5)
+
+
+def test_check_balance_with_balanced_clusters():
+    """Balanced cluster assignment produces a high p-value (no significant imbalance detected)."""
+    rng = np.random.default_rng(42)
+    n_clusters = 100
+    cluster_ids = np.repeat(range(n_clusters), 10)
+    treatment = np.tile([0, 1], len(cluster_ids) // 2)[cluster_ids]
+    age = 30 + rng.normal(0, 1, n_clusters)[cluster_ids] + rng.normal(0, 1, len(cluster_ids))
+    data = pd.DataFrame({"treat": treatment, "age": age, "cluster": cluster_ids})
+
+    df_cleaned, exclude_cols_set, numeric_notnull_set = preprocess_for_balance_and_stratification(
+        data=data,
+        exclude_cols=["treat", "cluster"],
+    )
+    df_cleaned = restore_original_numeric_columns(
+        df_orig=data, df_cleaned=df_cleaned, numeric_notnull_set=numeric_notnull_set
+    )
+    result = check_balance_of_preprocessed_df(
+        data=df_cleaned, treatment_col="treat", exclude_col_set=exclude_cols_set, cluster_col="cluster"
+    )
+
+    assert result.f_pvalue == pytest.approx(0.733, abs=1e-3)
+    assert result.f_statistic == pytest.approx(0.117, abs=1e-3)
+
+
+def test_check_balance_with_unbalanced_clusters():
+    """Unbalanced cluster assignment (old clusters in arm 0, young in arm 1) produces a low p-value."""
+    rng = np.random.default_rng(42)
+    n_clusters = 20
+    cluster_ids = np.repeat(range(n_clusters), 10)
+    cluster_ages = np.concatenate([np.repeat(50, 10), np.repeat(20, 10)])
+    treatment = np.concatenate([np.repeat(0, len(cluster_ids) // 2), np.repeat(1, len(cluster_ids) // 2)])
+    age = cluster_ages[cluster_ids] + rng.normal(0, 1, len(cluster_ids))
+    data = pd.DataFrame({"treat": treatment, "age": age, "cluster": cluster_ids})
+
+    df_cleaned, exclude_cols_set, numeric_notnull_set = preprocess_for_balance_and_stratification(
+        data=data,
+        exclude_cols=["treat", "cluster"],
+    )
+    df_cleaned = restore_original_numeric_columns(
+        df_orig=data, df_cleaned=df_cleaned, numeric_notnull_set=numeric_notnull_set
+    )
+    result = check_balance_of_preprocessed_df(
+        data=df_cleaned, treatment_col="treat", exclude_col_set=exclude_cols_set, cluster_col="cluster"
+    )
+
+    assert result.f_pvalue == pytest.approx(2.83e-36)
+    assert result.f_statistic == pytest.approx(87574.78)
+
+
+def test_check_balance_with_missing_cluster_col_raises_stats_balance_error():
+    """A missing cluster column should raise a domain error instead of a raw KeyError."""
+    data = pd.DataFrame({"treat": [0, 1, 0, 1], "age": [20, 21, 22, 23]})
+
+    with pytest.raises(StatsBalanceError, match=r"Cluster column 'cluster' not found in balance-check data."):
+        check_balance_of_preprocessed_df(data, treatment_col="treat", cluster_col="cluster")

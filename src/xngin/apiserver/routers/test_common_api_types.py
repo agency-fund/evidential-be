@@ -1,7 +1,11 @@
 import pytest
 from pydantic import ValidationError
 
-from xngin.apiserver.routers.common_api_types import Filter, PreassignedFrequentistExperimentSpec
+from xngin.apiserver.routers.common_api_types import (
+    Filter,
+    MABDwhExperimentSpec,
+    PreassignedFrequentistExperimentSpec,
+)
 from xngin.apiserver.routers.common_enums import Relation
 
 VALID_COLUMN_NAMES = [
@@ -71,7 +75,7 @@ VALID_BETWEEN = [
 ]
 
 
-@pytest.mark.parametrize("value,descr", VALID_BETWEEN)
+@pytest.mark.parametrize(("value", "descr"), VALID_BETWEEN)
 def test_between_relation(value, descr):
     filter_spec = Filter(field_name="col", relation=Relation.BETWEEN, value=value)
     assert filter_spec.value == value, f"Failed for case: {descr}"
@@ -92,7 +96,7 @@ INVALID_BETWEEN = [
 ]
 
 
-@pytest.mark.parametrize("value,descr", INVALID_BETWEEN)
+@pytest.mark.parametrize(("value", "descr"), INVALID_BETWEEN)
 def test_between_relation_invalid(value, descr):
     # The third case occurs when Pydantic backtracks internally to solve the constraints on `value`.
     with pytest.raises(ValidationError, match=r"(BETWEEN relation|same type| validation errors )"):
@@ -113,7 +117,7 @@ VALID_OTHER = [
 ]
 
 
-@pytest.mark.parametrize("relation,value", VALID_OTHER)
+@pytest.mark.parametrize(("relation", "value"), VALID_OTHER)
 def test_other_relations(relation, value):
     Filter(field_name="col", relation=relation, value=value)
 
@@ -209,3 +213,53 @@ def test_arm_weights_validation():
         match=r"(?s)Input should be a finite number.*Input should be a finite number",
     ):
         PreassignedFrequentistExperimentSpec.model_validate(invalid_inf)
+
+
+def test_cluster_key_and_strata_are_mutually_exclusive():
+    valid_spec = {
+        "experiment_type": "freq_preassigned",
+        "experiment_name": "test",
+        "description": "test",
+        "table_name": "dwh",
+        "primary_key": "id",
+        "cluster_key": "school_id",
+        "start_date": "2024-01-01T00:00:00+00:00",
+        "end_date": "2024-12-31T00:00:00+00:00",
+        "arms": [
+            {"arm_name": "C", "arm_description": "C"},
+            {"arm_name": "T", "arm_description": "T"},
+        ],
+        "strata": [{"field_name": "country"}],
+        "metrics": [{"field_name": "metric1", "metric_pct_change": 0.1}],
+        "filters": [],
+    }
+
+    with pytest.raises(ValidationError, match="Cluster-randomized frequentist designs cannot also set strata"):
+        PreassignedFrequentistExperimentSpec.model_validate(valid_spec)
+
+
+def test_mab_dwh_primary_key_and_target_must_differ():
+    """MABDwhExperimentSpec rejects a target_field_name equal to its primary_key."""
+    valid_spec = {
+        "experiment_type": "mab_online_dwh",
+        "experiment_name": "test",
+        "description": "test",
+        "start_date": "2024-01-01T00:00:00+00:00",
+        "end_date": "2024-12-31T00:00:00+00:00",
+        "table_name": "dwh",
+        "primary_key": "id",
+        "target_field_name": "is_onboarded",
+        "arms": [
+            {"arm_name": "C", "arm_description": "C", "alpha_init": 50.0, "beta_init": 1.0},
+            {"arm_name": "T", "arm_description": "T", "alpha_init": 1.0, "beta_init": 50.0},
+        ],
+    }
+    # Distinct primary_key/target validates fine.
+    spec = MABDwhExperimentSpec.model_validate(valid_spec)
+    assert spec.primary_key != spec.target_field_name
+
+    # Equal primary_key/target is rejected.
+    invalid_spec = valid_spec.copy()
+    invalid_spec["target_field_name"] = invalid_spec["primary_key"]
+    with pytest.raises(ValidationError, match="primary_key and target_field_name must refer to different columns"):
+        MABDwhExperimentSpec.model_validate(invalid_spec)

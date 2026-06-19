@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from pydantic import ValidationError
 
@@ -11,8 +12,7 @@ LOCAL_KEYSET_SENTINEL = "local"
 def _read_local_keyset(local_keyset_filename: str) -> str:
     """Development environments may use a key in the local filesystem."""
     try:
-        with open(local_keyset_filename) as f:
-            return f.read()
+        return Path(local_keyset_filename).read_text()
     except OSError as err:
         raise TokenCryptorMisconfiguredError(f"The {local_keyset_filename} file cannot be read.") from err
 

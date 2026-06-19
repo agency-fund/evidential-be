@@ -28,143 +28,133 @@ from xngin.stats.bandit_weights_to_prior import (
 )
 
 
-def _set_balance_check_json(experiment: tables.Experiment, value: capi.BalanceCheck | None) -> None:
-    if value is None:
-        experiment.balance_check = None
-    else:
-        experiment.balance_check = capi.BalanceCheck.model_validate(value).model_dump()
+def _upsert_field_used(
+    field_name: str,
+    field_type_map: dict[str, DataType],
+    fields_used_map: dict[str, tables.ExperimentField],
+    **field_kwargs: Any,
+) -> tables.ExperimentField:
+    """
+    Helper function for adding or updating ExperimentField objects to associate with an experiment.
+
+    Args:
+        field_name - the name of an underlying table column used in the experiment
+        field_type_map - used to resolve the data type of the field_name
+        fields_used_map - in-out map used to store ExperimentField objects by field_name
+        field_kwargs - additional fields to set on the ExperimentField object
+    """
+    field = fields_used_map.get(field_name)
+    if field is not None:
+        for key, value in field_kwargs.items():
+            setattr(field, key, value)
+        return field
+
+    resolved_type = field_type_map.get(field_name, DataType.UNKNOWN)
+    field = tables.ExperimentField(
+        field_name=field_name,
+        data_type=resolved_type.value,
+        experiment_filters=[],
+        **field_kwargs,
+    )
+    fields_used_map[field_name] = field
+    return field
 
 
-def _set_power_response_json(experiment: tables.Experiment, value: capi.PowerResponse | None) -> None:
-    if value is None:
-        experiment.power_analyses = None
-    else:
-        experiment.power_analyses = capi.PowerResponse.model_validate(value).model_dump()
-
-
-def _set_experiment_fields_from_design_spec(
-    experiment: tables.Experiment,
-    design_spec: capi.DesignSpec,
-    field_type_map: dict[str, DataType] | None = None,
-) -> None:
-    """Save the field-related components of a DesignSpec to an experiment."""
-    match design_spec:
-        case capi.MABExperimentSpec() | capi.CMABExperimentSpec():
-            experiment.design_spec_fields = None
-            experiment.experiment_fields = []
-            return
-        case capi.PreassignedFrequentistExperimentSpec() | capi.OnlineFrequentistExperimentSpec():
-            pass
+def _experiment_filter_from_spec_filter(
+    field_type_map: dict[str, DataType],
+    spec_filter: capi.Filter,
+    index: int,
+) -> tables.ExperimentFilter:
+    """Convert a DesignSpec's Filter object into a tables.ExperimentFilter."""
+    values = spec_filter.value
+    datatype = field_type_map.get(spec_filter.field_name, DataType.UNKNOWN)
+    match datatype.storage_class():
+        case DataTypeStorageClass.BOOLEAN:
+            values = [None if v is None else bool(v) for v in values]
+            return tables.ExperimentFilter(
+                position=index + 1,
+                relation=spec_filter.relation,
+                boolean_values=values,
+            )
+        case DataTypeStorageClass.NUMERIC:
+            return tables.ExperimentFilter(
+                position=index + 1,
+                relation=spec_filter.relation,
+                numeric_values=values,
+            )
         case _:
-            assert_never(design_spec)
+            values = [None if v is None else str(v) for v in values]
+            return tables.ExperimentFilter(
+                position=index + 1,
+                relation=spec_filter.relation,
+                string_values=values,
+            )
 
-    field_type_map = field_type_map or {}
-    unique_id_name = design_spec.primary_key
 
-    # Clear existing design fields
-    experiment.experiment_fields = []
-
-    # New fields used in the experiment. Each key is a field name and maps to a ExperimentField object.
+def _make_freq_experiment_fields(
+    design_spec: capi.BaseFrequentistDesignSpec,
+    field_type_map: dict[str, DataType],
+) -> list[tables.ExperimentField]:
+    """Make ExperimentField objects for a frequentist experiment."""
+    #  Each key is a field name used in the spec and will map to a final ExperimentField object.
     fields_used_map: dict[str, tables.ExperimentField] = {}
 
-    fields_used_map[unique_id_name] = tables.ExperimentField(
-        field_name=unique_id_name,
-        data_type=field_type_map.get(unique_id_name, DataType.UNKNOWN).value,
-        is_unique_id=True,
-        experiment_filters=[],
-    )
+    _upsert_field_used(design_spec.primary_key, field_type_map, fields_used_map, is_unique_id=True)
 
-    if design_spec.cluster_key:
-        cluster_key_name = design_spec.cluster_key
-        field = fields_used_map.get(cluster_key_name)
-        if field is None:
-            field = tables.ExperimentField(
-                field_name=cluster_key_name,
-                data_type=field_type_map.get(cluster_key_name, DataType.UNKNOWN).value,
-                experiment_filters=[],
-            )
-            fields_used_map[cluster_key_name] = field
-        field.is_cluster_key = True
+    if isinstance(design_spec, capi.PreassignedFrequentistExperimentSpec) and design_spec.cluster_key:
+        _upsert_field_used(design_spec.cluster_key, field_type_map, fields_used_map, is_cluster_key=True)
 
     # Add filters. Fields used as filters technically could be reused with different filter values.
-    for idx, filter_item in enumerate(design_spec.filters):
-        field = fields_used_map.get(filter_item.field_name)
-        datatype = field_type_map.get(filter_item.field_name, DataType.UNKNOWN)
-        # Create the new field if it doesn't exist
-        if field is None:
-            field = tables.ExperimentField(
-                field_name=filter_item.field_name,
-                data_type=datatype.value,
-                experiment_filters=[],
-            )
-            fields_used_map[filter_item.field_name] = field
-
-        # and associate new filter metadata with the field
-        filters = field.experiment_filters or []
-        values = filter_item.value
-        match datatype.storage_class():
-            case DataTypeStorageClass.BOOLEAN:
-                values = [None if v is None else bool(v) for v in values]
-                filters.append(
-                    tables.ExperimentFilter(
-                        position=idx + 1,
-                        relation=filter_item.relation,
-                        boolean_values=values,
-                    )
-                )
-            case DataTypeStorageClass.NUMERIC:
-                filters.append(
-                    tables.ExperimentFilter(
-                        position=idx + 1,
-                        relation=filter_item.relation,
-                        numeric_values=values,
-                    )
-                )
-            case _:
-                values = [None if v is None else str(v) for v in values]
-                filters.append(
-                    tables.ExperimentFilter(
-                        position=idx + 1,
-                        relation=filter_item.relation,
-                        string_values=values,
-                    )
-                )
-
-        field.experiment_filters = filters
+    for idx, spec_filter in enumerate(design_spec.filters):
+        filter_field = _upsert_field_used(spec_filter.field_name, field_type_map, fields_used_map)
+        filters = filter_field.experiment_filters or []
+        filters.append(_experiment_filter_from_spec_filter(field_type_map, spec_filter, idx))
+        filter_field.experiment_filters = filters
 
     # Add metrics
     if design_spec.metrics:
         for index, metric in enumerate(design_spec.metrics):
-            field = fields_used_map.get(metric.field_name)
-            if field is None:
-                field = tables.ExperimentField(
-                    field_name=metric.field_name,
-                    data_type=field_type_map.get(metric.field_name, DataType.UNKNOWN).value,
-                    experiment_filters=[],
-                )
-                fields_used_map[metric.field_name] = field
-
+            metric_field = _upsert_field_used(metric.field_name, field_type_map, fields_used_map)
             if index == 0:
-                field.is_primary_metric = True
-            field.metric_pct_change = metric.metric_pct_change
-            field.metric_target = metric.metric_target
+                metric_field.is_primary_metric = True
+            metric_field.metric_pct_change = metric.metric_pct_change
+            metric_field.metric_target = metric.metric_target
 
     # Add strata
     if design_spec.strata:
         for stratum in design_spec.strata:
-            field = fields_used_map.get(stratum.field_name)
-            if field is None:
-                field = tables.ExperimentField(
-                    field_name=stratum.field_name,
-                    data_type=field_type_map.get(stratum.field_name, DataType.UNKNOWN).value,
-                    experiment_filters=[],
-                )
-                fields_used_map[stratum.field_name] = field
+            _upsert_field_used(stratum.field_name, field_type_map, fields_used_map, is_strata=True)
 
-            field.is_strata = True
+    # Finally convert the fields_used_map to a list usable as an Experiment's experiment_fields
+    return list(fields_used_map.values())
 
-    # add fields_used_map to experiment_fields
-    experiment.experiment_fields = list(fields_used_map.values())
+
+def _make_mab_dwh_experiment_fields(
+    design_spec: capi.MABDwhExperimentSpec,
+    field_type_map: dict[str, DataType],
+) -> list[tables.ExperimentField]:
+    """Make the primary_key and target ExperimentField objects for a MAB-DWH experiment."""
+    fields_used_map: dict[str, tables.ExperimentField] = {}
+    _upsert_field_used(design_spec.primary_key, field_type_map, fields_used_map, is_unique_id=True)
+    _upsert_field_used(design_spec.target_field_name, field_type_map, fields_used_map, is_target=True)
+    return list(fields_used_map.values())
+
+
+def _make_experiment_fields_from_design_spec(
+    design_spec: capi.DesignSpec,
+    field_type_map: dict[str, DataType] | None = None,
+) -> list[tables.ExperimentField]:
+    """Make ExperimentField objects for a DesignSpec."""
+    field_type_map = field_type_map or {}
+    match design_spec:
+        case capi.MABExperimentSpec() | capi.CMABExperimentSpec():
+            return []
+        case capi.MABDwhExperimentSpec():
+            return _make_mab_dwh_experiment_fields(design_spec, field_type_map)
+        case capi.PreassignedFrequentistExperimentSpec() | capi.OnlineFrequentistExperimentSpec():
+            return _make_freq_experiment_fields(design_spec, field_type_map)
+        case _:
+            assert_never(design_spec)
 
 
 class ExperimentStorageConverter:
@@ -278,13 +268,10 @@ class ExperimentStorageConverter:
                     f"Frequentist experiment {self.experiment.id} "
                     "is missing datasource_table or unique participant key field."
                 )
-            cluster_key_field = self.experiment.cluster_key_field()
-
-            return TypeAdapter(capi.DesignSpec).validate_python({
+            freq_spec_dict: dict[str, object] = {
                 **base_experiment_dict,
                 "table_name": self.experiment.datasource_table,
                 "primary_key": primary_key_field.field_name,
-                "cluster_key": cluster_key_field.field_name if cluster_key_field else None,
                 "arms": [
                     {
                         "arm_id": arm.id,
@@ -301,10 +288,16 @@ class ExperimentStorageConverter:
                 "alpha": self.experiment.alpha,
                 "fstat_thresh": self.experiment.fstat_thresh,
                 "desired_n": self.experiment.desired_n,
-            })
+            }
+            if self.experiment.experiment_type == ExperimentsType.FREQ_PREASSIGNED.value:
+                cluster_key_field = self.experiment.cluster_key_field()
+                freq_spec_dict["cluster_key"] = cluster_key_field.field_name if cluster_key_field else None
+
+            return TypeAdapter(capi.DesignSpec).validate_python(freq_spec_dict)
 
         if self.experiment.experiment_type in {
             ExperimentsType.MAB_ONLINE.value,
+            ExperimentsType.MAB_ONLINE_DWH.value,
             ExperimentsType.CMAB_ONLINE.value,
         }:
             if not self.experiment.prior_type or not self.experiment.reward_type:
@@ -321,8 +314,25 @@ class ExperimentStorageConverter:
                     for context in self.experiment.contexts
                 ]
 
+            mab_dwh_fields: dict[str, Any] = {}
+            if self.experiment.experiment_type == ExperimentsType.MAB_ONLINE_DWH.value:
+                await self.experiment.awaitable_attrs.experiment_fields
+                primary_key_field = self.experiment.unique_id_field()
+                target_field = next(f for f in self.experiment.experiment_fields if f.is_target)
+                if self.experiment.datasource_table is None or primary_key_field is None:
+                    raise ValueError(
+                        f"MAB-DWH experiment {self.experiment.id} "
+                        "is missing datasource_table or unique participant key field."
+                    )
+                mab_dwh_fields = {
+                    "table_name": self.experiment.datasource_table,
+                    "primary_key": primary_key_field.field_name,
+                    "target_field_name": target_field.field_name,
+                }
+
             return TypeAdapter(capi.DesignSpec).validate_python({
                 **base_experiment_dict,
+                **mab_dwh_fields,
                 "arms": [
                     {
                         "arm_id": arm.id,
@@ -369,7 +379,6 @@ class ExperimentStorageConverter:
         return capi.GetExperimentResponse(
             experiment_id=(await self.experiment.awaitable_attrs.id),
             datasource_id=self.experiment.datasource_id,
-            participant_type_deprecated=self.experiment.participant_type,
             state=ExperimentState(self.experiment.state),
             stopped_assignments_at=self.experiment.stopped_assignments_at,
             stopped_assignments_reason=StopAssignmentReason.from_str(self.experiment.stopped_assignments_reason),
@@ -417,14 +426,12 @@ class ExperimentStorageConverter:
         decision: str = "",
         impact: str = "",
         field_type_map: dict[str, DataType] | None = None,
-        participant_type: str = "",
     ) -> Self:
         """Init experiment with arms from components. Get the final object with get_experiment()."""
         # Initialize common fields
         experiment = tables.Experiment(
             datasource_id=datasource_id,
             experiment_type=design_spec.experiment_type,
-            participant_type=participant_type,
             datasource_table=None,
             name=design_spec.experiment_name,
             description=design_spec.description,
@@ -458,14 +465,22 @@ class ExperimentStorageConverter:
                     )
                     for i, arm in enumerate(design_spec.arms, start=1)
                 ]
-                _set_experiment_fields_from_design_spec(experiment, design_spec, field_type_map)
-                _set_balance_check_json(experiment, balance_check)
-                _set_power_response_json(experiment, power_analyses)
+                experiment.experiment_fields = _make_experiment_fields_from_design_spec(design_spec, field_type_map)
+                experiment.balance_check = (
+                    None if balance_check is None else capi.BalanceCheck.model_validate(balance_check).model_dump()
+                )
+                experiment.power_analyses = (
+                    None if power_analyses is None else capi.PowerResponse.model_validate(power_analyses).model_dump()
+                )
                 return cls(experiment)
 
-            case capi.MABExperimentSpec() | capi.CMABExperimentSpec():
+            case capi.MABExperimentSpec() | capi.MABDwhExperimentSpec() | capi.CMABExperimentSpec():
                 if isinstance(design_spec, capi.CMABExperimentSpec) and not design_spec.contexts:
                     raise ValueError(f"CMAB experiment {experiment.id} must have contexts set.")
+
+                if isinstance(design_spec, capi.MABDwhExperimentSpec):
+                    experiment.datasource_table = design_spec.table_name
+                    experiment.experiment_fields = _make_experiment_fields_from_design_spec(design_spec, field_type_map)
 
                 # Set bandit fields
                 context_len = len(design_spec.contexts) if design_spec.contexts else 1
