@@ -506,7 +506,7 @@ jobs:
           PR_NUMBER: ${{ github.event.number }}
         run: |
           id=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --paginate --slurp \
-            --jq "map(.[] | select(.body | contains(\"${MARKER}\")) | .id) | .[0] // empty")
+            | jq -r --arg m "${MARKER}" 'map(.[] | select(.body | contains($m)) | .id) | .[0] // empty')
           if [[ -n "${id}" && "${id}" != "null" ]]; then
             gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" -F body=@comment.md
           else
