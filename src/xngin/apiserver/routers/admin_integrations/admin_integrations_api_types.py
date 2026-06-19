@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from pydantic import Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from xngin.apiserver.routers.admin.admin_api_types import AdminApiBaseModel
 
@@ -27,18 +27,18 @@ class SetConnectionToTurnRequest(AdminApiBaseModel):
         return v
 
 
+class Journey(BaseModel):
+    name: Annotated[str, Field(description=("The name of the Turn.io journey, as defined in the Turn.io platform."))]
+    uuid: Annotated[
+        str,
+        Field(description=("The unique identifier (UUID) of the Turn.io journey, as defined in the Turn.io platform.")),
+    ]
+
+
 class GetTurnJourneysResponse(AdminApiBaseModel):
     """Response describing an organization's Turn.io journeys."""
 
-    journeys: Annotated[
-        dict[str, str],
-        Field(
-            description=(
-                "Mapping of journey names to their corresponding IDs, retrieved from the Turn API. This allows "
-                "admins to reference specific journeys when configuring experiments that integrate with Turn.io."
-            )
-        ),
-    ]
+    journeys: list[Journey]
 
 
 class GetTurnConnectionResponse(AdminApiBaseModel):
@@ -71,3 +71,14 @@ class SetTurnArmJourneyMappingRequest(AdminApiBaseModel):
 
 class GetTurnArmJourneyMappingResponse(SetTurnArmJourneyMappingRequest):
     """Response describing the mapping between experiment arms and Turn.io journeys."""
+
+    stale_arm_ids: Annotated[
+        list[str],
+        Field(
+            description=(
+                "List of experiment arm IDs that are no longer valid based on the "
+                "most recent data from the Turn API. This can be used to identify and clean up stale mappings "
+                "after changes to Turn.io journeys or API tokens."
+            )
+        ),
+    ]

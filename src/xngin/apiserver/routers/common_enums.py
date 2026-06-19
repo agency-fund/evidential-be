@@ -266,6 +266,7 @@ class ExperimentsType(enum.StrEnum):
     """
 
     MAB_ONLINE = "mab_online"
+    MAB_ONLINE_DWH = "mab_online_dwh"
     CMAB_ONLINE = "cmab_online"
     FREQ_ONLINE = "freq_online"
     FREQ_PREASSIGNED = "freq_preassigned"
@@ -276,7 +277,11 @@ class ExperimentsType(enum.StrEnum):
 
     def is_bandit(self) -> bool:
         """Returns True if the experiment type is a bandit experiment."""
-        return self in {ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE}
+        return self in {
+            ExperimentsType.MAB_ONLINE,
+            ExperimentsType.MAB_ONLINE_DWH,
+            ExperimentsType.CMAB_ONLINE,
+        }
 
     def is_cmab(self) -> bool:
         """Returns True if the experiment type is a CMAB experiment."""
