@@ -1,7 +1,7 @@
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 
-import httpx
+import httpx2
 import pytest
 
 from xngin.apiserver.conftest import DatasourceMetadata, expect_status_code
@@ -77,7 +77,7 @@ def fixture_turn_config_response(
             {"name": "Journey 1", "uuid": f"journey-{arm_ids[1]}-uuid"},
         ],
     )
-    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(httpx2, "AsyncClient", FakeAsyncClient)
 
     iaclient.set_organization_turn_connection(
         organization_id=testing_datasource.organization_id,

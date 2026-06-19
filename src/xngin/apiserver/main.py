@@ -13,7 +13,7 @@ from xngin.apiserver import (
     middleware,
     routes,
 )
-from xngin.apiserver.openapi import custom_openapi
+from xngin.apiserver.openapi import custom_openapi, humane_operation_id
 from xngin.apiserver.routers.auth import auth_dependencies
 from xngin.ops import sentry
 from xngin.xsecrets import secretservice
@@ -58,6 +58,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(
     lifespan=lifespan,
     swagger_ui_parameters={"persistAuthorization": True},
+    generate_unique_id_function=humane_operation_id,
 )
 exceptionhandlers.setup(app)
 middleware.setup(app)

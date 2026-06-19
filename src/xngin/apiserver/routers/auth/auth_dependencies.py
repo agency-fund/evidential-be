@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import Annotated
 
-import httpx
+import httpx2
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from loguru import logger
@@ -113,8 +113,8 @@ _google_config: GoogleOidcConfig | None = None
 _google_config_stampede_lock = asyncio.Lock()
 
 
-async def _fetch_object_200(client: httpx.AsyncClient, url: str):
-    """Fetches a URL using the given httpx client, parses the response as a JSON dictionary.
+async def _fetch_object_200(client: httpx2.AsyncClient, url: str):
+    """Fetches a URL using the given httpx2 client, parses the response as a JSON dictionary.
 
     Raises GoogleOidcError when the response is not a 200 status or when the response is not a dict.
     """
@@ -141,8 +141,8 @@ async def get_google_configuration() -> GoogleOidcConfig:
 
         logger.info("Fetching Google OpenID configuration")
         try:
-            transport = httpx.AsyncHTTPTransport(retries=2)
-            async with httpx.AsyncClient(transport=transport, timeout=15.0) as client:
+            transport = httpx2.AsyncHTTPTransport(retries=2)
+            async with httpx2.AsyncClient(transport=transport, timeout=15.0) as client:
                 config = await _fetch_object_200(client, GOOGLE_DISCOVERY_URL)
                 jwks_url = config.get("jwks_uri")
                 if not jwks_url:
@@ -155,7 +155,7 @@ async def get_google_configuration() -> GoogleOidcConfig:
                     config=config,
                     jwks=jwks_response,
                 )
-        except httpx.ConnectError as exc:
+        except httpx2.ConnectError as exc:
             raise ServerAppearsOfflineError("We appear to be offline.") from exc
         else:
             return _google_config

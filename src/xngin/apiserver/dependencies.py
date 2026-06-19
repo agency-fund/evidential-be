@@ -1,4 +1,4 @@
-import httpx
+import httpx2
 
 from xngin.apiserver import database
 
@@ -19,7 +19,7 @@ async def xngin_db_session():
 
 
 async def retrying_httpx_dependency():
-    """Returns a new httpx client that will retry on connection errors"""
-    transport = httpx.AsyncHTTPTransport(retries=2)
-    async with httpx.AsyncClient(transport=transport, timeout=15.0) as client:
+    """Returns a new httpx2 client that will retry on connection errors"""
+    transport = httpx2.AsyncHTTPTransport(retries=2)
+    async with httpx2.AsyncClient(transport=transport, timeout=15.0) as client:
         yield client
