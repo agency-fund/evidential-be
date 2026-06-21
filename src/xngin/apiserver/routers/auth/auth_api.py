@@ -3,7 +3,7 @@
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-import httpx
+import httpx2
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from jose import JWTError, jwt
 from loguru import logger
@@ -53,7 +53,7 @@ router = APIRouter(
 async def auth_callback(
     body: CallbackRequest,
     oidc_config: Annotated[GoogleOidcConfig, Depends(get_google_configuration)],
-    httpx_client: Annotated[httpx.AsyncClient, Depends(retrying_httpx_dependency)],
+    httpx_client: Annotated[httpx2.AsyncClient, Depends(retrying_httpx_dependency)],
     session_cryptor: Annotated[SessionTokenCryptor, Depends()],
 ) -> CallbackResponse:
     """Exchanges the OIDC authorization code and verifier for an identity token (JWT), and then creates a session token.
@@ -77,7 +77,7 @@ async def auth_callback(
 
 
 async def _exchange_code_for_idtoken(
-    oidc_config: GoogleOidcConfig, httpx_client: httpx.AsyncClient, code: str, code_verifier: str
+    oidc_config: GoogleOidcConfig, httpx_client: httpx2.AsyncClient, code: str, code_verifier: str
 ):
     token_endpoint = oidc_config.config["token_endpoint"]
     token_response = await httpx_client.post(
