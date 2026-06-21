@@ -552,9 +552,9 @@ async def get_experiment_impl(
     converter = ExperimentStorageConverter(experiment)
     assign_summary = await get_assign_summary(
         xngin_session,
-        experiment.id,
-        converter.get_balance_check(),
+        experiment_id=experiment.id,
         experiment_type=ExperimentsType(experiment.experiment_type),
+        balance_check=converter.get_balance_check(),
         include_cluster_counts=experiment.cluster_key_field() is not None,
     )
     webhook_ids = [webhook.id for webhook in experiment.webhooks]
@@ -606,10 +606,10 @@ async def list_organization_or_datasource_experiments_impl(
         converter = ExperimentStorageConverter(e)
         balance_check = converter.get_balance_check()
         assign_summary = await get_assign_summary(
-            xngin_session,
-            e.id,
-            balance_check,
+            xngin_session=xngin_session,
+            experiment_id=e.id,
             experiment_type=ExperimentsType(e.experiment_type),
+            balance_check=balance_check,
             include_cluster_counts=e.cluster_key_field() is not None,
         )
         webhook_ids = [webhook.id for webhook in e.webhooks]
@@ -1067,10 +1067,10 @@ def convert_assignment_results_to_assign_summary(
 
 async def get_assign_summary(
     xngin_session: AsyncSession,
-    experiment_id: str,
-    balance_check: BalanceCheck | None,
-    experiment_type: ExperimentsType,
     *,
+    experiment_id: str,
+    experiment_type: ExperimentsType,
+    balance_check: BalanceCheck | None,
     include_cluster_counts: bool = False,
 ) -> AssignSummary:
     """Constructs an AssignSummary from the experiment's arms and arm_assignments."""

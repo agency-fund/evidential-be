@@ -2674,7 +2674,9 @@ async def test_arm_population_counter(xngin_session, testing_datasource):
     )
 
     # Initially no arm_stats rows exist, so get_assign_summary returns zeros
-    summary = await get_assign_summary(xngin_session, experiment.id, None, ExperimentsType.FREQ_ONLINE)
+    summary = await get_assign_summary(
+        xngin_session, experiment_id=experiment.id, experiment_type=ExperimentsType.FREQ_ONLINE, balance_check=None
+    )
     assert summary.sample_size == 0
     assert summary.arm_sizes is not None
     assert all(a.size == 0 for a in summary.arm_sizes)
@@ -2693,5 +2695,7 @@ async def test_arm_population_counter(xngin_session, testing_datasource):
     assert arm_stat.population == 1
 
     # get_assign_summary reflects the new count
-    summary = await get_assign_summary(xngin_session, experiment.id, None, ExperimentsType.FREQ_ONLINE)
+    summary = await get_assign_summary(
+        xngin_session, experiment_id=experiment.id, experiment_type=ExperimentsType.FREQ_ONLINE, balance_check=None
+    )
     assert summary.sample_size == 1
