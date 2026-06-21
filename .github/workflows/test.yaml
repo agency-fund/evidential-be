@@ -75,27 +75,32 @@ jobs:
       - uses: astral-sh/setup-uv@e06108dd0aef18192324c70427afc47652e63a82 # v7.5.0
       - name: check that migrations are valid
         run: uv run atlas migrate validate --env sa_postgres
-      - name: lint migrations
+      - name: check migrations are linearly ordered
         if: github.event_name == 'pull_request'
         run: |
-          uv run atlas migrate lint --env sa_postgres --git-base origin/main | tee -a lint-output
+          # Fail if this PR adds a migration that sorts before one already on main -- the
+          # "non-linear" history that breaks deploys. We use a dependency-free git check
+          # rather than `atlas migrate lint` because that command became Atlas Pro-only
+          # (requires `atlas login`) in v0.38 and otherwise just aborts. We capture its
+          # status so the failure isn't masked, still build/post the PR comment, then fail.
+          set -o pipefail
+          lint_status=0
+          ./tools/check_migrations_linear.sh origin/main 2>&1 | tee -a lint-output || lint_status=$?
 
           {
             echo '## Migration Lint'
             echo
-            if [[ -s lint-output ]]; then
-              echo '```'
-              cat lint-output
-              echo '```'
-            else
-              echo Lint output was empty.
-            fi
+            echo '```'
+            cat lint-output
+            echo '```'
             echo
           } | tee -a migration-lint.md
 
-          if [[ -s lint-output ]]; then
+          if [[ "${lint_status}" -ne 0 ]]; then
             cat migration-lint.md >> comment.md
           fi
+
+          exit "${lint_status}"
       - name: ensure migrations have been created for the latest code changes
         run: |
           before=$(sha256sum migrations/sa_postgres/atlas.sum)
