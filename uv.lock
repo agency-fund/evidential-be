@@ -279,7 +279,7 @@ wheels = [
 
 [[package]]
 name = "fastapi"
-version = "0.135.4"
+version = "0.137.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "annotated-doc", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -288,9 +288,9 @@ dependencies = [
     { name = "typing-extensions", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "typing-inspection", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/31/1e/957e66314411255bd5c4d2c9f5259c3b3b44d8b50a702d38577c950f9d92/fastapi-0.135.4.tar.gz", hash = "sha256:d87c41b0a7bcaa6f14629d73fe48e360821605c7b6d518caacbc00dcf8fa5e0e", size = 396670, upload-time = "2026-04-16T11:39:29.385Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d5/b1/e5b92c59d2c37817e77c1a8c2fc1f79cdcc04c68253e5406b43e3204cba7/fastapi-0.137.1.tar.gz", hash = "sha256:822360704230d9533d8d9475399613525968aa2f0b5bd2a3ccc9f18c88fd541c", size = 408293, upload-time = "2026-06-15T11:28:20.79Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ef/81/32a3db8ed89cd1e616deb31aa0d9c6ec58bb712a20d4c750757d320f8ca8/fastapi-0.135.4-py3-none-any.whl", hash = "sha256:539d3531f8aba9b286ab44658344553f4a4adc218529137501e5d97be071a78b", size = 117403, upload-time = "2026-04-16T11:39:30.896Z" },
+    { url = "https://files.pythonhosted.org/packages/da/35/380b9a5922f4340e51c309cde09e5bd32e62f02302971bee30dc15aa0624/fastapi-0.137.1-py3-none-any.whl", hash = "sha256:64f6983c59e45c4b9fdc44e57cb8035c2451ee91ea8e8ec042aca37de7cf6b69", size = 121877, upload-time = "2026-06-15T11:28:19.523Z" },
 ]
 
 [package.optional-dependencies]
@@ -326,11 +326,11 @@ standard-no-fastapi-cloud-cli = [
 
 [[package]]
 name = "fastapi-typed-client"
-version = "0.3.0+evid.2.up.g321354a"
-source = { git = "https://github.com/dctaf/fastapi-typed-client-fork?rev=evid%2Fv0.3.0%2Bevid.2.up.g321354a#1549e587d27e9eb1d53b5b07373ebad2fa72b0e1" }
+version = "0.4.0+evid.1"
+source = { git = "https://github.com/dctaf/fastapi-typed-client-fork?rev=evid%2Fv0.4.0%2Bevid.1#13f515476f40cec286bd42b4931b82bcea7aaee8" }
 dependencies = [
     { name = "fastapi", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "httpx", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "httpx2", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pydantic", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "rich", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "typer", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -575,6 +575,19 @@ wheels = [
 ]
 
 [[package]]
+name = "httpcore2"
+version = "2.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "h11", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "truststore", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7b/9b/2b1d1833a58236d1f6ee755e027a3917da0db59cc9708554cefc440ee8b6/httpcore2-2.4.0.tar.gz", hash = "sha256:3093a8ab8980d9f910b9cb4351df9186a0ad2350a6284a9107ac9a362a584422", size = 64618, upload-time = "2026-06-11T06:35:53.425Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7c/72/4fdf2306143a92a471fad9f3655aa542d43aa9188a7c9534e82c9aecf837/httpcore2-2.4.0-py3-none-any.whl", hash = "sha256:5218779da5d6e3c2013ac706121abfb3815d450e0613495c0de50264dce58242", size = 80151, upload-time = "2026-06-11T06:35:50.89Z" },
+]
+
+[[package]]
 name = "httptools"
 version = "0.7.1"
 source = { registry = "https://pypi.org/simple" }
@@ -604,6 +617,21 @@ wheels = [
 ]
 
 [[package]]
+name = "httpx2"
+version = "2.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "httpcore2", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "idna", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "truststore", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fc/60/b43ced4ccf26e95b396dbf67051d3e5042b645917d4da0469dd82a3bdd4f/httpx2-2.4.0.tar.gz", hash = "sha256:32e0734b61eb0824b3f56a9e98d6d92d381a3ef12c0045aa917ee63df6c411ef", size = 81691, upload-time = "2026-06-11T06:35:54.538Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/29/45/82bc57c3d9c3314f663b67cc057f1c017a6450685dde513f4f8db5cf431f/httpx2-2.4.0-py3-none-any.whl", hash = "sha256:425acd99297829599decf6701386dd84db3542597d36d3e2e4def930ecd57fd9", size = 74941, upload-time = "2026-06-11T06:35:52.235Z" },
+]
+
+[[package]]
 name = "identify"
 version = "2.6.3"
 source = { registry = "https://pypi.org/simple" }
@@ -614,11 +642,11 @@ wheels = [
 
 [[package]]
 name = "idna"
-version = "3.16"
+version = "3.18"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/1a/88/bcf9709822fe69d02c2a6a77956c98ce6ea8ca8767a9aadcedc7eb6a2390/idna-3.16.tar.gz", hash = "sha256:d7a6da03db833450fca25d2358ac9ff06cd624577a4aea3a596d5c0f77b8e03d", size = 203770, upload-time = "2026-05-22T00:16:18.781Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/cd/63/9496c57188a2ee585e0f1db071d75089a11e98aa86eb99d9d7618fc1edce/idna-3.18.tar.gz", hash = "sha256:ffb385a7e039654cef1ab9ef32c6fafe283c0c0467bba1d9029738ce4a14a848", size = 196711, upload-time = "2026-06-02T14:34:07.794Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/94/16/70255075a9859a0e3adb789b68ceb0e210dec03934245fd98d248226572f/idna-3.16-py3-none-any.whl", hash = "sha256:cc246e3a3f89580c3a951b5ad298ca4638078b2cdd4f115654332b5c26daded5", size = 74165, upload-time = "2026-05-22T00:16:16.698Z" },
+    { url = "https://files.pythonhosted.org/packages/1e/5e/d4e9f1a599fb8e573b7b87160658329fbf28d19eac2718f51fc3def3aa5a/idna-3.18-py3-none-any.whl", hash = "sha256:7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2", size = 65455, upload-time = "2026-06-02T14:34:06.319Z" },
 ]
 
 [[package]]
@@ -969,11 +997,11 @@ wheels = [
 
 [[package]]
 name = "pluggy"
-version = "1.5.0"
+version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/96/2d/02d4312c973c6050a18b314a5ad0b3210edb65a906f868e31c111dede4a6/pluggy-1.5.0.tar.gz", hash = "sha256:2cffa88e94fdc978c4c574f15f9e59b7f4201d439195c3715ca9e2486f1d0cf1", size = 67955, upload-time = "2024-04-20T21:34:42.531Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f9/e2/3e91f31a7d2b083fe6ef3fa267035b518369d9511ffab804f839851d2779/pluggy-1.6.0.tar.gz", hash = "sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3", size = 69412, upload-time = "2025-05-15T12:30:07.975Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/88/5f/e351af9a41f866ac3f1fac4ca0613908d9a41741cfcf2228f4ad853b697d/pluggy-1.5.0-py3-none-any.whl", hash = "sha256:44e1ad92c8ca002de6377e165f3e0f1be63266ab4d554740532335b9d75ea669", size = 20556, upload-time = "2024-04-20T21:34:40.434Z" },
+    { url = "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl", hash = "sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746", size = 20538, upload-time = "2025-05-15T12:30:06.134Z" },
 ]
 
 [[package]]
@@ -1676,14 +1704,14 @@ wheels = [
 
 [[package]]
 name = "starlette"
-version = "0.49.3"
+version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/de/1a/608df0b10b53b0beb96a37854ee05864d182ddd4b1156a22f1ad3860425a/starlette-0.49.3.tar.gz", hash = "sha256:1c14546f299b5901a1ea0e34410575bc33bbd741377a10484a54445588d00284", size = 2655031, upload-time = "2025-11-01T15:12:26.13Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/eb/e3/7c1dc7381d9f8ab7d854328ebfa884e62cb3f3d8549ddfd37c7814f42afa/starlette-1.3.1.tar.gz", hash = "sha256:05d0213193f2fbaae60e2ecb593b4add4262ad4e46536b54abe36f11a71724e0", size = 2703240, upload-time = "2026-06-12T09:23:11.602Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a3/e0/021c772d6a662f43b63044ab481dc6ac7592447605b5b35a957785363122/starlette-0.49.3-py3-none-any.whl", hash = "sha256:b579b99715fdc2980cf88c8ec96d3bf1ce16f5a8051a7c2b84ef9b1cdecaea2f", size = 74340, upload-time = "2025-11-01T15:12:24.387Z" },
+    { url = "https://files.pythonhosted.org/packages/ec/bb/2799cc2ede3ed41131f8975621e7213dfc7ef4acbbaadfa440f32500c370/starlette-1.3.1-py3-none-any.whl", hash = "sha256:c7372aae11c3c3f26a42df7bd626cec2f47d03483d261d369516a615a53714c6", size = 73632, upload-time = "2026-06-12T09:23:10.017Z" },
 ]
 
 [[package]]
@@ -1712,6 +1740,15 @@ version = "0.1.3"
 source = { git = "https://github.com/agency-fund/stochatreat?rev=prod#245e7decad625b0547da95222c02eac6b748a1e3" }
 dependencies = [
     { name = "pandas", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
+
+[[package]]
+name = "truststore"
+version = "0.10.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/53/a3/1585216310e344e8102c22482f6060c7a6ea0322b63e026372e6dcefcfd6/truststore-0.10.4.tar.gz", hash = "sha256:9d91bd436463ad5e4ee4aba766628dd6cd7010cf3e2461756b3303710eebc301", size = 26169, upload-time = "2025-08-12T18:49:02.73Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/19/97/56608b2249fe206a67cd573bc93cd9896e1efb9e98bce9c163bcdc704b88/truststore-0.10.4-py3-none-any.whl", hash = "sha256:adaeaecf1cbb5f4de3b1959b42d41f6fab57b2b1666adb59e89cb0b53361d981", size = 18660, upload-time = "2025-08-12T18:49:01.46Z" },
 ]
 
 [[package]]
@@ -1943,7 +1980,7 @@ dependencies = [
     { name = "email-validator", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "fastapi", extra = ["standard-no-fastapi-cloud-cli"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "google-cloud-kms", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "httpx", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "httpx2", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "loguru", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "orjson", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -1960,6 +1997,7 @@ dependencies = [
     { name = "sentry-sdk", extra = ["fastapi", "loguru", "sqlalchemy"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "sqlalchemy", extra = ["asyncio"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "sqlalchemy-bigquery", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "starlette", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "statsmodels", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "stochatreat", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "typer", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -1998,9 +2036,9 @@ requires-dist = [
     { name = "cachetools", specifier = ">=5.5.2" },
     { name = "dnspython", specifier = ">=2.7.0" },
     { name = "email-validator", specifier = ">=2.2.0" },
-    { name = "fastapi", extras = ["standard-no-fastapi-cloud-cli"], specifier = ">=0.135.3,<0.136" },
+    { name = "fastapi", extras = ["standard-no-fastapi-cloud-cli"], specifier = ">=0.137.1,<0.138" },
     { name = "google-cloud-kms", specifier = ">=3.7.0,<4" },
-    { name = "httpx", specifier = ">=0.28.1,<0.29.0" },
+    { name = "httpx2", specifier = ">=2.4.0,<3" },
     { name = "loguru", specifier = ">=0.7.3,<0.8.0" },
     { name = "numpy", specifier = ">=2.3,<2.4" },
     { name = "orjson", specifier = ">=3.11.7,<4" },
@@ -2017,6 +2055,7 @@ requires-dist = [
     { name = "sentry-sdk", extras = ["fastapi", "loguru", "sqlalchemy"], specifier = ">=2.47.0,<3" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.48,<2.1" },
     { name = "sqlalchemy-bigquery", specifier = ">=1.16.0,<2" },
+    { name = "starlette", specifier = ">=1.3.1,<2" },
     { name = "statsmodels", specifier = ">=0.14.5,<0.20" },
     { name = "stochatreat", git = "https://github.com/agency-fund/stochatreat?rev=prod" },
     { name = "typer", specifier = ">=0.26.7,<0.27" },
@@ -2029,7 +2068,7 @@ dev = [
     { name = "boto3-stubs", specifier = ">=1.39.1" },
     { name = "coverage", specifier = ">=7.11.0" },
     { name = "deepdiff", specifier = ">=8.6.2,<9" },
-    { name = "fastapi-typed-client", git = "https://github.com/dctaf/fastapi-typed-client-fork?rev=evid%2Fv0.3.0%2Bevid.2.up.g321354a" },
+    { name = "fastapi-typed-client", git = "https://github.com/dctaf/fastapi-typed-client-fork?rev=evid%2Fv0.4.0%2Bevid.1" },
     { name = "mypy", specifier = ">=1.19.1" },
     { name = "pandas-stubs", specifier = ">=2.3.2" },
     { name = "pre-commit", specifier = ">=4.5.0,<4.6.0" },
