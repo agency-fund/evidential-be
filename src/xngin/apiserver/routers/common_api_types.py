@@ -1016,7 +1016,7 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
         if self.prior_type == PriorTypes.BETA:
             if not self.reward_type == LikelihoodTypes.BERNOULLI:
                 raise ValueError("Beta prior can only be used with binary-valued rewards.")
-            if self.experiment_type != ExperimentsType.MAB_ONLINE:
+            if self.experiment_type not in {ExperimentsType.MAB_ONLINE, ExperimentsType.MAB_ONLINE_DWH}:
                 raise ValueError(f"Experiments of type {self.experiment_type} can only use Gaussian priors.")
 
         return self
@@ -1081,6 +1081,46 @@ class MABExperimentSpec(BaseBanditExperimentSpec):
     experiment_type: Literal[ExperimentsType.MAB_ONLINE] = ExperimentsType.MAB_ONLINE
 
 
+class MABDwhExperimentSpec(BaseBanditExperimentSpec):
+    """Use this type for a MAB experiment whose outcome (target) column is bound at design time to
+    a column in a connected data warehouse table.
+
+    The server resolves the target column's data type from the DWH at experiment-create time and
+    persists it on the experiment. Subsequent outcome reports are type-checked against that stored
+    type. The DWH is consulted at design time only; outcome values still arrive via the existing
+    push API."""
+
+    experiment_type: Literal[ExperimentsType.MAB_ONLINE_DWH] = ExperimentsType.MAB_ONLINE_DWH
+
+    table_name: Annotated[
+        str,
+        Field(
+            max_length=MAX_LENGTH_OF_NAME_VALUE,
+            description="Datasource table used to resolve target field metadata.",
+        ),
+    ]
+    primary_key: Annotated[
+        FieldName,
+        Field(description="Column name in table_name that uniquely identifies each participant."),
+    ]
+    target_field_name: Annotated[
+        FieldName,
+        Field(
+            description=(
+                "Column name in table_name whose values this bandit optimises. "
+                "Its data type is resolved from the DWH at create-time and used to validate "
+                "subsequent outcome reports."
+            ),
+        ),
+    ]
+
+    @model_validator(mode="after")
+    def check_primary_key_and_target_differ(self) -> Self:
+        if self.primary_key == self.target_field_name:
+            raise ValueError("primary_key and target_field_name must refer to different columns")
+        return self
+
+
 class CMABExperimentSpec(BaseBanditExperimentSpec):
     """Describes a Contextual Multi-armed Bandit (CMAB) experiment.
 
@@ -1100,7 +1140,7 @@ type AnyFrequentistDesignSpec = Annotated[
 ]
 
 type AnyBanditDesignSpec = Annotated[
-    MABExperimentSpec | CMABExperimentSpec,
+    MABExperimentSpec | MABDwhExperimentSpec | CMABExperimentSpec,
     Field(
         discriminator="experiment_type",
         description="The specific type of bandit experiment design.",

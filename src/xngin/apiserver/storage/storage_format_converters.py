@@ -128,6 +128,17 @@ def _make_freq_experiment_fields(
     return list(fields_used_map.values())
 
 
+def _make_mab_dwh_experiment_fields(
+    design_spec: capi.MABDwhExperimentSpec,
+    field_type_map: dict[str, DataType],
+) -> list[tables.ExperimentField]:
+    """Make the primary_key and target ExperimentField objects for a MAB-DWH experiment."""
+    fields_used_map: dict[str, tables.ExperimentField] = {}
+    _upsert_field_used(design_spec.primary_key, field_type_map, fields_used_map, is_unique_id=True)
+    _upsert_field_used(design_spec.target_field_name, field_type_map, fields_used_map, is_target=True)
+    return list(fields_used_map.values())
+
+
 def _make_experiment_fields_from_design_spec(
     design_spec: capi.DesignSpec,
     field_type_map: dict[str, DataType] | None = None,
@@ -137,6 +148,8 @@ def _make_experiment_fields_from_design_spec(
     match design_spec:
         case capi.MABExperimentSpec() | capi.CMABExperimentSpec():
             return []
+        case capi.MABDwhExperimentSpec():
+            return _make_mab_dwh_experiment_fields(design_spec, field_type_map)
         case capi.PreassignedFrequentistExperimentSpec() | capi.OnlineFrequentistExperimentSpec():
             return _make_freq_experiment_fields(design_spec, field_type_map)
         case _:
@@ -283,6 +296,7 @@ class ExperimentStorageConverter:
 
         if self.experiment.experiment_type in {
             ExperimentsType.MAB_ONLINE.value,
+            ExperimentsType.MAB_ONLINE_DWH.value,
             ExperimentsType.CMAB_ONLINE.value,
         }:
             if not self.experiment.prior_type or not self.experiment.reward_type:
@@ -299,8 +313,25 @@ class ExperimentStorageConverter:
                     for context in self.experiment.contexts
                 ]
 
+            mab_dwh_fields: dict[str, Any] = {}
+            if self.experiment.experiment_type == ExperimentsType.MAB_ONLINE_DWH.value:
+                await self.experiment.awaitable_attrs.experiment_fields
+                primary_key_field = self.experiment.unique_id_field()
+                target_field = next(f for f in self.experiment.experiment_fields if f.is_target)
+                if self.experiment.datasource_table is None or primary_key_field is None:
+                    raise ValueError(
+                        f"MAB-DWH experiment {self.experiment.id} "
+                        "is missing datasource_table or unique participant key field."
+                    )
+                mab_dwh_fields = {
+                    "table_name": self.experiment.datasource_table,
+                    "primary_key": primary_key_field.field_name,
+                    "target_field_name": target_field.field_name,
+                }
+
             return TypeAdapter(capi.DesignSpec).validate_python({
                 **base_experiment_dict,
+                **mab_dwh_fields,
                 "arms": [
                     {
                         "arm_id": arm.id,
@@ -442,9 +473,13 @@ class ExperimentStorageConverter:
                 )
                 return cls(experiment)
 
-            case capi.MABExperimentSpec() | capi.CMABExperimentSpec():
+            case capi.MABExperimentSpec() | capi.MABDwhExperimentSpec() | capi.CMABExperimentSpec():
                 if isinstance(design_spec, capi.CMABExperimentSpec) and not design_spec.contexts:
                     raise ValueError(f"CMAB experiment {experiment.id} must have contexts set.")
+
+                if isinstance(design_spec, capi.MABDwhExperimentSpec):
+                    experiment.datasource_table = design_spec.table_name
+                    experiment.experiment_fields = _make_experiment_fields_from_design_spec(design_spec, field_type_map)
 
                 # Set bandit fields
                 context_len = len(design_spec.contexts) if design_spec.contexts else 1

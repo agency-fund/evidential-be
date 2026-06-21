@@ -137,6 +137,8 @@ class TurnConnection(Base):
     One connection per organization. The API token is encrypted at rest; call
     get_turn_api_token() to retrieve the plaintext when making outbound requests
     to Turn, and set_turn_api_token() to configure or rotate it.
+
+    Also stores a list of Journeys retrieved from the Turn API
     """
 
     __tablename__ = "turn_connections"
@@ -145,8 +147,7 @@ class TurnConnection(Base):
     encrypted_turn_api_token: Mapped[str] = mapped_column()
     turn_api_token_preview: Mapped[str] = mapped_column(String(4))
 
-    cached_journeys: Mapped[dict | None] = mapped_column(postgresql.JSONB)
-    cached_journeys_updated_at: Mapped[datetime | None] = mapped_column()
+    journeys_dict: Mapped[dict | None] = mapped_column(postgresql.JSONB)
 
     created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -157,12 +158,9 @@ class TurnConnection(Base):
     organization: Mapped[Organization] = relationship(back_populates="turn_connection")
 
     def set_turn_api_token(self, token: str) -> Self:
-        """Encrypts and stores the Turn.io API token, records its preview, and invalidates
-        the cached journey list so the next read refetches from Turn."""
+        """Encrypts and stores the Turn.io API token, records its preview."""
         self.encrypted_turn_api_token = secretservice.get_symmetric().encrypt(token, f"turn.{self.organization_id}")
         self.turn_api_token_preview = token[-4:]
-        self.cached_journeys = None
-        self.cached_journeys_updated_at = None
         return self
 
     def get_turn_api_token(self) -> str:
@@ -664,6 +662,10 @@ class ExperimentField(Base):
     is_primary_metric: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
     metric_pct_change: Mapped[float | None] = mapped_column(Float)
     metric_target: Mapped[float | None] = mapped_column(Float)
+    # Bandit target metadata:
+    # is_target is true when this field is the DWH-backed outcome column that a bandit (e.g. MAB-DWH)
+    # optimises. The stored data_type is used to validate incoming outcome reports.
+    is_target: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
     # Filters metadata: not here, but determined by joining with ExperimentFilter
 
     @hybrid_property
