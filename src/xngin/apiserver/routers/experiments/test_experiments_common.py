@@ -749,22 +749,35 @@ async def test_create_preassigned_experiment_impl_cluster_assignment(xngin_sessi
 
     create_summary = response.assign_summary
     assert create_summary is not None
-    assert create_summary.arm_cluster_counts is not None
+    assert create_summary.arm_sizes is not None
     clusters_by_arm: dict[str, set[str]] = defaultdict(set)
     for row in assignment_rows:
         assert row.cluster_key is not None
         clusters_by_arm[row.arm_id].add(row.cluster_key)
-    for arm_cluster in create_summary.arm_cluster_counts:
-        arm_id = arm_cluster.arm.arm_id
+    for arm_size in create_summary.arm_sizes:
+        arm_id = arm_size.arm.arm_id
         assert arm_id is not None
-        assert arm_cluster.size == len(clusters_by_arm[arm_id])
-    assert sum(arm_cluster.size for arm_cluster in create_summary.arm_cluster_counts) == len(arms_by_cluster)
+        assert arm_size.cluster_count is not None
+        assert arm_size.cluster_count == len(clusters_by_arm[arm_id])
+    cluster_counts = [
+        arm_size.cluster_count for arm_size in create_summary.arm_sizes if arm_size.cluster_count is not None
+    ]
+    assert sum(cluster_counts) == len(arms_by_cluster)
 
     experiment = await get_experiment_preloaded(xngin_session, response.experiment_id)
     get_response = await get_experiment_impl(xngin_session, experiment)
     get_summary = get_response.assign_summary
     assert get_summary is not None
-    assert get_summary.arm_cluster_counts == create_summary.arm_cluster_counts
+    assert get_summary.arm_sizes is not None
+    for create_arm, get_arm in zip(create_summary.arm_sizes, get_summary.arm_sizes, strict=True):
+        assert create_arm.arm.arm_id == get_arm.arm.arm_id
+        assert create_arm.size == get_arm.size
+        assert create_arm.cluster_count == get_arm.cluster_count
+    for arm_size in get_summary.arm_sizes:
+        arm_id = arm_size.arm.arm_id
+        assert arm_id is not None
+        assert arm_size.cluster_count is not None
+        assert arm_size.cluster_count == len(clusters_by_arm[arm_id])
 
 
 async def _create_clustered_preassigned_experiment(
@@ -2648,11 +2661,9 @@ def test_convert_assignment_results_to_assign_summary_includes_cluster_counts():
 
     assert summary.sample_size == 5
     assert summary.arm_sizes is not None
-    assert [(arm_size.arm.arm_id, arm_size.size) for arm_size in summary.arm_sizes] == [("arm_1", 2), ("arm_2", 3)]
-    assert summary.arm_cluster_counts is not None
-    assert [(arm_size.arm.arm_id, arm_size.size) for arm_size in summary.arm_cluster_counts] == [
-        ("arm_1", 1),
-        ("arm_2", 2),
+    assert [(arm_size.arm.arm_id, arm_size.size, arm_size.cluster_count) for arm_size in summary.arm_sizes] == [
+        ("arm_1", 2, 1),
+        ("arm_2", 3, 2),
     ]
 
 

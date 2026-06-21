@@ -1311,6 +1311,10 @@ class ArmSize(ApiBaseModel):
 
     arm: Arm
     size: int = 0
+    cluster_count: Annotated[
+        int | None,
+        Field(description="The number of clusters assigned to this arm. Set only on cluster-randomized experiments."),
+    ] = None
 
 
 class CreateExperimentRequest(ApiBaseModel):
@@ -1346,14 +1350,7 @@ class AssignSummary(ApiBaseModel):
     arm_sizes: Annotated[
         list[ArmSize] | None,
         Field(
-            description="For each arm, the number of participants assigned.",
-            max_length=MAX_NUMBER_OF_ARMS,
-        ),
-    ] = None
-    arm_cluster_counts: Annotated[
-        list[ArmSize] | None,
-        Field(
-            description="For each arm, the number of clusters assigned.",
+            description="For each arm, the number of participants (and optionally clusters) assigned.",
             max_length=MAX_NUMBER_OF_ARMS,
         ),
     ] = None

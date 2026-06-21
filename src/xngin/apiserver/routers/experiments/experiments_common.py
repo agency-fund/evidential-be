@@ -1052,22 +1052,15 @@ def convert_assignment_results_to_assign_summary(
         ArmSize(
             arm=Arm(arm_id=arm.id, arm_name=arm.name),
             size=int(counts[i]),
+            cluster_count=(
+                None if assignment_result.arm_cluster_pop is None else int(assignment_result.arm_cluster_pop[i])
+            ),
         )
         for i, arm in enumerate(arms)
     ]
-    arm_cluster_counts = None
-    if assignment_result.arm_cluster_pop is not None:
-        arm_cluster_counts = [
-            ArmSize(
-                arm=Arm(arm_id=arm.id, arm_name=arm.name),
-                size=int(assignment_result.arm_cluster_pop[i]),
-            )
-            for i, arm in enumerate(arms)
-        ]
     return AssignSummary(
         balance_check=balance_check,
         arm_sizes=arm_sizes,
-        arm_cluster_counts=arm_cluster_counts,
         sample_size=len(assignment_result.treatment_ids),
     )
 
@@ -1091,20 +1084,12 @@ async def get_assign_summary(
         .where(tables.Arm.experiment_id == experiment_id)
         .order_by(tables.Arm.position)
     )
-    arm_sizes = [
-        ArmSize(
-            arm=Arm(arm_id=arm_id, arm_name=name),
-            size=count,
-        )
-        for arm_id, name, count in result
-    ]
 
-    arm_cluster_counts = None
+    cluster_count_by_arm_id: dict[str, int] = {}
     if include_cluster_counts:
         cluster_result = await xngin_session.execute(
             select(
                 tables.Arm.id,
-                tables.Arm.name,
                 func.count(tables.ArmAssignment.cluster_key.distinct()),
             )
             .outerjoin(
@@ -1112,16 +1097,18 @@ async def get_assign_summary(
                 (tables.Arm.id == tables.ArmAssignment.arm_id) & (tables.ArmAssignment.experiment_id == experiment_id),
             )
             .where(tables.Arm.experiment_id == experiment_id)
-            .group_by(tables.Arm.id, tables.Arm.name, tables.Arm.position)
-            .order_by(tables.Arm.position)
+            .group_by(tables.Arm.id)
         )
-        arm_cluster_counts = [
-            ArmSize(
-                arm=Arm(arm_id=arm_id, arm_name=name),
-                size=cluster_count,
-            )
-            for arm_id, name, cluster_count in cluster_result
-        ]
+        cluster_count_by_arm_id = {arm_id: cluster_count for arm_id, cluster_count in cluster_result}
+
+    arm_sizes = [
+        ArmSize(
+            arm=Arm(arm_id=arm_id, arm_name=name),
+            size=count,
+            cluster_count=cluster_count_by_arm_id.get(arm_id, 0) if include_cluster_counts else None,
+        )
+        for arm_id, name, count in result
+    ]
 
     if experiment_type in {ExperimentsType.MAB_ONLINE, ExperimentsType.MAB_ONLINE_DWH, ExperimentsType.CMAB_ONLINE}:
         balance_check = None
@@ -1129,7 +1116,6 @@ async def get_assign_summary(
     return AssignSummary(
         balance_check=balance_check,
         arm_sizes=arm_sizes,
-        arm_cluster_counts=arm_cluster_counts,
         sample_size=sum(arm_size.size for arm_size in arm_sizes),
     )
 
