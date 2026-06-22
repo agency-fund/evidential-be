@@ -13,7 +13,7 @@ import secrets
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
-import httpx
+import httpx2
 from fastapi import (
     APIRouter,
     Body,
@@ -82,14 +82,14 @@ TURN_ARM_JOURNEY_MAPPING_RESPONSES: dict[str | int, dict[str, Any]] = {
 
 
 async def _call_turn_api(
-    httpx_client: httpx.AsyncClient,
+    httpx_client: httpx2.AsyncClient,
     turn_api_token: str,
     method: str,
 ) -> list[Journey]:
     """
     Wrapper for outbound Turn.io API calls to standardize error handling.
 
-    Any non-2xx response from Turn.io and httpx.RequestErrors (e.g. network issues, timeouts) are logged
+    Any non-2xx response from Turn.io and httpx2.RequestErrors (e.g. network issues, timeouts) are logged
     and re-raised as 502 HTTP exceptions, but with appropriate status codes and error messages
     reproduced for debugging.
     """
@@ -104,13 +104,13 @@ async def _call_turn_api(
         response.raise_for_status()
         journeys = [Journey.model_validate(journey) for journey in response.json()]
 
-    except httpx.RequestError as exc:
+    except httpx2.RequestError as exc:
         logger.error(f"Error calling Turn.io API at {method} {TURN_JOURNEYS_URL}: {exc}")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Failed to reach Turn.io API. Details: {exc}",
         ) from exc
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         logger.error(
             f"Turn.io API returned non-2xx status at {method} {TURN_JOURNEYS_URL}:"
             + f"{exc.response.status_code} - {exc.response.text}"
@@ -129,7 +129,7 @@ async def _call_turn_api(
     return journeys
 
 
-async def refresh_journeys_dict(turn_api_token: str, httpx_client: httpx.AsyncClient) -> list[Journey]:
+async def refresh_journeys_dict(turn_api_token: str, httpx_client: httpx2.AsyncClient) -> list[Journey]:
     """Refreshes the cached Turn.io journeys on the TurnConnection.
 
     Returns the updated journey list.
@@ -160,7 +160,7 @@ async def set_organization_turn_connection(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
     body: Annotated[SetConnectionToTurnRequest, Body(...)],
-    httpx_client: Annotated[httpx.AsyncClient, Depends(retrying_httpx_dependency)],
+    httpx_client: Annotated[httpx2.AsyncClient, Depends(retrying_httpx_dependency)],
 ) -> AddWebhookToOrganizationResponse:
     """Sets (or rotates) the Turn.io API token for an organization.
 

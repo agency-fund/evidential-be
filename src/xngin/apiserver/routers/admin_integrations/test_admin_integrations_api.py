@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from typing import ClassVar
 
-import httpx
+import httpx2
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,10 +41,10 @@ class FakeAsyncClient:
 
     async def request(self, method, url, headers=None):
         FakeAsyncClient.call_log += 1
-        return httpx.Response(
+        return httpx2.Response(
             status_code=FakeAsyncClient.expected_status,
             json=list(FakeAsyncClient.stacks),
-            request=httpx.Request(method, url),
+            request=httpx2.Request(method, url),
         )
 
 
@@ -73,7 +73,7 @@ async def test_turn_connection_lifecycle(
     """Test creating, rotating, previewing, and deleting an organization's Turn.io connection."""
     monkeypatch.setattr(FakeAsyncClient, "call_log", 0)
     monkeypatch.setattr(FakeAsyncClient, "stacks", [{"name": "Arm A", "uuid": "arm-a-uuid"}])
-    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(httpx2, "AsyncClient", FakeAsyncClient)
 
     org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="test_turn_connection_lifecycle")).data.id
 
@@ -150,7 +150,7 @@ async def test_turn_connection_encrypted_at_rest(
     """The Turn.io API token must be encrypted at rest and recoverable via get_turn_api_token()."""
     monkeypatch.setattr(FakeAsyncClient, "call_log", 0)
     monkeypatch.setattr(FakeAsyncClient, "stacks", [{"name": "Arm A", "uuid": "arm-a-uuid"}])
-    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(httpx2, "AsyncClient", FakeAsyncClient)
 
     org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="test_turn_connection_encrypted")).data.id
 
@@ -177,7 +177,7 @@ async def test_turn_journeys_api_error_handling(
     """GET /turn-connection/journeys must handle errors from the Turn API gracefully."""
     # Reset the FakeAsyncClient's class-level state before the test.
     monkeypatch.setattr(FakeAsyncClient, "call_log", 0)
-    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(httpx2, "AsyncClient", FakeAsyncClient)
 
     org_id = aclient.create_organizations(
         body=CreateOrganizationRequest(name="test_turn_journeys_api_error_handling")
@@ -205,7 +205,7 @@ async def test_turn_journeys_api_error_handling(
 
     # Simulate a network error.
     async def _raise_request_error(self, method, url, headers=None):
-        raise httpx.RequestError("Network error", request=httpx.Request(method, url))
+        raise httpx2.RequestError("Network error", request=httpx2.Request(method, url))
 
     monkeypatch.setattr(FakeAsyncClient, "request", _raise_request_error)
     with expect_status_code(502, text="Failed to reach Turn.io API"):
@@ -239,7 +239,7 @@ async def test_turn_journey_mapping_lifecycle(
         "stacks",
         [{"name": "journey-0", "uuid": "journey-0-uuid"}, {"name": "journey-1", "uuid": "journey-1-uuid"}],
     )
-    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(httpx2, "AsyncClient", FakeAsyncClient)
 
     # PUT without a Turn connection configured for the org -> 409.
     with expect_status_code(409, text="No Turn.io connection"):
@@ -338,7 +338,7 @@ async def test_turn_journey_mapping_rejects_mismatched_arm_ids(
         "stacks",
         [{"name": "journey-0", "uuid": "journey-0-uuid"}, {"name": "journey-1", "uuid": "journey-1-uuid"}],
     )
-    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(httpx2, "AsyncClient", FakeAsyncClient)
 
     iaclient.set_organization_turn_connection(
         organization_id=org_id,
@@ -379,7 +379,7 @@ async def test_regenerate_turn_webhook_token(
     """Regenerating the webhook token rotates the auth_token without changing the Turn connection."""
     monkeypatch.setattr(FakeAsyncClient, "call_log", 0)
     monkeypatch.setattr(FakeAsyncClient, "stacks", [{"name": "Arm A", "uuid": "arm-a-uuid"}])
-    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(httpx2, "AsyncClient", FakeAsyncClient)
 
     org_id = aclient.create_organizations(
         body=CreateOrganizationRequest(name="test_regenerate_turn_webhook_token")
@@ -430,7 +430,7 @@ async def test_resetting_same_token_preserves_arm_journey_mapping(
         "stacks",
         [{"name": "journey-0", "uuid": "journey-0-uuid"}, {"name": "journey-1", "uuid": "journey-1-uuid"}],
     )
-    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(httpx2, "AsyncClient", FakeAsyncClient)
 
     token = "a" * 335
     iaclient.set_organization_turn_connection(

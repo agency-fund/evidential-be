@@ -90,7 +90,7 @@ def export_openapi_spec(output: Path = Path("openapi.json")):
 
     import xngin.apiserver.openapi  # noqa: PLC0415
 
-    app = FastAPI()
+    app = FastAPI(generate_unique_id_function=xngin.apiserver.openapi.humane_operation_id)
     from xngin.apiserver import routes  # noqa: PLC0415
 
     routes.register(app)

@@ -2,7 +2,7 @@
 
 from urllib.parse import urlparse, urlunparse
 
-import httpx
+import httpx2
 import sqlalchemy
 from fastapi import HTTPException
 from loguru import logger
@@ -58,13 +58,13 @@ def _record_turn_journeys_changed_event(
     )
 
 
-def make_webhook_outbound_handler(dsn: str, *, transport: httpx.BaseTransport | None = None):
+def make_webhook_outbound_handler(dsn: str, *, transport: httpx2.BaseTransport | None = None):
     """Returns a webhook outbound handler bound with the DSN via a SQLAlchemy engine.
 
     Also creates an entry in the Event table with information that will be useful for
     customers when debugging.
 
-    ``transport`` is forwarded to ``httpx.Client`` and exists primarily for testing.
+    ``transport`` is forwarded to ``httpx2.Client`` and exists primarily for testing.
     """
     engine = sqlalchemy.create_engine(
         dsn, connect_args={"application_name": TQ_DB_APPLICATION_NAME}, poolclass=NullPool
@@ -110,8 +110,8 @@ def make_webhook_outbound_handler(dsn: str, *, transport: httpx.BaseTransport | 
 
                 extensions = {"sni_hostname": hostname} if scheme == "https" else None
 
-                response: httpx.Response | None = None
-                with httpx.Client(timeout=10.0, transport=transport) as client:
+                response: httpx2.Response | None = None
+                with httpx2.Client(timeout=10.0, transport=transport) as client:
                     response = client.request(
                         request.method,
                         connect_url,
@@ -143,7 +143,7 @@ def make_webhook_outbound_handler(dsn: str, *, transport: httpx.BaseTransport | 
                     log_exc_message=message,
                 )
                 raise
-            except httpx.HTTPError as err:
+            except httpx2.HTTPError as err:
                 message = f"status={response.status_code} message={err!s}" if response else str(err)
                 _record_webhook_sent_event(
                     session,
@@ -198,8 +198,8 @@ def make_turn_journeys_changed_handler(dsn: str):
                     )
                     raise ValueError(f"No Turn connection found for organization {request.organization_id}")
 
-                transport = httpx.AsyncHTTPTransport(retries=3)
-                async with httpx.AsyncClient(transport=transport) as client:
+                transport = httpx2.AsyncHTTPTransport(retries=3)
+                async with httpx2.AsyncClient(transport=transport) as client:
                     journeys = await refresh_journeys_dict(turn_connection.get_turn_api_token(), client)
                     turn_connection.journeys_dict = {journey.name: journey.uuid for journey in journeys}
 

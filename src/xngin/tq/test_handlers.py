@@ -1,4 +1,4 @@
-import httpx
+import httpx2
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,7 +61,7 @@ async def test_webhook_outbound_handler_records_success_event(
 ):
     org_id = _create_organization(aclient, "test-webhook-success")
 
-    transport = httpx.MockTransport(lambda request: httpx.Response(200, request=request))
+    transport = httpx2.MockTransport(lambda request: httpx2.Response(200, request=request))
     task_queue = TaskQueue(dsn=tq_dsn, max_retries=0, poll_interval_secs=1)
     task_queue.register_handler(WEBHOOK_OUTBOUND_TASK_TYPE, make_webhook_outbound_handler(tq_dsn, transport=transport))
     with tq_runner(task_queue):
@@ -94,16 +94,16 @@ async def test_webhook_outbound_handler_preserves_url_credentials(
 ):
     org_id = _create_organization(aclient, "test-webhook-url-credentials")
 
-    captured_requests: list[httpx.Request] = []
+    captured_requests: list[httpx2.Request] = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         captured_requests.append(request)
-        return httpx.Response(200, request=request)
+        return httpx2.Response(200, request=request)
 
     task_queue = TaskQueue(dsn=tq_dsn, max_retries=0, poll_interval_secs=1)
     task_queue.register_handler(
         WEBHOOK_OUTBOUND_TASK_TYPE,
-        make_webhook_outbound_handler(tq_dsn, transport=httpx.MockTransport(handler)),
+        make_webhook_outbound_handler(tq_dsn, transport=httpx2.MockTransport(handler)),
     )
     with tq_runner(task_queue):
         task = await insert_task(
@@ -124,7 +124,7 @@ async def test_webhook_outbound_handler_preserves_url_credentials(
     assert request.headers["host"] == "localhost:8000"
     assert request.url.username == "infra"
     assert request.url.password == "password"
-    # Credentials in the URL are emitted as a Basic auth header by httpx
+    # Credentials in the URL are emitted as a Basic auth header by httpx2
     assert request.headers["authorization"] == "Basic aW5mcmE6cGFzc3dvcmQ="
 
 
@@ -140,7 +140,7 @@ async def test_turn_journeys_changed_handler_updates_journeys_and_records_succes
 
     monkeypatch.setattr(FakeAsyncClient, "call_log", 0)
     monkeypatch.setattr(FakeAsyncClient, "stacks", [{"name": "Arm A", "uuid": "arm-a-uuid"}])
-    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(httpx2, "AsyncClient", FakeAsyncClient)
 
     iaclient.set_organization_turn_connection(
         organization_id=org_id,
@@ -194,7 +194,7 @@ async def test_turn_journeys_changed_handler_records_failure_event_when_turn_api
 
     monkeypatch.setattr(FakeAsyncClient, "call_log", 0)
     monkeypatch.setattr(FakeAsyncClient, "stacks", [{"name": "Arm A", "uuid": "arm-a-uuid"}])
-    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(httpx2, "AsyncClient", FakeAsyncClient)
 
     iaclient.set_organization_turn_connection(
         organization_id=org_id,
