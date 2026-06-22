@@ -77,6 +77,16 @@ async def get_turn_app_config(
 @router.post(
     "/integrations/turn/webhook/{webhook_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        "401": {
+            "model": dict,
+            "description": "The provided Webhook-Token does not match the token configured for this webhook.",
+        },
+        "404": {
+            "model": dict,
+            "description": "The specified webhook was not found.",
+        },
+    },
 )
 async def turn_webhook(
     webhook_id: str,

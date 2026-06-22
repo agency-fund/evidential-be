@@ -200,7 +200,8 @@ def make_turn_journeys_changed_handler(dsn: str):
 
                 transport = httpx.AsyncHTTPTransport(retries=3)
                 async with httpx.AsyncClient(transport=transport) as client:
-                    await refresh_journeys_dict(turn_connection.get_turn_api_token(), client)
+                    journeys = await refresh_journeys_dict(turn_connection.get_turn_api_token(), client)
+                    turn_connection.journeys_dict = {journey.name: journey.uuid for journey in journeys}
 
                 _record_turn_journeys_changed_event(
                     session,

@@ -500,6 +500,7 @@ class IntegrationsAPIClient:
     ) -> (
         IntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
         | IntegrationsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], dict]
+        | IntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], dict]
         | IntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], dict]
         | IntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], dict]
         | IntegrationsAPIClientResult[
@@ -516,6 +517,7 @@ class IntegrationsAPIClient:
     ) -> (
         IntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
         | IntegrationsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], dict]
+        | IntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], dict]
         | IntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], dict]
         | IntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], dict]
         | IntegrationsAPIClientResult[
@@ -526,6 +528,7 @@ class IntegrationsAPIClient:
             (
                 IntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
                 | IntegrationsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], dict]
+                | IntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], dict]
                 | IntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], dict]
                 | IntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], dict]
                 | IntegrationsAPIClientResult[
@@ -539,6 +542,7 @@ class IntegrationsAPIClient:
                 models={
                     HTTPStatus.NO_CONTENT: Any,
                     HTTPStatus.BAD_REQUEST: dict,
+                    HTTPStatus.UNAUTHORIZED: dict,
                     HTTPStatus.FORBIDDEN: dict,
                     HTTPStatus.NOT_FOUND: dict,
                     HTTPStatus.UNPROCESSABLE_CONTENT: IntegrationsAPIClientHTTPValidationError,

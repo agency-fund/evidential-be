@@ -194,7 +194,7 @@ async def set_organization_turn_connection(
         session.add(turn_connection)
 
     if turn_webhook is None:
-        auth_token, turn_webhook = admin_common.create_webhook_impl(
+        _, turn_webhook = admin_common.create_webhook_impl(
             session=session,
             org_id=org.id,
             webhook=admin_common.AddWebhookToOrganizationRequest(
@@ -231,7 +231,7 @@ async def set_organization_turn_connection(
         type=turn_webhook.type,
         name=turn_webhook.name,
         url=turn_webhook.url,
-        auth_token=auth_token,
+        auth_token=turn_webhook.auth_token,
     )
 
 
@@ -264,12 +264,12 @@ async def get_organization_turn_connection(
             )
         )
     ).scalar_one_or_none()
-    if (webhook is None) or (webhook.auth_token is None):
+    if (webhook is None or webhook.auth_token is None) and not allow_missing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Turn journey changed webhook not found")
 
     return GetTurnConnectionResponse(
         token_preview=turn_connection.turn_api_token_preview if turn_connection else "",
-        auth_token_preview=webhook.auth_token[-4:],
+        auth_token_preview=webhook.auth_token[-4:] if (webhook is not None and webhook.auth_token is not None) else "",
     )
 
 
