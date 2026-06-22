@@ -53,6 +53,15 @@ class GetTurnConnectionResponse(AdminApiBaseModel):
             )
         ),
     ]
+    auth_token_preview: Annotated[
+        str,
+        Field(
+            description=(
+                "The last 4 characters of the auth token for the organization's Turn.io webhook, shown "
+                "so admins can identify the webhook without exposing the full secret."
+            )
+        ),
+    ]
 
 
 class SetTurnArmJourneyMappingRequest(AdminApiBaseModel):

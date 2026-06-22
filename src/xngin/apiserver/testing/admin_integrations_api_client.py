@@ -36,6 +36,7 @@ from pydantic import (
 )
 
 from xngin.apiserver.routers.admin.admin_api import HTTPExceptionError
+from xngin.apiserver.routers.admin.admin_api_types import AddWebhookToOrganizationResponse
 from xngin.apiserver.routers.admin_integrations.admin_integrations_api_types import (
     GetTurnArmJourneyMappingResponse,
     GetTurnConnectionResponse,
@@ -421,7 +422,7 @@ class AdminIntegrationsAPIClient:
         organization_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminIntegrationsAPIClientExtensions | None = None,
-    ) -> AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
+    ) -> AdminIntegrationsAPIClientResult[Literal[HTTPStatus.OK], AddWebhookToOrganizationResponse]: ...
     @overload
     def set_organization_turn_connection(
         self,
@@ -431,7 +432,7 @@ class AdminIntegrationsAPIClient:
         raise_if_not_default_status: Literal[False],
         client_exts: AdminIntegrationsAPIClientExtensions | None = None,
     ) -> (
-        AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        AdminIntegrationsAPIClientResult[Literal[HTTPStatus.OK], AddWebhookToOrganizationResponse]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
@@ -447,7 +448,7 @@ class AdminIntegrationsAPIClient:
         raise_if_not_default_status: bool = True,
         client_exts: AdminIntegrationsAPIClientExtensions | None = None,
     ) -> (
-        AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        AdminIntegrationsAPIClientResult[Literal[HTTPStatus.OK], AddWebhookToOrganizationResponse]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
@@ -457,7 +458,7 @@ class AdminIntegrationsAPIClient:
     ):
         return cast(
             (
-                AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                AdminIntegrationsAPIClientResult[Literal[HTTPStatus.OK], AddWebhookToOrganizationResponse]
                 | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
                 | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
                 | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
@@ -468,9 +469,9 @@ class AdminIntegrationsAPIClient:
             self._route_handler(
                 path="/v1/m/integrations/turn-connection/{organization_id}",
                 method=HTTPMethod.PUT,
-                default_status=HTTPStatus.NO_CONTENT,
+                default_status=HTTPStatus.OK,
                 models={
-                    HTTPStatus.NO_CONTENT: Any,
+                    HTTPStatus.OK: AddWebhookToOrganizationResponse,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,

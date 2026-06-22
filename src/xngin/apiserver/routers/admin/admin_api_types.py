@@ -263,7 +263,7 @@ class ListDatasourcesResponse(AdminApiBaseModel):
 
 class AddWebhookToOrganizationRequest(AdminApiBaseModel):
     direction: Literal["inbound", "outbound"] = "outbound"
-    type: Literal["experiment.created", "turn.journey_changed"]
+    type: Literal["experiment.created", "turn.journeys_changed"]
     name: Annotated[
         str,
         Field(
@@ -299,7 +299,8 @@ class AddWebhookToOrganizationResponse(AddWebhookToOrganizationRequest):
         str | None,
         Field(
             description=(
-                "The value of the Webhook-Token: header that will be sent with the request to the configured URL."
+                "The value of the Webhook-Token: header that will be sent with the "
+                "request to the configured URL or received from an inbound webhook."
             )
         ),
     ]
