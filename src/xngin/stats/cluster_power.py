@@ -93,6 +93,46 @@ def calculate_effective_sample_size(
     return int(total_n / deff)
 
 
+# The underlying individual power calculation needs at least this many units in the
+# smallest arm. Below it, statsmodels fails with opaque, misleading errors
+# (ValueError "Chosen sample size must be positive.", ZeroDivisionError, or
+# "f(a) and f(b) must have different signs").
+_MIN_ARM_N = 2
+
+
+def _check_effective_n_is_usable(
+    *,
+    effective_n: int,
+    desired_n: int,
+    deff: float,
+    icc: float,
+    avg_cluster_size: float,
+    n_arms: int,
+    arm_weights: list[float] | None,
+) -> None:
+    """Raise a clear, actionable error when the design effect collapses the effective sample size.
+
+    A very high ICC and/or large clusters can inflate the design effect (DEFF) so much that the
+    effective sample size (``desired_n / DEFF``) is too small to run a power calculation, even when
+    the user enters a very large ``desired_n``. Without this guard the downstream individual power
+    calc fails with a misleading "increase your sample size" style error, when the real driver is the
+    clustering structure (few, large clusters with high within-cluster correlation).
+    """
+    arm_probs = _normalize_arm_weights(arm_weights, n_arms)
+    smallest_arm_n = min(int(effective_n * prob) for prob in arm_probs)
+    if smallest_arm_n >= _MIN_ARM_N:
+        return
+
+    raise ValueError(
+        f"The design effect from clustering (DEFF={deff:.0f}) shrinks the effective sample size to "
+        f"{effective_n} (from a desired {desired_n}), which is too small to run a power calculation. "
+        f"This is driven by a high intracluster correlation (ICC={icc:.4f}) combined with a large "
+        f"average cluster size ({avg_cluster_size:.0f}) spread across few clusters, not by the desired "
+        f"sample size. Increasing the desired sample size will not meaningfully help; reduce the ICC or "
+        f"use more (and smaller) clusters."
+    )
+
+
 def calculate_num_clusters_needed(
     n_individual: float,
     avg_cluster_size: float,
@@ -226,6 +266,16 @@ def solve_for_mde_cluster_impl(
     deff = calculate_design_effect(metric.icc, metric.avg_cluster_size, metric.cv or 0.0)
 
     effective_n = calculate_effective_sample_size(desired_n, deff)
+
+    _check_effective_n_is_usable(
+        effective_n=effective_n,
+        desired_n=desired_n,
+        deff=deff,
+        icc=metric.icc,
+        avg_cluster_size=metric.avg_cluster_size,
+        n_arms=n_arms,
+        arm_weights=arm_weights,
+    )
 
     target_possible, pct_change_possible = solve_for_mde_individual_impl(
         desired_n=effective_n,

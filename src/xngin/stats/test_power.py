@@ -484,6 +484,38 @@ def test_check_power_with_invalid_desired_n_raises():
     assert "Chosen sample size must be positive" in str(excinfo.value)
 
 
+def test_check_power_high_deff_gives_clear_message_not_misleading_one():
+    """Regression: cluster design with a catastrophic design effect.
+
+    Reported edge case: ethnicity-clustered current_income with only 6 natural clusters of
+    ~166,667 each and ICC≈0.589 → DEFF≈98,227. Even a large desired_n leaves an effective sample
+    size below a runnable size, which previously surfaced as the misleading "Chosen sample size must
+    be positive." / "Your sample size is too small..." errors. We now explain the real driver.
+    """
+    metric = DesignSpecMetric(
+        field_name="current_income",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=50_000.0,
+        metric_stddev=20_000.0,
+        metric_pct_change=0.05,
+        available_n=1_000_002,
+        available_nonnull_n=1_000_002,
+        icc=0.5893605541543318,
+        avg_cluster_size=166_667,
+        cv=0.0,
+    )
+
+    with pytest.raises(StatsPowerError) as excinfo:
+        check_power([metric], n_arms=2, desired_n=50_000)
+
+    message = str(excinfo.value)
+    assert "current_income" in message
+    assert "design effect" in message
+    assert "DEFF=98227" in message
+    assert "Chosen sample size must be positive" not in message
+    assert "too small for the power calculation" not in message
+
+
 def test_analyze_metric_power_without_desired_n_still_works():
     """Test that original behavior still works when desired_n not provided."""
     metric = DesignSpecMetric(
