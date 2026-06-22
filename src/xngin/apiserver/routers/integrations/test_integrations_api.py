@@ -160,7 +160,7 @@ async def test_turn_webhook_enqueues_task(
     """Valid Webhook-Token results in 204 and a turn.journeys_changed task in the queue."""
     webhook_id, auth_token = inbound_turn_webhook
 
-    iclient.turn_webhook(webhook_id=webhook_id, webhook_token=auth_token)
+    iclient.turn_webhook(webhook_id=webhook_id, auth_token=auth_token)
 
     tasks = (
         (
@@ -181,7 +181,7 @@ async def test_turn_webhook_404_for_unknown_id(
 ):
     """An unrecognised webhook_id returns 404."""
     with expect_status_code(404):
-        iclient.turn_webhook(webhook_id="wh_doesnotexist", webhook_token="any-token")
+        iclient.turn_webhook(webhook_id="wh_doesnotexist", auth_token="any-token")
 
 
 async def test_turn_webhook_401_for_wrong_token(
@@ -191,7 +191,7 @@ async def test_turn_webhook_401_for_wrong_token(
     """Correct webhook_id but wrong Webhook-Token returns 401."""
     webhook_id, _ = inbound_turn_webhook
     with expect_status_code(401):
-        iclient.turn_webhook(webhook_id=webhook_id, webhook_token="wrong-token")
+        iclient.turn_webhook(webhook_id=webhook_id, auth_token="wrong-token")
 
 
 async def test_turn_webhook_401_for_missing_token(

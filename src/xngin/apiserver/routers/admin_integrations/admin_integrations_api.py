@@ -9,6 +9,7 @@ the mapping from experiment arms to Turn.io journeys.
 (See integrations_api.py for endpoints that specific third-party tools can hit.)
 """
 
+import secrets
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
@@ -270,6 +271,51 @@ async def get_organization_turn_connection(
     return GetTurnConnectionResponse(
         token_preview=turn_connection.turn_api_token_preview if turn_connection else "",
         auth_token_preview=webhook.auth_token[-4:] if (webhook is not None and webhook.auth_token is not None) else "",
+    )
+
+
+@router.put(
+    "/integrations/turn-connection/{organization_id}/regenerate-webhook-token", responses=TURN_JOURNEYS_RESPONSES
+)
+async def regenerate_turn_webhook_token(
+    organization_id: str,
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
+    allow_missing: Annotated[
+        bool, Query(description="If true, return a 200 with null body if the resource does not exist.")
+    ] = False,
+) -> AddWebhookToOrganizationResponse:
+    """Regenerates the auth token for the organization's turn.journeys_changed webhook.
+
+    This is used when the user wants to change their current token. It does not change
+    the Turn.io API token or the stored journeys in any way.
+
+    Raises 404 if no Turn connection or webhook has been configured for the organization (or if the
+    organization does not exist / the user does not have access to it).
+    """
+    org = await get_organization_or_raise(session, user, organization_id)
+
+    turn_webhook = (
+        await session.execute(
+            select(tables.Webhook).where(
+                tables.Webhook.organization_id == org.id, tables.Webhook.type == "turn.journeys_changed"
+            )
+        )
+    ).scalar_one_or_none()
+
+    if turn_webhook is None and not allow_missing:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Turn journey changed webhook not found")
+
+    if turn_webhook is not None:
+        turn_webhook.auth_token = secrets.token_hex(16)
+        await session.commit()
+    return AddWebhookToOrganizationResponse(
+        id=turn_webhook.id if turn_webhook else "",
+        direction=turn_webhook.direction if turn_webhook else "inbound",
+        type=turn_webhook.type if turn_webhook else "turn.journeys_changed",
+        name=turn_webhook.name if turn_webhook else "",
+        url=turn_webhook.url if turn_webhook else None,
+        auth_token=turn_webhook.auth_token if turn_webhook else "",
     )
 
 

@@ -91,7 +91,7 @@ async def get_turn_app_config(
 async def turn_webhook(
     webhook_id: str,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    webhook_token: Annotated[str | None, Header(alias=constants.HEADER_WEBHOOK_TOKEN)] = None,
+    auth_token: Annotated[str | None, Header(alias=constants.HEADER_WEBHOOK_TOKEN)] = None,
 ):
     """
     This endpoint is used as the webhook URL for Turn.io to notify us of changes to the Journeys.
@@ -103,7 +103,7 @@ async def turn_webhook(
     if not webhook:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found.")
 
-    if webhook_token != webhook.auth_token:
+    if auth_token != webhook.auth_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook auth token.")
 
     # Process the webhook payload here

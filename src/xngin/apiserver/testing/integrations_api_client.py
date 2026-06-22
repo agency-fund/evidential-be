@@ -485,7 +485,7 @@ class IntegrationsAPIClient:
         self,
         *,
         webhook_id: str,
-        webhook_token: str | None = INTEGRATIONS_API_CLIENT_NOT_REQUIRED,
+        auth_token: str | None = INTEGRATIONS_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: IntegrationsAPIClientExtensions | None = None,
     ) -> IntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
@@ -494,7 +494,7 @@ class IntegrationsAPIClient:
         self,
         *,
         webhook_id: str,
-        webhook_token: str | None = INTEGRATIONS_API_CLIENT_NOT_REQUIRED,
+        auth_token: str | None = INTEGRATIONS_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: IntegrationsAPIClientExtensions | None = None,
     ) -> (
@@ -511,7 +511,7 @@ class IntegrationsAPIClient:
         self,
         *,
         webhook_id: str,
-        webhook_token: str | None = INTEGRATIONS_API_CLIENT_NOT_REQUIRED,
+        auth_token: str | None = INTEGRATIONS_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: IntegrationsAPIClientExtensions | None = None,
     ) -> (
@@ -551,7 +551,7 @@ class IntegrationsAPIClient:
                     "webhook_id": webhook_id,
                 },
                 header_params={
-                    "Webhook-Token": webhook_token,
+                    "Webhook-Token": auth_token,
                 },
                 raise_if_not_default_status=raise_if_not_default_status,
                 client_exts=client_exts,

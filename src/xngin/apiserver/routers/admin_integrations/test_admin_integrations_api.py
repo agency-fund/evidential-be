@@ -373,6 +373,38 @@ async def test_turn_journey_mapping_rejects_mismatched_arm_ids(
     assert extra_id in match.http_response().text
 
 
+async def test_regenerate_turn_webhook_token(
+    monkeypatch: pytest.MonkeyPatch, aclient: AdminAPIClient, iaclient: AdminIntegrationsAPIClient
+):
+    """Regenerating the webhook token rotates the auth_token without changing the Turn connection."""
+    monkeypatch.setattr(FakeAsyncClient, "call_log", 0)
+    monkeypatch.setattr(FakeAsyncClient, "stacks", [{"name": "Arm A", "uuid": "arm-a-uuid"}])
+    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+
+    org_id = aclient.create_organizations(
+        body=CreateOrganizationRequest(name="test_regenerate_turn_webhook_token")
+    ).data.id
+
+    # No webhook configured -> 404.
+    with expect_status_code(404):
+        iaclient.regenerate_turn_webhook_token(organization_id=org_id)
+
+    # allow_missing=True with no webhook -> 200.
+    result = iaclient.regenerate_turn_webhook_token(organization_id=org_id, allow_missing=True).data
+    assert result.auth_token == ""
+
+    # Set up the Turn connection (also creates the turn.journeys_changed webhook).
+    initial = iaclient.set_organization_turn_connection(
+        organization_id=org_id,
+        body=SetConnectionToTurnRequest(turn_api_token="a" * 335),
+    ).data
+    initial_token = initial.auth_token
+
+    # Regenerate -> new token returned, different from initial.
+    result = iaclient.regenerate_turn_webhook_token(organization_id=org_id).data
+    assert result.auth_token != initial_token
+
+
 async def test_resetting_same_token_preserves_arm_journey_mapping(
     testing_datasource,
     testing_design_spec: MABExperimentSpec,
