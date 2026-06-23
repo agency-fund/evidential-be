@@ -139,7 +139,12 @@ async def bulk_insert_arm_assignments(
             assignments=assignments,
         )
 
-    arm_stats_rows = [{"arm_id": arm_id, "population": int(assignments.arm_pop[i])} for i, arm_id in enumerate(arm_ids)]
+    arm_stats_rows = []
+    for i, arm_id in enumerate(arm_ids):
+        row: dict[str, int | str] = {"arm_id": arm_id, "population": int(assignments.arm_pop[i])}
+        if assignments.arm_cluster_pop is not None:
+            row["cluster_count"] = int(assignments.arm_cluster_pop[i])
+        arm_stats_rows.append(row)
     await xngin_session.execute(insert(tables.ArmStats).values(arm_stats_rows))
 
 

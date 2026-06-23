@@ -736,34 +736,48 @@ async def test_create_preassigned_experiment_impl_cluster_assignment(xngin_sessi
             select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == response.experiment_id)
         )
     ).all()
-    arm_by_participant = {row.participant_id: row.arm_id for row in assignment_rows}
-    arms_by_cluster: dict[str, set[str]] = defaultdict(set)
+    participant_to_arm = {row.participant_id: row.arm_id for row in assignment_rows}
+    cluster_to_arms: dict[str, set[str]] = defaultdict(set)
     for participant in dwh_participants:
         participant_id = str(getattr(participant, design_spec.primary_key))
         cluster_id = str(getattr(participant, design_spec.cluster_key))
-        arms_by_cluster[cluster_id].add(arm_by_participant[participant_id])
+        cluster_to_arms[cluster_id].add(participant_to_arm[participant_id])
 
-    assert len(arms_by_cluster) > 1
-    assert all(len(arm_ids) == 1 for arm_ids in arms_by_cluster.values())
-    assert len(set.union(*arms_by_cluster.values())) == 2
+    assert len(cluster_to_arms) > 1
+    assert all(len(arm_ids) == 1 for arm_ids in cluster_to_arms.values())
+    assert len(set.union(*cluster_to_arms.values())) == 2
+
+    # Verify the assign_summary matches the cluster and arm counts derived from the raw assignments.
+    arm_to_clusters: dict[str, set[str]] = defaultdict(set)
+    arm_participant_counts: dict[str, int] = defaultdict(int)
+    for row in assignment_rows:
+        assert row.cluster_key is not None
+        arm_to_clusters[row.arm_id].add(row.cluster_key)
+        arm_participant_counts[row.arm_id] += 1
 
     create_summary = response.assign_summary
     assert create_summary is not None
     assert create_summary.arm_sizes is not None
-    clusters_by_arm: dict[str, set[str]] = defaultdict(set)
-    for row in assignment_rows:
-        assert row.cluster_key is not None
-        clusters_by_arm[row.arm_id].add(row.cluster_key)
+    total_clusters = 0
+    total_participants = 0
     for arm_size in create_summary.arm_sizes:
         arm_id = arm_size.arm.arm_id
         assert arm_id is not None
+        assert arm_size.size == arm_participant_counts[arm_id]
         assert arm_size.cluster_count is not None
-        assert arm_size.cluster_count == len(clusters_by_arm[arm_id])
-    cluster_counts = [
-        arm_size.cluster_count for arm_size in create_summary.arm_sizes if arm_size.cluster_count is not None
-    ]
-    assert sum(cluster_counts) == len(arms_by_cluster)
+        assert arm_size.cluster_count == len(arm_to_clusters[arm_id])
+        total_clusters += arm_size.cluster_count
+        total_participants += arm_size.size
+        # The returned summary counts should also match the persisted arm_stats counts.
+        arm_stat = await xngin_session.get(tables.ArmStats, arm_id)
+        assert arm_stat is not None
+        assert arm_stat.population == arm_size.size
+        assert arm_stat.cluster_count == arm_size.cluster_count
+    # Total clusters and participants seen should equal those in the original dwh_participants
+    assert total_clusters == len(cluster_to_arms)
+    assert total_participants == len(dwh_participants)
 
+    # Reading back the experiment should match the creation-time summary.
     experiment = await get_experiment_preloaded(xngin_session, response.experiment_id)
     get_response = await get_experiment_impl(xngin_session, experiment)
     get_summary = get_response.assign_summary
@@ -777,7 +791,7 @@ async def test_create_preassigned_experiment_impl_cluster_assignment(xngin_sessi
         arm_id = arm_size.arm.arm_id
         assert arm_id is not None
         assert arm_size.cluster_count is not None
-        assert arm_size.cluster_count == len(clusters_by_arm[arm_id])
+        assert arm_size.cluster_count == len(arm_to_clusters[arm_id])
 
 
 async def _create_clustered_preassigned_experiment(

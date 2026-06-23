@@ -1079,35 +1079,20 @@ async def get_assign_summary(
             tables.Arm.id,
             tables.Arm.name,
             func.coalesce(tables.ArmStats.population, 0),
+            tables.ArmStats.cluster_count,
         )
         .outerjoin(tables.ArmStats, tables.Arm.id == tables.ArmStats.arm_id)
         .where(tables.Arm.experiment_id == experiment_id)
         .order_by(tables.Arm.position)
     )
 
-    cluster_count_by_arm_id: dict[str, int] = {}
-    if include_cluster_counts:
-        cluster_result = await xngin_session.execute(
-            select(
-                tables.Arm.id,
-                func.count(tables.ArmAssignment.cluster_key.distinct()),
-            )
-            .outerjoin(
-                tables.ArmAssignment,
-                (tables.Arm.id == tables.ArmAssignment.arm_id) & (tables.ArmAssignment.experiment_id == experiment_id),
-            )
-            .where(tables.Arm.experiment_id == experiment_id)
-            .group_by(tables.Arm.id)
-        )
-        cluster_count_by_arm_id = {arm_id: cluster_count for arm_id, cluster_count in cluster_result}
-
     arm_sizes = [
         ArmSize(
             arm=Arm(arm_id=arm_id, arm_name=name),
             size=count,
-            cluster_count=cluster_count_by_arm_id.get(arm_id, 0) if include_cluster_counts else None,
+            cluster_count=cluster_count if include_cluster_counts else None,
         )
-        for arm_id, name, count in result
+        for arm_id, name, count, cluster_count in result
     ]
 
     if experiment_type in {ExperimentsType.MAB_ONLINE, ExperimentsType.MAB_ONLINE_DWH, ExperimentsType.CMAB_ONLINE}:
