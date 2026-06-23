@@ -243,7 +243,14 @@ def make_createexperimentrequest_json(
             raise ValueError(f"Invalid experiment type: {experiment_type}")
 
 
-def make_design_spec_clustered(*, cluster_key: str | None = "cluster_equal") -> PreassignedFrequentistExperimentSpec:
+def make_design_spec_clustered(
+    *,
+    cluster_key: str | None = "cluster_equal",
+    desired_n: int | None = 100,
+    desired_n_clusters: int | None = 10,
+) -> PreassignedFrequentistExperimentSpec:
+    if cluster_key is None:
+        desired_n_clusters = None
     return PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
         experiment_name="cluster analyze test",
@@ -257,7 +264,8 @@ def make_design_spec_clustered(*, cluster_key: str | None = "cluster_equal") -> 
         strata=[],
         metrics=[DesignSpecMetricRequest(field_name="test_score", metric_pct_change=0.1)],
         filters=[],
-        desired_n=100,
+        desired_n=desired_n,
+        desired_n_clusters=desired_n_clusters,
         power=0.8,
         alpha=0.05,
         fstat_thresh=0.2,
@@ -792,6 +800,81 @@ async def test_create_preassigned_experiment_impl_cluster_assignment(xngin_sessi
         assert arm_id is not None
         assert arm_size.cluster_count is not None
         assert arm_size.cluster_count == len(arm_to_clusters[arm_id])
+
+
+async def test_create_experiment_impl_clustered_requires_desired_n_clusters(xngin_session, testing_datasource):
+    design_spec = make_design_spec_clustered(desired_n_clusters=None)
+    request = CreateExperimentRequest(design_spec=design_spec)
+
+    with pytest.raises(
+        LateValidationError,
+        match="Cluster-randomized preassigned experiments must have a desired_n_clusters",
+    ):
+        await create_experiment_impl(
+            request=request,
+            datasource=testing_datasource.ds,
+            xngin_session=xngin_session,
+            stratify_on_metrics=False,
+            random_state=42,
+            validated_webhooks=[],
+        )
+
+
+async def test_create_experiment_impl_clustered_samples_clusters(xngin_session, testing_datasource):
+    """Clustered preassigned creation samples clusters, then includes every participant in each sampled cluster."""
+    design_spec = make_design_spec_clustered(
+        cluster_key="cluster_equal",
+        desired_n=999,
+        desired_n_clusters=3,
+    )
+    request = CreateExperimentRequest(design_spec=design_spec)
+
+    response = await create_experiment_impl(
+        request=request,
+        datasource=testing_datasource.ds,
+        xngin_session=xngin_session,
+        stratify_on_metrics=False,
+        random_state=42,
+        validated_webhooks=[],
+    )
+
+    assert isinstance(response.design_spec, PreassignedFrequentistExperimentSpec)
+    assert response.design_spec.desired_n == 999
+    assert response.design_spec.desired_n_clusters == 3
+    assert response.assign_summary is not None
+    assert response.assign_summary.arm_sizes is not None
+    assert response.assign_summary.sample_size == 30
+    assert sum(arm_size.cluster_count or 0 for arm_size in response.assign_summary.arm_sizes) == 3
+
+    experiment = await get_experiment_preloaded(xngin_session, response.experiment_id)
+    assert experiment.desired_n == 999
+    assert experiment.desired_n_clusters == 3
+    rehydrated_design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
+    assert isinstance(rehydrated_design_spec, PreassignedFrequentistExperimentSpec)
+    assert rehydrated_design_spec.desired_n_clusters == 3
+
+    assignments = (
+        await xngin_session.scalars(
+            select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == response.experiment_id)
+        )
+    ).all()
+    assert len(assignments) == 30
+
+    ids_by_cluster: dict[str, set[int]] = defaultdict(set)
+    arms_by_cluster: dict[str, set[str]] = defaultdict(set)
+    for assignment in assignments:
+        assert assignment.cluster_key is not None
+        ids_by_cluster[assignment.cluster_key].add(int(assignment.participant_id))
+        arms_by_cluster[assignment.cluster_key].add(assignment.arm_id)
+
+    assert len(ids_by_cluster) == 3
+    # Verify every participant in each sampled cluster was assigned.
+    for cluster_key, participant_ids in ids_by_cluster.items():
+        cluster_id = int(cluster_key)
+        # We know the cluster_equal column has 10 participants per cluster per tools/generated_clustered_data.py.
+        assert participant_ids == set(range(cluster_id * 10, cluster_id * 10 + 10))
+    # Each cluster should be tied to exactly 1 arm only.
+    assert all(len(arm_ids) == 1 for arm_ids in arms_by_cluster.values())
 
 
 async def _create_clustered_preassigned_experiment(

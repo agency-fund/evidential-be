@@ -141,11 +141,11 @@ def compose_cluster_query(
         columns.append(sa_table.c[col])
 
     cluster_col = sa_table.c[cluster_key]
+    eligible_clusters = select(cluster_col).filter(*filters).group_by(cluster_col).subquery()
+    sampled_cluster_col = eligible_clusters.c[cluster_key]
     sampled_clusters = (
-        select(cluster_col)
-        .filter(*filters)
-        .group_by(cluster_col)
-        .order_by(custom_functions.Random(sa_table=sa_table))
+        select(sampled_cluster_col)
+        .order_by(custom_functions.Random(sa_table=eligible_clusters))
         .limit(desired_cluster_n)
     )
 

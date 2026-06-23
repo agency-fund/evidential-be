@@ -291,6 +291,7 @@ class ExperimentStorageConverter:
             if self.experiment.experiment_type == ExperimentsType.FREQ_PREASSIGNED.value:
                 cluster_key_field = self.experiment.cluster_key_field()
                 freq_spec_dict["cluster_key"] = cluster_key_field.field_name if cluster_key_field else None
+                freq_spec_dict["desired_n_clusters"] = self.experiment.desired_n_clusters
 
             return TypeAdapter(capi.DesignSpec).validate_python(freq_spec_dict)
 
@@ -452,6 +453,8 @@ class ExperimentStorageConverter:
                 experiment.alpha = design_spec.alpha
                 experiment.fstat_thresh = design_spec.fstat_thresh
                 experiment.desired_n = design_spec.desired_n
+                if isinstance(design_spec, capi.PreassignedFrequentistExperimentSpec):
+                    experiment.desired_n_clusters = design_spec.desired_n_clusters
 
                 experiment.arms = [
                     tables.Arm(

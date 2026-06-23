@@ -31,6 +31,7 @@ from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import Filter, Relation
 from xngin.apiserver.routers.common_enums import DataType
 from xngin.apiserver.routers.experiments.test_property_filters import ALL_FILTER_CASES
+from xngin.db_extensions import custom_functions
 
 pytest_plugins = ("xngin.apiserver.dwh.dwh_test_support",)
 
@@ -398,6 +399,26 @@ def test_compose_cluster_query_raises_when_cluster_key_is_missing(shared_sample_
             desired_cluster_n=2,
             cluster_key="missing_cluster_key",
         )
+
+
+def test_compose_cluster_query_works_with_deterministic_random(queries_dwh_session, shared_sample_tables):
+    table: Table = shared_sample_tables.sample_clustered_table
+    old_value = custom_functions.USE_DETERMINISTIC_RANDOM
+    custom_functions.USE_DETERMINISTIC_RANDOM = True
+    try:
+        q = compose_cluster_query(
+            table,
+            select_columns={"id", "cluster_key"},
+            filters=[],
+            desired_cluster_n=2,
+            cluster_key="cluster_key",
+        )
+        rows = queries_dwh_session.execute(q).all()
+    finally:
+        custom_functions.USE_DETERMINISTIC_RANDOM = old_value
+
+    assert {row.cluster_key for row in rows} == {"a", "b"}
+    assert {row.id for row in rows} == {1, 2, 3, 4, 5}
 
 
 def _datatype_to_sqlalchemy_type(data_type: DataType, is_redshift: bool):

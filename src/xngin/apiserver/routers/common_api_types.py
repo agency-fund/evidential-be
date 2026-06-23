@@ -894,8 +894,10 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         Field(
             default=None,
             ge=0,
-            description="Used in both power calculations and experiment creation. "
-            "Required when creating preassigned experiments. Optional for power calculations. "
+            description="Desired number of individual participants. "
+            "Required when creating individual-randomized preassigned experiments. "
+            "For cluster-randomized preassigned experiment creation, use desired_n_clusters to control sampling; "
+            "desired_n remains available for power calculations. "
             "When set, the power check also returns the minimum detectable effect for this size, "
             "along with the minimum sample size.",
         ),
@@ -1054,11 +1056,24 @@ class PreassignedFrequentistExperimentSpec(BaseFrequentistDesignSpec):
             ),
         ),
     ] = None
+    desired_n_clusters: Annotated[
+        int | None,
+        Field(
+            default=None,
+            ge=1,
+            description=(
+                "Desired number of clusters to sample when creating a cluster-randomized preassigned experiment. "
+                "Only valid when cluster_key is set. All eligible participants in each sampled cluster are included."
+            ),
+        ),
+    ] = None
 
     @model_validator(mode="after")
     def validate_cluster_randomization(self) -> Self:
         if self.cluster_key is not None and self.strata:
             raise ValueError("Cluster-randomized frequentist designs cannot also set strata.")
+        if self.cluster_key is None and self.desired_n_clusters is not None:
+            raise ValueError("desired_n_clusters can only be set when cluster_key is set.")
         return self
 
 

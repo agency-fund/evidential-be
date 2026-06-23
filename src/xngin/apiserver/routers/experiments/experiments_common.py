@@ -243,9 +243,13 @@ async def create_experiment_impl(
     match request.design_spec:
         case PreassignedFrequentistExperimentSpec():
             preassigned_spec = request.design_spec
+            is_clustered = preassigned_spec.cluster_key is not None
             desired_n = preassigned_spec.desired_n
-            if desired_n is None:
-                raise LateValidationError("Preassigned experiments must have a desired_n.")
+            desired_n_clusters = preassigned_spec.desired_n_clusters
+            if is_clustered and desired_n_clusters is None:
+                raise LateValidationError("Cluster-randomized preassigned experiments must have a desired_n_clusters.")
+            if not is_clustered and desired_n is None:
+                raise LateValidationError("Individual-randomized preassigned experiments must have a desired_n.")
 
             table_name = preassigned_spec.table_name
             primary_key = preassigned_spec.primary_key
@@ -258,7 +262,7 @@ async def create_experiment_impl(
             stratum_cols = strata_names + metric_names if stratify_on_metrics else strata_names
             select_columns = {*stratum_cols, primary_key}
             eligibility_filters = request.design_spec.filters
-            if preassigned_spec.cluster_key is not None:
+            if is_clustered:
                 select_columns.add(preassigned_spec.cluster_key)
                 eligibility_filters = [
                     *eligibility_filters,
@@ -267,12 +271,21 @@ async def create_experiment_impl(
 
             ds_config = datasource.get_config()
             async with DwhSession(ds_config.dwh) as dwh:
-                result = await dwh.get_participants(
-                    table_name,
-                    select_columns=select_columns,
-                    filters=eligibility_filters,
-                    n=desired_n,
-                )
+                if is_clustered:
+                    result = await dwh.get_clusters_of_participants(
+                        table_name,
+                        select_columns=select_columns,
+                        filters=eligibility_filters,
+                        desired_cluster_n=desired_n_clusters,
+                        cluster_key=preassigned_spec.cluster_key,
+                    )
+                else:
+                    result = await dwh.get_participants(
+                        table_name,
+                        select_columns=select_columns,
+                        filters=eligibility_filters,
+                        n=desired_n,
+                    )
                 sa_table, participants = result.sa_table, result.participants
 
             if participants is None:

@@ -238,6 +238,29 @@ def test_cluster_key_and_strata_are_mutually_exclusive():
         PreassignedFrequentistExperimentSpec.model_validate(valid_spec)
 
 
+def test_desired_n_clusters_requires_cluster_key():
+    invalid_spec = {
+        "experiment_type": "freq_preassigned",
+        "experiment_name": "test",
+        "description": "test",
+        "table_name": "dwh",
+        "primary_key": "id",
+        "start_date": "2024-01-01T00:00:00+00:00",
+        "end_date": "2024-12-31T00:00:00+00:00",
+        "arms": [
+            {"arm_name": "C", "arm_description": "C"},
+            {"arm_name": "T", "arm_description": "T"},
+        ],
+        "strata": [],
+        "metrics": [{"field_name": "metric1", "metric_pct_change": 0.1}],
+        "filters": [],
+        "desired_n_clusters": 10,
+    }
+
+    with pytest.raises(ValidationError, match="desired_n_clusters can only be set when cluster_key is set"):
+        PreassignedFrequentistExperimentSpec.model_validate(invalid_spec)
+
+
 def test_mab_dwh_primary_key_and_target_must_differ():
     """MABDwhExperimentSpec rejects a target_field_name equal to its primary_key."""
     valid_spec = {

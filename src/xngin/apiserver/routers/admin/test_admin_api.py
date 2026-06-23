@@ -4275,7 +4275,7 @@ def test_create_freq_preassigned_experiment_with_cluster_key_roundtrips(
             description="Verify cluster_key is persisted and read back.",
             table_name="clustered_dwh",
             primary_key="participant_id",
-            cluster_key="cluster_powerlaw",
+            cluster_key="cluster_equal",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
             end_date=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
             arms=[
@@ -4286,17 +4286,20 @@ def test_create_freq_preassigned_experiment_with_cluster_key_roundtrips(
             strata=[],
             filters=[],
             desired_n=100,
+            desired_n_clusters=10,
         ),
         webhooks=[],
     )
 
     created = aclient.create_experiment(datasource_id=ds_id, body=experiment_request, random_state=42).data
     assert isinstance(created.design_spec, PreassignedFrequentistExperimentSpec)
-    assert created.design_spec.cluster_key == "cluster_powerlaw"
+    assert created.design_spec.cluster_key == "cluster_equal"
+    assert created.design_spec.desired_n_clusters == 10
 
     fetched = aclient.get_experiment_for_ui(datasource_id=ds_id, experiment_id=created.experiment_id).data
     assert isinstance(fetched.config.design_spec, PreassignedFrequentistExperimentSpec)
-    assert fetched.config.design_spec.cluster_key == "cluster_powerlaw"
+    assert fetched.config.design_spec.cluster_key == "cluster_equal"
+    assert fetched.config.design_spec.desired_n_clusters == 10
 
     # Verify the created and fetched experiment assign_summary objects match via pydantic model equality.
     create_summary = created.assign_summary
@@ -4351,7 +4354,7 @@ def test_analyze_cluster_preassigned_experiment(testing_datasource, aclient: Adm
             description="Verify clustered analysis via admin API.",
             table_name="clustered_dwh",
             primary_key="participant_id",
-            cluster_key="cluster_moderate",
+            cluster_key="cluster_equal",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
             end_date=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
             arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
@@ -4359,6 +4362,7 @@ def test_analyze_cluster_preassigned_experiment(testing_datasource, aclient: Adm
             strata=[],
             filters=[],
             desired_n=100,
+            desired_n_clusters=10,
         ),
     )
 
@@ -4400,6 +4404,7 @@ async def test_create_freq_preassigned_experiment_with_missing_cluster_key_raise
             strata=[],
             filters=[],
             desired_n=100,
+            desired_n_clusters=10,
         ),
         webhooks=[],
     )
@@ -4428,6 +4433,7 @@ async def test_create_freq_preassigned_experiment_cluster_key_has_nulls(
             strata=[],
             filters=[],
             desired_n=1000,
+            desired_n_clusters=1000,
         ),
         webhooks=[],
     )
