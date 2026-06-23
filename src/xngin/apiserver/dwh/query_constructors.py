@@ -118,3 +118,35 @@ def compose_query(sa_table: Table, select_columns: set[str], filters: list[Colum
         columns.append(sa_table.c[col])
 
     return select(*columns).filter(*filters).order_by(custom_functions.Random(sa_table=sa_table)).limit(desired_n)
+
+
+def compose_cluster_query(
+    sa_table: Table,
+    select_columns: set[str],
+    filters: list[ColumnElement],
+    desired_cluster_n: int,
+    cluster_key: str,
+):
+    """Builds a query that fetches rows belonging to a random sample of clusters."""
+
+    if not select_columns:
+        raise ValueError("select_columns must have at least one item.")
+    if cluster_key not in sa_table.c:
+        raise ValueError(f"Column {cluster_key} not found in schema.")
+
+    columns = []
+    for col in sorted(select_columns):  # sort for stable generated sql
+        if col not in sa_table.c:
+            raise ValueError(f"Column {col} not found in schema.")
+        columns.append(sa_table.c[col])
+
+    cluster_col = sa_table.c[cluster_key]
+    sampled_clusters = (
+        select(cluster_col)
+        .filter(*filters)
+        .group_by(cluster_col)
+        .order_by(custom_functions.Random(sa_table=sa_table))
+        .limit(desired_cluster_n)
+    )
+
+    return select(*columns).filter(*filters, cluster_col.in_(sampled_clusters))
