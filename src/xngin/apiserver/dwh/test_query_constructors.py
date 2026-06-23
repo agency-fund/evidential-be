@@ -364,7 +364,7 @@ def test_compose_cluster_query_samples_clusters_and_returns_all_cluster_rows(que
         table,
         select_columns={"id", "int_col", "cluster_key"},
         filters=[],
-        desired_cluster_n=2,
+        desired_n_clusters=2,
         cluster_key="cluster_key",
     )
     rows = queries_dwh_session.execute(q).all()
@@ -396,7 +396,7 @@ def test_compose_cluster_query_raises_when_cluster_key_is_missing(shared_sample_
             table,
             select_columns={"id"},
             filters=[],
-            desired_cluster_n=2,
+            desired_n_clusters=2,
             cluster_key="missing_cluster_key",
         )
 
@@ -410,7 +410,7 @@ def test_compose_cluster_query_works_with_deterministic_random(queries_dwh_sessi
             table,
             select_columns={"id", "cluster_key"},
             filters=[],
-            desired_cluster_n=2,
+            desired_n_clusters=2,
             cluster_key="cluster_key",
         )
         rows = queries_dwh_session.execute(q).all()

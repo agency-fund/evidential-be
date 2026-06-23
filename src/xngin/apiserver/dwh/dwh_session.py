@@ -284,7 +284,7 @@ class DwhSession:
         sa_table: sqlalchemy.Table,
         select_columns: set[str],
         filters: list[Filter],
-        desired_cluster_n: int,
+        desired_n_clusters: int,
         cluster_key: str,
     ):
         """Samples clusters and returns participants belonging to those clusters."""
@@ -293,7 +293,7 @@ class DwhSession:
             sa_table,
             select_columns | {cluster_key},
             sqla_filters,
-            desired_cluster_n,
+            desired_n_clusters,
             cluster_key,
         )
         return self.session.execute(query).all()
@@ -315,7 +315,7 @@ class DwhSession:
         table_name: str,
         select_columns: set[str],
         filters: list[Filter],
-        desired_cluster_n: int,
+        desired_n_clusters: int,
         cluster_key: str,
         use_sa_autoload: bool | None = None,
     ) -> GetParticipantsResult:
@@ -324,7 +324,7 @@ class DwhSession:
             sa_table,
             select_columns,
             filters,
-            desired_cluster_n,
+            desired_n_clusters,
             cluster_key,
         )
         return GetParticipantsResult(sa_table=sa_table, participants=participants)
@@ -367,7 +367,7 @@ class DwhSession:
         *,
         select_columns: set[str],
         filters: list[Filter],
-        desired_cluster_n: int,
+        desired_n_clusters: int,
         cluster_key: str,
         use_sa_autoload: bool | None = None,
     ) -> GetParticipantsResult:
@@ -382,7 +382,7 @@ class DwhSession:
             table_name: Name of the table to query
             select_columns: DWH columns to return. ``cluster_key`` is always included.
             filters: Filter conditions to apply before sampling clusters and fetching participants
-            desired_cluster_n: Number of clusters to sample
+            desired_n_clusters: Number of clusters to sample
             cluster_key: Column containing cluster identifiers
             use_sa_autoload: Whether to use SQLAlchemy reflection. If None, uses config default.
 
@@ -394,7 +394,7 @@ class DwhSession:
             table_name,
             select_columns,
             filters,
-            desired_cluster_n,
+            desired_n_clusters,
             cluster_key,
             use_sa_autoload,
         )

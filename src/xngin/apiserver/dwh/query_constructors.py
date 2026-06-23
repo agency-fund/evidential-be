@@ -124,7 +124,7 @@ def compose_cluster_query(
     sa_table: Table,
     select_columns: set[str],
     filters: list[ColumnElement],
-    desired_cluster_n: int,
+    desired_n_clusters: int,
     cluster_key: str,
 ):
     """Builds a query that fetches rows belonging to a random sample of clusters."""
@@ -146,7 +146,7 @@ def compose_cluster_query(
     sampled_clusters = (
         select(sampled_cluster_col)
         .order_by(custom_functions.Random(sa_table=eligible_clusters))
-        .limit(desired_cluster_n)
+        .limit(desired_n_clusters)
     )
 
     return select(*columns).filter(*filters, cluster_col.in_(sampled_clusters))

@@ -276,7 +276,7 @@ async def create_experiment_impl(
                         table_name,
                         select_columns=select_columns,
                         filters=eligibility_filters,
-                        desired_cluster_n=desired_n_clusters,
+                        desired_n_clusters=desired_n_clusters,
                         cluster_key=preassigned_spec.cluster_key,
                     )
                 else:
