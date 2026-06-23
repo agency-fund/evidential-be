@@ -425,6 +425,9 @@ def test_assign_clusters_equal_sizes():
     assert len(result.stratum_ids) == 200
     assert result.arm_pop[0] == 100
     assert result.arm_pop[1] == 100
+    assert result.arm_cluster_pop is not None
+    assert result.arm_cluster_pop[0] == 10
+    assert result.arm_cluster_pop[1] == 10
     # Can't do balance check since cluster sizes are all equal => no info to predict assignment
     assert result.balance_result is None
 
@@ -444,6 +447,9 @@ def test_assign_clusters_unequal_sizes():
     assert len(result.stratum_ids) == 575
     assert result.arm_pop[0] == 294
     assert result.arm_pop[1] == 281
+    assert result.arm_cluster_pop is not None
+    assert result.arm_cluster_pop[0] == 10
+    assert result.arm_cluster_pop[1] == 10
     assert isinstance(result.balance_result, BalanceResult)
     assert result.balance_result.f_pvalue == pytest.approx(0.8275, abs=1e-3)
     assert result.balance_result.f_statistic == pytest.approx(0.0489, abs=1e-3)
@@ -466,6 +472,10 @@ def test_assign_clusters_three_arms_unequal_sizes():
     assert result.arm_pop[0] == 307
     assert result.arm_pop[1] == 237
     assert result.arm_pop[2] == 329
+    assert result.arm_cluster_pop is not None
+    assert result.arm_cluster_pop[0] == 11
+    assert result.arm_cluster_pop[1] == 8
+    assert result.arm_cluster_pop[2] == 11
     assert isinstance(result.balance_result, BalanceResult)
     assert result.balance_result.f_pvalue == pytest.approx(0.7733, abs=1e-3)
     assert result.balance_result.f_statistic == pytest.approx(0.0857, abs=1e-3)

@@ -576,6 +576,8 @@ class ArmStats(Base):
 
     arm_id: Mapped[str] = mapped_column(ForeignKey("arms.id", ondelete="CASCADE"), primary_key=True)
     population: Mapped[int] = mapped_column(server_default="0")
+    # Cluster count present only for preassigned cluster-randomized experiments (set on bulk inserts).
+    cluster_count: Mapped[int | None] = mapped_column(nullable=True, server_default=None)
 
 
 class Draw(Base):
