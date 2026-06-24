@@ -820,6 +820,22 @@ async def test_create_experiment_impl_clustered_requires_desired_n_clusters(xngi
         )
 
 
+async def test_create_experiment_impl_clustered_rejects_empty_eligible_cohort(xngin_session, testing_datasource):
+    design_spec = make_design_spec_clustered()
+    design_spec.filters = [Filter(field_name="cluster_equal", relation=Relation.INCLUDES, value=[-1])]
+    request = CreateExperimentRequest(design_spec=design_spec)
+
+    with pytest.raises(LateValidationError, match="Preassigned experiments must have eligible participants data"):
+        await create_experiment_impl(
+            request=request,
+            datasource=testing_datasource.ds,
+            xngin_session=xngin_session,
+            stratify_on_metrics=False,
+            random_state=42,
+            validated_webhooks=[],
+        )
+
+
 async def test_create_experiment_impl_clustered_samples_clusters(xngin_session, testing_datasource):
     """Clustered preassigned creation samples clusters, then includes every participant in each sampled cluster."""
     design_spec = make_design_spec_clustered(

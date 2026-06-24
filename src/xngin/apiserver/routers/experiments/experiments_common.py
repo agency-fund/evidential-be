@@ -290,7 +290,7 @@ async def create_experiment_impl(
                     )
                 sa_table, participants = result.sa_table, result.participants
 
-            if participants is None:
+            if not participants:
                 raise LateValidationError("Preassigned experiments must have eligible participants data")
 
             return await create_preassigned_experiment_impl(
