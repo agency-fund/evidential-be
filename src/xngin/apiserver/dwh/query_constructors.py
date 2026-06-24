@@ -105,9 +105,8 @@ def create_inspect_table_from_cursor_query(table_name: str, schema_name: str | N
     return select(text("*")).select_from(table).limit(0)
 
 
-def compose_query(sa_table: Table, select_columns: set[str], filters: list[ColumnElement], desired_n: int):
-    """Builds a query to fetch rows from a list of filters and a set of column names to select."""
-
+def _resolve_columns(sa_table: Table, select_columns: set[str]) -> list[ColumnElement]:
+    """Resolves a set of column names to their SQLAlchemy columns, sorted by name for stable generated SQL."""
     if not select_columns:
         raise ValueError("select_columns must have at least one item.")
 
@@ -116,7 +115,12 @@ def compose_query(sa_table: Table, select_columns: set[str], filters: list[Colum
         if col not in sa_table.c:
             raise ValueError(f"Column {col} not found in schema.")
         columns.append(sa_table.c[col])
+    return columns
 
+
+def compose_query(sa_table: Table, select_columns: set[str], filters: list[ColumnElement], desired_n: int):
+    """Builds a query to fetch rows from a list of filters and a set of column names to select."""
+    columns = _resolve_columns(sa_table, select_columns)
     return select(*columns).filter(*filters).order_by(custom_functions.Random(sa_table=sa_table)).limit(desired_n)
 
 
@@ -128,18 +132,12 @@ def compose_cluster_query(
     cluster_key: str,
 ):
     """Builds a query that fetches rows belonging to a random sample of clusters."""
-
-    if not select_columns:
-        raise ValueError("select_columns must have at least one item.")
+    # cluster_key is validated separately because callers may sample on a column they don't select.
     if cluster_key not in sa_table.c:
         raise ValueError(f"Column {cluster_key} not found in schema.")
+    columns = _resolve_columns(sa_table, select_columns)
 
-    columns = []
-    for col in sorted(select_columns):  # sort for stable generated sql
-        if col not in sa_table.c:
-            raise ValueError(f"Column {col} not found in schema.")
-        columns.append(sa_table.c[col])
-
+    # Sample the clusters from those that have at least one row matching the filters.
     cluster_col = sa_table.c[cluster_key]
     eligible_clusters = select(cluster_col).filter(*filters).group_by(cluster_col).subquery()
     sampled_cluster_col = eligible_clusters.c[cluster_key]
@@ -149,4 +147,6 @@ def compose_cluster_query(
         .limit(desired_n_clusters)
     )
 
+    # Re-apply ``filters`` (not just cluster membership) so we return only the matching rows within each
+    # sampled cluster, consistent with the filtering used to choose the clusters above.
     return select(*columns).filter(*filters, cluster_col.in_(sampled_clusters))
