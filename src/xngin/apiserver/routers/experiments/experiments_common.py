@@ -243,12 +243,12 @@ async def create_experiment_impl(
     match request.design_spec:
         case PreassignedFrequentistExperimentSpec():
             preassigned_spec = request.design_spec
-            is_clustered = preassigned_spec.cluster_key is not None
+            cluster_key = preassigned_spec.cluster_key
             desired_n = preassigned_spec.desired_n
             desired_n_clusters = preassigned_spec.desired_n_clusters
-            if is_clustered and desired_n_clusters is None:
+            if cluster_key is not None and desired_n_clusters is None:
                 raise LateValidationError("Cluster-randomized preassigned experiments must have a desired_n_clusters.")
-            if not is_clustered and desired_n is None:
+            if cluster_key is None and desired_n is None:
                 raise LateValidationError("Individual-randomized preassigned experiments must have a desired_n.")
 
             table_name = preassigned_spec.table_name
@@ -262,24 +262,26 @@ async def create_experiment_impl(
             stratum_cols = strata_names + metric_names if stratify_on_metrics else strata_names
             select_columns = {*stratum_cols, primary_key}
             eligibility_filters = request.design_spec.filters
-            if is_clustered:
-                select_columns.add(preassigned_spec.cluster_key)
+            if cluster_key is not None:
+                select_columns.add(cluster_key)
                 eligibility_filters = [
                     *eligibility_filters,
-                    Filter(field_name=preassigned_spec.cluster_key, relation=Relation.EXCLUDES, value=[None]),
+                    Filter(field_name=cluster_key, relation=Relation.EXCLUDES, value=[None]),
                 ]
 
             ds_config = datasource.get_config()
             async with DwhSession(ds_config.dwh) as dwh:
-                if is_clustered:
+                if cluster_key is not None:
+                    assert desired_n_clusters is not None  # covered by LateValidationError above
                     result = await dwh.get_clusters_of_participants(
                         table_name,
                         select_columns=select_columns,
                         filters=eligibility_filters,
                         desired_n_clusters=desired_n_clusters,
-                        cluster_key=preassigned_spec.cluster_key,
+                        cluster_key=cluster_key,
                     )
                 else:
+                    assert desired_n is not None  # covered by LateValidationError above
                     result = await dwh.get_participants(
                         table_name,
                         select_columns=select_columns,
