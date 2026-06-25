@@ -3,6 +3,7 @@ import csv
 import io
 import json
 import math
+from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -2018,11 +2019,14 @@ def test_preassigned_experiment_assign_summary_matches_get(testing_datasource, a
     assert create_summary.balance_check == get_summary.balance_check
     assert create_summary.arm_sizes is not None
     assert get_summary.arm_sizes is not None
+    assert all(arm_size.cluster_count is None for arm_size in create_summary.arm_sizes)
+    assert all(arm_size.cluster_count is None for arm_size in get_summary.arm_sizes)
     assert len(create_summary.arm_sizes) == len(get_summary.arm_sizes)
     for create_arm, get_arm in zip(create_summary.arm_sizes, get_summary.arm_sizes, strict=True):
         assert create_arm.arm.arm_id == get_arm.arm.arm_id
         assert create_arm.arm.arm_name == get_arm.arm.arm_name
         assert create_arm.size == get_arm.size
+        assert create_arm.cluster_count == get_arm.cluster_count
 
 
 def test_create_and_get_freq_online_experiment(testing_datasource, aclient: AdminAPIClient):
@@ -4294,14 +4298,33 @@ def test_create_freq_preassigned_experiment_with_cluster_key_roundtrips(
     assert isinstance(fetched.config.design_spec, PreassignedFrequentistExperimentSpec)
     assert fetched.config.design_spec.cluster_key == "cluster_powerlaw"
 
-    # Verify assignment exports via integration API and UI API are consistent and contain the cluster key.
+    # Verify the created and fetched experiment assign_summary objects match via pydantic model equality.
+    create_summary = created.assign_summary
+    assert create_summary is not None
+    assert create_summary.arm_sizes is not None
+    fetched_summary = fetched.config.assign_summary
+    assert create_summary == fetched_summary
+
     assignments = eclient.get_experiment_assignments(
         api_key=testing_datasource.key,
         experiment_id=created.experiment_id,
     ).data.assignments
     assert len(assignments) == 100
-    assert all(assignment.cluster_key is not None for assignment in assignments)
+    # Verify the clusters seen in the individual assignments match the assign_summary cluster counts.
+    clusters_by_arm: dict[str, set[str]] = defaultdict(set)
+    participants_by_arm: dict[str, set[str]] = defaultdict(set)
+    for assignment in assignments:
+        assert assignment.cluster_key is not None
+        clusters_by_arm[assignment.arm_id].add(assignment.cluster_key)
+        participants_by_arm[assignment.arm_id].add(assignment.participant_id)
+    for arm_size in create_summary.arm_sizes:
+        arm_id = arm_size.arm.arm_id
+        assert arm_id is not None
+        assert len(clusters_by_arm[arm_id]) > 0
+        assert arm_size.cluster_count == len(clusters_by_arm[arm_id])
+        assert arm_size.size == len(participants_by_arm[arm_id])
 
+    # Verify assignment exports via integration API above and UI API below are consistent and contain the cluster key.
     csv_response = aclient.client.get(f"/v1/m/datasources/{ds_id}/experiments/{created.experiment_id}/assignments/csv")
     assert csv_response.status_code == HTTPStatus.OK, csv_response.content
     csv_reader = csv.DictReader(io.StringIO(csv_response.text))
@@ -4385,7 +4408,9 @@ async def test_create_freq_preassigned_experiment_with_missing_cluster_key_raise
         aclient.create_experiment(datasource_id=datasource_id, body=experiment_request, random_state=42)
 
 
-async def test_create_freq_preassigned_experiment_cluster_key_has_nulls(testing_datasource, aclient: AdminAPIClient):
+async def test_create_freq_preassigned_experiment_cluster_key_has_nulls(
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+):
     """Creating a cluster-randomized experiment with a cluster key that has nulls should exclude those rows."""
     datasource_id = testing_datasource.datasource_id
     experiment_request = CreateExperimentRequest(
@@ -4409,10 +4434,43 @@ async def test_create_freq_preassigned_experiment_cluster_key_has_nulls(testing_
 
     created = aclient.create_experiment(datasource_id=datasource_id, body=experiment_request, random_state=42).data
 
-    assert created.assign_summary is not None
+    created_summary = created.assign_summary
+    assert created_summary is not None
     # There are 1k rows in the wide_dwh table, and 28 rows where age=NULL that should be excluded:
-    assert created.assign_summary.sample_size == 972
-    assert created.assign_summary.arm_sizes is not None
-    assert len(created.assign_summary.arm_sizes) == 2
-    assert created.assign_summary.arm_sizes[0].size == 492
-    assert created.assign_summary.arm_sizes[1].size == 480
+    assert created_summary.sample_size == 972
+    assert created_summary.arm_sizes is not None
+    assert len(created_summary.arm_sizes) == 2
+    assert created_summary.arm_sizes[0].size == 492
+    assert created_summary.arm_sizes[1].size == 480
+    assert created_summary.arm_sizes[0].cluster_count == 37
+    assert created_summary.arm_sizes[1].cluster_count == 35
+
+    assignments = eclient.get_experiment_assignments(
+        api_key=testing_datasource.key,
+        experiment_id=created.experiment_id,
+    ).data.assignments
+    clusters_by_arm: dict[str, set[str]] = defaultdict(set)
+    for assignment in assignments:
+        assert assignment.cluster_key is not None
+        clusters_by_arm[assignment.arm_id].add(assignment.cluster_key)
+    for arm_size in created_summary.arm_sizes:
+        arm_id = arm_size.arm.arm_id
+        assert arm_id is not None
+        assert arm_size.cluster_count is not None
+        assert arm_size.cluster_count == len(clusters_by_arm[arm_id])
+
+    aclient.commit_experiment(datasource_id=datasource_id, experiment_id=created.experiment_id)
+    fetched_summary = aclient.get_experiment_for_ui(
+        datasource_id=datasource_id, experiment_id=created.experiment_id
+    ).data.config.assign_summary
+    assert fetched_summary is not None
+    assert fetched_summary.arm_sizes is not None
+    for create_arm, get_arm in zip(created_summary.arm_sizes, fetched_summary.arm_sizes, strict=True):
+        assert create_arm.arm.arm_id == get_arm.arm.arm_id
+        assert create_arm.size == get_arm.size
+        assert create_arm.cluster_count == get_arm.cluster_count
+    for arm_size in fetched_summary.arm_sizes:
+        arm_id = arm_size.arm.arm_id
+        assert arm_id is not None
+        assert arm_size.cluster_count is not None
+        assert arm_size.cluster_count == len(clusters_by_arm[arm_id])

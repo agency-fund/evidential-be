@@ -6,6 +6,7 @@ types. Our SQLA tables ideally shouldn't depend on xngin/apiserver/*; but for th
 JSONB type columns for multi-value/complex types, use the converters to get/set them properly.
 """
 
+import asyncio
 import operator
 from datetime import datetime
 from typing import Any, Self, assert_never
@@ -411,7 +412,7 @@ class ExperimentStorageConverter:
         )
 
     @classmethod
-    def init_from_components(
+    async def init_from_components(
         cls,
         datasource_id: str,
         organization_id: str,
@@ -499,8 +500,8 @@ class ExperimentStorageConverter:
 
                 arm_weights = design_spec.get_validated_arm_weights()
                 if arm_weights:
-                    # TODO: this method can be expensive and should be on a thread.
-                    param1, param2 = convert_arm_weights_to_prior_params(
+                    param1, param2 = await asyncio.to_thread(
+                        convert_arm_weights_to_prior_params,
                         arm_weights=arm_weights,
                         prior_type=design_spec.prior_type,
                         num_contexts=context_len,

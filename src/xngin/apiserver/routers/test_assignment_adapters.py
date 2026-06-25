@@ -288,6 +288,7 @@ async def test_bulk_insert_arm_assignments_basic(
         arm_stat = await xngin_session.get(tables.ArmStats, arm_id)
         assert arm_stat is not None
         assert arm_stat.population == int(fake_assignment_results.arm_pop[i])
+        assert arm_stat.cluster_count is None
 
     # Get assignments for verification
     result = await xngin_session.scalars(select(tables.ArmAssignment))
@@ -322,12 +323,17 @@ async def test_bulk_insert_arm_assignments_stores_cluster_key(
     assert unique_id_field is not None
 
     treatment_ids = [0, 1] * (len(sample_rows) // 2)
+    clusters_by_arm: dict[int, set[str]] = defaultdict(set)
+    for row, treatment in zip(sample_rows, treatment_ids, strict=True):
+        clusters_by_arm[treatment].add(row.region)
+    arm_cluster_pop = np.array([len(clusters_by_arm[i]) for i in range(len(arm_ids))])
     fake_assignment_results = AssignmentResult(
         treatment_ids=treatment_ids,
         stratum_ids=[0] * len(sample_rows),
         balance_result=None,
         stratum_cols=[],
         arm_pop=np.bincount(treatment_ids),
+        arm_cluster_pop=arm_cluster_pop,
     )
 
     await bulk_insert_arm_assignments(
@@ -339,6 +345,12 @@ async def test_bulk_insert_arm_assignments_stores_cluster_key(
         assignments=fake_assignment_results,
         cluster_key_col="region",
     )
+
+    for i, arm_id in enumerate(arm_ids):
+        arm_stat = await xngin_session.get(tables.ArmStats, arm_id)
+        assert arm_stat is not None
+        assert arm_stat.cluster_count == int(arm_cluster_pop[i])
+        assert arm_stat.population == int(fake_assignment_results.arm_pop[i])
 
     assignments = (await xngin_session.scalars(select(tables.ArmAssignment))).all()
     clusters_by_participant = {str(row.id): row.region for row in sample_rows}

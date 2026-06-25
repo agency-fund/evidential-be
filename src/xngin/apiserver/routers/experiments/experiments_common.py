@@ -380,7 +380,7 @@ async def create_preassigned_experiment_impl(
     )
     balance_check = make_balance_check(assignment_result.balance_result, design_spec.fstat_thresh)
 
-    experiment_converter = ExperimentStorageConverter.init_from_components(
+    experiment_converter = await ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
         design_spec=design_spec,
@@ -428,7 +428,7 @@ async def create_freq_online_experiment_impl(
     if not isinstance(design_spec, OnlineFrequentistExperimentSpec):
         raise MismatchedExperimentTypeError(f"Can't create freq online exp of type: {design_spec.experiment_type}")
 
-    experiment_converter = ExperimentStorageConverter.init_from_components(
+    experiment_converter = await ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
         design_spec=design_spec,
@@ -469,7 +469,7 @@ async def create_bandit_online_experiment_impl(
         case _:
             raise MismatchedExperimentTypeError(f"can't create bandit exp of type: {design_spec.experiment_type}")
 
-    experiment_converter = ExperimentStorageConverter.init_from_components(
+    experiment_converter = await ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
         design_spec=design_spec,
@@ -552,9 +552,10 @@ async def get_experiment_impl(
     converter = ExperimentStorageConverter(experiment)
     assign_summary = await get_assign_summary(
         xngin_session,
-        experiment.id,
-        converter.get_balance_check(),
+        experiment_id=experiment.id,
         experiment_type=ExperimentsType(experiment.experiment_type),
+        balance_check=converter.get_balance_check(),
+        include_cluster_counts=experiment.cluster_key_field() is not None,
     )
     webhook_ids = [webhook.id for webhook in experiment.webhooks]
     return await converter.get_experiment_response(assign_summary, webhook_ids)
@@ -605,7 +606,11 @@ async def list_organization_or_datasource_experiments_impl(
         converter = ExperimentStorageConverter(e)
         balance_check = converter.get_balance_check()
         assign_summary = await get_assign_summary(
-            xngin_session, e.id, balance_check, experiment_type=ExperimentsType(e.experiment_type)
+            xngin_session=xngin_session,
+            experiment_id=e.id,
+            experiment_type=ExperimentsType(e.experiment_type),
+            balance_check=balance_check,
+            include_cluster_counts=e.cluster_key_field() is not None,
         )
         webhook_ids = [webhook.id for webhook in e.webhooks]
         items.append(await converter.get_experiment_config(assign_summary, webhook_ids))
@@ -1047,6 +1052,9 @@ def convert_assignment_results_to_assign_summary(
         ArmSize(
             arm=Arm(arm_id=arm.id, arm_name=arm.name),
             size=int(counts[i]),
+            cluster_count=(
+                None if assignment_result.arm_cluster_pop is None else int(assignment_result.arm_cluster_pop[i])
+            ),
         )
         for i, arm in enumerate(arms)
     ]
@@ -1059,9 +1067,11 @@ def convert_assignment_results_to_assign_summary(
 
 async def get_assign_summary(
     xngin_session: AsyncSession,
+    *,
     experiment_id: str,
-    balance_check: BalanceCheck | None,
     experiment_type: ExperimentsType,
+    balance_check: BalanceCheck | None,
+    include_cluster_counts: bool = False,
 ) -> AssignSummary:
     """Constructs an AssignSummary from the experiment's arms and arm_assignments."""
     result = await xngin_session.execute(
@@ -1069,21 +1079,25 @@ async def get_assign_summary(
             tables.Arm.id,
             tables.Arm.name,
             func.coalesce(tables.ArmStats.population, 0),
+            tables.ArmStats.cluster_count,
         )
         .outerjoin(tables.ArmStats, tables.Arm.id == tables.ArmStats.arm_id)
         .where(tables.Arm.experiment_id == experiment_id)
         .order_by(tables.Arm.position)
     )
+
     arm_sizes = [
         ArmSize(
             arm=Arm(arm_id=arm_id, arm_name=name),
             size=count,
+            cluster_count=cluster_count if include_cluster_counts else None,
         )
-        for arm_id, name, count in result
+        for arm_id, name, count, cluster_count in result
     ]
 
     if experiment_type in {ExperimentsType.MAB_ONLINE, ExperimentsType.MAB_ONLINE_DWH, ExperimentsType.CMAB_ONLINE}:
         balance_check = None
+
     return AssignSummary(
         balance_check=balance_check,
         arm_sizes=arm_sizes,
