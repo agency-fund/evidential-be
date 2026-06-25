@@ -110,7 +110,7 @@ def _resolve_columns(sa_table: Table, select_columns: set[str]) -> list[ColumnEl
     if not select_columns:
         raise ValueError("select_columns must have at least one item.")
 
-    columns = []
+    columns: list[ColumnElement] = []
     for col in sorted(select_columns):  # sort for stable generated sql
         if col not in sa_table.c:
             raise ValueError(f"Column {col} not found in schema.")

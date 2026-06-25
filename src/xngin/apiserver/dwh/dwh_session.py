@@ -8,7 +8,7 @@ from typing import Self
 import google.api_core.exceptions
 import sqlalchemy
 from loguru import logger
-from sqlalchemy import Engine, Inspector, event, text
+from sqlalchemy import ColumnElement, Engine, Inspector, event, text
 from sqlalchemy.engine.interfaces import DBAPIConnection
 from sqlalchemy.exc import NoSuchTableError, OperationalError
 from sqlalchemy.orm import Session
@@ -272,7 +272,7 @@ class DwhSession:
         self,
         table_name: str,
         filters: list[Filter],
-        compose_query: Callable[[sqlalchemy.Table, list[Filter]], sqlalchemy.Select],
+        compose_query: Callable[[sqlalchemy.Table, list[ColumnElement]], sqlalchemy.Select],
         use_sa_autoload: bool | None = None,
     ) -> GetParticipantsResult:
         """Inspects ``table_name``, runs the query built by ``compose_query``, and wraps the resulting rows.
@@ -284,7 +284,7 @@ class DwhSession:
         sa_table = self._inspect_table_blocking(table_name, use_sa_autoload=use_sa_autoload)
         sqla_filters = query_constructors.create_query_filters(sa_table, filters)
         participants = self.session.execute(compose_query(sa_table, sqla_filters)).all()
-        return GetParticipantsResult(sa_table=sa_table, participants=participants)
+        return GetParticipantsResult(sa_table=sa_table, participants=list(participants))
 
     def _get_participants_blocking(
         self,
