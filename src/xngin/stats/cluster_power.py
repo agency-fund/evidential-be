@@ -119,10 +119,7 @@ def _check_effective_n_is_usable(
     if smallest_arm_n >= _MIN_ARM_N:
         return
 
-    raise ValueError(
-        "Too few, too-large clusters to run a power calculation for this metric. "
-        "A bigger sample won't help — you need more and smaller clusters."
-    )
+    raise ValueError("Too few clusters to run a power calculation for this metric. You need more clusters.")
 
 
 def calculate_num_clusters_needed(

@@ -510,7 +510,7 @@ def test_check_power_high_deff_gives_clear_message_not_misleading_one():
 
     message = str(excinfo.value)
     assert "current_income" in message
-    assert "more and smaller clusters" in message
+    assert "more clusters" in message
     assert "Chosen sample size must be positive" not in message
     assert "too small for the power calculation" not in message
 
