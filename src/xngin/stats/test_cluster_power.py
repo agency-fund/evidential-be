@@ -333,20 +333,20 @@ def test_solve_for_mde_cluster_impl_with_cv():
 
 
 @pytest.mark.parametrize(
-    ("desired_n", "expected_effective_n"),
+    "desired_n",
     [
         # Each of these produced a *different* opaque error before the guard, all from the same
         # root cause: effective_n = int(desired_n / DEFF) collapsing below a runnable size.
-        pytest.param(50_000, 0, id="effective_n_0_was_chosen_sample_size_must_be_positive"),
-        pytest.param(150_000, 1, id="effective_n_1_was_zero_division"),
-        pytest.param(290_000, 2, id="effective_n_2_was_different_signs"),
-        pytest.param(390_000, 3, id="effective_n_3_was_different_signs"),
+        pytest.param(50_000, id="effective_n_0_was_chosen_sample_size_must_be_positive"),
+        pytest.param(150_000, id="effective_n_1_was_zero_division"),
+        pytest.param(290_000, id="effective_n_2_was_different_signs"),
+        pytest.param(390_000, id="effective_n_3_was_different_signs"),
     ],
 )
-def test_solve_for_mde_cluster_impl_high_deff_raises_clear_error(desired_n, expected_effective_n):
+def test_solve_for_mde_cluster_impl_high_deff_raises_clear_error(desired_n):
     """A very high ICC with large, few clusters inflates DEFF so much that the effective sample
     size collapses below a usable size even for a large desired_n. Instead of the old misleading
-    "increase your sample size" errors, we raise a clear message pointing at the design effect.
+    "increase your sample size" errors, we raise a clear message pointing at the clustering structure.
 
     Mirrors the reported edge case: ethnicity-clustered current_income with 6 natural clusters of
     ~166,667 each and ICC≈0.589, giving DEFF≈98,227.
@@ -361,13 +361,11 @@ def test_solve_for_mde_cluster_impl_high_deff_raises_clear_error(desired_n, expe
         cv=0.0,
     )
 
-    with pytest.raises(ValueError, match="design effect") as excinfo:
+    with pytest.raises(ValueError, match="more and smaller clusters") as excinfo:
         solve_for_mde_cluster_impl(desired_n=desired_n, metric=metric, n_arms=2)
 
     message = str(excinfo.value)
-    assert "DEFF=98227" in message
-    assert "ICC=0.5894" in message
-    assert f"to {expected_effective_n} (from a desired {desired_n})" in message
+    assert "A bigger sample won't help" in message
     assert "Chosen sample size must be positive" not in message
 
 

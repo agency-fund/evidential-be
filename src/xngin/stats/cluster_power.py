@@ -103,10 +103,6 @@ _MIN_ARM_N = 2
 def _check_effective_n_is_usable(
     *,
     effective_n: int,
-    desired_n: int,
-    deff: float,
-    icc: float,
-    avg_cluster_size: float,
     n_arms: int,
     arm_weights: list[float] | None,
 ) -> None:
@@ -124,12 +120,8 @@ def _check_effective_n_is_usable(
         return
 
     raise ValueError(
-        f"The design effect from clustering (DEFF={deff:.0f}) shrinks the effective sample size to "
-        f"{effective_n} (from a desired {desired_n}), which is too small to run a power calculation. "
-        f"This is driven by a high intracluster correlation (ICC={icc:.4f}) combined with a large "
-        f"average cluster size ({avg_cluster_size:.0f}) spread across few clusters, not by the desired "
-        f"sample size. Increasing the desired sample size will not meaningfully help; reduce the ICC or "
-        f"use more (and smaller) clusters."
+        "Too few, too-large clusters to run a power calculation for this metric. "
+        "A bigger sample won't help — you need more and smaller clusters."
     )
 
 
@@ -269,10 +261,6 @@ def solve_for_mde_cluster_impl(
 
     _check_effective_n_is_usable(
         effective_n=effective_n,
-        desired_n=desired_n,
-        deff=deff,
-        icc=metric.icc,
-        avg_cluster_size=metric.avg_cluster_size,
         n_arms=n_arms,
         arm_weights=arm_weights,
     )
