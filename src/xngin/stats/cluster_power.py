@@ -93,10 +93,8 @@ def calculate_effective_sample_size(
     return int(total_n / deff)
 
 
-# The underlying individual power calculation needs at least this many units in the
-# smallest arm. Below it, statsmodels fails with opaque, misleading errors
-# (ValueError "Chosen sample size must be positive.", ZeroDivisionError, or
-# "f(a) and f(b) must have different signs").
+# Constrain the underlying individual power calculation to have at least this many units in the
+# smallest arm to avoid statsmodels raising opaque errors.
 _MIN_ARM_N = 2
 
 
@@ -111,15 +109,18 @@ def _check_effective_n_is_usable(
     A very high ICC and/or large clusters can inflate the design effect (DEFF) so much that the
     effective sample size (``desired_n / DEFF``) is too small to run a power calculation, even when
     the user enters a very large ``desired_n``. Without this guard the downstream individual power
-    calc fails with a misleading "increase your sample size" style error, when the real driver is the
-    clustering structure (few, large clusters with high within-cluster correlation).
+    calc fails with misleading errors.
     """
     arm_probs = _normalize_arm_weights(arm_weights, n_arms)
     smallest_arm_n = min(int(effective_n * prob) for prob in arm_probs)
     if smallest_arm_n >= _MIN_ARM_N:
         return
 
-    raise ValueError("Too few clusters to run a power calculation for this metric. You need more clusters.")
+    raise ValueError(
+        "Clustering inflates the required sample size so much that this power calculation can't run. "
+        "Increase the number of clusters, choose a cluster key with more groups, or relax filters to "
+        "include more cluster groups."
+    )
 
 
 def calculate_num_clusters_needed(

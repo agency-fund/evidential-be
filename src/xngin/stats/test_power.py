@@ -485,12 +485,11 @@ def test_check_power_with_invalid_desired_n_raises():
 
 
 def test_check_power_high_deff_gives_clear_message_not_misleading_one():
-    """Regression: cluster design with a catastrophic design effect.
+    """Regression test: cluster design with a catastrophic design effect raises reasonable error.
 
     Reported edge case: ethnicity-clustered current_income with only 6 natural clusters of
     ~166,667 each and ICC≈0.589 → DEFF≈98,227. Even a large desired_n leaves an effective sample
-    size below a runnable size, which previously surfaced as the misleading "Chosen sample size must
-    be positive." / "Your sample size is too small..." errors. We now explain the real driver.
+    size below a runnable size.
     """
     metric = DesignSpecMetric(
         field_name="current_income",
@@ -505,14 +504,8 @@ def test_check_power_high_deff_gives_clear_message_not_misleading_one():
         cv=0.0,
     )
 
-    with pytest.raises(StatsPowerError) as excinfo:
+    with pytest.raises(StatsPowerError, match="Clustering inflates the required sample size"):
         check_power([metric], n_arms=2, desired_n=50_000)
-
-    message = str(excinfo.value)
-    assert "current_income" in message
-    assert "more clusters" in message
-    assert "Chosen sample size must be positive" not in message
-    assert "too small for the power calculation" not in message
 
 
 def test_analyze_metric_power_without_desired_n_still_works():

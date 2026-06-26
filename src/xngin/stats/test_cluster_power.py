@@ -361,11 +361,10 @@ def test_solve_for_mde_cluster_impl_high_deff_raises_clear_error(desired_n):
         cv=0.0,
     )
 
-    with pytest.raises(ValueError, match="more clusters") as excinfo:
+    with pytest.raises(ValueError, match="Clustering inflates the required sample size") as excinfo:
         solve_for_mde_cluster_impl(desired_n=desired_n, metric=metric, n_arms=2)
 
     message = str(excinfo.value)
-    assert "Too few clusters" in message
     assert "Chosen sample size must be positive" not in message
 
 
