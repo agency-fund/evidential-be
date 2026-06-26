@@ -93,6 +93,36 @@ def calculate_effective_sample_size(
     return int(total_n / deff)
 
 
+# Constrain the underlying individual power calculation to have at least this many units in the
+# smallest arm to avoid statsmodels raising opaque errors.
+_MIN_ARM_N = 2
+
+
+def _check_effective_n_is_usable(
+    *,
+    effective_n: int,
+    n_arms: int,
+    arm_weights: list[float] | None,
+) -> None:
+    """Raise a clear, actionable error when the design effect collapses the effective sample size.
+
+    A very high ICC and/or large clusters can inflate the design effect (DEFF) so much that the
+    effective sample size (``desired_n / DEFF``) is too small to run a power calculation, even when
+    the user enters a very large ``desired_n``. Without this guard the downstream individual power
+    calc fails with misleading errors.
+    """
+    arm_probs = _normalize_arm_weights(arm_weights, n_arms)
+    smallest_arm_n = min(int(effective_n * prob) for prob in arm_probs)
+    if smallest_arm_n >= _MIN_ARM_N:
+        return
+
+    raise ValueError(
+        "Clustering inflates the required sample size so much that this power calculation can't run. "
+        "Increase the number of clusters, choose a cluster key with more groups, or relax filters to "
+        "include more cluster groups."
+    )
+
+
 def calculate_num_clusters_needed(
     n_individual: float,
     avg_cluster_size: float,
@@ -226,6 +256,12 @@ def solve_for_mde_cluster_impl(
     deff = calculate_design_effect(metric.icc, metric.avg_cluster_size, metric.cv or 0.0)
 
     effective_n = calculate_effective_sample_size(desired_n, deff)
+
+    _check_effective_n_is_usable(
+        effective_n=effective_n,
+        n_arms=n_arms,
+        arm_weights=arm_weights,
+    )
 
     target_possible, pct_change_possible = solve_for_mde_individual_impl(
         desired_n=effective_n,
