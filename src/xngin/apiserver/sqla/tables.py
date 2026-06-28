@@ -476,6 +476,7 @@ class Experiment(Base):
     alpha: Mapped[float | None] = mapped_column()
     fstat_thresh: Mapped[float | None] = mapped_column()
     desired_n: Mapped[int | None] = mapped_column()
+    desired_n_clusters: Mapped[int | None] = mapped_column()
 
     # Experiment Registry
     impact: Mapped[str] = mapped_column(server_default="")

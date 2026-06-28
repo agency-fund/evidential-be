@@ -90,9 +90,18 @@ class SampleTable(Base):
     experiment_ids = mapped_column(String, nullable=False)
 
 
+class SampleClusteredTable(Base):
+    __tablename__ = "test_clustered_table"
+
+    id = mapped_column(Integer, primary_key=True, autoincrement=False)
+    cluster_key = mapped_column(String, nullable=False)
+    int_col = mapped_column(Integer, nullable=False)
+
+
 class SampleTables(NamedTuple):
     sample_table: Table
     sample_nullable_table: Table
+    sample_clustered_table: Table
 
 
 @dataclass
@@ -133,6 +142,27 @@ SAMPLE_TABLE_ROWS = [
     ROW_100,
     ROW_200,
     ROW_300,
+]
+
+
+@dataclass
+class ClusteredRow:
+    id: int
+    cluster_key: str
+    int_col: int
+
+
+SAMPLE_CLUSTERED_TABLE_ROWS = [
+    ClusteredRow(id=1, cluster_key="a", int_col=10),
+    ClusteredRow(id=2, cluster_key="a", int_col=20),
+    ClusteredRow(id=3, cluster_key="b", int_col=30),
+    ClusteredRow(id=4, cluster_key="b", int_col=40),
+    ClusteredRow(id=5, cluster_key="b", int_col=50),
+    ClusteredRow(id=6, cluster_key="c", int_col=60),
+    ClusteredRow(id=7, cluster_key="d", int_col=70),
+    ClusteredRow(id=8, cluster_key="d", int_col=80),
+    ClusteredRow(id=9, cluster_key="d", int_col=90),
+    ClusteredRow(id=10, cluster_key="d", int_col=100),
 ]
 
 
@@ -188,10 +218,12 @@ def fixture_shared_sample_tables(queries_dwh_engine):
             session.add(SampleTable(**row.__dict__))
         for nullable_row in SAMPLE_NULLABLE_TABLE_ROWS:
             session.add(SampleNullableTable(**nullable_row.__dict__))
+        for clustered_row in SAMPLE_CLUSTERED_TABLE_ROWS:
+            session.add(SampleClusteredTable(**clustered_row.__dict__))
         session.commit()
 
     try:
-        yield SampleTables(SampleTable.get_table(), SampleNullableTable.get_table())
+        yield SampleTables(SampleTable.get_table(), SampleNullableTable.get_table(), SampleClusteredTable.get_table())
     finally:
         Base.metadata.drop_all(queries_dwh_engine)
 

@@ -451,6 +451,7 @@ async def test_cluster_key_exports_with_preassigned_assignments(
             strata=[],
             filters=[],
             desired_n=24,
+            desired_n_clusters=24,
         ),
         webhooks=[],
     )
@@ -463,9 +464,9 @@ async def test_cluster_key_exports_with_preassigned_assignments(
     json_response = eclient.client.get(f"/v1/experiments/{experiment_id}/assignments", headers=eclient_headers)
     assert json_response.status_code == HTTPStatus.OK, json_response.content
     json_assignments = json_response.json()["assignments"]
-    assert len(json_assignments) == 24
     assert all("cluster_key" in assignment for assignment in json_assignments)
     assert all(assignment["cluster_key"] is not None for assignment in json_assignments)
+    assert len({assignment["cluster_key"] for assignment in json_assignments}) == 24
 
     csv_response = eclient.client.get(f"/v1/experiments/{experiment_id}/assignments/csv", headers=eclient_headers)
     assert csv_response.status_code == HTTPStatus.OK, csv_response.content
