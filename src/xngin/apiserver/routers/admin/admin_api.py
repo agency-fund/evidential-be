@@ -2072,6 +2072,7 @@ async def get_experiment_for_ui(
     return GetExperimentForUiResponse(
         config=await experiments_common.get_experiment_impl(session, experiment),
         experiment_schema=make_schema_from_experiment(experiment),
+        sample_calls=experiments_common.make_sample_calls(experiment),
     )
 
 

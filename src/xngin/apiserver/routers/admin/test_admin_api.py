@@ -226,6 +226,34 @@ async def make_bandit_online_experiment(
     return data
 
 
+async def test_get_experiment_for_ui_includes_sample_calls_for_mab(testing_datasource, aclient: AdminAPIClient):
+    """A MAB experiment's UI response carries example calls with a type-correct outcome."""
+    experiment = await make_bandit_online_experiment(
+        aclient,
+        testing_datasource.datasource_id,
+        prior_type=PriorTypes.NORMAL,
+        reward_type=LikelihoodTypes.NORMAL,
+    )
+    assert experiment.sample_calls is not None
+    assert [c.label for c in experiment.sample_calls.calls] == ["Get assignment", "Report outcome"]
+    outcome_call = experiment.sample_calls.calls[1]
+    assert outcome_call.method == "POST"
+    assert outcome_call.path.endswith("/outcome")
+    assert experiment.config.experiment_id in outcome_call.path
+    assert outcome_call.body == {"outcome": 1.5}  # NORMAL reward => real-valued example
+
+
+async def test_get_experiment_for_ui_sample_calls_none_for_frequentist(
+    testing_datasource, aclient: AdminAPIClient, testing_experiment: TestExperiment
+):
+    """Frequentist experiments don't push outcomes to us, so they get no sample calls."""
+    response = aclient.get_experiment_for_ui(
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=testing_experiment.config.experiment_id,  # NB this is a frequentist experiment fixture
+    ).data
+    assert response.sample_calls is None
+
+
 def make_cmab_context_inputs(
     experiment: GetExperimentForUiResponse,
     values: list[float],

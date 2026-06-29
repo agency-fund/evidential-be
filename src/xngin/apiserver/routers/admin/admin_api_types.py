@@ -29,6 +29,7 @@ from xngin.apiserver.routers.common_api_types import (
     GetStrataResponseElement,
     Impact,
     PaginatedResponse,
+    SampleCalls,
 )
 from xngin.apiserver.settings import ParticipantsDef
 
@@ -627,6 +628,13 @@ class GetExperimentForUiResponse(AdminApiBaseModel):
         Field(
             description="If available, the schema information (fields used, data types) for this experiment. "
             "This field is null for experiments that only use an 'API Only' datasource."
+        ),
+    ]
+    sample_calls: Annotated[
+        SampleCalls | None,
+        Field(
+            description="Structured example API calls integrators would make for this experiment. "
+            "Null for experiment types that don't push to us at runtime (e.g. frequentist)."
         ),
     ]
 

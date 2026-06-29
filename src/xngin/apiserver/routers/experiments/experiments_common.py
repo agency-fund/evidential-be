@@ -52,6 +52,8 @@ from xngin.apiserver.routers.common_api_types import (
     OnlineFrequentistExperimentSpec,
     ParticipantProperty,
     PreassignedFrequentistExperimentSpec,
+    SampleCall,
+    SampleCalls,
 )
 from xngin.apiserver.routers.common_enums import (
     DataType,
@@ -905,6 +907,59 @@ async def create_assignment_for_participant(
         created_at=created_at,
         strata=[],
         context_values=sorted_context_vals,
+    )
+
+
+def make_sample_calls(experiment: tables.Experiment) -> SampleCalls | None:
+    """Build example API calls for a bandit experiment, for the admin UI.
+
+    Returns None for experiment types that don't push to us at runtime (frequentist experiments, and
+    CMAB is #todo in the future). The backend fills in everything it knows (the experiment
+    id in the path, a type-correct example outcome); participant_id and API key stay as placeholders.
+
+    Requires experiment.experiment_fields to be loaded for MAB_ONLINE_DWH experiments.
+    """
+    experiment_type = ExperimentsType(experiment.experiment_type)
+    if experiment_type not in {ExperimentsType.MAB_ONLINE, ExperimentsType.MAB_ONLINE_DWH}:
+        return None
+    if experiment.reward_type is None:
+        return None
+
+    # Pick a type-correct example outcome: 0/1 for a Bernoulli reward or a boolean DWH target column,
+    # otherwise an illustrative number.
+    outcome_example: float = 1.5
+    if LikelihoodTypes(experiment.reward_type) == LikelihoodTypes.BERNOULLI:
+        outcome_example = 1
+    elif experiment_type == ExperimentsType.MAB_ONLINE_DWH:
+        # MAB-DWH always has an is_target field (target_field_name is required at create time).
+        target_field = next(ef for ef in experiment.experiment_fields if ef.is_target)
+        if DataType(target_field.data_type).storage_class() is DataTypeStorageClass.BOOLEAN:
+            outcome_example = 1
+
+    base_path = f"{constants.API_PREFIX_V1}/experiments/{experiment.id}/assignments/{{participant_id}}"
+    api_key_header = {"X-API-Key": "<your-api-key>"}
+    return SampleCalls(
+        calls=[
+            SampleCall(
+                label="Get assignment",
+                method="GET",
+                path=base_path,
+                headers=api_key_header,
+                example_response={
+                    "experiment_id": experiment.id,
+                    "participant_id": "{participant_id}",
+                    "assignment": {"arm_id": "<arm_id>", "arm_name": "<arm_name>", "outcome": None},
+                },
+            ),
+            SampleCall(
+                label="Report outcome",
+                method="POST",
+                path=f"{base_path}/outcome",
+                headers=api_key_header,
+                body={"outcome": outcome_example},
+                example_response={"arm_id": "<arm_id>", "arm_name": "<arm_name>"},
+            ),
+        ]
     )
 
 
