@@ -243,15 +243,31 @@ async def test_get_experiment_for_ui_includes_sample_calls_for_mab(testing_datas
     assert outcome_call.body == {"outcome": 1.5}  # NORMAL reward => real-valued example
 
 
-async def test_get_experiment_for_ui_sample_calls_none_for_frequentist(
+async def test_get_experiment_for_ui_sample_calls_frequentist_get_assignment_only(
     testing_datasource, aclient: AdminAPIClient, testing_experiment: TestExperiment
 ):
-    """Frequentist experiments don't push outcomes to us, so they get no sample calls."""
+    """Frequentist clients fetch assignments via the API. Report outcomes through DWH, so
+    the UI shows a get-assignment example and no outcome call."""
     response = aclient.get_experiment_for_ui(
         datasource_id=testing_datasource.datasource_id,
         experiment_id=testing_experiment.config.experiment_id,  # NB this is a frequentist experiment fixture
     ).data
-    assert response.sample_calls is None
+    assert response.sample_calls is not None
+    assert [c.label for c in response.sample_calls.calls] == ["Get assignment"]
+    # Check we don't have an outcome call for frequentist experiments.
+    assert all("outcome" not in c.path for c in response.sample_calls.calls)
+
+
+async def test_get_experiment_for_ui_sample_calls_none_for_cmab(testing_datasource, aclient: AdminAPIClient):
+    """CMAB assignment needs a context vector, so the UI shows no sample calls yet (deferred)."""
+    experiment = await make_bandit_online_experiment(
+        aclient,
+        testing_datasource.datasource_id,
+        experiment_type=ExperimentsType.CMAB_ONLINE,
+        prior_type=PriorTypes.NORMAL,
+        reward_type=LikelihoodTypes.NORMAL,
+    )
+    assert experiment.sample_calls is None
 
 
 def make_cmab_context_inputs(

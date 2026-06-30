@@ -2819,6 +2819,7 @@ def _in_memory_experiment(
     experiment_type: ExperimentsType,
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
     target_data_type: DataType | None = None,
+    arms: list[tables.Arm] | None = None,
 ) -> tables.Experiment:
     """An in-memory (unpersisted) experiment with just the attributes make_sample_calls reads."""
     fields = []
@@ -2829,34 +2830,83 @@ def _in_memory_experiment(
         experiment_type=experiment_type.value,
         reward_type=reward_type.value,
         experiment_fields=fields,
+        arms=arms or [],
     )
 
 
 @pytest.mark.parametrize(
-    "experiment_type",
-    [ExperimentsType.FREQ_ONLINE, ExperimentsType.FREQ_PREASSIGNED, ExperimentsType.CMAB_ONLINE],
+    ("experiment_type", "expected_labels"),
+    [
+        # Everyone who serves assignments over the API gets a get-assignment example.
+        (ExperimentsType.FREQ_PREASSIGNED, ["Get assignment"]),
+        (ExperimentsType.FREQ_ONLINE, ["Get assignment"]),
+        # Bandits additionally get a report-outcome POST example.
+        (ExperimentsType.MAB_ONLINE, ["Get assignment", "Report outcome"]),
+        (ExperimentsType.MAB_ONLINE_DWH, ["Get assignment", "Report outcome"]),
+        # todo CMAB is deferred (its assignment needs a context vector).
+        (ExperimentsType.CMAB_ONLINE, None),
+    ],
 )
-def test_make_sample_calls_is_none_for_non_mab(experiment_type):
-    """Sample calls only make sense for experiment types that push to us at runtime (MAB today)."""
-    assert make_sample_calls(_in_memory_experiment(experiment_type)) is None
+def test_make_sample_calls_labels_by_type(experiment_type, expected_labels):
+    """The example calls each experiment type exposes, in one place."""
+    # MAB-DWH types its example outcome from the is_target field, so give it one.
+    target = DataType.BOOLEAN if experiment_type is ExperimentsType.MAB_ONLINE_DWH else None
+    calls = make_sample_calls(_in_memory_experiment(experiment_type, target_data_type=target))
+    if expected_labels is None:
+        assert calls is None
+    else:
+        assert calls is not None
+        assert [c.label for c in calls.calls] == expected_labels
 
 
 def test_make_sample_calls_mab_online_structure():
+    """A bandit's calls carry the interpolated experiment id, placeholder participant id / API key, and
+    expose the outcome field (filled in by the report-outcome call)."""
     calls = make_sample_calls(_in_memory_experiment(ExperimentsType.MAB_ONLINE, reward_type=LikelihoodTypes.NORMAL))
     assert calls is not None
-    assert [c.label for c in calls.calls] == ["Get assignment", "Report outcome"]
-
     get_call, outcome_call = calls.calls
+
     # The experiment id is filled in; participant id stays a placeholder; api key is never a real value.
     assert "exp_abc123" in get_call.path
     assert "{participant_id}" in get_call.path
     assert get_call.method == "GET"
     assert get_call.body is None
     assert get_call.headers == {"X-API-Key": "<your-api-key>"}
+    # Bandits expose the outcome field on the assignment (filled in by the outcome call).
+    assert get_call.example_response is not None
+    assert get_call.example_response["assignment"]["outcome"] is None
 
     assert outcome_call.method == "POST"
     assert outcome_call.path.endswith("/outcome")
     assert outcome_call.body == {"outcome": 1.5}  # NORMAL reward => real-valued example
+
+
+def test_make_sample_calls_frequentist_assignment_omits_outcome():
+    """Frequentist clients report outcomes through their DWH, so the assignment example omits the
+    bandit-only outcome field (and there's no report-outcome call)."""
+    calls = make_sample_calls(_in_memory_experiment(ExperimentsType.FREQ_PREASSIGNED))
+    assert calls is not None
+    (get_call,) = calls.calls
+    assert get_call.method == "GET"
+    assert get_call.body is None
+    assert get_call.example_response is not None
+    assert "outcome" not in get_call.example_response["assignment"]
+
+
+def test_make_sample_calls_uses_baseline_arm_as_example():
+    """The example shows a real arm (arms[0], the baseline) rather than a placeholder, in both the
+    assignment and the outcome responses."""
+    arms = [
+        tables.Arm(id="arm_ctrl", name="Control", position=1),
+        tables.Arm(id="arm_treat", name="Treatment", position=2),
+    ]
+    calls = make_sample_calls(_in_memory_experiment(ExperimentsType.MAB_ONLINE, arms=arms))
+    assert calls is not None
+    get_call, outcome_call = calls.calls
+    assert get_call.example_response is not None
+    assert get_call.example_response["assignment"]["arm_id"] == "arm_ctrl"
+    assert get_call.example_response["assignment"]["arm_name"] == "Control"
+    assert outcome_call.example_response == {"arm_id": "arm_ctrl", "arm_name": "Control"}
 
 
 @pytest.mark.parametrize(

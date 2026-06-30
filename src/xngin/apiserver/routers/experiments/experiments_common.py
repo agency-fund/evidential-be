@@ -911,56 +911,83 @@ async def create_assignment_for_participant(
 
 
 def make_sample_calls(experiment: tables.Experiment) -> SampleCalls | None:
-    """Build example API calls for a bandit experiment, for the admin UI.
+    """Build example API calls for an experiment, for the admin UI.
 
-    Returns None for experiment types that don't push to us at runtime (frequentist experiments, and
-    CMAB is #todo in the future). The backend fills in everything it knows (the experiment
-    id in the path, a type-correct example outcome); participant_id and API key stay as placeholders.
+    Currently generates samples along the following pattern:
 
-    Requires experiment.experiment_fields to be loaded for MAB_ONLINE_DWH experiments.
+    A/B Preassigned: GET assignment (no POST - outcomes read from the org's DWH)
+    A/B Online: GET assignment (no POST - outcomes read from the org's DWH)
+    MAB (incl. DWH-target): GET assignment, POST outcome for reporting back to the API
+    CMAB: None (# todo GET assignment sample not yet implemented, requires context vector)
+
+
+    The backend fills in everything it knows (the experiment id in the path, a real example arm, a
+    type-correct example outcome); participant_id and API key stay as placeholders.
+
+    Requires experiment.arms to be loaded (and experiment.experiment_fields for MAB_ONLINE_DWH
+    experiments).
     """
     experiment_type = ExperimentsType(experiment.experiment_type)
-    if experiment_type not in {ExperimentsType.MAB_ONLINE, ExperimentsType.MAB_ONLINE_DWH}:
+    if experiment_type.is_cmab():
         return None
-    if experiment.reward_type is None:
-        return None
-
-    # Pick a type-correct example outcome: 0/1 for a Bernoulli reward or a boolean DWH target column,
-    # otherwise an illustrative number.
-    outcome_example: float = 1.5
-    if LikelihoodTypes(experiment.reward_type) == LikelihoodTypes.BERNOULLI:
-        outcome_example = 1
-    elif experiment_type == ExperimentsType.MAB_ONLINE_DWH:
-        # MAB-DWH always has an is_target field (target_field_name is required at create time).
-        target_field = next(ef for ef in experiment.experiment_fields if ef.is_target)
-        if DataType(target_field.data_type).storage_class() is DataTypeStorageClass.BOOLEAN:
-            outcome_example = 1
 
     base_path = f"{constants.API_PREFIX_V1}/experiments/{experiment.id}/assignments/{{participant_id}}"
     api_key_header = {"X-API-Key": "<your-api-key>"}
-    return SampleCalls(
-        calls=[
-            SampleCall(
-                label="Get assignment",
-                method="GET",
-                path=base_path,
-                headers=api_key_header,
-                example_response={
-                    "experiment_id": experiment.id,
-                    "participant_id": "{participant_id}",
-                    "assignment": {"arm_id": "<arm_id>", "arm_name": "<arm_name>", "outcome": None},
-                },
-            ),
+    is_bandit = experiment_type.is_bandit()
+
+    # A participant is assigned exactly one arm, so show a real one to make the example concrete.
+    # arms are ordered baseline-first, so arms[0] (the control) is the natural illustrative value;
+    # fall back to placeholders if arms aren't loaded.
+    example_arm = experiment.arms[0] if experiment.arms else None
+    arm_id_example = example_arm.id if example_arm else "<arm_id>"
+    arm_name_example = example_arm.name if example_arm else "<arm_name>"
+
+    # Bandits expose the outcome field (filled in via the report-outcome call); for frequentist
+    # experiments the assignment is terminal from the API's perspective, so omit it.
+    assignment_example: dict[str, str | None] = {"arm_id": arm_id_example, "arm_name": arm_name_example}
+    if is_bandit:
+        assignment_example["outcome"] = None
+
+    calls = [
+        SampleCall(
+            label="Get assignment",
+            method="GET",
+            path=base_path,
+            headers=api_key_header,
+            example_response={
+                "experiment_id": experiment.id,
+                "participant_id": "{participant_id}",
+                "assignment": assignment_example,
+            },
+        ),
+    ]
+
+    if is_bandit:
+        # reward_type is a nullable column (frequentist experiments leave it None), but a bandit
+        # always has one. Asserted here anyway so that mypy can narrow the type for the next block.
+        assert experiment.reward_type is not None, "bandit experiment is missing a reward_type"
+        # Pick a type-correct example outcome: 0/1 for a Bernoulli reward or a boolean DWH target
+        # column, otherwise an illustrative number.
+        outcome_example: float = 1.5
+        if LikelihoodTypes(experiment.reward_type) == LikelihoodTypes.BERNOULLI:
+            outcome_example = 1
+        elif experiment_type == ExperimentsType.MAB_ONLINE_DWH:
+            # MAB-DWH always has an is_target field (target_field_name is required at create time).
+            target_field = next(ef for ef in experiment.experiment_fields if ef.is_target)
+            if DataType(target_field.data_type).storage_class() is DataTypeStorageClass.BOOLEAN:
+                outcome_example = 1
+        calls.append(
             SampleCall(
                 label="Report outcome",
                 method="POST",
                 path=f"{base_path}/outcome",
                 headers=api_key_header,
                 body={"outcome": outcome_example},
-                example_response={"arm_id": "<arm_id>", "arm_name": "<arm_name>"},
+                example_response={"arm_id": arm_id_example, "arm_name": arm_name_example},
             ),
-        ]
-    )
+        )
+
+    return SampleCalls(calls=calls)
 
 
 def _check_outcome_against_mab_dwh_target(
