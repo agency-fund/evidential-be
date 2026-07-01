@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from pydantic import TypeAdapter
 
@@ -23,13 +25,15 @@ def make_experiment_table(
         num_arms=num_arms,
     )
     design_spec: DesignSpec = TypeAdapter(DesignSpec).validate_python(request["design_spec"])
-    experiment_converter = ExperimentStorageConverter.init_from_components(
-        datasource_id="ds_id",
-        organization_id="org_id",
-        design_spec=design_spec,
-        state=ExperimentState.COMMITTED,
-        stopped_assignments_at=None,
-        stopped_assignments_reason=None,
+    experiment_converter = asyncio.run(
+        ExperimentStorageConverter.init_from_components(
+            datasource_id="ds_id",
+            organization_id="org_id",
+            design_spec=design_spec,
+            state=ExperimentState.COMMITTED,
+            stopped_assignments_at=None,
+            stopped_assignments_reason=None,
+        )
     )
     fake_experiment = experiment_converter.get_experiment()
     # Add fake ids to the arms

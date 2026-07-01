@@ -46,6 +46,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     ExperimentsAssignmentError,
     analyze_experiment_freq_impl,
     commit_experiment_impl,
+    convert_assignment_results_to_assign_summary,
     create_assignment_for_participant,
     create_bandit_online_experiment_impl,
     create_experiment_impl,
@@ -65,6 +66,7 @@ from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.assertions import assert_dates_equal
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
+from xngin.stats.assignment import AssignmentResult
 
 
 def make_createexperimentrequest_json(
@@ -241,7 +243,14 @@ def make_createexperimentrequest_json(
             raise ValueError(f"Invalid experiment type: {experiment_type}")
 
 
-def make_design_spec_clustered(*, cluster_key: str | None = "cluster_equal") -> PreassignedFrequentistExperimentSpec:
+def make_design_spec_clustered(
+    *,
+    cluster_key: str | None = "cluster_equal",
+    desired_n: int | None = 100,
+    desired_n_clusters: int | None = 10,
+) -> PreassignedFrequentistExperimentSpec:
+    if cluster_key is None:
+        desired_n_clusters = None
     return PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
         experiment_name="cluster analyze test",
@@ -255,7 +264,8 @@ def make_design_spec_clustered(*, cluster_key: str | None = "cluster_equal") -> 
         strata=[],
         metrics=[DesignSpecMetricRequest(field_name="test_score", metric_pct_change=0.1)],
         filters=[],
-        desired_n=100,
+        desired_n=desired_n,
+        desired_n_clusters=desired_n_clusters,
         power=0.8,
         alpha=0.05,
         fstat_thresh=0.2,
@@ -333,7 +343,7 @@ async def make_insertable_experiment(
         assert isinstance(design_spec, MABDwhExperimentSpec)
         field_type_map = await fetch_mab_dwh_fields_or_raise(datasource, design_spec)
 
-    experiment_converter = ExperimentStorageConverter.init_from_components(
+    experiment_converter = await ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
         organization_id=datasource.organization_id,
         design_spec=design_spec,
@@ -734,16 +744,153 @@ async def test_create_preassigned_experiment_impl_cluster_assignment(xngin_sessi
             select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == response.experiment_id)
         )
     ).all()
-    arm_by_participant = {row.participant_id: row.arm_id for row in assignment_rows}
-    arms_by_cluster: dict[str, set[str]] = defaultdict(set)
+    participant_to_arm = {row.participant_id: row.arm_id for row in assignment_rows}
+    cluster_to_arms: dict[str, set[str]] = defaultdict(set)
     for participant in dwh_participants:
         participant_id = str(getattr(participant, design_spec.primary_key))
         cluster_id = str(getattr(participant, design_spec.cluster_key))
-        arms_by_cluster[cluster_id].add(arm_by_participant[participant_id])
+        cluster_to_arms[cluster_id].add(participant_to_arm[participant_id])
 
-    assert len(arms_by_cluster) > 1
+    assert len(cluster_to_arms) > 1
+    assert all(len(arm_ids) == 1 for arm_ids in cluster_to_arms.values())
+    assert len(set.union(*cluster_to_arms.values())) == 2
+
+    # Verify the assign_summary matches the cluster and arm counts derived from the raw assignments.
+    arm_to_clusters: dict[str, set[str]] = defaultdict(set)
+    arm_participant_counts: dict[str, int] = defaultdict(int)
+    for row in assignment_rows:
+        assert row.cluster_key is not None
+        arm_to_clusters[row.arm_id].add(row.cluster_key)
+        arm_participant_counts[row.arm_id] += 1
+
+    create_summary = response.assign_summary
+    assert create_summary is not None
+    assert create_summary.arm_sizes is not None
+    total_clusters = 0
+    total_participants = 0
+    for arm_size in create_summary.arm_sizes:
+        arm_id = arm_size.arm.arm_id
+        assert arm_id is not None
+        assert arm_size.size == arm_participant_counts[arm_id]
+        assert arm_size.cluster_count is not None
+        assert arm_size.cluster_count == len(arm_to_clusters[arm_id])
+        total_clusters += arm_size.cluster_count
+        total_participants += arm_size.size
+        # The returned summary counts should also match the persisted arm_stats counts.
+        arm_stat = await xngin_session.get(tables.ArmStats, arm_id)
+        assert arm_stat is not None
+        assert arm_stat.population == arm_size.size
+        assert arm_stat.cluster_count == arm_size.cluster_count
+    # Total clusters and participants seen should equal those in the original dwh_participants
+    assert total_clusters == len(cluster_to_arms)
+    assert total_participants == len(dwh_participants)
+
+    # Reading back the experiment should match the creation-time summary.
+    experiment = await get_experiment_preloaded(xngin_session, response.experiment_id)
+    get_response = await get_experiment_impl(xngin_session, experiment)
+    get_summary = get_response.assign_summary
+    assert get_summary is not None
+    assert get_summary.arm_sizes is not None
+    for create_arm, get_arm in zip(create_summary.arm_sizes, get_summary.arm_sizes, strict=True):
+        assert create_arm.arm.arm_id == get_arm.arm.arm_id
+        assert create_arm.size == get_arm.size
+        assert create_arm.cluster_count == get_arm.cluster_count
+    for arm_size in get_summary.arm_sizes:
+        arm_id = arm_size.arm.arm_id
+        assert arm_id is not None
+        assert arm_size.cluster_count is not None
+        assert arm_size.cluster_count == len(arm_to_clusters[arm_id])
+
+
+async def test_create_experiment_impl_clustered_requires_desired_n_clusters(xngin_session, testing_datasource):
+    design_spec = make_design_spec_clustered(desired_n_clusters=None)
+    request = CreateExperimentRequest(design_spec=design_spec)
+
+    with pytest.raises(
+        LateValidationError,
+        match="Cluster-randomized preassigned experiments must have a desired_n_clusters",
+    ):
+        await create_experiment_impl(
+            request=request,
+            datasource=testing_datasource.ds,
+            xngin_session=xngin_session,
+            stratify_on_metrics=False,
+            random_state=42,
+            validated_webhooks=[],
+        )
+
+
+async def test_create_experiment_impl_clustered_rejects_empty_eligible_cohort(xngin_session, testing_datasource):
+    design_spec = make_design_spec_clustered()
+    design_spec.filters = [Filter(field_name="cluster_equal", relation=Relation.INCLUDES, value=[-1])]
+    request = CreateExperimentRequest(design_spec=design_spec)
+
+    with pytest.raises(LateValidationError, match="Preassigned experiments must have eligible participants data"):
+        await create_experiment_impl(
+            request=request,
+            datasource=testing_datasource.ds,
+            xngin_session=xngin_session,
+            stratify_on_metrics=False,
+            random_state=42,
+            validated_webhooks=[],
+        )
+
+
+async def test_create_experiment_impl_clustered_samples_clusters(xngin_session, testing_datasource):
+    """Clustered preassigned creation samples clusters, then includes every participant in each sampled cluster."""
+    design_spec = make_design_spec_clustered(
+        cluster_key="cluster_equal",
+        desired_n=999,
+        desired_n_clusters=3,
+    )
+    request = CreateExperimentRequest(design_spec=design_spec)
+
+    response = await create_experiment_impl(
+        request=request,
+        datasource=testing_datasource.ds,
+        xngin_session=xngin_session,
+        stratify_on_metrics=False,
+        random_state=42,
+        validated_webhooks=[],
+    )
+
+    assert isinstance(response.design_spec, PreassignedFrequentistExperimentSpec)
+    assert response.design_spec.desired_n == 999
+    assert response.design_spec.desired_n_clusters == 3
+    assert response.assign_summary is not None
+    assert response.assign_summary.arm_sizes is not None
+    assert response.assign_summary.sample_size == 30
+    assert sum(arm_size.cluster_count or 0 for arm_size in response.assign_summary.arm_sizes) == 3
+
+    experiment = await get_experiment_preloaded(xngin_session, response.experiment_id)
+    assert experiment.desired_n == 999
+    assert experiment.desired_n_clusters == 3
+    rehydrated_design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
+    assert isinstance(rehydrated_design_spec, PreassignedFrequentistExperimentSpec)
+    assert rehydrated_design_spec.desired_n_clusters == 3
+
+    assignments = (
+        await xngin_session.scalars(
+            select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == response.experiment_id)
+        )
+    ).all()
+    assert len(assignments) == 30
+
+    ids_by_cluster: dict[str, set[int]] = defaultdict(set)
+    arms_by_cluster: dict[str, set[str]] = defaultdict(set)
+    for assignment in assignments:
+        assert assignment.cluster_key is not None
+        ids_by_cluster[assignment.cluster_key].add(int(assignment.participant_id))
+        arms_by_cluster[assignment.cluster_key].add(assignment.arm_id)
+
+    assert len(ids_by_cluster) == 3
+    # Verify every participant in each sampled cluster was assigned.
+    for cluster_key, participant_ids in ids_by_cluster.items():
+        cluster_id = int(cluster_key)
+        # We know the cluster_equal column has 10 participants per cluster per tools/generated_clustered_data.py.
+        assert participant_ids == set(range(cluster_id * 10, cluster_id * 10 + 10))
+    # Each cluster should be tied to exactly 1 arm only.
     assert all(len(arm_ids) == 1 for arm_ids in arms_by_cluster.values())
-    assert len(set.union(*arms_by_cluster.values())) == 2
 
 
 async def _create_clustered_preassigned_experiment(
@@ -2608,6 +2755,31 @@ async def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_
         assert arm_analysis.num_missing_values == -1
 
 
+def test_convert_assignment_results_to_assign_summary_includes_cluster_counts():
+    """Cluster counts are mapped to arm metadata when present."""
+    arms = [
+        tables.Arm(id="arm_1", name="control", description="Control", position=1),
+        tables.Arm(id="arm_2", name="treatment", description="Treatment", position=2),
+    ]
+    assignment_result = AssignmentResult(
+        treatment_ids=[0, 0, 1, 1, 1],
+        stratum_ids=[0, 0, 1, 1, 1],
+        balance_result=None,
+        stratum_cols=[],
+        arm_pop=np.array([2, 3]),
+        arm_cluster_pop=np.array([1, 2]),
+    )
+
+    summary = convert_assignment_results_to_assign_summary(arms, assignment_result, balance_check=None)
+
+    assert summary.sample_size == 5
+    assert summary.arm_sizes is not None
+    assert [(arm_size.arm.arm_id, arm_size.size, arm_size.cluster_count) for arm_size in summary.arm_sizes] == [
+        ("arm_1", 2, 1),
+        ("arm_2", 3, 2),
+    ]
+
+
 async def test_arm_population_counter(xngin_session, testing_datasource):
     """Verify population is incremented on single insert and readable via get_assign_summary."""
     experiment = await insert_experiment_and_arms(
@@ -2615,7 +2787,9 @@ async def test_arm_population_counter(xngin_session, testing_datasource):
     )
 
     # Initially no arm_stats rows exist, so get_assign_summary returns zeros
-    summary = await get_assign_summary(xngin_session, experiment.id, None, ExperimentsType.FREQ_ONLINE)
+    summary = await get_assign_summary(
+        xngin_session, experiment_id=experiment.id, experiment_type=ExperimentsType.FREQ_ONLINE, balance_check=None
+    )
     assert summary.sample_size == 0
     assert summary.arm_sizes is not None
     assert all(a.size == 0 for a in summary.arm_sizes)
@@ -2634,5 +2808,7 @@ async def test_arm_population_counter(xngin_session, testing_datasource):
     assert arm_stat.population == 1
 
     # get_assign_summary reflects the new count
-    summary = await get_assign_summary(xngin_session, experiment.id, None, ExperimentsType.FREQ_ONLINE)
+    summary = await get_assign_summary(
+        xngin_session, experiment_id=experiment.id, experiment_type=ExperimentsType.FREQ_ONLINE, balance_check=None
+    )
     assert summary.sample_size == 1

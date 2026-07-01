@@ -1,13 +1,14 @@
 """Async context manager for data warehouse connections."""
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Self
 
 import google.api_core.exceptions
 import sqlalchemy
 from loguru import logger
-from sqlalchemy import Engine, Inspector, event, text
+from sqlalchemy import ColumnElement, Engine, Inspector, event, text
 from sqlalchemy.engine.interfaces import DBAPIConnection
 from sqlalchemy.exc import NoSuchTableError, OperationalError
 from sqlalchemy.orm import Session
@@ -267,17 +268,23 @@ class DwhSession:
             use_sa_autoload,
         )
 
-    def _query_for_participants_blocking(
+    def _get_result_blocking(
         self,
-        sa_table: sqlalchemy.Table,
-        select_columns: set[str],
+        table_name: str,
         filters: list[Filter],
-        desired_n: int,
-    ):
-        """Samples participants."""
+        compose_query: Callable[[sqlalchemy.Table, list[ColumnElement]], sqlalchemy.Select],
+        use_sa_autoload: bool | None = None,
+    ) -> GetParticipantsResult:
+        """Inspects ``table_name``, runs the query built by ``compose_query``, and wraps the resulting rows.
+
+        ``compose_query`` receives the inspected table and the SQLAlchemy-translated ``filters`` and returns
+        the query to execute. Both individual-level and cluster-level sampling paths provide their
+        custom composer while sharing remaining logic.
+        """
+        sa_table = self._inspect_table_blocking(table_name, use_sa_autoload=use_sa_autoload)
         sqla_filters = query_constructors.create_query_filters(sa_table, filters)
-        query = query_constructors.compose_query(sa_table, select_columns, sqla_filters, desired_n)
-        return self.session.execute(query).all()
+        participants = self.session.execute(compose_query(sa_table, sqla_filters)).all()
+        return GetParticipantsResult(sa_table=sa_table, participants=list(participants))
 
     def _get_participants_blocking(
         self,
@@ -287,9 +294,34 @@ class DwhSession:
         n: int,
         use_sa_autoload: bool | None = None,
     ) -> GetParticipantsResult:
-        sa_table = self._inspect_table_blocking(table_name, use_sa_autoload=use_sa_autoload)
-        participants = self._query_for_participants_blocking(sa_table, select_columns, filters, n)
-        return GetParticipantsResult(sa_table=sa_table, participants=participants)
+        return self._get_result_blocking(
+            table_name,
+            filters,
+            lambda sa_table, sqla_filters: query_constructors.compose_query(sa_table, select_columns, sqla_filters, n),
+            use_sa_autoload,
+        )
+
+    def _get_clusters_blocking(
+        self,
+        table_name: str,
+        select_columns: set[str],
+        filters: list[Filter],
+        desired_n_clusters: int,
+        cluster_key: str,
+        use_sa_autoload: bool | None = None,
+    ) -> GetParticipantsResult:
+        return self._get_result_blocking(
+            table_name,
+            filters,
+            lambda sa_table, sqla_filters: query_constructors.compose_cluster_query(
+                sa_table,
+                select_columns | {cluster_key},
+                sqla_filters,
+                desired_n_clusters,
+                cluster_key,
+            ),
+            use_sa_autoload,
+        )
 
     async def get_participants(
         self,
@@ -306,6 +338,7 @@ class DwhSession:
 
         Args:
             table_name: Name of the table to query
+            select_columns: DWH columns to return.
             filters: Filter conditions to apply
             n: Number of participants to retrieve
             use_sa_autoload: Whether to use SQLAlchemy reflection. If None, uses config default.
@@ -319,6 +352,44 @@ class DwhSession:
             select_columns,
             filters,
             n,
+            use_sa_autoload,
+        )
+
+    async def get_clusters_of_participants(
+        self,
+        table_name: str,
+        *,
+        select_columns: set[str],
+        filters: list[Filter],
+        desired_n_clusters: int,
+        cluster_key: str,
+        use_sa_autoload: bool | None = None,
+    ) -> GetParticipantsResult:
+        """Get participants from a random sample of clusters.
+
+        The random sample is taken over distinct values of ``cluster_key`` after applying ``filters``.
+        Returned participants are the filtered rows belonging to the sampled clusters.
+
+        Caveats documented on inspect_table() apply to the returned Table.
+
+        Args:
+            table_name: Name of the table to query
+            select_columns: DWH columns to return. ``cluster_key`` is always included.
+            filters: Filter conditions to apply before sampling clusters and fetching participants
+            desired_n_clusters: Number of clusters to sample
+            cluster_key: Column containing cluster identifiers
+            use_sa_autoload: Whether to use SQLAlchemy reflection. If None, uses config default.
+
+        Returns:
+            GetParticipantsResult containing both the SQLAlchemy table and participant query results
+        """
+        return await asyncio.to_thread(
+            self._get_clusters_blocking,
+            table_name,
+            select_columns,
+            filters,
+            desired_n_clusters,
+            cluster_key,
             use_sa_autoload,
         )
 

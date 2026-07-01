@@ -243,9 +243,13 @@ async def create_experiment_impl(
     match request.design_spec:
         case PreassignedFrequentistExperimentSpec():
             preassigned_spec = request.design_spec
+            cluster_key = preassigned_spec.cluster_key
             desired_n = preassigned_spec.desired_n
-            if desired_n is None:
-                raise LateValidationError("Preassigned experiments must have a desired_n.")
+            desired_n_clusters = preassigned_spec.desired_n_clusters
+            if cluster_key is not None and desired_n_clusters is None:
+                raise LateValidationError("Cluster-randomized preassigned experiments must have a desired_n_clusters.")
+            if cluster_key is None and desired_n is None:
+                raise LateValidationError("Individual-randomized preassigned experiments must have a desired_n.")
 
             table_name = preassigned_spec.table_name
             primary_key = preassigned_spec.primary_key
@@ -258,24 +262,35 @@ async def create_experiment_impl(
             stratum_cols = strata_names + metric_names if stratify_on_metrics else strata_names
             select_columns = {*stratum_cols, primary_key}
             eligibility_filters = request.design_spec.filters
-            if preassigned_spec.cluster_key is not None:
-                select_columns.add(preassigned_spec.cluster_key)
+            if cluster_key is not None:
+                select_columns.add(cluster_key)
                 eligibility_filters = [
                     *eligibility_filters,
-                    Filter(field_name=preassigned_spec.cluster_key, relation=Relation.EXCLUDES, value=[None]),
+                    Filter(field_name=cluster_key, relation=Relation.EXCLUDES, value=[None]),
                 ]
 
             ds_config = datasource.get_config()
             async with DwhSession(ds_config.dwh) as dwh:
-                result = await dwh.get_participants(
-                    table_name,
-                    select_columns=select_columns,
-                    filters=eligibility_filters,
-                    n=desired_n,
-                )
+                if cluster_key is not None:
+                    assert desired_n_clusters is not None  # covered by LateValidationError above
+                    result = await dwh.get_clusters_of_participants(
+                        table_name,
+                        select_columns=select_columns,
+                        filters=eligibility_filters,
+                        desired_n_clusters=desired_n_clusters,
+                        cluster_key=cluster_key,
+                    )
+                else:
+                    assert desired_n is not None  # covered by LateValidationError above
+                    result = await dwh.get_participants(
+                        table_name,
+                        select_columns=select_columns,
+                        filters=eligibility_filters,
+                        n=desired_n,
+                    )
                 sa_table, participants = result.sa_table, result.participants
 
-            if participants is None:
+            if not participants:
                 raise LateValidationError("Preassigned experiments must have eligible participants data")
 
             return await create_preassigned_experiment_impl(
@@ -380,7 +395,7 @@ async def create_preassigned_experiment_impl(
     )
     balance_check = make_balance_check(assignment_result.balance_result, design_spec.fstat_thresh)
 
-    experiment_converter = ExperimentStorageConverter.init_from_components(
+    experiment_converter = await ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
         design_spec=design_spec,
@@ -428,7 +443,7 @@ async def create_freq_online_experiment_impl(
     if not isinstance(design_spec, OnlineFrequentistExperimentSpec):
         raise MismatchedExperimentTypeError(f"Can't create freq online exp of type: {design_spec.experiment_type}")
 
-    experiment_converter = ExperimentStorageConverter.init_from_components(
+    experiment_converter = await ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
         design_spec=design_spec,
@@ -469,7 +484,7 @@ async def create_bandit_online_experiment_impl(
         case _:
             raise MismatchedExperimentTypeError(f"can't create bandit exp of type: {design_spec.experiment_type}")
 
-    experiment_converter = ExperimentStorageConverter.init_from_components(
+    experiment_converter = await ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
         design_spec=design_spec,
@@ -552,9 +567,10 @@ async def get_experiment_impl(
     converter = ExperimentStorageConverter(experiment)
     assign_summary = await get_assign_summary(
         xngin_session,
-        experiment.id,
-        converter.get_balance_check(),
+        experiment_id=experiment.id,
         experiment_type=ExperimentsType(experiment.experiment_type),
+        balance_check=converter.get_balance_check(),
+        include_cluster_counts=experiment.cluster_key_field() is not None,
     )
     webhook_ids = [webhook.id for webhook in experiment.webhooks]
     return await converter.get_experiment_response(assign_summary, webhook_ids)
@@ -605,7 +621,11 @@ async def list_organization_or_datasource_experiments_impl(
         converter = ExperimentStorageConverter(e)
         balance_check = converter.get_balance_check()
         assign_summary = await get_assign_summary(
-            xngin_session, e.id, balance_check, experiment_type=ExperimentsType(e.experiment_type)
+            xngin_session=xngin_session,
+            experiment_id=e.id,
+            experiment_type=ExperimentsType(e.experiment_type),
+            balance_check=balance_check,
+            include_cluster_counts=e.cluster_key_field() is not None,
         )
         webhook_ids = [webhook.id for webhook in e.webhooks]
         items.append(await converter.get_experiment_config(assign_summary, webhook_ids))
@@ -1047,6 +1067,9 @@ def convert_assignment_results_to_assign_summary(
         ArmSize(
             arm=Arm(arm_id=arm.id, arm_name=arm.name),
             size=int(counts[i]),
+            cluster_count=(
+                None if assignment_result.arm_cluster_pop is None else int(assignment_result.arm_cluster_pop[i])
+            ),
         )
         for i, arm in enumerate(arms)
     ]
@@ -1059,9 +1082,11 @@ def convert_assignment_results_to_assign_summary(
 
 async def get_assign_summary(
     xngin_session: AsyncSession,
+    *,
     experiment_id: str,
-    balance_check: BalanceCheck | None,
     experiment_type: ExperimentsType,
+    balance_check: BalanceCheck | None,
+    include_cluster_counts: bool = False,
 ) -> AssignSummary:
     """Constructs an AssignSummary from the experiment's arms and arm_assignments."""
     result = await xngin_session.execute(
@@ -1069,21 +1094,25 @@ async def get_assign_summary(
             tables.Arm.id,
             tables.Arm.name,
             func.coalesce(tables.ArmStats.population, 0),
+            tables.ArmStats.cluster_count,
         )
         .outerjoin(tables.ArmStats, tables.Arm.id == tables.ArmStats.arm_id)
         .where(tables.Arm.experiment_id == experiment_id)
         .order_by(tables.Arm.position)
     )
+
     arm_sizes = [
         ArmSize(
             arm=Arm(arm_id=arm_id, arm_name=name),
             size=count,
+            cluster_count=cluster_count if include_cluster_counts else None,
         )
-        for arm_id, name, count in result
+        for arm_id, name, count, cluster_count in result
     ]
 
     if experiment_type in {ExperimentsType.MAB_ONLINE, ExperimentsType.MAB_ONLINE_DWH, ExperimentsType.CMAB_ONLINE}:
         balance_check = None
+
     return AssignSummary(
         balance_check=balance_check,
         arm_sizes=arm_sizes,

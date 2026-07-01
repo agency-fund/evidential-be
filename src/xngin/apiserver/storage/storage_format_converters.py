@@ -6,6 +6,7 @@ types. Our SQLA tables ideally shouldn't depend on xngin/apiserver/*; but for th
 JSONB type columns for multi-value/complex types, use the converters to get/set them properly.
 """
 
+import asyncio
 import operator
 from datetime import datetime
 from typing import Any, Self, assert_never
@@ -291,6 +292,7 @@ class ExperimentStorageConverter:
             if self.experiment.experiment_type == ExperimentsType.FREQ_PREASSIGNED.value:
                 cluster_key_field = self.experiment.cluster_key_field()
                 freq_spec_dict["cluster_key"] = cluster_key_field.field_name if cluster_key_field else None
+                freq_spec_dict["desired_n_clusters"] = self.experiment.desired_n_clusters
 
             return TypeAdapter(capi.DesignSpec).validate_python(freq_spec_dict)
 
@@ -411,7 +413,7 @@ class ExperimentStorageConverter:
         )
 
     @classmethod
-    def init_from_components(
+    async def init_from_components(
         cls,
         datasource_id: str,
         organization_id: str,
@@ -452,6 +454,8 @@ class ExperimentStorageConverter:
                 experiment.alpha = design_spec.alpha
                 experiment.fstat_thresh = design_spec.fstat_thresh
                 experiment.desired_n = design_spec.desired_n
+                if isinstance(design_spec, capi.PreassignedFrequentistExperimentSpec):
+                    experiment.desired_n_clusters = design_spec.desired_n_clusters
 
                 experiment.arms = [
                     tables.Arm(
@@ -499,8 +503,8 @@ class ExperimentStorageConverter:
 
                 arm_weights = design_spec.get_validated_arm_weights()
                 if arm_weights:
-                    # TODO: this method can be expensive and should be on a thread.
-                    param1, param2 = convert_arm_weights_to_prior_params(
+                    param1, param2 = await asyncio.to_thread(
+                        convert_arm_weights_to_prior_params,
                         arm_weights=arm_weights,
                         prior_type=design_spec.prior_type,
                         num_contexts=context_len,
