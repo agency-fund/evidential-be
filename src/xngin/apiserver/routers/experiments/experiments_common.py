@@ -32,6 +32,7 @@ from xngin.apiserver.routers.common_api_types import (
     AnyFrequentistDesignSpec,
     Arm,
     ArmAnalysis,
+    ArmBandit,
     ArmSize,
     Assignment,
     AssignSummary,
@@ -49,9 +50,13 @@ from xngin.apiserver.routers.common_api_types import (
     MABDwhExperimentSpec,
     MABExperimentSpec,
     MetricAnalysis,
+    OnlineAssignmentWithFiltersRequest,
     OnlineFrequentistExperimentSpec,
     ParticipantProperty,
     PreassignedFrequentistExperimentSpec,
+    SampleCall,
+    SampleCalls,
+    UpdateBanditArmOutcomeRequest,
 )
 from xngin.apiserver.routers.common_enums import (
     DataType,
@@ -906,6 +911,98 @@ async def create_assignment_for_participant(
         strata=[],
         context_values=sorted_context_vals,
     )
+
+
+def make_sample_calls(experiment: tables.Experiment) -> SampleCalls | None:
+    """Build example API calls for an experiment, for the admin UI's integration guide.
+
+    The backend fills in everything it knows (the experiment id in the path, a real example arm, a
+    type-correct example outcome); participant_id and API key stay as placeholders. Returns None for
+    experiment types that have no meaningful example yet (currently CMAB, whose assignment needs a
+    context vector).
+
+    Requires experiment.arms to be loaded (experiment.experiment_fields for MAB_ONLINE_DWH
+    experiments, and experiment.experiment_filters for FREQ_ONLINE experiments).
+    """
+    experiment_type = ExperimentsType(experiment.experiment_type)
+    if experiment_type.is_cmab():
+        return None
+
+    base_path = f"{constants.API_PREFIX_V1}/experiments/{experiment.id}/assignments/{{participant_id}}"
+    api_key_header = {"X-API-Key": "<your-api-key>"}
+    is_bandit = experiment_type.is_bandit()
+
+    # A participant is assigned exactly one arm, so show a real one to make the example concrete.
+    # arms are ordered baseline-first, so arms[0] (the control) is the natural illustrative value;
+    # fall back to placeholders if arms aren't loaded.
+    example_arm = experiment.arms[0] if experiment.arms else None
+    arm_id_example = example_arm.id if example_arm else "<arm_id>"
+    arm_name_example = example_arm.name if example_arm else "<arm_name>"
+
+    get_assignment_response = GetParticipantAssignmentResponse(
+        experiment_id=experiment.id,
+        participant_id="{participant_id}",
+        assignment=Assignment(
+            arm_id=arm_id_example,
+            participant_id="{participant_id}",
+            arm_name=arm_name_example,
+        ),
+    )
+    calls = [
+        SampleCall(
+            label="Get assignment",
+            method="GET",
+            path=base_path,
+            headers=api_key_header,
+            example_response=get_assignment_response.model_dump(mode="json"),
+        ),
+    ]
+
+    if is_bandit and experiment.reward_type is not None:
+        # Pick a type-correct example outcome: 0/1 for a Bernoulli reward or a boolean DWH target
+        # column, otherwise an illustrative number.
+        outcome_example: float = 1.5
+        if LikelihoodTypes(experiment.reward_type) == LikelihoodTypes.BERNOULLI:
+            outcome_example = 1
+        elif experiment_type == ExperimentsType.MAB_ONLINE_DWH:
+            # MAB-DWH always has an is_target field (target_field_name is required at create time).
+            target_field = next(ef for ef in experiment.experiment_fields if ef.is_target)
+            if DataType(target_field.data_type).storage_class() is DataTypeStorageClass.BOOLEAN:
+                outcome_example = 1
+        outcome_request = UpdateBanditArmOutcomeRequest(outcome=outcome_example)
+        outcome_response = ArmBandit(arm_id=arm_id_example, arm_name=arm_name_example)
+        calls.append(
+            SampleCall(
+                label="Report outcome",
+                method="POST",
+                path=f"{base_path}/outcome",
+                headers=api_key_header,
+                body=outcome_request.model_dump(mode="json"),
+                example_response=outcome_response.model_dump(mode="json"),
+            ),
+        )
+
+    # A filtered freq_online experiment must assign via assign_with_filters: the plain GET can't
+    # evaluate filters, so it would assign everyone. (Filterless freq_online assigns fine via GET.)
+    if experiment_type == ExperimentsType.FREQ_ONLINE and experiment.experiment_filters:
+        # One example property per filter; value is a per-participant placeholder.
+        filters_request = OnlineAssignmentWithFiltersRequest(
+            properties=[
+                ParticipantProperty(field_name=ef.field_name, value="<value>") for ef in experiment.experiment_filters
+            ]
+        )
+        calls.append(
+            SampleCall(
+                label="Get assignment (with filters)",
+                method="POST",
+                path=f"{base_path}/assign_with_filters",
+                headers=api_key_header,
+                body=filters_request.model_dump(mode="json"),
+                example_response=get_assignment_response.model_dump(mode="json"),
+            ),
+        )
+
+    return SampleCalls(calls=calls)
 
 
 def _check_outcome_against_mab_dwh_target(

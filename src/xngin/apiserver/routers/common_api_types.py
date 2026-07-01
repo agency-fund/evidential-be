@@ -1492,6 +1492,33 @@ class UpdateBanditArmOutcomeRequest(ApiBaseModel):
     outcome: float
 
 
+class SampleCall(ApiBaseModel):
+    """A single structured example of an API call an integrator would make.
+
+    The backend fills in everything it knows for a given experiment (e.g. the experiment id in the
+    path, a type-correct example outcome in the body); the remaining placeholders (participant id,
+    API key) are for the integrator to supply. The FE renders these (including any curl variant)."""
+
+    label: Annotated[str, Field(description='Human-readable label, e.g. "Get assignment".')]
+    method: Annotated[str, Field(description='HTTP method, e.g. "GET" or "POST".')]
+    path: Annotated[
+        str,
+        Field(description="Path with the experiment id filled in; remaining {placeholders} are caller-supplied."),
+    ]
+    headers: Annotated[
+        dict[str, str],
+        Field(description="Request headers; secrets are placeholders, never real values."),
+    ]
+    body: Annotated[dict | None, Field(description="Example request body, if any.")] = None
+    example_response: Annotated[dict | None, Field(description="Illustrative success response, if any.")] = None
+
+
+class SampleCalls(ApiBaseModel):
+    """The set of example API calls for an experiment, for display in the admin UI."""
+
+    calls: Annotated[list[SampleCall], Field(description="Ordered example calls an integrator would make.")]
+
+
 class TurnConfigResponse(ApiBaseModel):
     """Describes the configuration for Turn.io Evidential App."""
 
