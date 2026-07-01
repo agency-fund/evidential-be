@@ -2881,16 +2881,17 @@ def test_make_sample_calls_mab_online_structure():
     assert outcome_call.body == {"outcome": 1.5}  # NORMAL reward => real-valued example
 
 
-def test_make_sample_calls_frequentist_assignment_omits_outcome():
-    """Frequentist clients report outcomes through their DWH, so the assignment example omits the
-    bandit-only outcome field (and there's no report-outcome call)."""
+def test_make_sample_calls_frequentist_get_assignment_only():
+    """Frequentist clients report outcomes through their DWH, so there's no report-outcome call —
+    just the get-assignment example"""
     calls = make_sample_calls(_in_memory_experiment(ExperimentsType.FREQ_PREASSIGNED))
     assert calls is not None
     (get_call,) = calls.calls
     assert get_call.method == "GET"
     assert get_call.body is None
     assert get_call.example_response is not None
-    assert "outcome" not in get_call.example_response["assignment"]
+    assert set(get_call.example_response) == {"experiment_id", "participant_id", "assignment"}
+    assert get_call.example_response["assignment"]["outcome"] is None
 
 
 def test_make_sample_calls_uses_baseline_arm_as_example():
@@ -2906,7 +2907,10 @@ def test_make_sample_calls_uses_baseline_arm_as_example():
     assert get_call.example_response is not None
     assert get_call.example_response["assignment"]["arm_id"] == "arm_ctrl"
     assert get_call.example_response["assignment"]["arm_name"] == "Control"
-    assert outcome_call.example_response == {"arm_id": "arm_ctrl", "arm_name": "Control"}
+    # The outcome response is a full ArmBandit dump; the illustrative arm is the baseline.
+    assert outcome_call.example_response is not None
+    assert outcome_call.example_response["arm_id"] == "arm_ctrl"
+    assert outcome_call.example_response["arm_name"] == "Control"
 
 
 @pytest.mark.parametrize(
