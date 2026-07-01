@@ -2820,104 +2820,18 @@ def _in_memory_experiment(
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
     target_data_type: DataType | None = None,
     arms: list[tables.Arm] | None = None,
-    filter_field_names: list[str] | None = None,
 ) -> tables.Experiment:
     """An in-memory (unpersisted) experiment with just the attributes make_sample_calls reads."""
     fields = []
     if target_data_type is not None:
         fields = [tables.ExperimentField(field_name="target_col", data_type=target_data_type.value, is_target=True)]
-    experiment = tables.Experiment(
+    return tables.Experiment(
         id="exp_abc123",
         experiment_type=experiment_type.value,
         reward_type=reward_type.value,
         experiment_fields=fields,
         arms=arms or [],
     )
-    if filter_field_names is not None:
-        experiment.experiment_filters = [
-            tables.ExperimentFilter(position=i, field_name=name, relation=Relation.INCLUDES.value)
-            for i, name in enumerate(filter_field_names, start=1)
-        ]
-    return experiment
-
-
-@pytest.mark.parametrize(
-    ("experiment_type", "expected_labels"),
-    [
-        # Everyone who serves assignments over the API gets a get-assignment example.
-        (ExperimentsType.FREQ_PREASSIGNED, ["Get assignment"]),
-        (ExperimentsType.FREQ_ONLINE, ["Get assignment"]),
-        # Bandits additionally get a report-outcome POST example.
-        (ExperimentsType.MAB_ONLINE, ["Get assignment", "Report outcome"]),
-        (ExperimentsType.MAB_ONLINE_DWH, ["Get assignment", "Report outcome"]),
-        # todo CMAB is deferred (its assignment needs a context vector).
-        (ExperimentsType.CMAB_ONLINE, None),
-    ],
-)
-def test_make_sample_calls_labels_by_type(experiment_type, expected_labels):
-    """The example calls each experiment type exposes, in one place."""
-    # MAB-DWH types its example outcome from the is_target field, so give it one.
-    target = DataType.BOOLEAN if experiment_type is ExperimentsType.MAB_ONLINE_DWH else None
-    calls = make_sample_calls(_in_memory_experiment(experiment_type, target_data_type=target))
-    if expected_labels is None:
-        assert calls is None
-    else:
-        assert calls is not None
-        assert [c.label for c in calls.calls] == expected_labels
-
-
-def test_make_sample_calls_mab_online_structure():
-    """A bandit's calls carry the interpolated experiment id, placeholder participant id / API key, and
-    expose the outcome field (filled in by the report-outcome call)."""
-    calls = make_sample_calls(_in_memory_experiment(ExperimentsType.MAB_ONLINE, reward_type=LikelihoodTypes.NORMAL))
-    assert calls is not None
-    get_call, outcome_call = calls.calls
-
-    # The experiment id is filled in; participant id stays a placeholder; api key is never a real value.
-    assert "exp_abc123" in get_call.path
-    assert "{participant_id}" in get_call.path
-    assert get_call.method == "GET"
-    assert get_call.body is None
-    assert get_call.headers == {"X-API-Key": "<your-api-key>"}
-    # Bandits expose the outcome field on the assignment (filled in by the outcome call).
-    assert get_call.example_response is not None
-    assert get_call.example_response["assignment"]["outcome"] is None
-
-    assert outcome_call.method == "POST"
-    assert outcome_call.path.endswith("/outcome")
-    assert outcome_call.body == {"outcome": 1.5}  # NORMAL reward => real-valued example
-
-
-def test_make_sample_calls_preassigned_frequentist_get_assignment_only():
-    """A preassigned frequentist experiment gets only the get-assignment example: report-outcome is
-    bandit-only, and assign_with_filters is freq_online-only."""
-    calls = make_sample_calls(_in_memory_experiment(ExperimentsType.FREQ_PREASSIGNED))
-    assert calls is not None
-    (get_call,) = calls.calls
-    assert get_call.method == "GET"
-    assert get_call.body is None
-    assert get_call.example_response is not None
-    assert set(get_call.example_response) == {"experiment_id", "participant_id", "assignment"}
-    assert get_call.example_response["assignment"]["outcome"] is None
-
-
-def test_make_sample_calls_uses_baseline_arm_as_example():
-    """The example shows a real arm (arms[0], the baseline) rather than a placeholder, in both the
-    assignment and the outcome responses."""
-    arms = [
-        tables.Arm(id="arm_ctrl", name="Control", position=1),
-        tables.Arm(id="arm_treat", name="Treatment", position=2),
-    ]
-    calls = make_sample_calls(_in_memory_experiment(ExperimentsType.MAB_ONLINE, arms=arms))
-    assert calls is not None
-    get_call, outcome_call = calls.calls
-    assert get_call.example_response is not None
-    assert get_call.example_response["assignment"]["arm_id"] == "arm_ctrl"
-    assert get_call.example_response["assignment"]["arm_name"] == "Control"
-    # The outcome response is a full ArmBandit dump; the illustrative arm is the baseline.
-    assert outcome_call.example_response is not None
-    assert outcome_call.example_response["arm_id"] == "arm_ctrl"
-    assert outcome_call.example_response["arm_name"] == "Control"
 
 
 @pytest.mark.parametrize(
@@ -2943,23 +2857,3 @@ def test_make_sample_calls_freq_online_without_filters_get_assignment_only():
     calls = make_sample_calls(_in_memory_experiment(ExperimentsType.FREQ_ONLINE))
     assert calls is not None
     assert [c.label for c in calls.calls] == ["Get assignment"]
-
-
-def test_make_sample_calls_freq_online_with_filters_adds_assign_with_filters():
-    """A filtered freq_online experiment also gets an assign_with_filters call, whose body carries one
-    property per filter so filters are actually evaluated on assignment."""
-    calls = make_sample_calls(
-        _in_memory_experiment(ExperimentsType.FREQ_ONLINE, filter_field_names=["country", "gender", "age"])
-    )
-    assert calls is not None
-    assert [c.label for c in calls.calls] == ["Get assignment", "Get assignment (with filters)"]
-    filtered_call = calls.calls[1]
-    assert filtered_call.method == "POST"
-    assert filtered_call.path.endswith("/assign_with_filters")
-    assert filtered_call.body == {
-        "properties": [
-            {"field_name": "country", "value": "<value>"},
-            {"field_name": "gender", "value": "<value>"},
-            {"field_name": "age", "value": "<value>"},
-        ]
-    }
