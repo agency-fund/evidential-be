@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from xngin.apiserver.constants import HEADER_WEBHOOK_TOKEN
 
 WEBHOOK_OUTBOUND_TASK_TYPE = "webhook.outbound"
+TURN_JOURNEYS_CHANGED_TASK_TYPE = "turn.journeys_changed"
 _WEBHOOK_TOKEN_HEADER = HEADER_WEBHOOK_TOKEN.casefold()
 
 
@@ -27,3 +28,9 @@ class WebhookOutboundTask(BaseModel):
         if sanitized_headers == self.headers:
             return self
         return self.model_copy(update={"headers": sanitized_headers})
+
+
+class TurnJourneysChangedTask(BaseModel):
+    """Defines the payload understood by turn_journeys_changed handler."""
+
+    organization_id: str

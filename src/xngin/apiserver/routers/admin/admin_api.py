@@ -935,6 +935,7 @@ async def add_webhook_to_organization(
 
     return AddWebhookToOrganizationResponse(
         id=webhook.id,
+        direction=webhook.direction,
         type=webhook.type,
         name=webhook.name,
         url=webhook.url,
@@ -970,6 +971,7 @@ def convert_webhooks_to_webhooksummaries(webhooks):
     return [
         WebhookSummary(
             id=webhook.id,
+            direction=webhook.direction,
             type=webhook.type,
             name=webhook.name,
             url=webhook.url,

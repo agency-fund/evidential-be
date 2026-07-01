@@ -8,17 +8,19 @@ Currently, we only support Turn.io, so this includes endpoints for the Turn.io E
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, status
 from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import constants
 from xngin.apiserver.dependencies import xngin_db_session
+from xngin.apiserver.routers.admin.admin_api import GENERIC_SUCCESS
 from xngin.apiserver.routers.common_api_types import TurnConfigResponse
 from xngin.apiserver.routers.experiments.dependencies import experiment_dependency
 from xngin.apiserver.routers.experiments.experiments_api import STANDARD_INTEGRATION_RESPONSES
 from xngin.apiserver.sqla import tables
+from xngin.tq.task_payload_types import TURN_JOURNEYS_CHANGED_TASK_TYPE
 
 
 @asynccontextmanager
@@ -70,3 +72,46 @@ async def get_turn_app_config(
         experiment_name=experiment.name,
         arm_journey_map=turn_config.arm_journey_map,
     )
+
+
+@router.post(
+    "/integrations/turn/webhook/{webhook_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        "401": {
+            "model": dict,
+            "description": "The provided Webhook-Token does not match the token configured for this webhook.",
+        },
+        "404": {
+            "model": dict,
+            "description": "The specified webhook was not found.",
+        },
+    },
+)
+async def turn_webhook(
+    webhook_id: str,
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    auth_token: Annotated[str | None, Header(alias=constants.HEADER_WEBHOOK_TOKEN)] = None,
+):
+    """
+    This endpoint is used as the webhook URL for Turn.io to notify us of changes to the Journeys.
+    It is not intended to be called directly by clients, and will return a 400 error if called without
+    a valid Turn.io webhook auth token.
+    """
+    webhook = await session.get(tables.Webhook, webhook_id)
+
+    if not webhook:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found.")
+
+    if auth_token != webhook.auth_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook auth token.")
+
+    # Process the webhook payload here
+    session.add(
+        tables.Task(
+            task_type=TURN_JOURNEYS_CHANGED_TASK_TYPE,
+            payload={"organization_id": webhook.organization_id},
+        )
+    )
+    await session.commit()
+    return GENERIC_SUCCESS

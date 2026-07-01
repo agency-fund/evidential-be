@@ -3,8 +3,11 @@ from datetime import UTC, datetime, timedelta
 
 import httpx2
 import pytest
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver.conftest import DatasourceMetadata, expect_status_code
+from xngin.apiserver.routers.admin.admin_api_types import AddWebhookToOrganizationRequest
 from xngin.apiserver.routers.admin_integrations.admin_integrations_api_types import (
     SetConnectionToTurnRequest,
     SetTurnArmJourneyMappingRequest,
@@ -23,9 +26,11 @@ from xngin.apiserver.routers.common_enums import (
     LikelihoodTypes,
     PriorTypes,
 )
+from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.admin_integrations_api_client import AdminIntegrationsAPIClient
 from xngin.apiserver.testing.integrations_api_client import IntegrationsAPIClient
+from xngin.tq.task_payload_types import TURN_JOURNEYS_CHANGED_TASK_TYPE
 
 
 @pytest.fixture(name="testing_design_spec")
@@ -126,3 +131,74 @@ async def test_get_turn_app_config_404_when_no_mapping(
     )
     with expect_status_code(404):
         iclient.get_turn_app_config(experiment_id=turn_config_response.experiment_id, api_key=testing_datasource.key)
+
+
+@pytest.fixture(name="inbound_turn_webhook")
+async def fixture_inbound_turn_webhook(
+    aclient: AdminAPIClient,
+    testing_datasource: DatasourceMetadata,
+):
+    """Creates an inbound turn.journeys_changed webhook; yields (webhook_id, auth_token)."""
+    webhook = aclient.add_webhook_to_organization(
+        organization_id=testing_datasource.organization_id,
+        body=AddWebhookToOrganizationRequest(
+            direction="inbound",
+            type="turn.journeys_changed",
+            name="test-inbound-turn-webhook",
+            url=None,
+        ),
+    ).data
+    return webhook.id, webhook.auth_token
+
+
+async def test_turn_webhook_enqueues_task(
+    iclient: IntegrationsAPIClient,
+    xngin_session: AsyncSession,
+    testing_datasource: DatasourceMetadata,
+    inbound_turn_webhook: tuple[str, str | None],
+):
+    """Valid Webhook-Token results in 204 and a turn.journeys_changed task in the queue."""
+    webhook_id, auth_token = inbound_turn_webhook
+
+    iclient.turn_webhook(webhook_id=webhook_id, auth_token=auth_token)
+
+    tasks = (
+        (
+            await xngin_session.execute(
+                select(tables.Task).where(tables.Task.task_type == TURN_JOURNEYS_CHANGED_TASK_TYPE)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    assert len(tasks) == 1
+    assert tasks[0].payload == {"organization_id": testing_datasource.organization_id}
+
+
+async def test_turn_webhook_404_for_unknown_id(
+    iclient: IntegrationsAPIClient,
+):
+    """An unrecognised webhook_id returns 404."""
+    with expect_status_code(404):
+        iclient.turn_webhook(webhook_id="wh_doesnotexist", auth_token="any-token")
+
+
+async def test_turn_webhook_401_for_wrong_token(
+    iclient: IntegrationsAPIClient,
+    inbound_turn_webhook: tuple[str, str | None],
+):
+    """Correct webhook_id but wrong Webhook-Token returns 401."""
+    webhook_id, _ = inbound_turn_webhook
+    with expect_status_code(401):
+        iclient.turn_webhook(webhook_id=webhook_id, auth_token="wrong-token")
+
+
+async def test_turn_webhook_401_for_missing_token(
+    iclient: IntegrationsAPIClient,
+    inbound_turn_webhook: tuple[str, str | None],
+):
+    """No Webhook-Token header returns 401."""
+    webhook_id, _ = inbound_turn_webhook
+    with expect_status_code(401):
+        iclient.turn_webhook(webhook_id=webhook_id)

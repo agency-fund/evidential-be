@@ -2,6 +2,8 @@
 
 # mypy: disable-error-code="misc"
 
+import asyncio
+import inspect
 import os
 import threading
 import time
@@ -145,7 +147,9 @@ class TaskQueue:
         handler = self.handlers[task.task_type]
 
         try:
-            handler(task)
+            result = handler(task)
+            if inspect.iscoroutine(result):
+                asyncio.run(result)
             self._mark_task_completed(conn, task)
         except Exception as e:
             logger.exception(f"Error handling task {task.id}")
