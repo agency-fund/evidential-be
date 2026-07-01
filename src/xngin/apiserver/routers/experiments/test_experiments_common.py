@@ -2820,18 +2820,25 @@ def _in_memory_experiment(
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
     target_data_type: DataType | None = None,
     arms: list[tables.Arm] | None = None,
+    filter_field_names: list[str] | None = None,
 ) -> tables.Experiment:
     """An in-memory (unpersisted) experiment with just the attributes make_sample_calls reads."""
     fields = []
     if target_data_type is not None:
         fields = [tables.ExperimentField(field_name="target_col", data_type=target_data_type.value, is_target=True)]
-    return tables.Experiment(
+    experiment = tables.Experiment(
         id="exp_abc123",
         experiment_type=experiment_type.value,
         reward_type=reward_type.value,
         experiment_fields=fields,
         arms=arms or [],
     )
+    if filter_field_names is not None:
+        experiment.experiment_filters = [
+            tables.ExperimentFilter(position=i, field_name=name, relation=Relation.INCLUDES.value)
+            for i, name in enumerate(filter_field_names, start=1)
+        ]
+    return experiment
 
 
 @pytest.mark.parametrize(
@@ -2881,9 +2888,9 @@ def test_make_sample_calls_mab_online_structure():
     assert outcome_call.body == {"outcome": 1.5}  # NORMAL reward => real-valued example
 
 
-def test_make_sample_calls_frequentist_get_assignment_only():
-    """Frequentist clients report outcomes through their DWH, so there's no report-outcome call —
-    just the get-assignment example"""
+def test_make_sample_calls_preassigned_frequentist_get_assignment_only():
+    """A preassigned frequentist experiment gets only the get-assignment example: report-outcome is
+    bandit-only, and assign_with_filters is freq_online-only."""
     calls = make_sample_calls(_in_memory_experiment(ExperimentsType.FREQ_PREASSIGNED))
     assert calls is not None
     (get_call,) = calls.calls
@@ -2930,3 +2937,29 @@ def test_make_sample_calls_outcome_example_value(reward_type, target_data_type, 
     )
     assert calls is not None
     assert calls.calls[1].body == {"outcome": expected_outcome}
+
+
+def test_make_sample_calls_freq_online_without_filters_get_assignment_only():
+    calls = make_sample_calls(_in_memory_experiment(ExperimentsType.FREQ_ONLINE))
+    assert calls is not None
+    assert [c.label for c in calls.calls] == ["Get assignment"]
+
+
+def test_make_sample_calls_freq_online_with_filters_adds_assign_with_filters():
+    """A filtered freq_online experiment also gets an assign_with_filters call, whose body carries one
+    property per filter so filters are actually evaluated on assignment."""
+    calls = make_sample_calls(
+        _in_memory_experiment(ExperimentsType.FREQ_ONLINE, filter_field_names=["country", "gender", "age"])
+    )
+    assert calls is not None
+    assert [c.label for c in calls.calls] == ["Get assignment", "Get assignment (with filters)"]
+    filtered_call = calls.calls[1]
+    assert filtered_call.method == "POST"
+    assert filtered_call.path.endswith("/assign_with_filters")
+    assert filtered_call.body == {
+        "properties": [
+            {"field_name": "country", "value": "<value>"},
+            {"field_name": "gender", "value": "<value>"},
+            {"field_name": "age", "value": "<value>"},
+        ]
+    }

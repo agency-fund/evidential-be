@@ -18,12 +18,14 @@ from xngin.apiserver.routers.common_api_types import (
     ArmBandit,
     CreateExperimentRequest,
     DesignSpecMetricRequest,
+    Filter,
     LikelihoodTypes,
     MABExperimentSpec,
+    OnlineFrequentistExperimentSpec,
     PreassignedFrequentistExperimentSpec,
     PriorTypes,
 )
-from xngin.apiserver.routers.common_enums import ExperimentsType
+from xngin.apiserver.routers.common_enums import ExperimentsType, Relation
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.admin_integrations_api_client import AdminIntegrationsAPIClient
@@ -469,11 +471,11 @@ async def test_get_experiment_sample_calls_none_for_cmab(
     assert sample_calls is None
 
 
-async def test_get_experiment_sample_calls_frequentist_get_assignment_only(
+async def test_get_experiment_sample_calls_preassigned_frequentist_get_assignment_only(
     testing_datasource, aclient: AdminAPIClient, iaclient: AdminIntegrationsAPIClient
 ):
-    """Frequentist clients fetch assignments via the API but report outcomes through their DWH, so
-    they get a get-assignment example and no outcome call."""
+    """A preassigned frequentist experiment gets only the get-assignment example: report-outcome is
+    bandit-only, and assign_with_filters is freq_online-only."""
     datasource_id = testing_datasource.datasource_id
     created = aclient.create_experiment(
         datasource_id=datasource_id,
@@ -503,3 +505,41 @@ async def test_get_experiment_sample_calls_frequentist_get_assignment_only(
     assert sample_calls is not None
     assert [c.label for c in sample_calls.calls] == ["Get assignment"]
     assert all("outcome" not in c.path for c in sample_calls.calls)
+
+
+async def test_get_experiment_sample_calls_freq_online_with_filters(
+    testing_datasource, aclient: AdminAPIClient, iaclient: AdminIntegrationsAPIClient
+):
+    """A freq_online experiment with filters also gets an assign_with_filters example, so integrators
+    apply their filters when creating assignments instead of unintentionally assigning everyone."""
+    datasource_id = testing_datasource.datasource_id
+    created = aclient.create_experiment(
+        datasource_id=datasource_id,
+        body=CreateExperimentRequest(
+            design_spec=OnlineFrequentistExperimentSpec(
+                experiment_type=ExperimentsType.FREQ_ONLINE,
+                experiment_name="test experiment",
+                description="test experiment",
+                table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+                primary_key="id",
+                start_date=datetime(2024, 1, 1, tzinfo=UTC),
+                end_date=datetime.now(UTC) + timedelta(days=1),
+                arms=[Arm(arm_name="C", arm_description="C"), Arm(arm_name="T", arm_description="T")],
+                metrics=[DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1)],
+                strata=[],
+                filters=[Filter(field_name="gender", relation=Relation.INCLUDES, value=["Male"])],
+            ),
+        ),
+        random_state=42,
+    ).data
+    aclient.commit_experiment(datasource_id=datasource_id, experiment_id=created.experiment_id)
+    sample_calls = iaclient.get_experiment_sample_calls(
+        datasource_id=datasource_id,
+        experiment_id=created.experiment_id,
+    ).data
+    assert sample_calls is not None
+    assert [c.label for c in sample_calls.calls] == ["Get assignment", "Get assignment (with filters)"]
+    filtered_call = sample_calls.calls[1]
+    assert filtered_call.method == "POST"
+    assert filtered_call.path.endswith("/assign_with_filters")
+    assert filtered_call.body == {"properties": [{"field_name": "gender", "value": "<value>"}]}

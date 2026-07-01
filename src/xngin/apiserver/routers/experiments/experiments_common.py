@@ -958,10 +958,7 @@ def make_sample_calls(experiment: tables.Experiment) -> SampleCalls | None:
         ),
     ]
 
-    if is_bandit:
-        # reward_type is a nullable column (frequentist experiments leave it None), but a bandit
-        # always has one. Asserted here anyway so that mypy can narrow the type for the next block.
-        assert experiment.reward_type is not None, "bandit experiment is missing a reward_type"
+    if is_bandit and experiment.reward_type is not None:
         # Pick a type-correct example outcome: 0/1 for a Bernoulli reward or a boolean DWH target
         # column, otherwise an illustrative number.
         outcome_example: float = 1.5
@@ -985,14 +982,14 @@ def make_sample_calls(experiment: tables.Experiment) -> SampleCalls | None:
             ),
         )
 
-        # A filtered freq_online experiment must assign via assign_with_filters: the plain GET can't
-        # evaluate filters, so it would assign everyone.
-        filter_field_names: list[str] = []
-        for experiment_filter in experiment.experiment_filters:
-            if experiment_filter.field_name not in filter_field_names:
-                filter_field_names.append(experiment_filter.field_name)
+    # A filtered freq_online experiment must assign via assign_with_filters: the plain GET can't
+    # evaluate filters, so it would assign everyone. (Filterless freq_online assigns fine via GET.)
+    if experiment_type == ExperimentsType.FREQ_ONLINE and experiment.experiment_filters:
+        # One example property per filter; value is a per-participant placeholder.
         filters_request = OnlineAssignmentWithFiltersRequest(
-            properties=[ParticipantProperty(field_name=name, value="<value>") for name in filter_field_names]
+            properties=[
+                ParticipantProperty(field_name=ef.field_name, value="<value>") for ef in experiment.experiment_filters
+            ]
         )
         calls.append(
             SampleCall(
