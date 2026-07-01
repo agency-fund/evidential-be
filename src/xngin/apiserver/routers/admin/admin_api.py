@@ -138,6 +138,7 @@ from xngin.apiserver.routers.common_api_types import (
     PowerResponse,
     PreassignedFrequentistExperimentSpec,
     Relation,
+    SampleCalls,
 )
 from xngin.apiserver.routers.common_enums import ExperimentState, PreloadMethod
 from xngin.apiserver.routers.experiments import experiments_common, experiments_common_csv
@@ -2072,8 +2073,30 @@ async def get_experiment_for_ui(
     return GetExperimentForUiResponse(
         config=await experiments_common.get_experiment_impl(session, experiment),
         experiment_schema=make_schema_from_experiment(experiment),
-        sample_calls=experiments_common.make_sample_calls(experiment),
     )
+
+
+@router.get("/datasources/{datasource_id}/experiments/{experiment_id}/sample-calls")
+async def get_experiment_sample_calls(
+    datasource_id: str,
+    experiment_id: str,
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
+) -> SampleCalls | None:
+    """Return example API calls for integrating with this experiment.
+
+    Integration/onboarding documentation shown in the integration guide: a get-assignment example
+    for every type, plus a report-outcome example for bandits. Returns null for experiment types
+    without a meaningful example (currently CMAB, whose assignment needs a context vector) #todo
+    """
+    ds = await get_datasource_or_raise(session, user, datasource_id)
+    experiment = await get_experiment_via_ds_or_raise(
+        session,
+        ds,
+        experiment_id,
+        preload=[tables.Experiment.experiment_fields],
+    )
+    return experiments_common.make_sample_calls(experiment)
 
 
 @router.get(
