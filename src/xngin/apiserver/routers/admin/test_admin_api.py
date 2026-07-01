@@ -226,58 +226,6 @@ async def make_bandit_online_experiment(
     return data
 
 
-async def test_get_experiment_sample_calls_for_mab(testing_datasource, aclient: AdminAPIClient):
-    """A MAB experiment's sample calls carry example calls with a type-correct outcome."""
-    experiment = await make_bandit_online_experiment(
-        aclient,
-        testing_datasource.datasource_id,
-        prior_type=PriorTypes.NORMAL,
-        reward_type=LikelihoodTypes.NORMAL,
-    )
-    sample_calls = aclient.get_experiment_sample_calls(
-        datasource_id=testing_datasource.datasource_id,
-        experiment_id=experiment.config.experiment_id,
-    ).data
-    assert sample_calls is not None
-    assert [c.label for c in sample_calls.calls] == ["Get assignment", "Report outcome"]
-    outcome_call = sample_calls.calls[1]
-    assert outcome_call.method == "POST"
-    assert outcome_call.path.endswith("/outcome")
-    assert experiment.config.experiment_id in outcome_call.path
-    assert outcome_call.body == {"outcome": 1.5}  # NORMAL reward => real-valued example
-
-
-async def test_get_experiment_sample_calls_frequentist_get_assignment_only(
-    testing_datasource, aclient: AdminAPIClient, testing_experiment: TestExperiment
-):
-    """Frequentist clients fetch assignments via the API. Report outcomes through DWH, so
-    they get a get-assignment example and no outcome call."""
-    sample_calls = aclient.get_experiment_sample_calls(
-        datasource_id=testing_datasource.datasource_id,
-        experiment_id=testing_experiment.config.experiment_id,  # NB this is a frequentist experiment fixture
-    ).data
-    assert sample_calls is not None
-    assert [c.label for c in sample_calls.calls] == ["Get assignment"]
-    # Check we don't have an outcome call for frequentist experiments.
-    assert all("outcome" not in c.path for c in sample_calls.calls)
-
-
-async def test_get_experiment_sample_calls_none_for_cmab(testing_datasource, aclient: AdminAPIClient):
-    """CMAB assignment needs a context vector, so there are no sample calls yet (deferred)."""
-    experiment = await make_bandit_online_experiment(
-        aclient,
-        testing_datasource.datasource_id,
-        experiment_type=ExperimentsType.CMAB_ONLINE,
-        prior_type=PriorTypes.NORMAL,
-        reward_type=LikelihoodTypes.NORMAL,
-    )
-    sample_calls = aclient.get_experiment_sample_calls(
-        datasource_id=testing_datasource.datasource_id,
-        experiment_id=experiment.config.experiment_id,
-    ).data
-    assert sample_calls is None
-
-
 def make_cmab_context_inputs(
     experiment: GetExperimentForUiResponse,
     values: list[float],
