@@ -50,6 +50,7 @@ from xngin.apiserver.routers.common_api_types import (
     MABDwhExperimentSpec,
     MABExperimentSpec,
     MetricAnalysis,
+    OnlineAssignmentWithFiltersRequest,
     OnlineFrequentistExperimentSpec,
     ParticipantProperty,
     PreassignedFrequentistExperimentSpec,
@@ -920,8 +921,8 @@ def make_sample_calls(experiment: tables.Experiment) -> SampleCalls | None:
     experiment types that have no meaningful example yet (currently CMAB, whose assignment needs a
     context vector).
 
-    Requires experiment.arms to be loaded (and experiment.experiment_fields for MAB_ONLINE_DWH
-    experiments).
+    Requires experiment.arms to be loaded (experiment.experiment_fields for MAB_ONLINE_DWH
+    experiments, and experiment.experiment_filters for FREQ_ONLINE experiments).
     """
     experiment_type = ExperimentsType(experiment.experiment_type)
     if experiment_type.is_cmab():
@@ -981,6 +982,26 @@ def make_sample_calls(experiment: tables.Experiment) -> SampleCalls | None:
                 headers=api_key_header,
                 body=outcome_request.model_dump(mode="json"),
                 example_response=outcome_response.model_dump(mode="json"),
+            ),
+        )
+
+        # A filtered freq_online experiment must assign via assign_with_filters: the plain GET can't
+        # evaluate filters, so it would assign everyone.
+        filter_field_names: list[str] = []
+        for experiment_filter in experiment.experiment_filters:
+            if experiment_filter.field_name not in filter_field_names:
+                filter_field_names.append(experiment_filter.field_name)
+        filters_request = OnlineAssignmentWithFiltersRequest(
+            properties=[ParticipantProperty(field_name=name, value="<value>") for name in filter_field_names]
+        )
+        calls.append(
+            SampleCall(
+                label="Get assignment (with filters)",
+                method="POST",
+                path=f"{base_path}/assign_with_filters",
+                headers=api_key_header,
+                body=filters_request.model_dump(mode="json"),
+                example_response=get_assignment_response.model_dump(mode="json"),
             ),
         )
 
