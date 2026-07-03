@@ -15,5 +15,8 @@ class TurnJourneysChangedEvent(BaseEventModel):
     success: bool
     response: str
 
+    def status_icon(self) -> Literal["success", "failure"]:
+        return "success" if self.success else "failure"
+
     def summarize(self) -> str:
         return f"Journeys changed for {self.organization_id}"

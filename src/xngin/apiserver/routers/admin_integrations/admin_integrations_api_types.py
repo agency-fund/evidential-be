@@ -2,7 +2,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field, field_validator
 
-from xngin.apiserver.routers.admin.admin_api_types import AdminApiBaseModel
+from xngin.apiserver.routers.admin.admin_api_types import AddWebhookToOrganizationResponse, AdminApiBaseModel
 
 
 class SetConnectionToTurnRequest(AdminApiBaseModel):
@@ -41,24 +41,15 @@ class GetTurnJourneysResponse(AdminApiBaseModel):
     journeys: list[Journey]
 
 
-class GetTurnConnectionResponse(AdminApiBaseModel):
+class GetTurnConnectionResponse(AddWebhookToOrganizationResponse):
     """Response describing an organization's Turn.io connection."""
 
-    token_preview: Annotated[
+    turn_api_token_preview: Annotated[
         str,
         Field(
             description=(
                 "The last 4 characters of the configured Turn.io API token, shown so admins can identify "
                 "which token is currently configured without exposing the full secret."
-            )
-        ),
-    ]
-    auth_token_preview: Annotated[
-        str,
-        Field(
-            description=(
-                "The last 4 characters of the auth token for the organization's Turn.io webhook, shown "
-                "so admins can identify the webhook without exposing the full secret."
             )
         ),
     ]

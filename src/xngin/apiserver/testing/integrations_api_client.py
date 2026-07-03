@@ -481,7 +481,7 @@ class IntegrationsAPIClient:
         )
 
     @overload
-    def turn_webhook(
+    def receive_turn_journey_update_notification(
         self,
         *,
         webhook_id: str,
@@ -490,7 +490,7 @@ class IntegrationsAPIClient:
         client_exts: IntegrationsAPIClientExtensions | None = None,
     ) -> IntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
     @overload
-    def turn_webhook(
+    def receive_turn_journey_update_notification(
         self,
         *,
         webhook_id: str,
@@ -507,7 +507,7 @@ class IntegrationsAPIClient:
             Literal[HTTPStatus.UNPROCESSABLE_CONTENT], IntegrationsAPIClientHTTPValidationError
         ]
     ): ...
-    def turn_webhook(
+    def receive_turn_journey_update_notification(
         self,
         *,
         webhook_id: str,
@@ -536,7 +536,7 @@ class IntegrationsAPIClient:
                 ]
             ),
             self._route_handler(
-                path="/v1/integrations/turn/webhook/{webhook_id}",
+                path="/v1/integrations/turn/webhook/{webhook_id}/config-updated",
                 method=HTTPMethod.POST,
                 default_status=HTTPStatus.NO_CONTENT,
                 models={

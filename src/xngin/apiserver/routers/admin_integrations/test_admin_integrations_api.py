@@ -83,18 +83,28 @@ async def test_turn_connection_lifecycle(
 
     # GET with allow_missing=True -> 200.
     assert (
-        iaclient.get_organization_turn_connection(organization_id=org_id, allow_missing=True).data.token_preview == ""
+        iaclient.get_organization_turn_connection(
+            organization_id=org_id, allow_missing=True
+        ).data.turn_api_token_preview
+        == ""
     )
 
     # Create the connection.
     initial_token = "abcde" * 67  # 335 chars
-    iaclient.set_organization_turn_connection(
+    response = iaclient.set_organization_turn_connection(
         organization_id=org_id,
         body=SetConnectionToTurnRequest(turn_api_token=initial_token),
-    )
+    ).data
+
+    assert response.type == "turn.journeys_changed"
+    assert response.direction == "inbound"
+    assert response.name == "Turn Journeys Changed Webhook"
+    assert response.url is None
+    assert response.auth_token is not None
+    assert response.id is not None
 
     # GET returns a preview of the last 4 chars of the token.
-    preview = iaclient.get_organization_turn_connection(organization_id=org_id).data.token_preview
+    preview = iaclient.get_organization_turn_connection(organization_id=org_id).data.turn_api_token_preview
     assert preview == initial_token[-4:]
 
     # Check that Journeys were also fetched from client
@@ -110,7 +120,7 @@ async def test_turn_connection_lifecycle(
     )
 
     # Preview now reflects the new token.
-    preview = iaclient.get_organization_turn_connection(organization_id=org_id).data.token_preview
+    preview = iaclient.get_organization_turn_connection(organization_id=org_id).data.turn_api_token_preview
     assert preview == rotated_token[-4:]
 
     # Check that Journeys were refetched from client after rotation
@@ -129,9 +139,9 @@ async def test_turn_connection_lifecycle(
     with expect_status_code(404):
         iaclient.get_organization_turn_journeys(organization_id=org_id)
 
-    # Get Journeys with  after delete -> 200 with empty journeys.
-    # journeys = iaclient.get_organization_turn_journeys(organization_id=org_id).data.journeys
-    # assert journeys == {}
+    # Check that the webhook was also deleted.
+    turn_webhooks = aclient.list_organization_webhooks(organization_id=org_id).data
+    assert len(turn_webhooks.items) == 0
 
     # Delete again without allow_missing -> 404.
     with expect_status_code(404):
@@ -453,3 +463,57 @@ async def test_resetting_same_token_preserves_arm_journey_mapping(
 
     got = iaclient.get_turn_arm_journey_mapping(datasource_id=ds_id, experiment_id=experiment_id).data
     assert got.arm_to_journeys == mapping
+
+
+async def test_refetch_journeys_from_turn(
+    testing_datasource,
+    testing_design_spec: MABExperimentSpec,
+    iaclient: AdminIntegrationsAPIClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """
+    The refresh-journeys endpoint is used by the Turn.io webhook handler to trigger a re-fetch of the journeys
+    dictionary from Turn.io. This test ensures that the endpoint can be called successfully and that it
+    triggers the expected behavior of refreshing the journeys dictionary.
+    """
+    org_id = testing_datasource.organization_id
+    monkeypatch.setattr(FakeAsyncClient, "call_log", 0)
+    monkeypatch.setattr(
+        FakeAsyncClient,
+        "stacks",
+        [{"name": "journey-0", "uuid": "journey-0-uuid"}, {"name": "journey-1", "uuid": "journey-1-uuid"}],
+    )
+    monkeypatch.setattr(httpx2, "AsyncClient", FakeAsyncClient)
+
+    # Call the refresh-journeys endpoint without a Turn connection configured for the organization.
+    with expect_status_code(404, text="No Turn.io connection configured for this organization."):
+        iaclient.refetch_journeys_from_turn(organization_id=org_id)
+
+    token = "a" * 335
+    iaclient.set_organization_turn_connection(
+        organization_id=org_id,
+        body=SetConnectionToTurnRequest(turn_api_token=token),
+    )
+
+    # Call the refresh-journeys endpoint without changing the journeys.
+    iaclient.refetch_journeys_from_turn(organization_id=org_id)
+
+    journey_dict = iaclient.get_organization_turn_journeys(organization_id=org_id).data.journeys
+    assert {journey.name: journey.uuid for journey in journey_dict} == {
+        "journey-0": "journey-0-uuid",
+        "journey-1": "journey-1-uuid",
+    }
+
+    # Update the journeys in the FakeAsyncClient to simulate a change in Turn.io.
+    monkeypatch.setattr(
+        FakeAsyncClient,
+        "stacks",
+        [{"name": "journey-2", "uuid": "journey-2-uuid"}, {"name": "journey-3", "uuid": "journey-3-uuid"}],
+    )
+    iaclient.refetch_journeys_from_turn(organization_id=org_id)
+
+    journey_dict = iaclient.get_organization_turn_journeys(organization_id=org_id).data.journeys
+    assert {journey.name: journey.uuid for journey in journey_dict} == {
+        "journey-2": "journey-2-uuid",
+        "journey-3": "journey-3-uuid",
+    }

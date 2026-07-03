@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver.conftest import DatasourceMetadata, expect_status_code
-from xngin.apiserver.routers.admin.admin_api_types import AddWebhookToOrganizationRequest
+from xngin.apiserver.routers.admin.admin_api_types import AddTurnJourneysChangedWebhookRequest
 from xngin.apiserver.routers.admin_integrations.admin_integrations_api_types import (
     SetConnectionToTurnRequest,
     SetTurnArmJourneyMappingRequest,
@@ -141,11 +141,8 @@ async def fixture_inbound_turn_webhook(
     """Creates an inbound turn.journeys_changed webhook; yields (webhook_id, auth_token)."""
     webhook = aclient.add_webhook_to_organization(
         organization_id=testing_datasource.organization_id,
-        body=AddWebhookToOrganizationRequest(
-            direction="inbound",
-            type="turn.journeys_changed",
+        body=AddTurnJourneysChangedWebhookRequest(
             name="test-inbound-turn-webhook",
-            url=None,
         ),
     ).data
     return webhook.id, webhook.auth_token
@@ -160,7 +157,7 @@ async def test_turn_webhook_enqueues_task(
     """Valid Webhook-Token results in 204 and a turn.journeys_changed task in the queue."""
     webhook_id, auth_token = inbound_turn_webhook
 
-    iclient.turn_webhook(webhook_id=webhook_id, auth_token=auth_token)
+    iclient.receive_turn_journey_update_notification(webhook_id=webhook_id, auth_token=auth_token)
 
     tasks = (
         (
@@ -181,7 +178,7 @@ async def test_turn_webhook_404_for_unknown_id(
 ):
     """An unrecognised webhook_id returns 404."""
     with expect_status_code(404):
-        iclient.turn_webhook(webhook_id="wh_doesnotexist", auth_token="any-token")
+        iclient.receive_turn_journey_update_notification(webhook_id="wh_doesnotexist", auth_token="any-token")
 
 
 async def test_turn_webhook_401_for_wrong_token(
@@ -191,7 +188,7 @@ async def test_turn_webhook_401_for_wrong_token(
     """Correct webhook_id but wrong Webhook-Token returns 401."""
     webhook_id, _ = inbound_turn_webhook
     with expect_status_code(401):
-        iclient.turn_webhook(webhook_id=webhook_id, auth_token="wrong-token")
+        iclient.receive_turn_journey_update_notification(webhook_id=webhook_id, auth_token="wrong-token")
 
 
 async def test_turn_webhook_401_for_missing_token(
@@ -201,4 +198,4 @@ async def test_turn_webhook_401_for_missing_token(
     """No Webhook-Token header returns 401."""
     webhook_id, _ = inbound_turn_webhook
     with expect_status_code(401):
-        iclient.turn_webhook(webhook_id=webhook_id)
+        iclient.receive_turn_journey_update_notification(webhook_id=webhook_id)

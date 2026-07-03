@@ -1,13 +1,11 @@
 import httpx2
 import pytest
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.routers.admin.admin_api_types import CreateOrganizationRequest
 from xngin.apiserver.routers.admin_integrations.admin_integrations_api_types import SetConnectionToTurnRequest
 from xngin.apiserver.routers.admin_integrations.test_admin_integrations_api import FakeAsyncClient
-from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.admin_integrations_api_client import AdminIntegrationsAPIClient
 from xngin.tq.handlers import make_turn_journeys_changed_handler, make_webhook_outbound_handler
@@ -155,7 +153,10 @@ async def test_turn_journeys_changed_handler_updates_journeys_and_records_succes
     )
 
     task_queue = TaskQueue(dsn=tq_dsn, max_retries=0, poll_interval_secs=1)
-    task_queue.register_handler(TURN_JOURNEYS_CHANGED_TASK_TYPE, make_turn_journeys_changed_handler(tq_dsn))
+    evidential_transport = httpx2.MockTransport(lambda req: httpx2.Response(204, request=req))
+    task_queue.register_handler(
+        TURN_JOURNEYS_CHANGED_TASK_TYPE, make_turn_journeys_changed_handler(tq_dsn, transport=evidential_transport)
+    )
     with tq_runner(task_queue):
         task = await insert_task(
             xngin_session,
@@ -165,14 +166,6 @@ async def test_turn_journeys_changed_handler_updates_journeys_and_records_succes
         success_task = await wait_for_task_status(task.id, "success")
 
     assert success_task.message is None
-
-    # Journeys dict should reflect the latest stacks response.
-    turn_connection = (
-        await xngin_session.execute(
-            select(tables.TurnConnection).where(tables.TurnConnection.organization_id == org_id)
-        )
-    ).scalar_one()
-    assert turn_connection.journeys_dict == {"Journey 1": "j1-uuid", "Journey 2": "j2-uuid"}
 
     events = aclient.list_organization_events(organization_id=org_id).data.items
     assert len(events) == 1
@@ -205,7 +198,10 @@ async def test_turn_journeys_changed_handler_records_failure_event_when_turn_api
     monkeypatch.setattr(FakeAsyncClient, "expected_status", 500)
 
     task_queue = TaskQueue(dsn=tq_dsn, max_retries=0, poll_interval_secs=1)
-    task_queue.register_handler(TURN_JOURNEYS_CHANGED_TASK_TYPE, make_turn_journeys_changed_handler(tq_dsn))
+    evidential_transport = httpx2.MockTransport(lambda req: httpx2.Response(500, request=req))
+    task_queue.register_handler(
+        TURN_JOURNEYS_CHANGED_TASK_TYPE, make_turn_journeys_changed_handler(tq_dsn, transport=evidential_transport)
+    )
     with tq_runner(task_queue):
         task = await insert_task(
             xngin_session,

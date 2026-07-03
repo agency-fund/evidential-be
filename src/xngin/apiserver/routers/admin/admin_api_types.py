@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 from urllib.parse import urlparse
 
 from annotated_types import Ge, Le
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from xngin.apiserver.common_field_types import FieldName
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
@@ -261,9 +261,11 @@ class ListDatasourcesResponse(AdminApiBaseModel):
     ]
 
 
-class AddWebhookToOrganizationRequest(AdminApiBaseModel):
+class AddExperimentCreatedWebhookRequest(AdminApiBaseModel):
+    """Request to add a webhook that is triggered when an experiment is created."""
+
+    type: Literal["experiment.created"] = "experiment.created"
     direction: Literal["inbound", "outbound"] = "outbound"
-    type: Literal["experiment.created", "turn.journeys_changed"]
     name: Annotated[
         str,
         Field(
@@ -282,19 +284,43 @@ class AddWebhookToOrganizationRequest(AdminApiBaseModel):
         ),
     ]
 
-    @model_validator(mode="after")
-    def validate_url(self) -> AddWebhookToOrganizationRequest:
-        if self.url is not None:
-            self.url = validate_webhook_url(self.url)
-        if self.url is None and self.type == "experiment.created":
-            raise ValueError("URL must be provided for experiment.created webhooks.")
-        return self
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        return validate_webhook_url(v)
 
 
-class AddWebhookToOrganizationResponse(AddWebhookToOrganizationRequest):
+class AddTurnJourneysChangedWebhookRequest(AdminApiBaseModel):
+    """Request to add a webhook that is triggered when a turn's journeys are changed."""
+
+    type: Literal["turn.journeys_changed"] = "turn.journeys_changed"
+    direction: Literal["inbound"] = "inbound"
+    name: Annotated[
+        str,
+        Field(
+            max_length=MAX_LENGTH_OF_NAME_VALUE,
+            description=(
+                "User-friendly name for the webhook. This name is displayed in the UI and helps "
+                "identify the webhook's purpose."
+            ),
+        ),
+    ]
+
+
+AddWebhookToOrganizationRequest = Annotated[
+    AddExperimentCreatedWebhookRequest | AddTurnJourneysChangedWebhookRequest,
+    Field(discriminator="type"),
+]
+
+
+class AddWebhookToOrganizationResponse(AdminApiBaseModel):
     """Information on the successfully created webhook."""
 
     id: Annotated[str, Field(description="The ID of the newly created webhook.")]
+    type: str
+    direction: str
+    name: str
+    url: str | None = None
     auth_token: Annotated[
         str | None,
         Field(

@@ -23,8 +23,8 @@ from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSc
 from xngin.apiserver.dwh.inspections import ColumnDeleted, Drift, FieldChangedType
 from xngin.apiserver.routers.admin.admin_api_converters import CREDENTIALS_UNAVAILABLE_MESSAGE
 from xngin.apiserver.routers.admin.admin_api_types import (
+    AddExperimentCreatedWebhookRequest,
     AddMemberToOrganizationRequest,
-    AddWebhookToOrganizationRequest,
     BqDsn,
     CreateDatasourceRequest,
     CreateOrganizationRequest,
@@ -890,7 +890,7 @@ async def test_webhook_lifecycle(aclient: AdminAPIClient):
     # Create a webhook
     webhook_data = aclient.add_webhook_to_organization(
         organization_id=org_id,
-        body=AddWebhookToOrganizationRequest(
+        body=AddExperimentCreatedWebhookRequest(
             type="experiment.created",
             url="https://example.com/webhook",
             name="test webhook",
@@ -967,7 +967,7 @@ def test_delete_webhook_scopes_resource_to_organization(aclient: AdminAPIClient,
     victim_org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="webhook-delete-victim")).data.id
     webhook = aclient.add_webhook_to_organization(
         organization_id=victim_org_id,
-        body=AddWebhookToOrganizationRequest(
+        body=AddExperimentCreatedWebhookRequest(
             type="experiment.created",
             url="https://example.com/webhook",
             name="victim webhook",
@@ -993,7 +993,7 @@ def test_create_webhook_rejects_ssrf_url(aclient: AdminAPIClient):
     with expect_status_code(422, detail_contains="Failed to resolve hostname from webhook URL"):
         aclient.add_webhook_to_organization(
             organization_id=org_id,
-            body=AddWebhookToOrganizationRequest.model_construct(
+            body=AddExperimentCreatedWebhookRequest.model_construct(
                 type="experiment.created",
                 url=f"http://{safe_resolve.UNSAFE_IP_FOR_TESTING}/steal-creds",
                 name="ssrf attempt",
@@ -1006,7 +1006,7 @@ def test_update_webhook_rejects_ssrf_url(aclient: AdminAPIClient):
     org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="update_webhook_rejects_ssrf")).data.id
     webhook_id = aclient.add_webhook_to_organization(
         organization_id=org_id,
-        body=AddWebhookToOrganizationRequest(
+        body=AddExperimentCreatedWebhookRequest(
             type="experiment.created",
             url="http://8.8.8.8/webhook",
             name="safe webhook",
@@ -2926,7 +2926,7 @@ async def test_experiment_webhook_integration(testing_datasource, aclient: Admin
     # Create two webhooks in the organization
     webhook1_response = aclient.add_webhook_to_organization(
         organization_id=org_id,
-        body=AddWebhookToOrganizationRequest(
+        body=AddExperimentCreatedWebhookRequest(
             type="experiment.created",
             name="Test Webhook 1",
             url="https://example.com/webhook1",
@@ -2936,7 +2936,7 @@ async def test_experiment_webhook_integration(testing_datasource, aclient: Admin
 
     aclient.add_webhook_to_organization(
         organization_id=org_id,
-        body=AddWebhookToOrganizationRequest(
+        body=AddExperimentCreatedWebhookRequest(
             type="experiment.created",
             name="Test Webhook 2",
             url="https://example.com/webhook2",
@@ -3787,10 +3787,10 @@ def test_list_organization_events_pagination(testing_datasource, aclient: AdminA
     # Create a webhook
     webhook_id = aclient.add_webhook_to_organization(
         organization_id=org_id,
-        body=AddWebhookToOrganizationRequest(
-            type="experiment.created",
-            url="https://example.com/webhook",
+        body=AddExperimentCreatedWebhookRequest(
             name="test webhook",
+            url="https://example.com/webhook",
+            type="experiment.created",
         ),
     ).data.id
 

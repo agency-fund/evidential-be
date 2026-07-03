@@ -4,13 +4,12 @@ from urllib.parse import urlparse, urlunparse
 
 import httpx2
 import sqlalchemy
-from fastapi import HTTPException
 from loguru import logger
 from sqlalchemy import NullPool
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
-from xngin.apiserver.routers.admin_integrations.admin_integrations_api import refresh_journeys_dict
+from xngin.apiserver.flags import XNGIN_PUBLIC_API_BASE_URL
 from xngin.apiserver.sqla import tables
 from xngin.events.turn_journeys_changed import TurnJourneysChangedEvent
 from xngin.events.webhook_sent import WebhookSentEvent
@@ -159,7 +158,7 @@ def make_webhook_outbound_handler(dsn: str, *, transport: httpx2.BaseTransport |
     return webhook_outbound_handler
 
 
-def make_turn_journeys_changed_handler(dsn: str):
+def make_turn_journeys_changed_handler(dsn: str, *, transport: httpx2.AsyncBaseTransport | None = None):
     """Returns a turn_journeys_changed handler bound with the DSN via a SQLAlchemy engine.
 
     Also creates an entry in the Event table with information that will be useful for
@@ -180,28 +179,14 @@ def make_turn_journeys_changed_handler(dsn: str):
 
         request = TurnJourneysChangedTask.model_validate(task.payload)
         logger.info(f"Processing {request}")
-
         with Session(engine) as session:
             try:
-                turn_connection = session.execute(
-                    sqlalchemy.select(tables.TurnConnection).where(
-                        tables.TurnConnection.organization_id == request.organization_id
+                async with httpx2.AsyncClient(transport=transport, timeout=10.0) as client:
+                    response = await client.request(
+                        method="GET",
+                        url=f"{XNGIN_PUBLIC_API_BASE_URL}/integrations/turn/{request.organization_id}/refresh-journeys",
                     )
-                ).scalar_one_or_none()
-
-                if turn_connection is None:
-                    _record_turn_journeys_changed_event(
-                        session,
-                        request,
-                        success=False,
-                        response_summary=f"No Turn connection found for organization {request.organization_id}",
-                    )
-                    raise ValueError(f"No Turn connection found for organization {request.organization_id}")
-
-                transport = httpx2.AsyncHTTPTransport(retries=3)
-                async with httpx2.AsyncClient(transport=transport) as client:
-                    journeys = await refresh_journeys_dict(turn_connection.get_turn_api_token(), client)
-                    turn_connection.journeys_dict = {journey.name: journey.uuid for journey in journeys}
+                    response.raise_for_status()
 
                 _record_turn_journeys_changed_event(
                     session,
@@ -209,8 +194,8 @@ def make_turn_journeys_changed_handler(dsn: str):
                     success=True,
                     response_summary="Journeys dict refreshed successfully",
                 )
-            except HTTPException as err:
-                message = f"status={err.status_code} message={err!s}"
+            except httpx2.HTTPStatusError as err:
+                message = f"status={response.status_code} message={err!s}"
                 _record_turn_journeys_changed_event(
                     session,
                     request,
