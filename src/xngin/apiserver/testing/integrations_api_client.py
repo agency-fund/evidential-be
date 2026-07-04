@@ -611,7 +611,7 @@ class IntegrationsAPIClient:
                 ]
             ),
             self._route_handler(
-                path="/v1/integrations/turn/{webhook_id}/refresh-journeys",
+                path="/v1/integrations/turn/webhook/{webhook_id}/refresh-journeys",
                 method=HTTPMethod.POST,
                 default_status=HTTPStatus.NO_CONTENT,
                 models={

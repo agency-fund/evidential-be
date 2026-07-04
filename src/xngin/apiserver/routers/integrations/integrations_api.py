@@ -115,7 +115,7 @@ async def receive_turn_journey_update_notification(
     This is intentional: Turn.io's webhook calls timeout in ~5s, and large refreshes may take longer.
     See `make_turn_journeys_changed_handler` in `xngin/tq/handlers.py` for the worker side logic.
     """
-    if not auth_token:
+    if not auth_token:  # for mypy
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing webhook auth token.")
     turn_webhook = await get_turn_webhook_or_raise(session, webhook_id=webhook_id, allow_missing=False)
     assert turn_webhook is not None  # for mypy
@@ -135,7 +135,7 @@ async def receive_turn_journey_update_notification(
 
 
 @router.post(
-    "/integrations/turn/{webhook_id}/refresh-journeys",
+    "/integrations/turn/webhook/{webhook_id}/refresh-journeys",
     status_code=status.HTTP_204_NO_CONTENT,
     responses={
         "404": {

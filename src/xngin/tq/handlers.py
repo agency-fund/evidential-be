@@ -188,13 +188,13 @@ def make_turn_journeys_changed_handler(dsn: str, *, transport: httpx2.AsyncBaseT
             raise ValueError("Task payload is empty")
 
         request = TurnJourneysChangedTask.model_validate(task.payload)
-        logger.info(f"Processing {request}")
+        logger.info(f"Processing request for org {request.organization_id} and webhook {request.webhook_id}")
         with Session(engine) as session:
             try:
                 async with httpx2.AsyncClient(transport=transport, timeout=10.0) as client:
                     response = await client.request(
                         method="POST",
-                        url=f"{XNGIN_PUBLIC_API_BASE_URL}{constants.API_PREFIX_V1}/integrations/turn/{request.webhook_id}/refresh-journeys",
+                        url=f"{XNGIN_PUBLIC_API_BASE_URL}{constants.API_PREFIX_V1}/integrations/turn/webhook/{request.webhook_id}/refresh-journeys",
                         headers={constants.HEADER_WEBHOOK_TOKEN: request.webhook_auth_token},
                     )
                     response.raise_for_status()
@@ -205,7 +205,7 @@ def make_turn_journeys_changed_handler(dsn: str, *, transport: httpx2.AsyncBaseT
                     success=True,
                     response_summary="Journeys dict refreshed successfully",
                 )
-            except httpx2.HTTPStatusError as err:
+            except httpx2.HTTPError as err:
                 message = f"status={response.status_code} message={err!s}"
                 _record_turn_journeys_changed_event(
                     session,
