@@ -196,10 +196,14 @@ async def set_organization_turn_connection(
     Creates a Turn connection for the organization if one does not yet exist, otherwise
     overwrites the existing token. An organization has at most one Turn connection.
 
-    Whenever the token is set or rotated, the stored list of Turn.io journeys for the
-    organization is automatically refreshed. Right now, this is the ONLY way to refresh journeys.
-    However, there are planned subsequent updates to add a separate webhook endpoint for
-    refreshing journeys without rotating the token, that the Turn.io App can automatically call.
+    Also ensures a "turn.journeys_changed" webhook exists for the organization, creating one
+    if it does not already exist.
+
+    The stored list of Turn.io journeys for the organization is also refreshed when the token is set or updated.
+    A separate webhook endpoint for refreshing journeys ("/integrations/turn/webhook/{webhook_id}/config-updated")
+    can be used to notify Evidential of updates to the Journeys from the Turn.io Evidential App, or
+    "/integrations/turn/webhook/{webhook_id}/refresh-journeys" can be used to manually trigger a refresh without
+    rotating the token.
 
     NB: It's important to maintain the order of setting token -> refreshing journeys in a single
     transaction, since the validity of the journeys list depends on the token. This ensures that
@@ -218,6 +222,10 @@ async def set_organization_turn_connection(
         session.add(turn_connection)
 
     turn_webhook = await get_turn_webhook_or_raise(session, organization_id=org.id, allow_missing=True)
+
+    token_changed = turn_connection.get_turn_api_token() != body.turn_api_token
+    should_refresh_journeys = turn_webhook is None or token_changed
+
     if turn_webhook is None:
         _, turn_webhook = admin_common.create_webhook_impl(
             session=session,
@@ -227,7 +235,7 @@ async def set_organization_turn_connection(
             ),
         )
 
-    elif turn_connection.get_turn_api_token() != body.turn_api_token:
+    elif token_changed:
         # This could make the arm_journey_ids stored in ExperimentTurnConfig.arm_journey_map invalid.
         # We expose that drift to the UI via get_..mapping()'s reporting of stale journey IDs.
         turn_connection.set_turn_api_token(body.turn_api_token)
@@ -238,13 +246,10 @@ async def set_organization_turn_connection(
             f"Not updating token."
         )
 
-    # Refresh the stored journeys
-    journeys = await refresh_journeys_dict(turn_api_token=body.turn_api_token, httpx_client=httpx_client)
+    if should_refresh_journeys:
+        journeys = await refresh_journeys_dict(turn_api_token=body.turn_api_token, httpx_client=httpx_client)
+        turn_connection.journeys_dict = {journey.name: journey.uuid for journey in journeys}
 
-    turn_connection.journeys_dict = {journey.name: journey.uuid for journey in journeys}
-
-    # Only commit after refreshing happens successfully,
-    # otherwise we discard both token and journeys updates.
     await session.commit()
 
     return AddWebhookToOrganizationResponse(
@@ -263,7 +268,7 @@ async def get_organization_turn_connection(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
     allow_missing: Annotated[
-        bool, Query(description="If true, return a 200 with null body if the resource does not exist.")
+        bool, Query(description="If true, return a 200 with default/empty field values if the resource does not exist.")
     ] = False,
 ) -> GetTurnConnectionResponse:
     """Returns a preview of the organization's configured Turn.io API token.
@@ -299,7 +304,7 @@ async def regenerate_turn_webhook_token(
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
     allow_missing: Annotated[
-        bool, Query(description="If true, return a 200 with null body if the resource does not exist.")
+        bool, Query(description="If true, return a 200 with default/empty field values if the resource does not exist.")
     ] = False,
 ) -> AddWebhookToOrganizationResponse:
     """Regenerates the auth token for the organization's turn.journeys_changed webhook.
