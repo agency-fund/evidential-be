@@ -8,15 +8,19 @@ Currently, we only support Turn.io, so this includes endpoints for the Turn.io E
 from contextlib import asynccontextmanager
 from typing import Annotated
 
+import httpx2
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, status
 from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import constants
-from xngin.apiserver.dependencies import xngin_db_session
+from xngin.apiserver.dependencies import retrying_httpx_dependency, xngin_db_session
 from xngin.apiserver.routers.admin.admin_api import GENERIC_SUCCESS
-from xngin.apiserver.routers.admin_integrations.admin_integrations_api import get_turn_webhook_or_raise
+from xngin.apiserver.routers.admin_integrations.admin_integrations_api import (
+    get_turn_webhook_or_raise,
+    refresh_journeys_dict,
+)
 from xngin.apiserver.routers.common_api_types import TurnConfigResponse
 from xngin.apiserver.routers.experiments.dependencies import experiment_dependency
 from xngin.apiserver.routers.experiments.experiments_api import STANDARD_INTEGRATION_RESPONSES
@@ -110,8 +114,55 @@ async def receive_turn_journey_update_notification(
     session.add(
         tables.Task(
             task_type=TURN_JOURNEYS_CHANGED_TASK_TYPE,
-            payload=TurnJourneysChangedTask(organization_id=turn_webhook.organization_id).model_dump(),
+            payload=TurnJourneysChangedTask(
+                organization_id=turn_webhook.organization_id, webhook_id=webhook_id, webhook_auth_token=auth_token
+            ).model_dump(),
         )
     )
     await session.commit()
+    return GENERIC_SUCCESS
+
+
+@router.post(
+    "/integrations/turn/{webhook_id}/refresh-journeys",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        "404": {
+            "model": dict,
+            "description": "The specified webhook or Turn.io connection was not found.",
+        },
+    },
+)
+async def refetch_journeys_from_turn(
+    webhook_id: str,
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    httpx_client: Annotated[httpx2.AsyncClient, Depends(retrying_httpx_dependency)],
+    auth_token: Annotated[str | None, Header(alias=constants.HEADER_WEBHOOK_TOKEN)] = None,
+):
+    """
+    This endpoint is used by the refresh task handler to refresh the journeys dictionary by triggering a re-fetch
+    from Turn.io.
+    This is meant to be used ONLY by the Turn.io webhook handler, and not directly by users.
+    """
+    webhook = await get_turn_webhook_or_raise(session, webhook_id=webhook_id, allow_missing=False)
+    assert webhook is not None  # for mypy
+
+    if auth_token != webhook.auth_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook auth token.")
+
+    turn_connection = (
+        await session.execute(
+            select(tables.TurnConnection).where(tables.TurnConnection.organization_id == webhook.organization_id)
+        )
+    ).scalar_one_or_none()
+
+    if not turn_connection:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="No Turn.io connection configured for this organization."
+        )
+
+    journeys = await refresh_journeys_dict(turn_connection.get_turn_api_token(), httpx_client)
+    turn_connection.journeys_dict = {journey.name: journey.uuid for journey in journeys}
+    await session.commit()
+
     return GENERIC_SUCCESS

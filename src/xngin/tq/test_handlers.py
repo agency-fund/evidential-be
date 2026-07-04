@@ -140,10 +140,10 @@ async def test_turn_journeys_changed_handler_updates_journeys_and_records_succes
     monkeypatch.setattr(FakeAsyncClient, "stacks", [{"name": "Arm A", "uuid": "arm-a-uuid"}])
     monkeypatch.setattr(httpx2, "AsyncClient", FakeAsyncClient)
 
-    iaclient.set_organization_turn_connection(
+    response = iaclient.set_organization_turn_connection(
         organization_id=org_id,
         body=SetConnectionToTurnRequest(turn_api_token="a" * 335),
-    )
+    ).data
 
     # Update the stacks the Turn API will return when the handler fires.
     monkeypatch.setattr(
@@ -161,7 +161,7 @@ async def test_turn_journeys_changed_handler_updates_journeys_and_records_succes
         task = await insert_task(
             xngin_session,
             task_type=TURN_JOURNEYS_CHANGED_TASK_TYPE,
-            payload={"organization_id": org_id},
+            payload={"organization_id": org_id, "webhook_id": response.id, "webhook_auth_token": response.auth_token},
         )
         success_task = await wait_for_task_status(task.id, "success")
 
@@ -189,10 +189,10 @@ async def test_turn_journeys_changed_handler_records_failure_event_when_turn_api
     monkeypatch.setattr(FakeAsyncClient, "stacks", [{"name": "Arm A", "uuid": "arm-a-uuid"}])
     monkeypatch.setattr(httpx2, "AsyncClient", FakeAsyncClient)
 
-    iaclient.set_organization_turn_connection(
+    response = iaclient.set_organization_turn_connection(
         organization_id=org_id,
         body=SetConnectionToTurnRequest(turn_api_token="a" * 335),
-    )
+    ).data
 
     # Simulate the Turn API being unavailable when the handler fires.
     monkeypatch.setattr(FakeAsyncClient, "expected_status", 500)
@@ -206,7 +206,7 @@ async def test_turn_journeys_changed_handler_records_failure_event_when_turn_api
         task = await insert_task(
             xngin_session,
             task_type=TURN_JOURNEYS_CHANGED_TASK_TYPE,
-            payload={"organization_id": org_id},
+            payload={"organization_id": org_id, "webhook_id": response.id, "webhook_auth_token": response.auth_token},
         )
         dead_task = await wait_for_task_status(task.id, "dead")
 

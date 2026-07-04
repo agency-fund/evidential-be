@@ -12,6 +12,7 @@ class TurnJourneysChangedEvent(BaseEventModel):
 
     type: Literal["turn.journeys_changed"] = "turn.journeys_changed"
     organization_id: Annotated[str, Field(description="The organization ID.")]
+    webhook_id: Annotated[str, Field(description="The webhook ID")]
     success: bool
     response: str
 

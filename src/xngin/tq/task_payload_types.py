@@ -34,3 +34,5 @@ class TurnJourneysChangedTask(BaseModel):
     """Defines the payload understood by turn_journeys_changed handler."""
 
     organization_id: str
+    webhook_id: str
+    webhook_auth_token: str

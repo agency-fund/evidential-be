@@ -8,6 +8,7 @@ from loguru import logger
 from sqlalchemy import NullPool
 from sqlalchemy.orm import Session
 
+from xngin.apiserver import constants
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.flags import XNGIN_PUBLIC_API_BASE_URL
 from xngin.apiserver.sqla import tables
@@ -51,7 +52,10 @@ def _record_turn_journeys_changed_event(
             type=TurnJourneysChangedEvent.TYPE,
         ).set_data(
             TurnJourneysChangedEvent(
-                organization_id=request.organization_id, success=success, response=response_summary
+                organization_id=request.organization_id,
+                webhook_id=request.webhook_id,
+                success=success,
+                response=response_summary,
             )
         )
     )
@@ -183,8 +187,9 @@ def make_turn_journeys_changed_handler(dsn: str, *, transport: httpx2.AsyncBaseT
             try:
                 async with httpx2.AsyncClient(transport=transport, timeout=10.0) as client:
                     response = await client.request(
-                        method="GET",
-                        url=f"{XNGIN_PUBLIC_API_BASE_URL}/integrations/turn/{request.organization_id}/refresh-journeys",
+                        method="POST",
+                        url=f"{XNGIN_PUBLIC_API_BASE_URL}{constants.API_PREFIX_V1}/integrations/turn/{request.webhook_id}/refresh-journeys",
+                        headers={constants.HEADER_WEBHOOK_TOKEN: request.webhook_auth_token},
                     )
                     response.raise_for_status()
 

@@ -170,7 +170,11 @@ async def test_turn_webhook_enqueues_task(
     )
 
     assert len(tasks) == 1
-    assert tasks[0].payload == {"organization_id": testing_datasource.organization_id}
+    assert tasks[0].payload == {
+        "organization_id": testing_datasource.organization_id,
+        "webhook_id": webhook_id,
+        "webhook_auth_token": auth_token,
+    }
 
 
 async def test_turn_webhook_404_for_unknown_id(
@@ -199,3 +203,57 @@ async def test_turn_webhook_401_for_missing_token(
     webhook_id, _ = inbound_turn_webhook
     with expect_status_code(401):
         iclient.receive_turn_journey_update_notification(webhook_id=webhook_id)
+
+
+async def test_refetch_journeys_from_turn(
+    testing_datasource,
+    iaclient: AdminIntegrationsAPIClient,
+    iclient: IntegrationsAPIClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """
+    The refresh-journeys endpoint is used by the Turn.io webhook handler to trigger a re-fetch of the journeys
+    dictionary from Turn.io. This test ensures that the endpoint can be called successfully and that it
+    triggers the expected behavior of refreshing the journeys dictionary.
+    """
+    org_id = testing_datasource.organization_id
+    monkeypatch.setattr(FakeAsyncClient, "call_log", 0)
+    monkeypatch.setattr(
+        FakeAsyncClient,
+        "stacks",
+        [{"name": "journey-0", "uuid": "journey-0-uuid"}, {"name": "journey-1", "uuid": "journey-1-uuid"}],
+    )
+    monkeypatch.setattr(httpx2, "AsyncClient", FakeAsyncClient)
+
+    # Call the refresh-journeys endpoint without a Turn connection configured for the organization.
+    with expect_status_code(404, text="Turn.io webhook not found"):
+        iclient.refetch_journeys_from_turn(webhook_id="nonexistent-webhook-id", auth_token="any-token")
+
+    token = "a" * 335
+    response = iaclient.set_organization_turn_connection(
+        organization_id=org_id,
+        body=SetConnectionToTurnRequest(turn_api_token=token),
+    ).data
+
+    # Call the refresh-journeys endpoint without changing the journeys.
+    iclient.refetch_journeys_from_turn(webhook_id=response.id, auth_token=response.auth_token)
+
+    journey_dict = iaclient.get_organization_turn_journeys(organization_id=org_id).data.journeys
+    assert {journey.name: journey.uuid for journey in journey_dict} == {
+        "journey-0": "journey-0-uuid",
+        "journey-1": "journey-1-uuid",
+    }
+
+    # Update the journeys in the FakeAsyncClient to simulate a change in Turn.io.
+    monkeypatch.setattr(
+        FakeAsyncClient,
+        "stacks",
+        [{"name": "journey-2", "uuid": "journey-2-uuid"}, {"name": "journey-3", "uuid": "journey-3-uuid"}],
+    )
+    iclient.refetch_journeys_from_turn(webhook_id=response.id, auth_token=response.auth_token)
+
+    journey_dict = iaclient.get_organization_turn_journeys(organization_id=org_id).data.journeys
+    assert {journey.name: journey.uuid for journey in journey_dict} == {
+        "journey-2": "journey-2-uuid",
+        "journey-3": "journey-3-uuid",
+    }
