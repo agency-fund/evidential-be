@@ -42,6 +42,13 @@ router = APIRouter(
 )
 
 
+def check_webhook_auth_token(auth_token: str | None, webhook: tables.Webhook) -> None:
+    if not auth_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing webhook auth token.")
+    if auth_token != webhook.auth_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook auth token.")
+
+
 @router.get(
     "/integrations/experiments/{experiment_id}/turn-app-config",
     summary="Get the Turn.io arm to journey mapping configuration for the experiment, if it exists.",
@@ -102,14 +109,18 @@ async def receive_turn_journey_update_notification(
     This endpoint is used as the webhook URL for Turn.io to notify us of changes to the Journeys.
     It is not intended to be called directly by clients, and will return a 400 error if called without
     a valid Turn.io webhook auth token.
+
+    This endpoint only enqueues a task; it does not perform the refresh itself. A `tq` worker picks up
+    the task and triggers the actual refresh by calling `refetch_journeys_from_turn` below, over HTTP.
+    This is intentional: Turn.io's webhook calls timeout in ~5s, and large refreshes may take longer.
+    See `make_turn_journeys_changed_handler` in `xngin/tq/handlers.py` for the worker side logic.
     """
     if not auth_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing webhook auth token.")
     turn_webhook = await get_turn_webhook_or_raise(session, webhook_id=webhook_id, allow_missing=False)
     assert turn_webhook is not None  # for mypy
 
-    if auth_token != turn_webhook.auth_token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook auth token.")
+    check_webhook_auth_token(auth_token, turn_webhook)
 
     session.add(
         tables.Task(
@@ -140,15 +151,22 @@ async def refetch_journeys_from_turn(
     auth_token: Annotated[str | None, Header(alias=constants.HEADER_WEBHOOK_TOKEN)] = None,
 ):
     """
-    This endpoint is used by the refresh task handler to refresh the journeys dictionary by triggering a re-fetch
-    from Turn.io.
-    This is meant to be used ONLY by the Turn.io webhook handler, and not directly by users.
+    Refreshes the cached Turn.io journeys for the organization owning this webhook.
+
+    This endpoint is called in two ways:
+    1. By the `tq` worker's `turn_journeys_changed` handler, in response to a Turn.io webhook
+       notification (see `receive_turn_journey_update_notification` above). The worker calls this
+       endpoint over HTTP, authenticating with the same Webhook-Token any other caller would use,
+       rather than invoking the refresh logic in-process — `tq` intentionally has no dependency on
+       Evidential's business logic or database models, so it treats this as an external API call.
+    2. Directly, as a way to manually trigger a refresh without waiting for a Turn.io webhook or
+       rotating the connection's token (see `set_organization_turn_connection` in
+       `admin_integrations_api.py`).
     """
     webhook = await get_turn_webhook_or_raise(session, webhook_id=webhook_id, allow_missing=False)
     assert webhook is not None  # for mypy
 
-    if auth_token != webhook.auth_token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook auth token.")
+    check_webhook_auth_token(auth_token, webhook)
 
     turn_connection = (
         await session.execute(
