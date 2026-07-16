@@ -1,0 +1,106 @@
+title = "betterleaks config for xngin"
+
+[extend]
+useDefault = true
+
+# ---------------------------------------------------------------------------
+# Custom rules for project-specific secret patterns
+# ---------------------------------------------------------------------------
+
+[[rules]]
+id = "xngin-encrypted-value"
+description = "Encrypted secret value (should never appear in plain commits)"
+regex = '''\$encrypted\$:[A-Za-z0-9+/=]+'''
+keywords = ["$encrypted$"]
+
+[[rules]]
+id = "xngin-api-key"
+description = "xngin API key (xat-prefixed)"
+regex = '''xat[a-zA-Z0-9_-]{20,}'''
+keywords = ["xat"]
+
+[[rules]]
+id = "xngin-session-token"
+description = "xngin session token (xa_-prefixed)"
+regex = '''xa_[a-zA-Z0-9_-]{20,}'''
+keywords = ["xa_"]
+
+[[rules]]
+id = "xngin-nacl-keyset"
+description = "NaCl encryption keyset (base64-encoded JSON)"
+regex = '''XNGIN_SECRETS_NACL_KEYSET\s*=\s*["'][A-Za-z0-9+/=]{20,}["']'''
+keywords = ["XNGIN_SECRETS_NACL_KEYSET"]
+
+[[rules]]
+id = "xngin-session-token-keyset"
+description = "Session token encryption keyset"
+regex = '''XNGIN_SESSION_TOKEN_KEYSET\s*=\s*["'][A-Za-z0-9+/=]{20,}["']'''
+keywords = ["XNGIN_SESSION_TOKEN_KEYSET"]
+
+[[rules]]
+id = "xngin-gcp-credentials"
+description = "GCP credentials for KMS (base64-encoded service account JSON)"
+regex = '''XNGIN_SECRETS_GCP_CREDENTIALS\s*=\s*["'][A-Za-z0-9+/=]{20,}["']'''
+keywords = ["XNGIN_SECRETS_GCP_CREDENTIALS"]
+
+[[rules]]
+id = "gcp-kms-key-uri"
+description = "GCP KMS key URI with project details"
+regex = '''gcp-kms://projects/[a-z0-9-]+/locations/[a-z0-9-]+/keyRings/[a-z0-9-]+/cryptoKeys/[a-z0-9-]+'''
+keywords = ["gcp-kms://"]
+
+[[rules]]
+id = "database-url-with-password"
+description = "Database connection string with embedded credentials"
+regex = '''(?i)postgres(?:ql)?(?:\+\w+)?://[^:]+:[^@]+@[^/\s]+'''
+keywords = ["postgresql://", "postgres://"]
+
+[[rules]]
+id = "sentry-dsn"
+description = "Sentry DSN with embedded secret key"
+regex = '''https://[a-f0-9]{32}@[a-z0-9.-]+\.ingest\.(?:us\.|de\.)?sentry\.io/\d+'''
+keywords = ["sentry.io"]
+
+[[rules]]
+id = "webhook-token"
+description = "Webhook authentication token"
+regex = '''(?i)webhook[_-]?token\s*[:=]\s*["'][a-f0-9]{32,}["']'''
+keywords = ["webhook_token", "webhook-token"]
+
+[[rules]]
+id = "gcp-service-account-key"
+description = "GCP service account private key"
+regex = '''-----BEGIN (?:RSA )?PRIVATE KEY-----'''
+keywords = ["PRIVATE KEY"]
+
+[[rules]]
+id = "gcp-service-account-json"
+description = "GCP service account JSON with private key"
+regex = '''"private_key"\s*:\s*"-----BEGIN'''
+keywords = ["private_key"]
+
+# ---------------------------------------------------------------------------
+# Allowlist: known safe patterns that are not real secrets
+# ---------------------------------------------------------------------------
+
+[allowlist]
+paths = [
+    '''\.git/''',
+    '''node_modules/''',
+    '''\.mypy_cache/''',
+    '''__pycache__/''',
+    '''\.pytest_cache/''',
+    '''\.venv/''',
+    '''migrations/''',
+]
+
+regexes = [
+    # Local dev database DSNs with default postgres:postgres on localhost — not real credentials.
+    '''postgres(?:ql)?(?:\+\w+)?://postgres:postgres@localhost:\d+/''',
+    # Google OAuth client IDs are public identifiers, not secrets.
+    '''\d+-[a-z0-9]+\.apps\.googleusercontent\.com''',
+    # Placeholder value used in CI, not a real secret.
+    '''unset-google-oidc-client-secret''',
+    # Hardcoded test-only sentinel, not a real credential.
+    '''airplane-mode-token''',
+]
