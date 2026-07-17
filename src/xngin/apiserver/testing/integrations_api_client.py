@@ -479,3 +479,155 @@ class IntegrationsAPIClient:
                 client_exts=client_exts,
             ),
         )
+
+    @overload
+    def receive_turn_journey_update_notification(
+        self,
+        *,
+        webhook_id: str,
+        auth_token: str | None = INTEGRATIONS_API_CLIENT_NOT_REQUIRED,
+        raise_if_not_default_status: Literal[True] = True,
+        client_exts: IntegrationsAPIClientExtensions | None = None,
+    ) -> IntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
+    @overload
+    def receive_turn_journey_update_notification(
+        self,
+        *,
+        webhook_id: str,
+        auth_token: str | None = INTEGRATIONS_API_CLIENT_NOT_REQUIRED,
+        raise_if_not_default_status: Literal[False],
+        client_exts: IntegrationsAPIClientExtensions | None = None,
+    ) -> (
+        IntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | IntegrationsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], dict]
+        | IntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], dict]
+        | IntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], dict]
+        | IntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], dict]
+        | IntegrationsAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], IntegrationsAPIClientHTTPValidationError
+        ]
+    ): ...
+    def receive_turn_journey_update_notification(
+        self,
+        *,
+        webhook_id: str,
+        auth_token: str | None = INTEGRATIONS_API_CLIENT_NOT_REQUIRED,
+        raise_if_not_default_status: bool = True,
+        client_exts: IntegrationsAPIClientExtensions | None = None,
+    ) -> (
+        IntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | IntegrationsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], dict]
+        | IntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], dict]
+        | IntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], dict]
+        | IntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], dict]
+        | IntegrationsAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], IntegrationsAPIClientHTTPValidationError
+        ]
+    ):
+        return cast(
+            (
+                IntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | IntegrationsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], dict]
+                | IntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], dict]
+                | IntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], dict]
+                | IntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], dict]
+                | IntegrationsAPIClientResult[
+                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT], IntegrationsAPIClientHTTPValidationError
+                ]
+            ),
+            self._route_handler(
+                path="/v1/integrations/turn/webhook/{webhook_id}/config-updated",
+                method=HTTPMethod.POST,
+                default_status=HTTPStatus.NO_CONTENT,
+                models={
+                    HTTPStatus.NO_CONTENT: Any,
+                    HTTPStatus.BAD_REQUEST: dict,
+                    HTTPStatus.UNAUTHORIZED: dict,
+                    HTTPStatus.FORBIDDEN: dict,
+                    HTTPStatus.NOT_FOUND: dict,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: IntegrationsAPIClientHTTPValidationError,
+                },
+                path_params={
+                    "webhook_id": webhook_id,
+                },
+                header_params={
+                    "Webhook-Token": auth_token,
+                },
+                raise_if_not_default_status=raise_if_not_default_status,
+                client_exts=client_exts,
+            ),
+        )
+
+    @overload
+    def refetch_journeys_from_turn(
+        self,
+        *,
+        webhook_id: str,
+        auth_token: str | None = INTEGRATIONS_API_CLIENT_NOT_REQUIRED,
+        raise_if_not_default_status: Literal[True] = True,
+        client_exts: IntegrationsAPIClientExtensions | None = None,
+    ) -> IntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
+    @overload
+    def refetch_journeys_from_turn(
+        self,
+        *,
+        webhook_id: str,
+        auth_token: str | None = INTEGRATIONS_API_CLIENT_NOT_REQUIRED,
+        raise_if_not_default_status: Literal[False],
+        client_exts: IntegrationsAPIClientExtensions | None = None,
+    ) -> (
+        IntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | IntegrationsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], dict]
+        | IntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], dict]
+        | IntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], dict]
+        | IntegrationsAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], IntegrationsAPIClientHTTPValidationError
+        ]
+    ): ...
+    def refetch_journeys_from_turn(
+        self,
+        *,
+        webhook_id: str,
+        auth_token: str | None = INTEGRATIONS_API_CLIENT_NOT_REQUIRED,
+        raise_if_not_default_status: bool = True,
+        client_exts: IntegrationsAPIClientExtensions | None = None,
+    ) -> (
+        IntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | IntegrationsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], dict]
+        | IntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], dict]
+        | IntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], dict]
+        | IntegrationsAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], IntegrationsAPIClientHTTPValidationError
+        ]
+    ):
+        return cast(
+            (
+                IntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | IntegrationsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], dict]
+                | IntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], dict]
+                | IntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], dict]
+                | IntegrationsAPIClientResult[
+                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT], IntegrationsAPIClientHTTPValidationError
+                ]
+            ),
+            self._route_handler(
+                path="/v1/integrations/turn/webhook/{webhook_id}/refresh-journeys",
+                method=HTTPMethod.POST,
+                default_status=HTTPStatus.NO_CONTENT,
+                models={
+                    HTTPStatus.NO_CONTENT: Any,
+                    HTTPStatus.BAD_REQUEST: dict,
+                    HTTPStatus.FORBIDDEN: dict,
+                    HTTPStatus.NOT_FOUND: dict,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: IntegrationsAPIClientHTTPValidationError,
+                },
+                path_params={
+                    "webhook_id": webhook_id,
+                },
+                header_params={
+                    "Webhook-Token": auth_token,
+                },
+                raise_if_not_default_status=raise_if_not_default_status,
+                client_exts=client_exts,
+            ),
+        )

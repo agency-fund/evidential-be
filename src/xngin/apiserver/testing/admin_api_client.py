@@ -41,8 +41,9 @@ from xngin.apiserver.routers.admin.admin_api import (
     MessageError,
 )
 from xngin.apiserver.routers.admin.admin_api_types import (
+    AddExperimentCreatedWebhookRequest,
     AddMemberToOrganizationRequest,
-    AddWebhookToOrganizationRequest,
+    AddTurnJourneysChangedWebhookRequest,
     AddWebhookToOrganizationResponse,
     CreateApiKeyResponse,
     CreateDatasourceRequest,
@@ -1410,7 +1411,7 @@ class AdminAPIClient:
     def add_webhook_to_organization(
         self,
         *,
-        body: AddWebhookToOrganizationRequest,
+        body: AddExperimentCreatedWebhookRequest | AddTurnJourneysChangedWebhookRequest,
         organization_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
@@ -1419,7 +1420,7 @@ class AdminAPIClient:
     def add_webhook_to_organization(
         self,
         *,
-        body: AddWebhookToOrganizationRequest,
+        body: AddExperimentCreatedWebhookRequest | AddTurnJourneysChangedWebhookRequest,
         organization_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
@@ -1434,7 +1435,7 @@ class AdminAPIClient:
     def add_webhook_to_organization(
         self,
         *,
-        body: AddWebhookToOrganizationRequest,
+        body: AddExperimentCreatedWebhookRequest | AddTurnJourneysChangedWebhookRequest,
         organization_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,
