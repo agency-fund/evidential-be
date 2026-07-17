@@ -2694,6 +2694,33 @@ async def test_update_bandit_arm_with_outcome_mab_dwh_numeric_target_accepts_any
     assert draws[0].outcome == 42.7
 
 
+async def test_update_bandit_arm_with_freq_experiments_returns_422(xngin_session, testing_datasource):
+    """Freq experiments should return 422 when updating bandit arm with outcome."""
+    online_freq_experiment = await insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.FREQ_ONLINE,
+        target_field_name="current_income",
+    )
+    await create_assignment_for_participant(xngin_session, online_freq_experiment, "p1", None, random_state=66)
+
+    with pytest.raises(LateValidationError, match="Cannot dynamically update arms for frequentist experiments"):
+        await update_bandit_arm_with_outcome_impl(
+            xngin_session=xngin_session, experiment=online_freq_experiment, participant_id="p1", outcome=42.7
+        )
+
+    pre_freq_experiment = await insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+    )
+    await create_assignment_for_participant(xngin_session, pre_freq_experiment, "p1", None, random_state=66)
+
+    with pytest.raises(LateValidationError, match="Cannot dynamically update arms for frequentist experiments"):
+        await update_bandit_arm_with_outcome_impl(
+            xngin_session=xngin_session, experiment=pre_freq_experiment, participant_id="p1", outcome=42.7
+        )
+
+
 async def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_session, testing_datasource):
     experiment, _ = await make_insertable_experiment(
         testing_datasource.ds,

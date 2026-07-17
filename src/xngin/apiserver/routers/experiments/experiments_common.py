@@ -961,8 +961,7 @@ async def update_bandit_arm_with_outcome_impl(
 
     # For DWH-backed bandits, type-check the outcome against the stored target column's data_type.
     if isinstance(design_spec, MABDwhExperimentSpec):
-        experiment_fields = await experiment.awaitable_attrs.experiment_fields
-        _check_outcome_against_mab_dwh_target(experiment_fields, outcome)
+        _check_outcome_against_mab_dwh_target(experiment.experiment_fields, outcome)
 
     try:
         result = await xngin_session.execute(
