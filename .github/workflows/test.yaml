@@ -59,7 +59,7 @@ jobs:
   ruff-annotations:
     needs: changes
     if: needs.changes.outputs.ruffannotations == 'true'
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Checkout code
@@ -97,27 +97,32 @@ jobs:
       - uses: astral-sh/setup-uv@e06108dd0aef18192324c70427afc47652e63a82 # v7.5.0
       - name: check that migrations are valid
         run: uv run atlas migrate validate --env sa_postgres
-      - name: lint migrations
+      - name: check migrations are linearly ordered
         if: github.event_name == 'pull_request'
         run: |
-          uv run atlas migrate lint --env sa_postgres --git-base origin/main | tee -a lint-output
+          # Fail if this PR adds a migration that sorts before one already on main -- the
+          # "non-linear" history that breaks deploys. We use a dependency-free git check
+          # rather than `atlas migrate lint` because that command became Atlas Pro-only
+          # (requires `atlas login`) in v0.38 and otherwise just aborts. We capture its
+          # status so the failure isn't masked, still build/post the PR comment, then fail.
+          set -o pipefail
+          lint_status=0
+          ./tools/check_migrations_linear.sh origin/main 2>&1 | tee -a lint-output || lint_status=$?
 
           {
             echo '## Migration Lint'
             echo
-            if [[ -s lint-output ]]; then
-              echo '```'
-              cat lint-output
-              echo '```'
-            else
-              echo Lint output was empty.
-            fi
+            echo '```'
+            cat lint-output
+            echo '```'
             echo
           } | tee -a migration-lint.md
 
-          if [[ -s lint-output ]]; then
+          if [[ "${lint_status}" -ne 0 ]]; then
             cat migration-lint.md >> comment.md
           fi
+
+          exit "${lint_status}"
       - name: ensure migrations have been created for the latest code changes
         run: |
           before=$(sha256sum migrations/sa_postgres/atlas.sum)
@@ -176,6 +181,7 @@ jobs:
       pydependencies: ${{ steps.filter.outputs.pydependencies }}
       migrations: ${{ steps.filter.outputs.migrations }}
       queries: ${{ steps.filter.outputs.queries }}
+      openapi: ${{ steps.filter.outputs.openapi }}
     steps:
       - if: github.event_name != 'pull_request'
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
@@ -198,7 +204,10 @@ jobs:
             queries:
               - 'src/xngin/apiserver/dwh/**'
               - 'src/xngin/apiserver/conftest.py'
-
+            openapi:
+              - 'src/**/*.py'
+              - 'pyproject.toml'
+              - 'uv.lock'
 
   osx-setup:
     needs: changes
@@ -385,3 +394,148 @@ jobs:
         with:
           persist-credentials: false
       - run: docker buildx bake
+
+  frontend-impact:
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.openapi == 'true'
+    timeout-minutes: 15
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@e06108dd0aef18192324c70427afc47652e63a82 # v7.5.0
+      - run: XNGIN_PUBLISH_ALL_DOCS=true uv run xngin-cli export-openapi-spec
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          repository: agency-fund/evidential-fe
+          ref: main
+          path: evidential-fe
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          package_json_file: evidential-fe/package.json
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: 'evidential-fe/.nvmrc'
+          cache: 'pnpm'
+          cache-dependency-path: 'evidential-fe/pnpm-lock.yaml'
+      - uses: go-task/setup-task@3be4020d41929789a01026e0e427a4321ce0ad44 # v2.0.0
+        with:
+          version: 3.x
+      - run: cp openapi.json evidential-fe/openapi.json
+      - id: frontend_install
+        working-directory: evidential-fe
+        run: pnpm install --frozen-lockfile
+      - name: regenerate client and lint
+        id: regen
+        working-directory: evidential-fe
+        run: |
+          set +e
+          pnpm exec orval --config orval.config.ts 2>&1 | tee ../orval-output.txt
+          echo "orval_rc=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          task lint 2>&1 | tee ../lint-output.txt
+          echo "lint_rc=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+      - name: report impact
+        if: always()
+        env:
+          ORVAL_RC: ${{ steps.regen.outputs.orval_rc }}
+          LINT_RC: ${{ steps.regen.outputs.lint_rc }}
+          INSTALL_OUTCOME: ${{ steps.frontend_install.outcome }}
+          REGEN_OUTCOME: ${{ steps.regen.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          check_completed=true
+          if [[ "${INSTALL_OUTCOME}" != "success" || "${REGEN_OUTCOME}" != "success" ]]; then
+            check_completed=false
+          fi
+
+          diff=''
+          if [[ -d evidential-fe/.git ]]; then
+            if ! diff=$(git -C evidential-fe diff -- src/api); then
+              diff=''
+              check_completed=false
+            fi
+          else
+            check_completed=false
+          fi
+
+          impact=false
+          if [[ "${check_completed}" != "true" || -n "${diff}" || "${ORVAL_RC:-0}" != "0" || "${LINT_RC:-0}" != "0" ]]; then
+            impact=true
+          fi
+
+          {
+            echo '## Frontend API client impact'
+            echo
+            if [[ "${check_completed}" != "true" ]]; then
+              echo 'The frontend impact check did not complete.'
+              echo
+              echo "- frontend install step: ${INSTALL_OUTCOME:-unknown}"
+              echo "- regenerate client and lint step: ${REGEN_OUTCOME:-unknown}"
+              echo
+              echo "Inspect the workflow run: ${RUN_URL}"
+            elif [[ "${impact}" == "true" ]]; then
+              echo 'This change **may impact** the code generated in the frontend.'
+            else
+              echo 'This change will not impact the generated client.'
+            fi
+            echo
+            if [[ -n "${diff}" ]]; then
+              echo '<details><summary>Generated client diff (src/api)</summary>'
+              echo
+              echo '```diff'
+              echo "${diff}"
+              echo '```'
+              echo
+              echo '</details>'
+            fi
+            if [[ "${ORVAL_RC:-0}" != "0" ]]; then
+              echo "<details><summary>orval failed (exit ${ORVAL_RC})</summary>"
+              echo
+              echo '```'
+              cat orval-output.txt 2>/dev/null || echo 'No orval output was captured.'
+              echo '```'
+              echo
+              echo '</details>'
+            fi
+            if [[ "${LINT_RC:-0}" != "0" ]]; then
+              echo "<details><summary>task lint failed (exit ${LINT_RC})</summary>"
+              echo
+              echo '```'
+              cat lint-output.txt 2>/dev/null || echo 'No lint output was captured.'
+              echo '```'
+              echo
+              echo '</details>'
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          {
+            echo '<!-- frontend-impact-check -->'
+            if [[ "${check_completed}" != "true" ]]; then
+              echo "⚠️ The frontend impact check did not complete. Please review: ${RUN_URL}"
+            elif [[ "${impact}" != "true" ]]; then
+              echo '✅ This PR does not change the frontend'\''s generated client.'
+            elif [[ "${ORVAL_RC:-0}" == "0" && "${LINT_RC:-0}" == "0" ]]; then
+              echo "🔄 This PR changes the files produced by the frontend's code generator, but linting still passes. Please review: ${RUN_URL}"
+            else
+              echo "⚠️ This PR requires frontend changes: client generation or linting failed. Please review: ${RUN_URL}"
+            fi
+          } > comment.md
+      - name: post sticky comment
+        if: always() && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MARKER: '<!-- frontend-impact-check -->'
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          id=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --paginate --slurp \
+            | jq -r --arg m "${MARKER}" 'map(.[] | select(.body | contains($m)) | .id) | .[0] // empty')
+          if [[ -n "${id}" && "${id}" != "null" ]]; then
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" -F body=@comment.md
+          else
+            gh pr comment "${PR_NUMBER}" --repo "${GITHUB_REPOSITORY}" --body-file comment.md
+          fi

@@ -34,7 +34,8 @@ def deterministic_random(element):
     if element.sa_table is None:
         raise ValueError("our_random requires sa_table= to be an inspectable table-like entity.")
     meta = inspect(element.sa_table)
-    columns = (c for c in meta.primary_key.columns) if meta.primary_key.columns else (c for c in meta.columns)
+    primary_key = list(meta.primary_key)
+    columns = primary_key or list(meta.columns)
     return ", ".join(str(c) for c in sorted(columns, key=lambda c: c.name))
 
 

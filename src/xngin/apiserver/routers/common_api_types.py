@@ -894,8 +894,10 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         Field(
             default=None,
             ge=0,
-            description="Used in both power calculations and experiment creation. "
-            "Required when creating preassigned experiments. Optional for power calculations. "
+            description="Desired number of individual participants. "
+            "Required when creating individual-randomized preassigned experiments. "
+            "For cluster-randomized preassigned experiment creation, use desired_n_clusters to control sampling; "
+            "desired_n remains available for power calculations. "
             "When set, the power check also returns the minimum detectable effect for this size, "
             "along with the minimum sample size.",
         ),
@@ -1016,7 +1018,7 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
         if self.prior_type == PriorTypes.BETA:
             if not self.reward_type == LikelihoodTypes.BERNOULLI:
                 raise ValueError("Beta prior can only be used with binary-valued rewards.")
-            if self.experiment_type != ExperimentsType.MAB_ONLINE:
+            if self.experiment_type not in {ExperimentsType.MAB_ONLINE, ExperimentsType.MAB_ONLINE_DWH}:
                 raise ValueError(f"Experiments of type {self.experiment_type} can only use Gaussian priors.")
 
         return self
@@ -1054,11 +1056,24 @@ class PreassignedFrequentistExperimentSpec(BaseFrequentistDesignSpec):
             ),
         ),
     ] = None
+    desired_n_clusters: Annotated[
+        int | None,
+        Field(
+            default=None,
+            ge=1,
+            description=(
+                "Desired number of clusters to sample when creating a cluster-randomized preassigned experiment. "
+                "Only valid when cluster_key is set. All eligible participants in each sampled cluster are included."
+            ),
+        ),
+    ] = None
 
     @model_validator(mode="after")
     def validate_cluster_randomization(self) -> Self:
         if self.cluster_key is not None and self.strata:
             raise ValueError("Cluster-randomized frequentist designs cannot also set strata.")
+        if self.cluster_key is None and self.desired_n_clusters is not None:
+            raise ValueError("desired_n_clusters can only be set when cluster_key is set.")
         return self
 
 
@@ -1081,6 +1096,46 @@ class MABExperimentSpec(BaseBanditExperimentSpec):
     experiment_type: Literal[ExperimentsType.MAB_ONLINE] = ExperimentsType.MAB_ONLINE
 
 
+class MABDwhExperimentSpec(BaseBanditExperimentSpec):
+    """Use this type for a MAB experiment whose outcome (target) column is bound at design time to
+    a column in a connected data warehouse table.
+
+    The server resolves the target column's data type from the DWH at experiment-create time and
+    persists it on the experiment. Subsequent outcome reports are type-checked against that stored
+    type. The DWH is consulted at design time only; outcome values still arrive via the existing
+    push API."""
+
+    experiment_type: Literal[ExperimentsType.MAB_ONLINE_DWH] = ExperimentsType.MAB_ONLINE_DWH
+
+    table_name: Annotated[
+        str,
+        Field(
+            max_length=MAX_LENGTH_OF_NAME_VALUE,
+            description="Datasource table used to resolve target field metadata.",
+        ),
+    ]
+    primary_key: Annotated[
+        FieldName,
+        Field(description="Column name in table_name that uniquely identifies each participant."),
+    ]
+    target_field_name: Annotated[
+        FieldName,
+        Field(
+            description=(
+                "Column name in table_name whose values this bandit optimises. "
+                "Its data type is resolved from the DWH at create-time and used to validate "
+                "subsequent outcome reports."
+            ),
+        ),
+    ]
+
+    @model_validator(mode="after")
+    def check_primary_key_and_target_differ(self) -> Self:
+        if self.primary_key == self.target_field_name:
+            raise ValueError("primary_key and target_field_name must refer to different columns")
+        return self
+
+
 class CMABExperimentSpec(BaseBanditExperimentSpec):
     """Describes a Contextual Multi-armed Bandit (CMAB) experiment.
 
@@ -1100,7 +1155,7 @@ type AnyFrequentistDesignSpec = Annotated[
 ]
 
 type AnyBanditDesignSpec = Annotated[
-    MABExperimentSpec | CMABExperimentSpec,
+    MABExperimentSpec | MABDwhExperimentSpec | CMABExperimentSpec,
     Field(
         discriminator="experiment_type",
         description="The specific type of bandit experiment design.",
@@ -1271,6 +1326,10 @@ class ArmSize(ApiBaseModel):
 
     arm: Arm
     size: int = 0
+    cluster_count: Annotated[
+        int | None,
+        Field(description="The number of clusters assigned to this arm. Set only on cluster-randomized experiments."),
+    ] = None
 
 
 class CreateExperimentRequest(ApiBaseModel):
@@ -1306,7 +1365,7 @@ class AssignSummary(ApiBaseModel):
     arm_sizes: Annotated[
         list[ArmSize] | None,
         Field(
-            description="For each arm, the number of participants assigned.",
+            description="For each arm, the number of participants (and optionally clusters) assigned.",
             max_length=MAX_NUMBER_OF_ARMS,
         ),
     ] = None

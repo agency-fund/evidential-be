@@ -448,7 +448,7 @@ class StatusCodeMatcher:
     ) = None
 
     def http_response(self):
-        """Returns the httpx Response."""
+        """Returns the httpx2 Response."""
         if self.exc is None:
             raise AssertionError("StatusCodeMatcher has no captured response yet.")
         return self.exc.result.response

@@ -210,7 +210,11 @@ def choose_arm(
     sorted_context_vals: Optional context vector for the experiment.
     random_state: Seed for the random number generator. None for true randomness.
     """
-    supported_types = {ExperimentsType.MAB_ONLINE.value, ExperimentsType.CMAB_ONLINE.value}
+    supported_types = {
+        ExperimentsType.MAB_ONLINE.value,
+        ExperimentsType.MAB_ONLINE_DWH.value,
+        ExperimentsType.CMAB_ONLINE.value,
+    }
     if experiment.experiment_type not in supported_types:
         raise ValueError(f"Invalid experiment type: {experiment.experiment_type}.")
 
@@ -269,7 +273,11 @@ def update_arm(
     outcomes: The rewards received from the arm.
     context: The context vector for the arm.
     """
-    supported_types = {ExperimentsType.MAB_ONLINE.value, ExperimentsType.CMAB_ONLINE.value}
+    supported_types = {
+        ExperimentsType.MAB_ONLINE.value,
+        ExperimentsType.MAB_ONLINE_DWH.value,
+        ExperimentsType.CMAB_ONLINE.value,
+    }
     if experiment.experiment_type not in supported_types:
         raise ValueError(f"Invalid experiment type: {experiment.experiment_type}.")
     if not experiment.prior_type or not experiment.reward_type:

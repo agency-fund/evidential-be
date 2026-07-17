@@ -46,6 +46,7 @@ from xngin.apiserver.routers.common_api_types import (
     GetExperimentResponse,
     GetParticipantAssignmentResponse,
     ListExperimentsResponse,
+    MABDwhExperimentSpec,
     MABExperimentSpec,
     MetricAnalysis,
     OnlineFrequentistExperimentSpec,
@@ -54,6 +55,7 @@ from xngin.apiserver.routers.common_api_types import (
 )
 from xngin.apiserver.routers.common_enums import (
     DataType,
+    DataTypeStorageClass,
     ExperimentState,
     ExperimentsType,
     LikelihoodTypes,
@@ -144,22 +146,44 @@ async def fetch_fields_or_raise(
         return convert_table_to_fields_or_raise(sa_table, design_spec)
 
 
-def convert_table_to_fields_or_raise(table: Table, design_spec: AnyFrequentistDesignSpec) -> dict[str, DataType]:
-    """Helper to fetch_fields_or_raise that operates on a pre-inspected SQLAlchemy table."""
+async def fetch_mab_dwh_fields_or_raise(
+    datasource: tables.Datasource,
+    design_spec: MABDwhExperimentSpec,
+) -> dict[str, DataType]:
+    """Inspect the DWH table referenced by a MAB-DWH design spec and return field metadata
+    for the primary_key and target_field_name columns.
+
+    Returns: Field name => datatype map (covering primary_key and target_field_name only).
+    Raises: LateValidationError if either column is missing from the table.
+    """
+    async with DwhSession(datasource.get_config().dwh) as dwh:
+        sa_table = await dwh.inspect_table(design_spec.table_name)
+
+    referenced_fields_and_types = _resolve_referenced_field_types(
+        sa_table, {design_spec.primary_key, design_spec.target_field_name}
+    )
+
+    target_type = referenced_fields_and_types[design_spec.target_field_name]
+    if not target_type.is_supported_as_metric():
+        raise LateValidationError(
+            f"Invalid target field '{design_spec.target_field_name}' of type {target_type.value}. "
+            "Only boolean or numeric data types are supported as targets."
+        )
+
+    return referenced_fields_and_types
+
+
+def _resolve_referenced_field_types(table: Table, referenced_fields: set[str]) -> dict[str, DataType]:
+    """Map each referenced column name to its supported DataType in a pre-inspected table.
+
+    Raises: LateValidationError if any referenced field is missing from the table (or present
+    but of an unsupported data type).
+    """
     schema_supported_fields_map: dict[str, DataType] = {}
     for column in table.columns.values():
         data_type = DataType.match(column.type)
         if data_type.is_supported():
             schema_supported_fields_map[column.name] = data_type
-
-    referenced_fields = {
-        *[metric.field_name for metric in design_spec.metrics],
-        *[filter_.field_name for filter_ in design_spec.filters],
-        *[stratum.field_name for stratum in design_spec.strata],
-        design_spec.primary_key,
-    }
-    if isinstance(design_spec, PreassignedFrequentistExperimentSpec) and design_spec.cluster_key is not None:
-        referenced_fields.add(design_spec.cluster_key)
 
     referenced_fields_and_types = {
         field_name: schema_supported_fields_map[field_name]
@@ -173,6 +197,21 @@ def convert_table_to_fields_or_raise(table: Table, design_spec: AnyFrequentistDe
             "The .design_spec field refers to columns that do not exist in the table: "
             f"{', '.join(sorted(missing_fields))}"
         )
+    return referenced_fields_and_types
+
+
+def convert_table_to_fields_or_raise(table: Table, design_spec: AnyFrequentistDesignSpec) -> dict[str, DataType]:
+    """Helper to fetch_fields_or_raise that operates on a pre-inspected SQLAlchemy table."""
+    referenced_fields = {
+        *[metric.field_name for metric in design_spec.metrics],
+        *[filter_.field_name for filter_ in design_spec.filters],
+        *[stratum.field_name for stratum in design_spec.strata],
+        design_spec.primary_key,
+    }
+    if isinstance(design_spec, PreassignedFrequentistExperimentSpec) and design_spec.cluster_key is not None:
+        referenced_fields.add(design_spec.cluster_key)
+
+    referenced_fields_and_types = _resolve_referenced_field_types(table, referenced_fields)
 
     bad_metric_types = [
         m.field_name
@@ -204,9 +243,13 @@ async def create_experiment_impl(
     match request.design_spec:
         case PreassignedFrequentistExperimentSpec():
             preassigned_spec = request.design_spec
+            cluster_key = preassigned_spec.cluster_key
             desired_n = preassigned_spec.desired_n
-            if desired_n is None:
-                raise LateValidationError("Preassigned experiments must have a desired_n.")
+            desired_n_clusters = preassigned_spec.desired_n_clusters
+            if cluster_key is not None and desired_n_clusters is None:
+                raise LateValidationError("Cluster-randomized preassigned experiments must have a desired_n_clusters.")
+            if cluster_key is None and desired_n is None:
+                raise LateValidationError("Individual-randomized preassigned experiments must have a desired_n.")
 
             table_name = preassigned_spec.table_name
             primary_key = preassigned_spec.primary_key
@@ -219,24 +262,35 @@ async def create_experiment_impl(
             stratum_cols = strata_names + metric_names if stratify_on_metrics else strata_names
             select_columns = {*stratum_cols, primary_key}
             eligibility_filters = request.design_spec.filters
-            if preassigned_spec.cluster_key is not None:
-                select_columns.add(preassigned_spec.cluster_key)
+            if cluster_key is not None:
+                select_columns.add(cluster_key)
                 eligibility_filters = [
                     *eligibility_filters,
-                    Filter(field_name=preassigned_spec.cluster_key, relation=Relation.EXCLUDES, value=[None]),
+                    Filter(field_name=cluster_key, relation=Relation.EXCLUDES, value=[None]),
                 ]
 
             ds_config = datasource.get_config()
             async with DwhSession(ds_config.dwh) as dwh:
-                result = await dwh.get_participants(
-                    table_name,
-                    select_columns=select_columns,
-                    filters=eligibility_filters,
-                    n=desired_n,
-                )
+                if cluster_key is not None:
+                    assert desired_n_clusters is not None  # covered by LateValidationError above
+                    result = await dwh.get_clusters_of_participants(
+                        table_name,
+                        select_columns=select_columns,
+                        filters=eligibility_filters,
+                        desired_n_clusters=desired_n_clusters,
+                        cluster_key=cluster_key,
+                    )
+                else:
+                    assert desired_n is not None  # covered by LateValidationError above
+                    result = await dwh.get_participants(
+                        table_name,
+                        select_columns=select_columns,
+                        filters=eligibility_filters,
+                        n=desired_n,
+                    )
                 sa_table, participants = result.sa_table, result.participants
 
-            if participants is None:
+            if not participants:
                 raise LateValidationError("Preassigned experiments must have eligible participants data")
 
             return await create_preassigned_experiment_impl(
@@ -262,6 +316,17 @@ async def create_experiment_impl(
                 organization_id=datasource.organization_id,
                 xngin_session=xngin_session,
                 validated_webhooks=validated_webhooks,
+                field_type_map=field_type_map,
+            )
+
+        case MABDwhExperimentSpec():
+            field_type_map = await fetch_mab_dwh_fields_or_raise(datasource, request.design_spec)
+            return await create_bandit_online_experiment_impl(
+                xngin_session=xngin_session,
+                organization_id=datasource.organization_id,
+                validated_webhooks=validated_webhooks,
+                request=request,
+                datasource_id=datasource.id,
                 field_type_map=field_type_map,
             )
 
@@ -330,7 +395,7 @@ async def create_preassigned_experiment_impl(
     )
     balance_check = make_balance_check(assignment_result.balance_result, design_spec.fstat_thresh)
 
-    experiment_converter = ExperimentStorageConverter.init_from_components(
+    experiment_converter = await ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
         design_spec=design_spec,
@@ -378,7 +443,7 @@ async def create_freq_online_experiment_impl(
     if not isinstance(design_spec, OnlineFrequentistExperimentSpec):
         raise MismatchedExperimentTypeError(f"Can't create freq online exp of type: {design_spec.experiment_type}")
 
-    experiment_converter = ExperimentStorageConverter.init_from_components(
+    experiment_converter = await ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
         design_spec=design_spec,
@@ -408,20 +473,22 @@ async def create_bandit_online_experiment_impl(
     validated_webhooks: list[tables.Webhook],
     request: CreateExperimentRequest,
     datasource_id: str,
+    field_type_map: dict[str, DataType] | None = None,
 ) -> CreateExperimentResponse:
     """Create a bandit experiment and persist it to the database."""
     design_spec = request.design_spec
 
     match design_spec:
-        case MABExperimentSpec() | CMABExperimentSpec():
+        case MABExperimentSpec() | MABDwhExperimentSpec() | CMABExperimentSpec():
             pass
         case _:
             raise MismatchedExperimentTypeError(f"can't create bandit exp of type: {design_spec.experiment_type}")
 
-    experiment_converter = ExperimentStorageConverter.init_from_components(
+    experiment_converter = await ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
         design_spec=design_spec,
+        field_type_map=field_type_map,
     )
     experiment = experiment_converter.get_experiment()
     # Associate webhooks with the experiment
@@ -500,9 +567,10 @@ async def get_experiment_impl(
     converter = ExperimentStorageConverter(experiment)
     assign_summary = await get_assign_summary(
         xngin_session,
-        experiment.id,
-        converter.get_balance_check(),
+        experiment_id=experiment.id,
         experiment_type=ExperimentsType(experiment.experiment_type),
+        balance_check=converter.get_balance_check(),
+        include_cluster_counts=experiment.cluster_key_field() is not None,
     )
     webhook_ids = [webhook.id for webhook in experiment.webhooks]
     return await converter.get_experiment_response(assign_summary, webhook_ids)
@@ -553,7 +621,11 @@ async def list_organization_or_datasource_experiments_impl(
         converter = ExperimentStorageConverter(e)
         balance_check = converter.get_balance_check()
         assign_summary = await get_assign_summary(
-            xngin_session, e.id, balance_check, experiment_type=ExperimentsType(e.experiment_type)
+            xngin_session=xngin_session,
+            experiment_id=e.id,
+            experiment_type=ExperimentsType(e.experiment_type),
+            balance_check=balance_check,
+            include_cluster_counts=e.cluster_key_field() is not None,
         )
         webhook_ids = [webhook.id for webhook in e.webhooks]
         items.append(await converter.get_experiment_config(assign_summary, webhook_ids))
@@ -605,7 +677,7 @@ async def get_existing_assignment_for_participant(
                     tables.ArmAssignment.participant_id == participant_id,
                 )
             )
-        case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
+        case ExperimentsType.MAB_ONLINE | ExperimentsType.MAB_ONLINE_DWH | ExperimentsType.CMAB_ONLINE:
             stmt = (
                 select(
                     tables.Draw.participant_id,
@@ -777,7 +849,7 @@ async def create_assignment_for_participant(
                         .returning(tables.ArmAssignment.created_at)
                     )
                 ).fetchone()
-            case ExperimentsType.MAB_ONLINE | ExperimentsType.CMAB_ONLINE:
+            case ExperimentsType.MAB_ONLINE | ExperimentsType.MAB_ONLINE_DWH | ExperimentsType.CMAB_ONLINE:
                 if experiment_type == ExperimentsType.CMAB_ONLINE:
                     if not sorted_context_vals:
                         raise ExperimentsAssignmentError(
@@ -836,6 +908,20 @@ async def create_assignment_for_participant(
     )
 
 
+def _check_outcome_against_mab_dwh_target(
+    experiment_fields: list[tables.ExperimentField],
+    outcome: float,
+) -> None:
+    """Reject outcomes that don't match the stored target column's data_type storage class."""
+    target_field = next(ef for ef in experiment_fields if ef.is_target)
+    target_type = DataType(target_field.data_type)
+    if target_type.storage_class() == DataTypeStorageClass.BOOLEAN and outcome not in {0, 1}:
+        raise LateValidationError(
+            f"Invalid outcome {outcome} for target field '{target_field.field_name}' "
+            f"of type {target_type.value}: must be 0 or 1 for boolean targets."
+        )
+
+
 async def update_bandit_arm_with_outcome_impl(
     xngin_session: AsyncSession,
     experiment: tables.Experiment,
@@ -847,7 +933,7 @@ async def update_bandit_arm_with_outcome_impl(
     design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
 
     match design_spec:
-        case MABExperimentSpec() | CMABExperimentSpec():
+        case MABExperimentSpec() | MABDwhExperimentSpec() | CMABExperimentSpec():
             pass
         case PreassignedFrequentistExperimentSpec() | OnlineFrequentistExperimentSpec():
             raise LateValidationError("Cannot dynamically update arms for frequentist experiments.")
@@ -872,6 +958,11 @@ async def update_bandit_arm_with_outcome_impl(
         1,
     }:
         raise LateValidationError(f"Invalid outcome for binary reward type: {outcome}. Must be 0 or 1.")
+
+    # For DWH-backed bandits, type-check the outcome against the stored target column's data_type.
+    if isinstance(design_spec, MABDwhExperimentSpec):
+        experiment_fields = await experiment.awaitable_attrs.experiment_fields
+        _check_outcome_against_mab_dwh_target(experiment_fields, outcome)
 
     try:
         result = await xngin_session.execute(
@@ -976,6 +1067,9 @@ def convert_assignment_results_to_assign_summary(
         ArmSize(
             arm=Arm(arm_id=arm.id, arm_name=arm.name),
             size=int(counts[i]),
+            cluster_count=(
+                None if assignment_result.arm_cluster_pop is None else int(assignment_result.arm_cluster_pop[i])
+            ),
         )
         for i, arm in enumerate(arms)
     ]
@@ -988,9 +1082,11 @@ def convert_assignment_results_to_assign_summary(
 
 async def get_assign_summary(
     xngin_session: AsyncSession,
+    *,
     experiment_id: str,
-    balance_check: BalanceCheck | None,
     experiment_type: ExperimentsType,
+    balance_check: BalanceCheck | None,
+    include_cluster_counts: bool = False,
 ) -> AssignSummary:
     """Constructs an AssignSummary from the experiment's arms and arm_assignments."""
     result = await xngin_session.execute(
@@ -998,21 +1094,25 @@ async def get_assign_summary(
             tables.Arm.id,
             tables.Arm.name,
             func.coalesce(tables.ArmStats.population, 0),
+            tables.ArmStats.cluster_count,
         )
         .outerjoin(tables.ArmStats, tables.Arm.id == tables.ArmStats.arm_id)
         .where(tables.Arm.experiment_id == experiment_id)
         .order_by(tables.Arm.position)
     )
+
     arm_sizes = [
         ArmSize(
             arm=Arm(arm_id=arm_id, arm_name=name),
             size=count,
+            cluster_count=cluster_count if include_cluster_counts else None,
         )
-        for arm_id, name, count in result
+        for arm_id, name, count, cluster_count in result
     ]
 
-    if experiment_type in {ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE}:
+    if experiment_type in {ExperimentsType.MAB_ONLINE, ExperimentsType.MAB_ONLINE_DWH, ExperimentsType.CMAB_ONLINE}:
         balance_check = None
+
     return AssignSummary(
         balance_check=balance_check,
         arm_sizes=arm_sizes,

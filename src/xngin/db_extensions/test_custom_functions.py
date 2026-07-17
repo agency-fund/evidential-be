@@ -84,6 +84,12 @@ def test_deterministic_random():
     sql_text = str(query_nopk.compile(engine))
     assert "ORDER BY nopk_table.int_col, nopk_table.string_col" in sql_text
 
+    # deterministic random enabled for a selectable/subquery
+    subq = select(SampleTable.__table__.c.string_col).group_by(SampleTable.__table__.c.string_col).subquery()
+    query_subq = select(subq.c.string_col).order_by(custom_functions.Random(sa_table=subq))
+    sql_text = str(query_subq.compile(engine))
+    assert "ORDER BY anon_1.string_col" in sql_text
+
     # normal case
     custom_functions.USE_DETERMINISTIC_RANDOM = False
     query = select(SampleTable).order_by(custom_functions.Random(sa_table=SampleTable.__table__))

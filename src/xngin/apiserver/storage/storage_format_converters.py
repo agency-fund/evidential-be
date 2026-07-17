@@ -6,6 +6,7 @@ types. Our SQLA tables ideally shouldn't depend on xngin/apiserver/*; but for th
 JSONB type columns for multi-value/complex types, use the converters to get/set them properly.
 """
 
+import asyncio
 import operator
 from datetime import datetime
 from typing import Any, Self, assert_never
@@ -128,6 +129,17 @@ def _make_freq_experiment_fields(
     return list(fields_used_map.values())
 
 
+def _make_mab_dwh_experiment_fields(
+    design_spec: capi.MABDwhExperimentSpec,
+    field_type_map: dict[str, DataType],
+) -> list[tables.ExperimentField]:
+    """Make the primary_key and target ExperimentField objects for a MAB-DWH experiment."""
+    fields_used_map: dict[str, tables.ExperimentField] = {}
+    _upsert_field_used(design_spec.primary_key, field_type_map, fields_used_map, is_unique_id=True)
+    _upsert_field_used(design_spec.target_field_name, field_type_map, fields_used_map, is_target=True)
+    return list(fields_used_map.values())
+
+
 def _make_experiment_fields_from_design_spec(
     design_spec: capi.DesignSpec,
     field_type_map: dict[str, DataType] | None = None,
@@ -137,6 +149,8 @@ def _make_experiment_fields_from_design_spec(
     match design_spec:
         case capi.MABExperimentSpec() | capi.CMABExperimentSpec():
             return []
+        case capi.MABDwhExperimentSpec():
+            return _make_mab_dwh_experiment_fields(design_spec, field_type_map)
         case capi.PreassignedFrequentistExperimentSpec() | capi.OnlineFrequentistExperimentSpec():
             return _make_freq_experiment_fields(design_spec, field_type_map)
         case _:
@@ -278,11 +292,13 @@ class ExperimentStorageConverter:
             if self.experiment.experiment_type == ExperimentsType.FREQ_PREASSIGNED.value:
                 cluster_key_field = self.experiment.cluster_key_field()
                 freq_spec_dict["cluster_key"] = cluster_key_field.field_name if cluster_key_field else None
+                freq_spec_dict["desired_n_clusters"] = self.experiment.desired_n_clusters
 
             return TypeAdapter(capi.DesignSpec).validate_python(freq_spec_dict)
 
         if self.experiment.experiment_type in {
             ExperimentsType.MAB_ONLINE.value,
+            ExperimentsType.MAB_ONLINE_DWH.value,
             ExperimentsType.CMAB_ONLINE.value,
         }:
             if not self.experiment.prior_type or not self.experiment.reward_type:
@@ -299,8 +315,25 @@ class ExperimentStorageConverter:
                     for context in self.experiment.contexts
                 ]
 
+            mab_dwh_fields: dict[str, Any] = {}
+            if self.experiment.experiment_type == ExperimentsType.MAB_ONLINE_DWH.value:
+                await self.experiment.awaitable_attrs.experiment_fields
+                primary_key_field = self.experiment.unique_id_field()
+                target_field = next(f for f in self.experiment.experiment_fields if f.is_target)
+                if self.experiment.datasource_table is None or primary_key_field is None:
+                    raise ValueError(
+                        f"MAB-DWH experiment {self.experiment.id} "
+                        "is missing datasource_table or unique participant key field."
+                    )
+                mab_dwh_fields = {
+                    "table_name": self.experiment.datasource_table,
+                    "primary_key": primary_key_field.field_name,
+                    "target_field_name": target_field.field_name,
+                }
+
             return TypeAdapter(capi.DesignSpec).validate_python({
                 **base_experiment_dict,
+                **mab_dwh_fields,
                 "arms": [
                     {
                         "arm_id": arm.id,
@@ -380,7 +413,7 @@ class ExperimentStorageConverter:
         )
 
     @classmethod
-    def init_from_components(
+    async def init_from_components(
         cls,
         datasource_id: str,
         organization_id: str,
@@ -421,6 +454,8 @@ class ExperimentStorageConverter:
                 experiment.alpha = design_spec.alpha
                 experiment.fstat_thresh = design_spec.fstat_thresh
                 experiment.desired_n = design_spec.desired_n
+                if isinstance(design_spec, capi.PreassignedFrequentistExperimentSpec):
+                    experiment.desired_n_clusters = design_spec.desired_n_clusters
 
                 experiment.arms = [
                     tables.Arm(
@@ -442,9 +477,13 @@ class ExperimentStorageConverter:
                 )
                 return cls(experiment)
 
-            case capi.MABExperimentSpec() | capi.CMABExperimentSpec():
+            case capi.MABExperimentSpec() | capi.MABDwhExperimentSpec() | capi.CMABExperimentSpec():
                 if isinstance(design_spec, capi.CMABExperimentSpec) and not design_spec.contexts:
                     raise ValueError(f"CMAB experiment {experiment.id} must have contexts set.")
+
+                if isinstance(design_spec, capi.MABDwhExperimentSpec):
+                    experiment.datasource_table = design_spec.table_name
+                    experiment.experiment_fields = _make_experiment_fields_from_design_spec(design_spec, field_type_map)
 
                 # Set bandit fields
                 context_len = len(design_spec.contexts) if design_spec.contexts else 1
@@ -464,8 +503,8 @@ class ExperimentStorageConverter:
 
                 arm_weights = design_spec.get_validated_arm_weights()
                 if arm_weights:
-                    # TODO: this method can be expensive and should be on a thread.
-                    param1, param2 = convert_arm_weights_to_prior_params(
+                    param1, param2 = await asyncio.to_thread(
+                        convert_arm_weights_to_prior_params,
                         arm_weights=arm_weights,
                         prior_type=design_spec.prior_type,
                         num_contexts=context_len,

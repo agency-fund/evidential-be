@@ -24,7 +24,7 @@ from warnings import warn
 
 from fastapi.encoders import jsonable_encoder
 from fastapi.sse import ServerSentEvent
-from httpx import (
+from httpx2 import (
     USE_CLIENT_DEFAULT,
     Client,
     Response,
@@ -36,6 +36,7 @@ from pydantic import (
 )
 
 from xngin.apiserver.routers.admin.admin_api import HTTPExceptionError
+from xngin.apiserver.routers.admin.admin_api_types import AddWebhookToOrganizationResponse
 from xngin.apiserver.routers.admin_integrations.admin_integrations_api_types import (
     GetTurnArmJourneyMappingResponse,
     GetTurnConnectionResponse,
@@ -143,7 +144,7 @@ class AdminIntegrationsAPIClient:
                     # `UploadFile`-like; duck-typed so we need not import it here.
                     result.append((name, (v.filename, v.file, v.content_type)))
                 else:
-                    # `bytes` / `str` / `IO[bytes]` / httpx `(name, content[, type])`.
+                    # `bytes` / `str` / `IO[bytes]` / httpx2 `(name, content[, type])`.
                     result.append((name, v))
         return result or None
 
@@ -163,7 +164,7 @@ class AdminIntegrationsAPIClient:
                 # (only flat models round-trip; nested dicts don't url-encode).
                 form.update(encoded)
             else:
-                # Scalars get stringified by httpx; lists become repeated fields.
+                # Scalars get stringified by httpx2; lists become repeated fields.
                 form[name] = encoded
         return form or None
 
@@ -234,7 +235,7 @@ class AdminIntegrationsAPIClient:
         queries = self._filter_and_encode_params(query_params) or {}
         self._apply_security_params(security_params, headers, cookies, queries)
         if cookies:
-            # Mirror httpx's per-request-cookies DeprecationWarning ourselves
+            # Mirror httpx2's per-request-cookies DeprecationWarning ourselves
             # (we bypass `Client.request()` via `build_request` + `send`).
             warn(
                 "Setting per-request cookie parameters is deprecated because cookie"
@@ -421,7 +422,7 @@ class AdminIntegrationsAPIClient:
         organization_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminIntegrationsAPIClientExtensions | None = None,
-    ) -> AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
+    ) -> AdminIntegrationsAPIClientResult[Literal[HTTPStatus.OK], AddWebhookToOrganizationResponse]: ...
     @overload
     def set_organization_turn_connection(
         self,
@@ -431,14 +432,13 @@ class AdminIntegrationsAPIClient:
         raise_if_not_default_status: Literal[False],
         client_exts: AdminIntegrationsAPIClientExtensions | None = None,
     ) -> (
-        AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        AdminIntegrationsAPIClientResult[Literal[HTTPStatus.OK], AddWebhookToOrganizationResponse]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
-        | AdminIntegrationsAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminIntegrationsAPIClientHTTPValidationError
-        ]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], HTTPExceptionError]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], HTTPExceptionError]
     ): ...
     def set_organization_turn_connection(
         self,
@@ -448,37 +448,36 @@ class AdminIntegrationsAPIClient:
         raise_if_not_default_status: bool = True,
         client_exts: AdminIntegrationsAPIClientExtensions | None = None,
     ) -> (
-        AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        AdminIntegrationsAPIClientResult[Literal[HTTPStatus.OK], AddWebhookToOrganizationResponse]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
-        | AdminIntegrationsAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminIntegrationsAPIClientHTTPValidationError
-        ]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], HTTPExceptionError]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], HTTPExceptionError]
     ):
         return cast(
             (
-                AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                AdminIntegrationsAPIClientResult[Literal[HTTPStatus.OK], AddWebhookToOrganizationResponse]
                 | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
                 | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
                 | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
                 | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
-                | AdminIntegrationsAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminIntegrationsAPIClientHTTPValidationError
-                ]
+                | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], HTTPExceptionError]
+                | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], HTTPExceptionError]
             ),
             self._route_handler(
                 path="/v1/m/integrations/turn-connection/{organization_id}",
                 method=HTTPMethod.PUT,
-                default_status=HTTPStatus.NO_CONTENT,
+                default_status=HTTPStatus.OK,
                 models={
-                    HTTPStatus.NO_CONTENT: Any,
+                    HTTPStatus.OK: AddWebhookToOrganizationResponse,
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
                     HTTPStatus.NOT_FOUND: HTTPExceptionError,
-                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminIntegrationsAPIClientHTTPValidationError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: HTTPExceptionError,
+                    HTTPStatus.BAD_GATEWAY: HTTPExceptionError,
                 },
                 path_params={
                     "organization_id": organization_id,
@@ -557,6 +556,82 @@ class AdminIntegrationsAPIClient:
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
                     HTTPStatus.NOT_FOUND: HTTPExceptionError,
                     HTTPStatus.UNPROCESSABLE_CONTENT: AdminIntegrationsAPIClientHTTPValidationError,
+                },
+                path_params={
+                    "organization_id": organization_id,
+                },
+                query_params={
+                    "allow_missing": allow_missing,
+                },
+                raise_if_not_default_status=raise_if_not_default_status,
+                client_exts=client_exts,
+            ),
+        )
+
+    @overload
+    def regenerate_turn_webhook_token(
+        self,
+        *,
+        organization_id: str,
+        allow_missing: bool = ADMIN_INTEGRATIONS_API_CLIENT_NOT_REQUIRED,
+        raise_if_not_default_status: Literal[True] = True,
+        client_exts: AdminIntegrationsAPIClientExtensions | None = None,
+    ) -> AdminIntegrationsAPIClientResult[Literal[HTTPStatus.OK], AddWebhookToOrganizationResponse]: ...
+    @overload
+    def regenerate_turn_webhook_token(
+        self,
+        *,
+        organization_id: str,
+        allow_missing: bool = ADMIN_INTEGRATIONS_API_CLIENT_NOT_REQUIRED,
+        raise_if_not_default_status: Literal[False],
+        client_exts: AdminIntegrationsAPIClientExtensions | None = None,
+    ) -> (
+        AdminIntegrationsAPIClientResult[Literal[HTTPStatus.OK], AddWebhookToOrganizationResponse]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], HTTPExceptionError]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], HTTPExceptionError]
+    ): ...
+    def regenerate_turn_webhook_token(
+        self,
+        *,
+        organization_id: str,
+        allow_missing: bool = ADMIN_INTEGRATIONS_API_CLIENT_NOT_REQUIRED,
+        raise_if_not_default_status: bool = True,
+        client_exts: AdminIntegrationsAPIClientExtensions | None = None,
+    ) -> (
+        AdminIntegrationsAPIClientResult[Literal[HTTPStatus.OK], AddWebhookToOrganizationResponse]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], HTTPExceptionError]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], HTTPExceptionError]
+    ):
+        return cast(
+            (
+                AdminIntegrationsAPIClientResult[Literal[HTTPStatus.OK], AddWebhookToOrganizationResponse]
+                | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], HTTPExceptionError]
+                | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], HTTPExceptionError]
+            ),
+            self._route_handler(
+                path="/v1/m/integrations/turn-connection/{organization_id}/regenerate-webhook-token",
+                method=HTTPMethod.PUT,
+                default_status=HTTPStatus.OK,
+                models={
+                    HTTPStatus.OK: AddWebhookToOrganizationResponse,
+                    HTTPStatus.BAD_REQUEST: HTTPExceptionError,
+                    HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
+                    HTTPStatus.FORBIDDEN: HTTPExceptionError,
+                    HTTPStatus.NOT_FOUND: HTTPExceptionError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: HTTPExceptionError,
+                    HTTPStatus.BAD_GATEWAY: HTTPExceptionError,
                 },
                 path_params={
                     "organization_id": organization_id,
@@ -668,9 +743,7 @@ class AdminIntegrationsAPIClient:
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
-        | AdminIntegrationsAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminIntegrationsAPIClientHTTPValidationError
-        ]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], HTTPExceptionError]
     ): ...
     def get_organization_turn_journeys(
@@ -685,9 +758,7 @@ class AdminIntegrationsAPIClient:
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
-        | AdminIntegrationsAPIClientResult[
-            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminIntegrationsAPIClientHTTPValidationError
-        ]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], HTTPExceptionError]
         | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], HTTPExceptionError]
     ):
         return cast(
@@ -697,9 +768,7 @@ class AdminIntegrationsAPIClient:
                 | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
                 | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
                 | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
-                | AdminIntegrationsAPIClientResult[
-                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminIntegrationsAPIClientHTTPValidationError
-                ]
+                | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], HTTPExceptionError]
                 | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], HTTPExceptionError]
             ),
             self._route_handler(
@@ -712,7 +781,7 @@ class AdminIntegrationsAPIClient:
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
                     HTTPStatus.NOT_FOUND: HTTPExceptionError,
-                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminIntegrationsAPIClientHTTPValidationError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: HTTPExceptionError,
                     HTTPStatus.BAD_GATEWAY: HTTPExceptionError,
                 },
                 path_params={

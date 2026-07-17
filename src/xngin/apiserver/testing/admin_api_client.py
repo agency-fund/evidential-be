@@ -24,7 +24,7 @@ from warnings import warn
 
 from fastapi.encoders import jsonable_encoder
 from fastapi.sse import ServerSentEvent
-from httpx import (
+from httpx2 import (
     USE_CLIENT_DEFAULT,
     Client,
     Response,
@@ -41,8 +41,9 @@ from xngin.apiserver.routers.admin.admin_api import (
     MessageError,
 )
 from xngin.apiserver.routers.admin.admin_api_types import (
+    AddExperimentCreatedWebhookRequest,
     AddMemberToOrganizationRequest,
-    AddWebhookToOrganizationRequest,
+    AddTurnJourneysChangedWebhookRequest,
     AddWebhookToOrganizationResponse,
     CreateApiKeyResponse,
     CreateDatasourceRequest,
@@ -192,7 +193,7 @@ class AdminAPIClient:
                     # `UploadFile`-like; duck-typed so we need not import it here.
                     result.append((name, (v.filename, v.file, v.content_type)))
                 else:
-                    # `bytes` / `str` / `IO[bytes]` / httpx `(name, content[, type])`.
+                    # `bytes` / `str` / `IO[bytes]` / httpx2 `(name, content[, type])`.
                     result.append((name, v))
         return result or None
 
@@ -212,7 +213,7 @@ class AdminAPIClient:
                 # (only flat models round-trip; nested dicts don't url-encode).
                 form.update(encoded)
             else:
-                # Scalars get stringified by httpx; lists become repeated fields.
+                # Scalars get stringified by httpx2; lists become repeated fields.
                 form[name] = encoded
         return form or None
 
@@ -283,7 +284,7 @@ class AdminAPIClient:
         queries = self._filter_and_encode_params(query_params) or {}
         self._apply_security_params(security_params, headers, cookies, queries)
         if cookies:
-            # Mirror httpx's per-request-cookies DeprecationWarning ourselves
+            # Mirror httpx2's per-request-cookies DeprecationWarning ourselves
             # (we bypass `Client.request()` via `build_request` + `send`).
             warn(
                 "Setting per-request cookie parameters is deprecated because cookie"
@@ -1410,7 +1411,7 @@ class AdminAPIClient:
     def add_webhook_to_organization(
         self,
         *,
-        body: AddWebhookToOrganizationRequest,
+        body: AddExperimentCreatedWebhookRequest | AddTurnJourneysChangedWebhookRequest,
         organization_id: str,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: AdminAPIClientExtensions | None = None,
@@ -1419,7 +1420,7 @@ class AdminAPIClient:
     def add_webhook_to_organization(
         self,
         *,
-        body: AddWebhookToOrganizationRequest,
+        body: AddExperimentCreatedWebhookRequest | AddTurnJourneysChangedWebhookRequest,
         organization_id: str,
         raise_if_not_default_status: Literal[False],
         client_exts: AdminAPIClientExtensions | None = None,
@@ -1434,7 +1435,7 @@ class AdminAPIClient:
     def add_webhook_to_organization(
         self,
         *,
-        body: AddWebhookToOrganizationRequest,
+        body: AddExperimentCreatedWebhookRequest | AddTurnJourneysChangedWebhookRequest,
         organization_id: str,
         raise_if_not_default_status: bool = True,
         client_exts: AdminAPIClientExtensions | None = None,

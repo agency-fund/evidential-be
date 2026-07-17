@@ -451,6 +451,7 @@ async def test_cluster_key_exports_with_preassigned_assignments(
             strata=[],
             filters=[],
             desired_n=24,
+            desired_n_clusters=24,
         ),
         webhooks=[],
     )
@@ -463,9 +464,9 @@ async def test_cluster_key_exports_with_preassigned_assignments(
     json_response = eclient.client.get(f"/v1/experiments/{experiment_id}/assignments", headers=eclient_headers)
     assert json_response.status_code == HTTPStatus.OK, json_response.content
     json_assignments = json_response.json()["assignments"]
-    assert len(json_assignments) == 24
     assert all("cluster_key" in assignment for assignment in json_assignments)
     assert all(assignment["cluster_key"] is not None for assignment in json_assignments)
+    assert len({assignment["cluster_key"] for assignment in json_assignments}) == 24
 
     csv_response = eclient.client.get(f"/v1/experiments/{experiment_id}/assignments/csv", headers=eclient_headers)
     assert csv_response.status_code == HTTPStatus.OK, csv_response.content
@@ -1165,6 +1166,20 @@ async def test_get_assignment_mab_cache_headers(
     assert response.data.assignment is not None
     assert response.data.assignment.outcome == 1.0
     assert response.response.headers["Cache-Control"] == "private, max-age=3600"
+
+
+async def test_update_bandit_arm_with_outcome_rejects_non_numeric_outcome(
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+):
+    """Non-numeric outcome in the request body is rejected"""
+    mab_experiment = await create_experiment(testing_datasource, aclient, experiment_type=ExperimentsType.MAB_ONLINE)
+
+    response = eclient.client.post(
+        f"/v1/experiments/{mab_experiment.experiment_id}/assignments/1/outcome",
+        headers={"X-API-Key": testing_datasource.key},
+        json={"outcome": "not-a-float"},
+    )
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_CONTENT, response.content
 
 
 async def test_get_assignment_cmab_cache_headers(
