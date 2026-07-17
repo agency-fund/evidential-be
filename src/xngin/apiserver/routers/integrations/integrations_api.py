@@ -42,11 +42,12 @@ router = APIRouter(
 )
 
 
-def check_webhook_auth_token(auth_token: str | None, webhook: tables.Webhook) -> None:
+def check_webhook_auth_token(auth_token: str | None, webhook: tables.Webhook | None) -> tables.Webhook:
     if not auth_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing webhook auth token.")
-    if auth_token != webhook.auth_token:
+    if not webhook or auth_token != webhook.auth_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook auth token.")
+    return webhook
 
 
 @router.get(
@@ -115,12 +116,8 @@ async def receive_turn_journey_update_notification(
     This is intentional: Turn.io's webhook calls timeout in ~5s, and large refreshes may take longer.
     See `make_turn_journeys_changed_handler` in `xngin/tq/handlers.py` for the worker side logic.
     """
-    if not auth_token:  # for mypy
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing webhook auth token.")
     turn_webhook = await get_turn_webhook_or_raise(session, webhook_id=webhook_id, allow_missing=False)
-    assert turn_webhook is not None  # for mypy
-
-    check_webhook_auth_token(auth_token, turn_webhook)
+    turn_webhook = check_webhook_auth_token(auth_token, turn_webhook)
 
     session.add(
         tables.Task(
@@ -164,9 +161,7 @@ async def refetch_journeys_from_turn(
        `admin_integrations_api.py`).
     """
     webhook = await get_turn_webhook_or_raise(session, webhook_id=webhook_id, allow_missing=False)
-    assert webhook is not None  # for mypy
-
-    check_webhook_auth_token(auth_token, webhook)
+    webhook = check_webhook_auth_token(auth_token, webhook)
 
     turn_connection = (
         await session.execute(
