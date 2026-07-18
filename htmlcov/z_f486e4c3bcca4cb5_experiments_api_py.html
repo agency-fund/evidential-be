@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_f486e4c3bcca4cb5_experiments_common_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.14.3">coverage.py v7.14.3</a>,
-            created at 2026-07-17 12:20 +0000
+            created at 2026-07-18 09:02 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -482,7 +482,7 @@
     <p class="run"><span class="n"><a id="t400" href="#t400">400</a></span><span class="t"><span class="key">async</span> <span class="key">def</span> <span class="nam">update_bandit_arm_with_participant_outcome</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t401" href="#t401">401</a></span><span class="t">    <span class="nam">participant_id</span><span class="op">:</span> <span class="nam">str</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t402" href="#t402">402</a></span><span class="t">    <span class="nam">body</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span><span class="nam">UpdateBanditArmOutcomeRequest</span><span class="op">,</span> <span class="nam">Body</span><span class="op">(</span><span class="op">)</span><span class="op">]</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t403" href="#t403">403</a></span><span class="t">    <span class="nam">experiment</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span><span class="nam">tables</span><span class="op">.</span><span class="nam">Experiment</span><span class="op">,</span> <span class="nam">Depends</span><span class="op">(</span><span class="nam">experiment_dependency</span><span class="op">)</span><span class="op">]</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t403" href="#t403">403</a></span><span class="t">    <span class="nam">experiment</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span><span class="nam">tables</span><span class="op">.</span><span class="nam">Experiment</span><span class="op">,</span> <span class="nam">Depends</span><span class="op">(</span><span class="nam">experiment_and_datasource_dependency</span><span class="op">)</span><span class="op">]</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t404" href="#t404">404</a></span><span class="t">    <span class="nam">session</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span><span class="nam">AsyncSession</span><span class="op">,</span> <span class="nam">Depends</span><span class="op">(</span><span class="nam">xngin_db_session</span><span class="op">)</span><span class="op">]</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t405" href="#t405">405</a></span><span class="t"><span class="op">)</span> <span class="op">-></span> <span class="nam">ArmBandit</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t406" href="#t406">406</a></span><span class="t">    <span class="com"># Update the arm with the outcome</span>&nbsp;</span><span class="r"></span></p>
@@ -518,7 +518,7 @@
             <a class="nav" href="z_f486e4c3bcca4cb5_experiments_common_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.14.3">coverage.py v7.14.3</a>,
-            created at 2026-07-17 12:20 +0000
+            created at 2026-07-18 09:02 +0000
         </p>
     </div>
 </footer>
