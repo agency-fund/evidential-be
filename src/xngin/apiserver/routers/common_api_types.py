@@ -1518,6 +1518,15 @@ class SampleCalls(ApiBaseModel):
 
     calls: Annotated[list[SampleCall], Field(description="Ordered example calls an integrator would make.")]
 
+    @model_validator(mode="after")
+    def labels_are_unique(self) -> Self:
+        """Enforce unique labels; the FE keys the rendered list on them."""
+        labels = [call.label for call in self.calls]
+        duplicates = {label for label in labels if labels.count(label) > 1}
+        if duplicates:
+            raise ValueError(f"calls must have unique labels; duplicated: {sorted(duplicates)}")
+        return self
+
 
 class TurnConfigResponse(ApiBaseModel):
     """Describes the configuration for Turn.io Evidential App."""
