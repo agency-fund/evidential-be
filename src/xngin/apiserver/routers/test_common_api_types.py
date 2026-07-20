@@ -5,6 +5,8 @@ from xngin.apiserver.routers.common_api_types import (
     Filter,
     MABDwhExperimentSpec,
     PreassignedFrequentistExperimentSpec,
+    SampleCall,
+    SampleCalls,
 )
 from xngin.apiserver.routers.common_enums import Relation
 
@@ -286,3 +288,15 @@ def test_mab_dwh_primary_key_and_target_must_differ():
     invalid_spec["target_field_name"] = invalid_spec["primary_key"]
     with pytest.raises(ValidationError, match="primary_key and target_field_name must refer to different columns"):
         MABDwhExperimentSpec.model_validate(invalid_spec)
+
+
+def test_sample_calls_labels_must_be_unique():
+    def call(label):
+        return SampleCall(label=label, method="GET", path="/v1/x", headers={})
+
+    # Distinct labels validate fine.
+    SampleCalls(calls=[call("Get assignment"), call("Update outcome")])
+
+    # Duplicate labels are rejected (the FE keys its rendered list on them).
+    with pytest.raises(ValidationError, match="calls must have unique labels"):
+        SampleCalls(calls=[call("Get assignment"), call("Get assignment")])
