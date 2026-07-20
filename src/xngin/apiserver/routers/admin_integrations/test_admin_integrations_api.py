@@ -538,8 +538,13 @@ async def test_get_experiment_sample_calls_freq_online_with_filters(
         experiment_id=created.experiment_id,
     ).data
     assert sample_calls is not None
-    assert [c.label for c in sample_calls.calls] == ["Get assignment", "Get assignment (with filters)"]
-    filtered_call = sample_calls.calls[1]
+    # The assigning POST comes first: it's the call filtered integrators should use. The GET is
+    # read-only (create_if_none=false) since a plain GET can't evaluate filters.
+    assert [c.label for c in sample_calls.calls] == ["Get assignment (with filters)", "Get existing assignment"]
+    filtered_call = sample_calls.calls[0]
     assert filtered_call.method == "POST"
     assert filtered_call.path.endswith("/assign_with_filters")
     assert filtered_call.body == {"properties": [{"field_name": "gender", "value": "<value>"}]}
+    get_call = sample_calls.calls[1]
+    assert get_call.method == "GET"
+    assert get_call.path.endswith("?create_if_none=false")

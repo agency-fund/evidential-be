@@ -939,6 +939,11 @@ def make_sample_calls(experiment: tables.Experiment) -> SampleCalls | None:
     arm_id_example = example_arm.id if example_arm else "<arm_id>"
     arm_name_example = example_arm.name if example_arm else "<arm_name>"
 
+    # A filtered freq_online experiment must assign via assign_with_filters: the plain GET can't
+    # evaluate filters, so it would assign everyone. Its GET example is therefore read-only
+    # (create_if_none=false). (Filterless freq_online assigns fine via GET.)
+    is_filtered = experiment_type == ExperimentsType.FREQ_ONLINE and bool(experiment.experiment_filters)
+
     get_assignment_response = GetParticipantAssignmentResponse(
         experiment_id=experiment.id,
         participant_id="{participant_id}",
@@ -950,9 +955,9 @@ def make_sample_calls(experiment: tables.Experiment) -> SampleCalls | None:
     )
     calls = [
         SampleCall(
-            label="Get assignment",
+            label="Get existing assignment" if is_filtered else "Get assignment",
             method="GET",
-            path=base_path,
+            path=f"{base_path}?create_if_none=false" if is_filtered else base_path,
             headers=api_key_header,
             example_response=get_assignment_response.model_dump(mode="json"),
         ),
@@ -982,16 +987,16 @@ def make_sample_calls(experiment: tables.Experiment) -> SampleCalls | None:
             ),
         )
 
-    # A filtered freq_online experiment must assign via assign_with_filters: the plain GET can't
-    # evaluate filters, so it would assign everyone. (Filterless freq_online assigns fine via GET.)
-    if experiment_type == ExperimentsType.FREQ_ONLINE and experiment.experiment_filters:
-        # One example property per filter; value is a per-participant placeholder.
+    if is_filtered:
+        # One example property per filter; value is a per-participant placeholder. Listed first
+        # because this is the assigning call filtered integrators are expected to use.
         filters_request = OnlineAssignmentWithFiltersRequest(
             properties=[
                 ParticipantProperty(field_name=ef.field_name, value="<value>") for ef in experiment.experiment_filters
             ]
         )
-        calls.append(
+        calls.insert(
+            0,
             SampleCall(
                 label="Get assignment (with filters)",
                 method="POST",
