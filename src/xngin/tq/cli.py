@@ -6,8 +6,8 @@ import typer
 
 from xngin.apiserver import customlogging
 from xngin.ops import sentry
-from xngin.tq.handlers import make_webhook_outbound_handler
-from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE
+from xngin.tq.handlers import make_turn_journeys_changed_handler, make_webhook_outbound_handler
+from xngin.tq.task_payload_types import TURN_JOURNEYS_CHANGED_TASK_TYPE, WEBHOOK_OUTBOUND_TASK_TYPE
 from xngin.tq.task_queue import TaskQueue
 
 # The maximum number of times we will try to complete a task before marking it as "dead".
@@ -52,4 +52,5 @@ def run(
     """Run the task queue processor."""
     queue = TaskQueue(dsn=dsn, max_retries=max_retries, poll_interval_secs=poll_interval)
     queue.register_handler(WEBHOOK_OUTBOUND_TASK_TYPE, make_webhook_outbound_handler(dsn))
+    queue.register_handler(TURN_JOURNEYS_CHANGED_TASK_TYPE, make_turn_journeys_changed_handler(dsn))
     queue.run()

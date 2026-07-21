@@ -90,18 +90,28 @@ async def test_turn_connection_lifecycle(
 
     # GET with allow_missing=True -> 200.
     assert (
-        iaclient.get_organization_turn_connection(organization_id=org_id, allow_missing=True).data.token_preview == ""
+        iaclient.get_organization_turn_connection(
+            organization_id=org_id, allow_missing=True
+        ).data.turn_api_token_preview
+        == ""
     )
 
     # Create the connection.
     initial_token = "abcde" * 67  # 335 chars
-    iaclient.set_organization_turn_connection(
+    response = iaclient.set_organization_turn_connection(
         organization_id=org_id,
         body=SetConnectionToTurnRequest(turn_api_token=initial_token),
-    )
+    ).data
+
+    assert response.type == "turn.journeys_changed"
+    assert response.direction == "inbound"
+    assert response.name == "Turn Journeys Changed Webhook"
+    assert response.url is None
+    assert response.auth_token is not None
+    assert response.id is not None
 
     # GET returns a preview of the last 4 chars of the token.
-    preview = iaclient.get_organization_turn_connection(organization_id=org_id).data.token_preview
+    preview = iaclient.get_organization_turn_connection(organization_id=org_id).data.turn_api_token_preview
     assert preview == initial_token[-4:]
 
     # Check that Journeys were also fetched from client
@@ -117,7 +127,7 @@ async def test_turn_connection_lifecycle(
     )
 
     # Preview now reflects the new token.
-    preview = iaclient.get_organization_turn_connection(organization_id=org_id).data.token_preview
+    preview = iaclient.get_organization_turn_connection(organization_id=org_id).data.turn_api_token_preview
     assert preview == rotated_token[-4:]
 
     # Check that Journeys were refetched from client after rotation
@@ -136,9 +146,9 @@ async def test_turn_connection_lifecycle(
     with expect_status_code(404):
         iaclient.get_organization_turn_journeys(organization_id=org_id)
 
-    # Get Journeys with  after delete -> 200 with empty journeys.
-    # journeys = iaclient.get_organization_turn_journeys(organization_id=org_id).data.journeys
-    # assert journeys == {}
+    # Check that the webhook was also deleted.
+    turn_webhooks = aclient.list_organization_webhooks(organization_id=org_id).data
+    assert len(turn_webhooks.items) == 0
 
     # Delete again without allow_missing -> 404.
     with expect_status_code(404):
@@ -378,6 +388,38 @@ async def test_turn_journey_mapping_rejects_mismatched_arm_ids(
             ),
         )
     assert extra_id in match.http_response().text
+
+
+async def test_regenerate_turn_webhook_token(
+    monkeypatch: pytest.MonkeyPatch, aclient: AdminAPIClient, iaclient: AdminIntegrationsAPIClient
+):
+    """Regenerating the webhook token rotates the auth_token without changing the Turn connection."""
+    monkeypatch.setattr(FakeAsyncClient, "call_log", 0)
+    monkeypatch.setattr(FakeAsyncClient, "stacks", [{"name": "Arm A", "uuid": "arm-a-uuid"}])
+    monkeypatch.setattr(httpx2, "AsyncClient", FakeAsyncClient)
+
+    org_id = aclient.create_organizations(
+        body=CreateOrganizationRequest(name="test_regenerate_turn_webhook_token")
+    ).data.id
+
+    # No webhook configured -> 404.
+    with expect_status_code(404):
+        iaclient.regenerate_turn_webhook_token(organization_id=org_id)
+
+    # allow_missing=True with no webhook -> 200.
+    result = iaclient.regenerate_turn_webhook_token(organization_id=org_id, allow_missing=True).data
+    assert result.auth_token == ""
+
+    # Set up the Turn connection (also creates the turn.journeys_changed webhook).
+    initial = iaclient.set_organization_turn_connection(
+        organization_id=org_id,
+        body=SetConnectionToTurnRequest(turn_api_token="a" * 335),
+    ).data
+    initial_token = initial.auth_token
+
+    # Regenerate -> new token returned, different from initial.
+    result = iaclient.regenerate_turn_webhook_token(organization_id=org_id).data
+    assert result.auth_token != initial_token
 
 
 async def test_resetting_same_token_preserves_arm_journey_mapping(
