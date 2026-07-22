@@ -466,6 +466,8 @@ class Experiment(Base):
     n_trials: Mapped[int] = mapped_column(server_default="0")
     prior_type: Mapped[str | None] = mapped_column()
     reward_type: Mapped[str | None] = mapped_column()
+    enable_autofail: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
+    autofail_window: Mapped[int | None] = mapped_column()
 
     # Frequentist config params
     # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run

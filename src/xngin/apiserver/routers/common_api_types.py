@@ -976,6 +976,25 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
             default=LikelihoodTypes.BERNOULLI,
         ),
     ]
+    enable_autofail: Annotated[
+        bool,
+        Field(
+            description=(
+                "When true, the experiment will automatically log a failure for participants who "
+                "do not report an outcome within a specified time window."
+            ),
+        ),
+    ] = False
+    autofail_window: Annotated[
+        int | None,
+        Field(
+            description=(
+                "The time window in hours after which a participant is considered to have failed if "
+                "no outcome is reported. Required if enable_autofail is true."
+            ),
+            ge=1,
+        ),
+    ] = None
 
     @model_validator(mode="after")
     def check_arm_missing_params(self) -> Self:
@@ -1032,6 +1051,15 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
             raise ValueError("Contextual MAB experiments require at least one context.")
         if self.experiment_type != ExperimentsType.CMAB_ONLINE and self.contexts:
             raise ValueError("Contexts are only applicable for contextual MAB experiments.")
+        return self
+
+    @model_validator(mode="after")
+    def check_autofail_window(self) -> Self:
+        """
+        Validate that the autofail window is set if autofail is enabled.
+        """
+        if self.enable_autofail and self.autofail_window is None:
+            raise ValueError("Autofail time window must be set if autofail is enabled.")
         return self
 
 

@@ -353,6 +353,8 @@ class ExperimentStorageConverter:
                 ],
                 "prior_type": capi.PriorTypes(self.experiment.prior_type),
                 "reward_type": capi.LikelihoodTypes(self.experiment.reward_type),
+                "enable_autofail": self.experiment.enable_autofail,
+                "autofail_window": self.experiment.autofail_window,
                 "contexts": contexts,
             })
         raise ValueError(f"Unsupported experiment type: {self.experiment.experiment_type}")
@@ -500,6 +502,8 @@ class ExperimentStorageConverter:
                 experiment.reward_type = design_spec.reward_type.value
                 experiment.prior_type = design_spec.prior_type.value
                 experiment.n_trials = n_trials
+                experiment.enable_autofail = design_spec.enable_autofail
+                experiment.autofail_window = design_spec.autofail_window
 
                 arm_weights = design_spec.get_validated_arm_weights()
                 if arm_weights:
