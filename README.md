@@ -73,7 +73,7 @@
 | src/xngin/events/experiment\_created.py                                            |       13 |        1 |     92% |        24 |
 | src/xngin/ops/sentry.py                                                            |       13 |        6 |     54% |     18-40 |
 | src/xngin/stats/assignment.py                                                      |       87 |        2 |     98% |  170, 262 |
-| src/xngin/stats/balance.py                                                         |       74 |        2 |     97% |  110, 141 |
+| src/xngin/stats/balance.py                                                         |       78 |        3 |     96% |110, 141, 210 |
 | src/xngin/stats/bandit\_analysis.py                                                |       73 |        4 |     95% |134, 136, 199-200 |
 | src/xngin/stats/bandit\_sampling.py                                                |       86 |        7 |     92% |184, 219, 226, 254, 282, 284, 316 |
 | src/xngin/stats/bandit\_weights\_to\_prior.py                                      |       50 |        2 |     96% |   75, 138 |
@@ -91,7 +91,7 @@
 | src/xngin/xsecrets/secretservice.py                                                |       63 |        5 |     92% |37, 49-50, 108, 130 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                                     |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                                         |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                                          | **15079** | **1099** | **93%** |           |
+| **TOTAL**                                                                          | **15090** | **1100** | **93%** |           |
 
 81 files skipped due to complete coverage.
 
