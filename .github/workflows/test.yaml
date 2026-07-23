@@ -50,7 +50,7 @@ jobs:
         with:
           config: .betterleaks.toml
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          fail-on-leak: 'false'
+          fail-on-leak: 'true'
       - uses: github/codeql-action/upload-sarif@b7351df727350dca84cb9d725d57dcf5bc82ba26 # v3
         if: always()
         with:
