@@ -44,6 +44,7 @@ from xngin.apiserver.routers.admin_integrations.admin_integrations_api_types imp
     SetConnectionToTurnRequest,
     SetTurnArmJourneyMappingRequest,
 )
+from xngin.apiserver.routers.common_api_types import SampleCalls
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -1030,6 +1031,82 @@ class AdminIntegrationsAPIClient:
                 },
                 query_params={
                     "allow_missing": allow_missing,
+                },
+                raise_if_not_default_status=raise_if_not_default_status,
+                client_exts=client_exts,
+            ),
+        )
+
+    @overload
+    def get_experiment_sample_calls(
+        self,
+        *,
+        datasource_id: str,
+        experiment_id: str,
+        raise_if_not_default_status: Literal[True] = True,
+        client_exts: AdminIntegrationsAPIClientExtensions | None = None,
+    ) -> AdminIntegrationsAPIClientResult[Literal[HTTPStatus.OK], SampleCalls | None]: ...
+    @overload
+    def get_experiment_sample_calls(
+        self,
+        *,
+        datasource_id: str,
+        experiment_id: str,
+        raise_if_not_default_status: Literal[False],
+        client_exts: AdminIntegrationsAPIClientExtensions | None = None,
+    ) -> (
+        AdminIntegrationsAPIClientResult[Literal[HTTPStatus.OK], SampleCalls | None]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminIntegrationsAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminIntegrationsAPIClientHTTPValidationError
+        ]
+    ): ...
+    def get_experiment_sample_calls(
+        self,
+        *,
+        datasource_id: str,
+        experiment_id: str,
+        raise_if_not_default_status: bool = True,
+        client_exts: AdminIntegrationsAPIClientExtensions | None = None,
+    ) -> (
+        AdminIntegrationsAPIClientResult[Literal[HTTPStatus.OK], SampleCalls | None]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminIntegrationsAPIClientResult[
+            Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminIntegrationsAPIClientHTTPValidationError
+        ]
+    ):
+        return cast(
+            (
+                AdminIntegrationsAPIClientResult[Literal[HTTPStatus.OK], SampleCalls | None]
+                | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminIntegrationsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminIntegrationsAPIClientResult[
+                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminIntegrationsAPIClientHTTPValidationError
+                ]
+            ),
+            self._route_handler(
+                path="/v1/m/integrations/datasources/{datasource_id}/experiments/{experiment_id}/sample-calls",
+                method=HTTPMethod.GET,
+                default_status=HTTPStatus.OK,
+                models={
+                    HTTPStatus.OK: SampleCalls | None,
+                    HTTPStatus.BAD_REQUEST: HTTPExceptionError,
+                    HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
+                    HTTPStatus.FORBIDDEN: HTTPExceptionError,
+                    HTTPStatus.NOT_FOUND: HTTPExceptionError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminIntegrationsAPIClientHTTPValidationError,
+                },
+                path_params={
+                    "datasource_id": datasource_id,
+                    "experiment_id": experiment_id,
                 },
                 raise_if_not_default_status=raise_if_not_default_status,
                 client_exts=client_exts,

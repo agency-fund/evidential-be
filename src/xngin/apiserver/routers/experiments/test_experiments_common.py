@@ -58,6 +58,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     get_existing_assignment_for_participant,
     get_experiment_impl,
     get_or_create_assignment_for_participant,
+    make_sample_calls,
     make_schema_from_experiment,
     update_bandit_arm_with_outcome_impl,
 )
@@ -2839,3 +2840,61 @@ async def test_arm_population_counter(xngin_session, testing_datasource):
         xngin_session, experiment_id=experiment.id, experiment_type=ExperimentsType.FREQ_ONLINE, balance_check=None
     )
     assert summary.sample_size == 1
+
+
+def _in_memory_experiment(
+    experiment_type: ExperimentsType,
+    reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
+    target_data_type: DataType | None = None,
+    arms: list[tables.Arm] | None = None,
+) -> tables.Experiment:
+    """An in-memory (unpersisted) experiment with just the attributes make_sample_calls reads."""
+    fields = []
+    if target_data_type is not None:
+        fields = [tables.ExperimentField(field_name="target_col", data_type=target_data_type.value, is_target=True)]
+    return tables.Experiment(
+        id="exp_abc123",
+        experiment_type=experiment_type.value,
+        reward_type=reward_type.value,
+        experiment_fields=fields,
+        arms=arms or [],
+    )
+
+
+@pytest.mark.parametrize(
+    ("reward_type", "target_data_type", "expected_outcome"),
+    [
+        (LikelihoodTypes.BERNOULLI, None, 1),  # bernoulli MAB => binary
+        (LikelihoodTypes.NORMAL, None, 1.5),  # normal MAB => real
+        (LikelihoodTypes.NORMAL, DataType.BOOLEAN, 1),  # dwh boolean target => binary even under normal reward
+        (LikelihoodTypes.NORMAL, DataType.NUMERIC, 1.5),  # dwh numeric target => real
+        (LikelihoodTypes.BERNOULLI, DataType.NUMERIC, 1),  # bernoulli still forces binary
+    ],
+)
+def test_make_sample_calls_outcome_example_value(reward_type, target_data_type, expected_outcome):
+    experiment_type = ExperimentsType.MAB_ONLINE_DWH if target_data_type is not None else ExperimentsType.MAB_ONLINE
+    calls = make_sample_calls(
+        _in_memory_experiment(experiment_type, reward_type=reward_type, target_data_type=target_data_type)
+    )
+    assert calls is not None
+    assert calls.calls[1].body == {"outcome": expected_outcome}
+    assert calls.calls[1].example_response is not None
+    assert calls.calls[1].example_response["arm_id"] == "<arm_id>"
+
+
+def test_make_sample_calls_freq_online_without_filters_get_assignment_only():
+    calls = make_sample_calls(_in_memory_experiment(ExperimentsType.FREQ_ONLINE))
+    assert calls is not None
+    assert [c.label for c in calls.calls] == ["Get assignment"]
+
+
+def test_make_sample_calls_example_response_uses_baseline_arm():
+    # Arms are ordered baseline-first, so the example must show the first arm's real id, not the
+    # placeholder and not another arm.
+    arms = [tables.Arm(id="arm_baseline", name="Control"), tables.Arm(id="arm_other", name="Treatment")]
+    calls = make_sample_calls(_in_memory_experiment(ExperimentsType.FREQ_ONLINE, arms=arms))
+    assert calls is not None
+    assert calls.calls[0].example_response is not None
+    assignment = calls.calls[0].example_response["assignment"]
+    assert assignment["arm_id"] == "arm_baseline"
+    assert assignment["arm_name"] == "Control"
