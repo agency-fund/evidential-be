@@ -550,6 +550,16 @@ class BanditExperimentAnalysisResponse(ApiBaseModel):
         int,
         Field(description="The number of outcomes observed for this experiment."),
     ]
+    fraction_automatically_failed: Annotated[
+        float,
+        Field(
+            description=(
+                "The fraction of outcomes that were automatically failed by the system, rather than manually "
+                "reported by the user. This is calculated as the number of automatically failed outcomes divided "
+                "by the total number of outcomes observed for this experiment."
+            )
+        ),
+    ]
     created_at: Annotated[
         datetime.datetime,
         Field(description="The date and time the experiment analysis was created."),
@@ -1241,6 +1251,7 @@ class AssignmentTypedDict(TypedDict):
     strata: NotRequired[list[StrataTypedDict] | None]
     observed_at: NotRequired[str | None]
     outcome: NotRequired[float | None]
+    autofailed_outcome: NotRequired[bool | None]
     context_values: NotRequired[list[float] | None]
 
 
@@ -1302,6 +1313,15 @@ class Assignment(ApiBaseModel):
     ] = None
 
     outcome: Annotated[float | None, Field(description="The observed outcome for this assignment.")] = None
+    autofailed_outcome: Annotated[
+        bool | None,
+        Field(
+            description=(
+                "Whether the outcome was automatically failed by the system (True) or manually reported by "
+                "the user (False). Null if no outcome was recorded."
+            )
+        ),
+    ] = None
 
     context_values: Annotated[
         list[float] | None,
@@ -1518,6 +1538,7 @@ class UpdateBanditArmOutcomeRequest(ApiBaseModel):
     """Describes the outcome of a bandit experiment."""
 
     outcome: float
+    autofailed_outcome: bool = False
 
 
 class TurnConfigResponse(ApiBaseModel):

@@ -11,7 +11,7 @@ import pandas as pd
 from fastapi import HTTPException, status
 from pandas import DataFrame
 from psycopg import sql
-from sqlalchemy import Select, Table, func, insert, select, update
+from sqlalchemy import Integer, Select, Table, func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -927,6 +927,7 @@ async def update_bandit_arm_with_outcome_impl(
     experiment: tables.Experiment,
     participant_id: str,
     outcome: float,
+    autofailed_outcome: bool = False,
 ) -> tables.Arm:
     """Update the Draw table with the outcome for a bandit experiment."""
     # Not supported for frequentist experiments
@@ -972,7 +973,7 @@ async def update_bandit_arm_with_outcome_impl(
                 tables.Draw.experiment_id == experiment.id,
                 tables.Draw.outcome.is_(None),  # guard against double-write at DB level
             )
-            .values(observed_at=datetime.now(UTC), outcome=outcome)
+            .values(observed_at=datetime.now(UTC), outcome=outcome, autofailed_outcome=autofailed_outcome)
             .returning(tables.Draw.arm_id, tables.Draw.context_vals)
         )
         draw_record = result.one_or_none()
@@ -1268,6 +1269,7 @@ class DrawsOutcomeAggregates:
     """Aggregate statistics over the non-null outcomes of an experiment's draws."""
 
     n_outcomes: int
+    fraction_autofailed_outcomes: float
     outcome_std_dev: float
 
 
@@ -1287,6 +1289,7 @@ async def analyze_experiment_bandit_impl(
         experiment_id=experiment.id,
         arm_analyses=arm_analyses,
         n_outcomes=aggregates.n_outcomes,
+        fraction_automatically_failed=aggregates.fraction_autofailed_outcomes,
         created_at=datetime.now(UTC),
         contexts=context_vals,
     )
@@ -1308,4 +1311,16 @@ async def _draws_outcome_aggregates(xngin_session: AsyncSession, experiment_id: 
             )
         )
     ).one()
-    return DrawsOutcomeAggregates(n_outcomes=n_outcomes, outcome_std_dev=std_dev)
+    fraction_autofailed_outcomes = (
+        await xngin_session.execute(
+            select(func.coalesce(func.avg(tables.Draw.autofailed_outcome.cast(Integer)), 0.0)).where(
+                tables.Draw.experiment_id == experiment_id,
+                tables.Draw.outcome.is_not(None),
+            )
+        )
+    ).scalar_one()
+    return DrawsOutcomeAggregates(
+        n_outcomes=n_outcomes,
+        outcome_std_dev=std_dev,
+        fraction_autofailed_outcomes=fraction_autofailed_outcomes,
+    )
