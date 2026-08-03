@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import sentry_sdk
 from loguru import logger
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import selectinload
 
 from xngin.apiserver import database
@@ -63,7 +63,6 @@ async def create_pending_autofail_updates() -> None:
 async def _make_one_autofail_update(
     update: tables.AutofailUpdate,
     draw: tables.Draw,
-    experiment: tables.Experiment,
     session: AsyncSession,
     autofail_update_timeout: int,
 ) -> None:
@@ -77,27 +76,31 @@ async def _make_one_autofail_update(
         async with asyncio.timeout(autofail_update_timeout):
             await experiments_common.update_bandit_arm_with_outcome_impl(
                 xngin_session=session,
-                experiment=experiment,
+                experiment=draw.experiment,
                 participant_id=draw.participant_id,
-                outcome=experiment.autofail_outcome_value,
+                outcome=draw.experiment.autofail_outcome_value,
                 autofailed_outcome=True,
                 commit_on_success=False,
             )
             update.status = "success"
             update.message = (
                 f"Autofail processed successfully. Participant {draw.participant_id} "
-                f"recorded outcome {experiment.autofail_outcome_value}."
+                f"recorded outcome {draw.experiment.autofail_outcome_value}."
             )
 
     except Exception as exc:
-        logger.error(
+        logger.opt(exception=exc).error(
             f"Failed to process autofail update for experiment {draw.experiment_id} and "
             f"participant {draw.participant_id}: {exc!s}"
         )
         sentry_sdk.capture_exception(exc)
+        sentry_sdk.metrics.count(
+            "autofail_update.failed",
+            1,
+            attributes={"experiment_id": draw.experiment_id, "participant_id": draw.participant_id},
+        )
         update.status = "failed"
         update.message = f"{type(exc).__name__}: {exc}"
-        raise
 
     sentry_sdk.metrics.count(
         "autofail_update.finished",
@@ -115,12 +118,18 @@ async def process_pending_autofail_updates(autofail_update_timeout: int, *, max_
     """
     autofail_update = (
         select(tables.AutofailUpdate)
-        .join(tables.Draw, tables.AutofailUpdate.participant_id == tables.Draw.participant_id)
+        .join(
+            tables.Draw,
+            and_(
+                tables.AutofailUpdate.experiment_id == tables.Draw.experiment_id,
+                tables.AutofailUpdate.participant_id == tables.Draw.participant_id,
+            ),
+        )
         .join(tables.Experiment, tables.Draw.experiment_id == tables.Experiment.id)
         .where(tables.AutofailUpdate.status == "pending")
         .limit(1)
         .with_for_update(skip_locked=True)
-        .options(selectinload(tables.AutofailUpdate.draw, tables.Draw.experiment))
+        .options(selectinload(tables.AutofailUpdate.draw).joinedload(tables.Draw.experiment))
     )
     while True:
         await asyncio.sleep(random.uniform(0, max_jitter_secs))  # jitter  # noqa: S311
@@ -129,17 +138,10 @@ async def process_pending_autofail_updates(autofail_update_timeout: int, *, max_
             if one_update is None:
                 logger.info("No pending autofail updates found.")
                 return
-            stmt = (
-                select(tables.Draw)
-                .join(tables.Experiment, tables.Draw.experiment_id == tables.Experiment.id)
-                .where(tables.Draw.participant_id == one_update.participant_id)
-            )
-            draw = (await session.execute(stmt)).scalar_one_or_none()
-            experiment = draw.experiment
+            draw = one_update.draw
             await _make_one_autofail_update(
                 update=one_update,
                 draw=draw,
-                experiment=experiment,
                 session=session,
                 autofail_update_timeout=autofail_update_timeout,
             )

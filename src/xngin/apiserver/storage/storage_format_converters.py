@@ -305,6 +305,7 @@ class ExperimentStorageConverter:
                 raise ValueError(f"Bandit experiment {self.experiment.id} must have prior_type and reward_type set.")
             contexts = None
             if self.experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value:
+                await self.experiment.awaitable_attrs.contexts
                 contexts = [
                     capi.Context(
                         context_id=context.id,
