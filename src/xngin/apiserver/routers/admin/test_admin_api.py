@@ -2207,6 +2207,44 @@ def test_create_online_cmab_experiment(testing_datasource, aclient: AdminAPIClie
 
 
 @pytest.mark.parametrize(
+    ("experiment_type", "enable_autofail", "autofail_window", "autofail_outcome_value"),
+    [
+        (ExperimentsType.MAB_ONLINE, False, 24, 0.0),
+        (ExperimentsType.CMAB_ONLINE, False, 24, 0.0),
+        (ExperimentsType.MAB_ONLINE, True, 48, 1.0),
+        (ExperimentsType.CMAB_ONLINE, True, 72, 0.5),
+    ],
+)
+def test_create_online_bandit_experiment_with_autofail(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    experiment_type,
+    enable_autofail,
+    autofail_window,
+    autofail_outcome_value,
+):
+    """Autofail settings should survive creation and be readable back from the API."""
+    datasource_id = testing_datasource.datasource_id
+    request_obj = make_create_online_bandit_experiment_request(
+        experiment_type=experiment_type,
+        enable_autofail=enable_autofail,
+        autofail_window=autofail_window,
+        autofail_outcome_value=autofail_outcome_value,
+    )
+
+    created_experiment = aclient.create_experiment(datasource_id=datasource_id, body=request_obj, random_state=42).data
+    parsed_experiment_id = created_experiment.experiment_id
+    assert parsed_experiment_id is not None
+
+    fetched_resp = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=parsed_experiment_id).data
+    for design_spec in (created_experiment.design_spec, fetched_resp.config.design_spec):
+        assert isinstance(design_spec, MABExperimentSpec | CMABExperimentSpec)
+        assert design_spec.enable_autofail == enable_autofail
+        assert design_spec.autofail_window == autofail_window
+        assert design_spec.autofail_outcome_value == autofail_outcome_value
+
+
+@pytest.mark.parametrize(
     ("experiment_type", "reward_type", "prior_type"),
     [
         (ExperimentsType.MAB_ONLINE, LikelihoodTypes.NORMAL, PriorTypes.NORMAL),

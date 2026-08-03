@@ -79,12 +79,27 @@ def make_createexperimentrequest_json(
     primary_key: str | None = None,
     desired_n: int | None = None,
     target_field_name: str = "is_onboarded",
+    enable_autofail: bool = False,
+    autofail_window: int = 24,
+    autofail_outcome_value: float = 0.0,
 ):
     """Make a basic CreateExperimentRequest JSON object.
 
     This does not add any power analyses or balance checks, nor do any validation.
+
+    The autofail arguments only apply to the bandit experiment types; frequentist specs have no
+    such fields.
     """
     experiment_type = ExperimentsType(experiment_type)
+    autofail_spec = (
+        {
+            "enable_autofail": True,
+            "autofail_window": autofail_window,
+            "autofail_outcome_value": autofail_outcome_value,
+        }
+        if enable_autofail
+        else {}
+    )
     match experiment_type:
         case ExperimentsType.FREQ_PREASSIGNED | ExperimentsType.FREQ_ONLINE:
             table_name = table_name or TESTING_DWH_PARTICIPANT_DEF.table_name
@@ -156,6 +171,7 @@ def make_createexperimentrequest_json(
                     "prior_type": prior_type,
                     "reward_type": reward_type,
                     "arms": arms,
+                    **autofail_spec,
                 }
             }
         case ExperimentsType.MAB_ONLINE_DWH:
@@ -193,6 +209,7 @@ def make_createexperimentrequest_json(
                     "table_name": table_name or TESTING_DWH_PARTICIPANT_DEF.table_name,
                     "primary_key": primary_key or "id",
                     "target_field_name": target_field_name,
+                    **autofail_spec,
                 }
             }
         case ExperimentsType.CMAB_ONLINE:
@@ -237,6 +254,7 @@ def make_createexperimentrequest_json(
                             "value_type": "real-valued",
                         },
                     ],
+                    **autofail_spec,
                 }
             }
         case _:
@@ -287,12 +305,18 @@ def make_create_online_bandit_experiment_request(
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
     prior_type: PriorTypes = PriorTypes.NORMAL,
     target_field_name: str = "is_onboarded",
+    enable_autofail: bool = False,
+    autofail_window: int = 24,
+    autofail_outcome_value: float = 0.0,
 ) -> CreateExperimentRequest:
     request = make_createexperimentrequest_json(
         experiment_type=experiment_type,
         prior_type=prior_type,
         reward_type=reward_type,
         target_field_name=target_field_name,
+        enable_autofail=enable_autofail,
+        autofail_window=autofail_window,
+        autofail_outcome_value=autofail_outcome_value,
     )
     return CreateExperimentRequest.model_validate(request)
 

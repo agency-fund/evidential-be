@@ -1538,7 +1538,6 @@ class UpdateBanditArmOutcomeRequest(ApiBaseModel):
     """Describes the outcome of a bandit experiment."""
 
     outcome: float
-    autofailed_outcome: bool = False
 
 
 class TurnConfigResponse(ApiBaseModel):

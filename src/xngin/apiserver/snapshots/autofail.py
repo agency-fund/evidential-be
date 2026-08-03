@@ -46,7 +46,7 @@ async def create_pending_autofail_updates() -> None:
             experiment = draw.experiment
             # Check if the draw has no outcome and has exceeded the threshold time.
             now = datetime.now(UTC)
-            if draw.outcome is None and ((now - draw.created_at).total_seconds()) > experiment.autofail_window:
+            if draw.outcome is None and ((now - draw.created_at).total_seconds() / 3600) > experiment.autofail_window:
                 # Create a pending autofail update for this draw.
                 pending_update = tables.AutofailUpdate(
                     participant_id=draw.participant_id,
