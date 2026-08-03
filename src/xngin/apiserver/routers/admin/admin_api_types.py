@@ -1,4 +1,3 @@
-import enum
 from datetime import datetime
 from typing import Annotated, Literal
 from urllib.parse import urlparse
@@ -30,6 +29,7 @@ from xngin.apiserver.routers.common_api_types import (
     Impact,
     PaginatedResponse,
 )
+from xngin.apiserver.routers.common_enums import SnapshotStatus
 from xngin.apiserver.settings import ParticipantsDef
 
 
@@ -49,14 +49,6 @@ def validate_webhook_url(url: str) -> str:
 
 class AdminApiBaseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
-
-class SnapshotStatus(enum.StrEnum):
-    """Describes the status of a snapshot."""
-
-    SUCCESS = "success"
-    RUNNING = "running"
-    FAILED = "failed"
 
 
 class Snapshot(AdminApiBaseModel):

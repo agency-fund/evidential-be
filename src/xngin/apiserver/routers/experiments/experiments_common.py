@@ -653,6 +653,7 @@ async def get_existing_assignment_for_participant(
                 list[float] | None,
                 datetime | None,
                 float | None,
+                bool | None,
             ]
         ]
     )
@@ -687,6 +688,7 @@ async def get_existing_assignment_for_participant(
                     tables.Draw.context_vals,
                     tables.Draw.observed_at,
                     tables.Draw.outcome,
+                    tables.Draw.autofailed_outcome,
                 )
                 .join(
                     tables.Arm,
@@ -713,6 +715,9 @@ async def get_existing_assignment_for_participant(
             strata=[],  # Strata are not included in this query
             observed_at=existing_assignment.observed_at if hasattr(existing_assignment, "observed_at") else None,
             outcome=existing_assignment.outcome if hasattr(existing_assignment, "outcome") else None,
+            autofailed_outcome=existing_assignment.autofailed_outcome
+            if hasattr(existing_assignment, "autofailed_outcome")
+            else None,
             context_values=existing_assignment.context_vals if hasattr(existing_assignment, "context_vals") else None,
         )
     return None
@@ -922,12 +927,49 @@ def _check_outcome_against_mab_dwh_target(
         )
 
 
+async def _fetch_outcomes_and_context_for_arm(
+    xngin_session: AsyncSession,
+    experiment_id: str,
+    arm_id: str,
+    outcome: float,
+    context_vals: list[float] | None,
+) -> tuple[list[float], list[list[float]] | None]:
+    """Return the just-recorded outcome plus the arm's prior outcomes, newest first.
+
+    Context values are aggregated alongside the outcomes and returned only for contextual
+    bandits, i.e. when the current draw carries context.
+    """
+    has_context = context_vals is not None
+    subq = (
+        select(tables.Draw.outcome, tables.Draw.context_vals)
+        .where(
+            tables.Draw.experiment_id == experiment_id,
+            tables.Draw.arm_id == arm_id,
+            tables.Draw.outcome.is_not(None),
+        )
+        .order_by(tables.Draw.created_at.desc())
+        .limit(100)  # TODO: Make draw limiting configurable
+        .subquery()
+    )
+    agg_cols = [func.array_agg(subq.c.outcome)]
+    if has_context:
+        agg_cols.append(func.array_agg(subq.c.context_vals))
+    agg_result = await xngin_session.execute(select(*agg_cols).select_from(subq))
+    agg_row = agg_result.one()
+
+    all_prior_outcomes = agg_row[0]
+    outcomes = [outcome] + (all_prior_outcomes or [])
+    all_context_vals = ([context_vals] + (agg_row[1] or [])) if has_context else None
+    return outcomes, all_context_vals
+
+
 async def update_bandit_arm_with_outcome_impl(
     xngin_session: AsyncSession,
     experiment: tables.Experiment,
     participant_id: str,
     outcome: float,
     autofailed_outcome: bool = False,
+    commit_on_success: bool = True,
 ) -> tables.Arm:
     """Update the Draw table with the outcome for a bandit experiment."""
     # Not supported for frequentist experiments
@@ -985,27 +1027,13 @@ async def update_bandit_arm_with_outcome_impl(
         arm_to_update = next(arm for arm in experiment.arms if arm.id == draw_record.arm_id)
 
         # Get all prior draws for this arm, sorted by creation date
-        has_context = draw_record.context_vals is not None
-        subq = (
-            select(tables.Draw.outcome, tables.Draw.context_vals)
-            .where(
-                tables.Draw.experiment_id == experiment.id,
-                tables.Draw.arm_id == draw_record.arm_id,
-                tables.Draw.outcome.is_not(None),
-            )
-            .order_by(tables.Draw.created_at.desc())
-            .limit(100)  # TODO: Make draw limiting configurable
-            .subquery()
+        outcomes, context_vals = await _fetch_outcomes_and_context_for_arm(
+            xngin_session,
+            experiment_id=experiment.id,
+            arm_id=draw_record.arm_id,
+            outcome=outcome,
+            context_vals=draw_record.context_vals,
         )
-        agg_cols = [func.array_agg(subq.c.outcome)]
-        if has_context:
-            agg_cols.append(func.array_agg(subq.c.context_vals))
-        agg_result = await xngin_session.execute(select(*agg_cols).select_from(subq))
-        agg_row = agg_result.one()
-
-        all_prior_outcomes = agg_row[0]
-        outcomes = [outcome] + (all_prior_outcomes or [])
-        context_vals = ([draw_record.context_vals] + (agg_row[1] or [])) if has_context else None
 
         updated_parameters = update_bandit_arm(
             experiment=experiment,
@@ -1046,7 +1074,8 @@ async def update_bandit_arm_with_outcome_impl(
             .values(**update_draw_params)
         )
         xngin_session.add(arm_to_update)
-        await xngin_session.commit()
+        if commit_on_success:
+            await xngin_session.commit()
 
     except IntegrityError as e:
         await xngin_session.rollback()

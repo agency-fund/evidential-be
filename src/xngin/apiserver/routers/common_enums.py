@@ -397,3 +397,11 @@ class ExperimentAnalysisType(enum.StrEnum):
 
     FREQ = "freq"
     BANDIT = "bandit"
+
+
+class SnapshotStatus(enum.StrEnum):
+    """Describes the status of a snapshot."""
+
+    SUCCESS = "success"
+    RUNNING = "running"
+    FAILED = "failed"

@@ -412,6 +412,7 @@ async def update_bandit_arm_with_participant_outcome(
         experiment=experiment,
         participant_id=participant_id,
         outcome=body.outcome,
+        autofailed_outcome=body.autofailed_outcome,
     )
 
     return ArmBandit(
