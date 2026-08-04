@@ -267,7 +267,7 @@ tasks:
     vars:
       LATEST: "{{default 1 .LATEST}}"
     cmds:
-      - psql "{{.XNGIN_DEVAPP_STANDARD_DSN}}" -c "CREATE DATABASE migration_lint;" || true
+      - uv run xngin-cli create-database --dsn "{{.XNGIN_LOCALPG_DSN}}" --allow-existing migration_lint
       - >
         uv run atlas migrate lint --dir "file://migrations/sa_postgres/"
         --latest {{.LATEST}} --dev-url "{{.XNGIN_DEVAPP_MIGRATIONS_LINT_DSN}}"
@@ -324,18 +324,14 @@ tasks:
   drop-databases:
     desc: "Forcibly remove the local development databases."
     interactive: true
-    cmds:
-      - psql "{{.XNGIN_LOCALPG_DSN}}" -c "DROP DATABASE dwh WITH (FORCE);" || true
-      - psql "{{.XNGIN_LOCALPG_DSN}}" -c "DROP DATABASE migration_lint WITH (FORCE);" || true
-      - psql "{{.XNGIN_LOCALPG_DSN}}" -c "DROP DATABASE test_xngin WITH (FORCE);" || true
-      - psql "{{.XNGIN_LOCALPG_DSN}}" -c "DROP DATABASE {{.XNGIN_DEVAPPDB_NAME}} WITH (FORCE);" || true
+    cmd: uv run xngin-cli drop-database --dsn "{{.XNGIN_LOCALPG_DSN}}" dwh migration_lint test_xngin {{.XNGIN_DEVAPPDB_NAME}}
   create-database:
     desc: "Create an empty database with the supplied name. Useful for prepping a pg_restore of your local database after dropping it."
     interactive: true
     vars:
       DBNAME: '{{default "xngin" .DBNAME}}'
     cmds:
-      - psql "{{.XNGIN_LOCALPG_DSN}}" -c "CREATE DATABASE {{.DBNAME}};"
+      - uv run xngin-cli create-database --dsn "{{.XNGIN_LOCALPG_DSN}}" {{.DBNAME}}
   generate-typed-clients:
     desc: "Generates the admin_api_client.py and experiments_api_client.py code from the latest API definitions."
     interactive: true

@@ -4,7 +4,6 @@ import asyncio
 import functools
 import json
 import logging
-import os
 import shutil
 import subprocess  # noqa: S404
 import sys
@@ -22,10 +21,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import Session
 
 from xngin.cli.commands import create_testing_dwh as _create_testing_dwh_cmd
-from xngin.cli.common import create_engine_and_database
+from xngin.cli.commands import databases as _databases_cmd
+from xngin.cli.common import CLI_DB_APPLICATION_NAME, create_engine_and_database
 from xngin.xsecrets import secretservice
-
-CLI_DB_APPLICATION_NAME = f"cli-{os.getpid()}"
 
 err_console = Console(stderr=True)
 console = Console(stderr=False)
@@ -33,6 +31,7 @@ app = typer.Typer(help=__doc__)
 snapshots_app = typer.Typer(help="Create and modify fake historical snapshots for development.")
 app.add_typer(snapshots_app, name="snapshots")
 _create_testing_dwh_cmd.register(app)
+_databases_cmd.register(app)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
 

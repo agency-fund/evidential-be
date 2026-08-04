@@ -1,5 +1,7 @@
 """Helpers shared by `cli/main.py` and the per-command modules under `cli/commands/`."""
 
+import os
+
 import sqlalchemy
 from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
@@ -7,6 +9,8 @@ from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 from xngin.apiserver.dwh import dwh_utils
 
 SA_LOGGER_NAME_FOR_CLI = "cli_dwh"
+
+CLI_DB_APPLICATION_NAME = f"cli-{os.getpid()}"
 
 
 def create_engine_and_database(url: sqlalchemy.URL, *, connect_args: dict | None = None):
