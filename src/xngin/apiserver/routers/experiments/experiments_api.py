@@ -400,7 +400,7 @@ async def get_assignment_cmab(
 async def update_bandit_arm_with_participant_outcome(
     participant_id: str,
     body: Annotated[UpdateBanditArmOutcomeRequest, Body()],
-    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
+    experiment: Annotated[tables.Experiment, Depends(experiment_and_datasource_dependency)],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> ArmBandit:
     # Update the arm with the outcome

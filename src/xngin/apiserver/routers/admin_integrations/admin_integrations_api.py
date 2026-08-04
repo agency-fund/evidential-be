@@ -53,6 +53,8 @@ from xngin.apiserver.routers.admin_integrations.admin_integrations_api_types imp
     SetTurnArmJourneyMappingRequest,
 )
 from xngin.apiserver.routers.auth.auth_dependencies import require_user_from_token
+from xngin.apiserver.routers.common_api_types import SampleCalls
+from xngin.apiserver.routers.experiments.experiments_common import make_sample_calls
 from xngin.apiserver.sqla import tables
 
 TURN_JOURNEYS_URL = "https://whatsapp.turn.io/v1/stacks"
@@ -545,3 +547,27 @@ async def delete_turn_arm_journey_mapping(
     )
     await session.commit()
     return response
+
+
+@router.get("/integrations/datasources/{datasource_id}/experiments/{experiment_id}/sample-calls")
+async def get_experiment_sample_calls(
+    datasource_id: str,
+    experiment_id: str,
+    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
+) -> SampleCalls | None:
+    """Return example API calls for integrating with this experiment.
+
+    Integration/onboarding documentation shown in the integration guide: a get-assignment example
+    for every type, plus a report-outcome example for bandits and an assign-with-filters example for
+    freq_online experiments that have eligibility filters. Returns null for experiment types without
+    a meaningful example (currently CMAB, whose assignment needs a context vector).
+    """
+    ds = await get_datasource_or_raise(session, user, datasource_id)
+    experiment = await get_experiment_via_ds_or_raise(
+        session,
+        ds,
+        experiment_id,
+        preload=[tables.Experiment.experiment_fields, tables.Experiment.experiment_filters],
+    )
+    return make_sample_calls(experiment)

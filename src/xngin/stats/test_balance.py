@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -511,3 +513,26 @@ def test_check_balance_with_missing_cluster_col_raises_stats_balance_error():
 
     with pytest.raises(StatsBalanceError, match=r"Cluster column 'cluster' not found in balance-check data."):
         check_balance_of_preprocessed_df(data, treatment_col="treat", cluster_col="cluster")
+
+
+def test_check_balance_too_few_participants_raises_stats_balance_error():
+    """When residual df is 0, the robust F-test fails and we raise StatsBalanceError.
+
+    A 4-level categorical with n=4 yields intercept + 3 dummies (full rank), so df_resid=0
+    and HC1 cannot form a usable parameter covariance for the balance F-test.
+    """
+    data = pd.DataFrame({
+        "treat": [0, 1, 0, 1],
+        "cat": ["a", "b", "c", "d"],
+    })
+
+    with warnings.catch_warnings():
+        # HC1 emits divide-by-zero / invalid-value RuntimeWarnings when df_resid=0 before the
+        # ValueError that we translate into StatsBalanceError.
+        warnings.filterwarnings(action="ignore", message=r"(divide by zero|invalid value).*", category=RuntimeWarning)
+
+        with pytest.raises(
+            StatsBalanceError,
+            match=r"Add more participants or reduce the number of metrics or fields used for stratification\.",
+        ):
+            check_balance_of_preprocessed_df(data, treatment_col="treat")
