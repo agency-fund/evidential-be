@@ -70,6 +70,7 @@ from xngin.apiserver.routers.common_api_types import (
     GetExperimentResponse,
     GetParticipantAssignmentResponse,
     LikelihoodTypes,
+    MABDwhExperimentSpec,
     MABExperimentSpec,
     OnlineFrequentistExperimentSpec,
     PowerRequest,
@@ -2211,8 +2212,10 @@ def test_create_online_cmab_experiment(testing_datasource, aclient: AdminAPIClie
     [
         (ExperimentsType.MAB_ONLINE, False, 24, 0.0),
         (ExperimentsType.CMAB_ONLINE, False, 24, 0.0),
+        (ExperimentsType.MAB_ONLINE_DWH, False, 24, 0.0),
         (ExperimentsType.MAB_ONLINE, True, 48, 1.0),
         (ExperimentsType.CMAB_ONLINE, True, 72, 0.5),
+        (ExperimentsType.MAB_ONLINE_DWH, True, 72, 0.0),
     ],
 )
 def test_create_online_bandit_experiment_with_autofail(
@@ -2238,7 +2241,7 @@ def test_create_online_bandit_experiment_with_autofail(
 
     fetched_resp = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=parsed_experiment_id).data
     for design_spec in (created_experiment.design_spec, fetched_resp.config.design_spec):
-        assert isinstance(design_spec, MABExperimentSpec | CMABExperimentSpec)
+        assert isinstance(design_spec, MABExperimentSpec | CMABExperimentSpec | MABDwhExperimentSpec)
         assert design_spec.enable_autofail == enable_autofail
         assert design_spec.autofail_window == autofail_window
         assert design_spec.autofail_outcome_value == autofail_outcome_value

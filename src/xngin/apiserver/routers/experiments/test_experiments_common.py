@@ -93,7 +93,7 @@ def make_createexperimentrequest_json(
     experiment_type = ExperimentsType(experiment_type)
     autofail_spec = (
         {
-            "enable_autofail": True,
+            "enable_autofail": enable_autofail,
             "autofail_window": autofail_window,
             "autofail_outcome_value": autofail_outcome_value,
         }

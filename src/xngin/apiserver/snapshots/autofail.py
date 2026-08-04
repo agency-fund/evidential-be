@@ -9,6 +9,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.orm import selectinload
 
 from xngin.apiserver import database
+from xngin.apiserver.routers.common_api_types import ExperimentsType
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.sqla import tables
 
@@ -31,10 +32,17 @@ async def create_pending_autofail_updates() -> None:
         # Query for experiments that are running and have autofail enabled.
         stmt = (
             select(tables.Draw)
-            .join(tables.Experiment, tables.Draw.experiment_id == tables.Experiment.id)
+            .join(
+                tables.Experiment,
+                tables.Draw.experiment_id == tables.Experiment.id,
+            )
             .where(
                 tables.Experiment.enable_autofail.is_(True),
-                tables.Experiment.experiment_type.contains("mab"),
+                tables.Experiment.experiment_type.in_([
+                    ExperimentsType.MAB_ONLINE,
+                    ExperimentsType.MAB_ONLINE_DWH,
+                    ExperimentsType.CMAB_ONLINE,
+                ]),
                 tables.Draw.outcome.is_(None),
             )
         )
@@ -46,7 +54,7 @@ async def create_pending_autofail_updates() -> None:
             experiment = draw.experiment
             # Check if the draw has no outcome and has exceeded the threshold time.
             now = datetime.now(UTC)
-            if draw.outcome is None and ((now - draw.created_at).total_seconds() / 3600) > experiment.autofail_window:
+            if ((now - draw.created_at).total_seconds() / 3600) > experiment.autofail_window:
                 # Create a pending autofail update for this draw.
                 pending_update = tables.AutofailUpdate(
                     participant_id=draw.participant_id,

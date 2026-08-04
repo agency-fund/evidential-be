@@ -1072,6 +1072,19 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
             raise ValueError("Contexts are only applicable for contextual MAB experiments.")
         return self
 
+    @model_validator(mode="after")
+    def check_autofail_params(self) -> Self:
+        """
+        Validate that the autofail parameters are valid.
+        """
+        if (
+            self.enable_autofail
+            and self.reward_type == LikelihoodTypes.BERNOULLI
+            and self.autofail_outcome_value not in {0.0, 1.0}
+        ):
+            raise ValueError("Autofail outcome value must be 0.0 or 1.0 for binary-valued outcomes.")
+        return self
+
 
 class PreassignedFrequentistExperimentSpec(BaseFrequentistDesignSpec):
     """Describes a Preassigned A/B experiment.
