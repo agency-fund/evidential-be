@@ -16,13 +16,15 @@ SA_LOGGER_NAME_FOR_CLI = "cli_dwh"
 
 CLI_DB_APPLICATION_NAME = f"cli-{os.getpid()}"
 
-# CREATE DATABASE and DROP DATABASE run against the "postgres" database because it reliably exists, whereas the
-# database being created or dropped either does not exist or cannot be connected to while it is being modified.
-MAINTENANCE_DATABASE = "postgres"
+# Postgres: CREATE DATABASE and DROP DATABASE run against the "postgres" database because it reliably exists.
+POSTGRES_MAINTENANCE_DATABASE = "postgres"
+
+# Redshift: "dev" exists on every cluster.
+REDSHIFT_MAINTENANCE_DATABASE = "dev"
 
 # Postgres error codes
-DUPLICATE_DATABASE = "42P04"
-UNIQUE_VIOLATION = "23505"
+PG_DUPLICATE_DATABASE = "42P04"
+PG_UNIQUE_VIOLATION = "23505"
 
 console = Console()
 err_console = Console(stderr=True)
@@ -70,7 +72,14 @@ def cli_engine(url: sqlalchemy.URL | str, *, connect_args: dict | None = None, e
 def cli_async_engine(url: sqlalchemy.URL | str) -> AsyncEngine:
     """Creates an Engine comparable to what cli_engine would create, but async."""
     url = sqlalchemy.make_url(url)
-    return create_async_engine(url, connect_args=cli_connect_args(url), logging_name=SA_LOGGER_NAME_FOR_CLI)
+    engine = create_async_engine(url, connect_args=cli_connect_args(url), logging_name=SA_LOGGER_NAME_FOR_CLI)
+    dwh_utils.extra_engine_setup(engine.sync_engine)
+    return engine
+
+
+def maintenance_database_for(url: sqlalchemy.URL) -> str:
+    """Returns the name of the database to connect to in order to create or drop the database named in the URL."""
+    return REDSHIFT_MAINTENANCE_DATABASE if dwh_utils.is_redshift(url) else POSTGRES_MAINTENANCE_DATABASE
 
 
 def ensure_database_exists(url: sqlalchemy.URL) -> None:
@@ -96,7 +105,8 @@ def ensure_database_exists(url: sqlalchemy.URL) -> None:
         engine.dispose()
 
     print(f"Creating database {url.database}...")
-    maintenance_engine = cli_engine(url.set(database=MAINTENANCE_DATABASE))
+    maintenance_database = maintenance_database_for(url)
+    maintenance_engine = cli_engine(url.set(database=maintenance_database))
     try:
         # CREATE DATABASE cannot run inside a transaction block.
         with maintenance_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
@@ -105,8 +115,12 @@ def ensure_database_exists(url: sqlalchemy.URL) -> None:
             except DBAPIError as exc:
                 # Losing a race with a concurrent creator is not an error. Redshift is not guaranteed to report
                 # Postgres' SQLSTATEs, so fall back to matching the message.
-                if sqlstate_of(exc) not in {DUPLICATE_DATABASE, UNIQUE_VIOLATION} and "already exists" not in str(exc):
+                if sqlstate_of(exc) not in {PG_DUPLICATE_DATABASE, PG_UNIQUE_VIOLATION} and "already exists" not in str(
+                    exc
+                ):
                     raise
+    except OperationalError as exc:
+        fail(f'could not create database {url.database} via the "{maintenance_database}" database: {exc}')
     finally:
         maintenance_engine.dispose()
 

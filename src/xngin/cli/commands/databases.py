@@ -7,14 +7,14 @@ from typing import Annotated
 import psycopg
 import typer
 
-from xngin.cli.common import CLI_DB_APPLICATION_NAME, MAINTENANCE_DATABASE, console, fail
+from xngin.cli.common import CLI_DB_APPLICATION_NAME, POSTGRES_MAINTENANCE_DATABASE, console, fail
 
 DsnOption = Annotated[
     str,
     typer.Option(
         envvar="XNGIN_LOCALPG_DSN",
         help="libpq connection URI of the Postgres server to modify. The database named in the URI is ignored; "
-        f'the connection is made to the "{MAINTENANCE_DATABASE}" database.',
+        f'the connection is made to the "{POSTGRES_MAINTENANCE_DATABASE}" database.',
     ),
 ]
 
@@ -32,7 +32,7 @@ def _maintenance_connection(dsn: str) -> Iterator[psycopg.Connection]:
             dsn,
             application_name=CLI_DB_APPLICATION_NAME,
             autocommit=True,
-            dbname=MAINTENANCE_DATABASE,
+            dbname=POSTGRES_MAINTENANCE_DATABASE,
         )
     except (psycopg.OperationalError, psycopg.ProgrammingError) as exc:
         fail(f"could not connect: {exc}")
