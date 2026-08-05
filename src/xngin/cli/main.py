@@ -14,19 +14,16 @@ from typing import Annotated
 
 import typer
 from email_validator import EmailNotValidError, validate_email
-from rich.console import Console
-from sqlalchemy import create_engine, make_url
+from sqlalchemy import make_url
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from xngin.cli.commands import create_testing_dwh as _create_testing_dwh_cmd
 from xngin.cli.commands import databases as _databases_cmd
-from xngin.cli.common import CLI_DB_APPLICATION_NAME, create_engine_and_database
+from xngin.cli.common import cli_async_engine, cli_engine, console, create_engine_and_database, fail
 from xngin.xsecrets import secretservice
 
-err_console = Console(stderr=True)
-console = Console(stderr=False)
 app = typer.Typer(help=__doc__)
 snapshots_app = typer.Typer(help="Create and modify fake historical snapshots for development.")
 app.add_typer(snapshots_app, name="snapshots")
@@ -64,7 +61,7 @@ def create_apiserver_db(
     from xngin.apiserver.sqla import tables  # noqa: PLC0415
 
     console.print(f"DSN: [cyan]{dsn}[/cyan]")
-    engine = create_engine_and_database(make_url(dsn), connect_args={"application_name": CLI_DB_APPLICATION_NAME})
+    engine = create_engine_and_database(make_url(dsn))
     tables.Base.metadata.create_all(bind=engine)
 
 
@@ -148,9 +145,8 @@ def bigquery_dataset_delete(
     dataset_ref = f"{project_id}.{dataset_id}"
     try:
         client.delete_dataset(dataset_ref, delete_contents=True)
-    except NotFound as exc:
-        print(f"Dataset {dataset_ref} does not exist.")
-        raise typer.Exit(1) from exc
+    except NotFound:
+        fail(f"Dataset {dataset_ref} does not exist.")
     else:
         print(f"Dataset {dataset_ref} has been deleted.")
 
@@ -172,9 +168,8 @@ def bigquery_table_delete(
     table_ref = f"{project_id}.{dataset_id}.{table_id}"
     try:
         client.delete_table(table_ref)
-    except NotFound as exc:
-        print(f"Table {table_ref} does not exist.")
-        raise typer.Exit(1) from exc
+    except NotFound:
+        fail(f"Table {table_ref} does not exist.")
     else:
         print(f"Table {table_ref} has been deleted.")
 
@@ -241,7 +236,7 @@ async def add_user(
             "XNGIN_DEVDWH_DSN is unset.[/bold yellow]"
         )
 
-    engine = create_async_engine(database_url, connect_args={"application_name": CLI_DB_APPLICATION_NAME})
+    engine = cli_async_engine(database_url)
     async with AsyncSession(engine) as session:
         try:
             user = await create_entities_for_first_time_user(
@@ -272,8 +267,7 @@ async def add_user(
                         console.print(f"    Experiment: [cyan]{experiment.name}[/cyan] (ID: {experiment.id})")
         except IntegrityError as err:
             await session.rollback()
-            err_console.print(f"[bold red]Error:[/bold red] {err}")
-            raise typer.Exit(1) from err
+            fail(str(err))
 
 
 @app.command()
@@ -385,8 +379,7 @@ def generate_typed_clients():
             check=True,
         )
     except subprocess.CalledProcessError as exc:
-        err_console.print(f"[bold red]Error:[/bold red] ruff formatting failed: {exc}")
-        raise typer.Exit(1) from exc
+        fail(f"ruff formatting failed: {exc}")
 
 
 @snapshots_app.command("create-fake")
@@ -417,28 +410,22 @@ def snapshots_create_fake(
         get_metric_names,
     )
 
-    engine = create_engine(dsn, connect_args={"application_name": CLI_DB_APPLICATION_NAME}, echo=echo)
+    engine = cli_engine(dsn, echo=echo)
 
     with Session(engine) as session:
         try:
             experiment = get_freq_experiment_for_cli(session, exp_id)
         except ValueError as err:
-            err_console.print(f"Error: {err}")
-            raise typer.Exit(1) from err
+            fail(str(err))
 
         if metric and metric not in get_metric_names(experiment):
-            err_console.print(
-                f"Error: metric '{metric}' not found in experiment. Available: {get_metric_names(experiment)}"
-            )
-            raise typer.Exit(1)
+            fail(f"metric '{metric}' not found in experiment. Available: {get_metric_names(experiment)}")
 
         if arm_id and arm_id not in get_arm_ids(experiment):
-            err_console.print(f"Error: arm_id '{arm_id}' not found in experiment. Available: {get_arm_ids(experiment)}")
-            raise typer.Exit(1)
+            fail(f"arm_id '{arm_id}' not found in experiment. Available: {get_arm_ids(experiment)}")
 
         if field and field not in VALID_SNAPSHOT_FIELDS:
-            err_console.print(f"Error: field '{field}' not valid. Must be one of: {VALID_SNAPSHOT_FIELDS}")
-            raise typer.Exit(1)
+            fail(f"field '{field}' not valid. Must be one of: {VALID_SNAPSHOT_FIELDS}")
 
         snapshots = create_fake_snapshots(
             session,

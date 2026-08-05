@@ -1,5 +1,6 @@
 """`create-testing-dwh` command: loads the testing CSV into a dev data warehouse."""
 
+import contextlib
 import logging
 import re
 import uuid
@@ -12,19 +13,16 @@ import psycopg
 import psycopg2
 import sqlalchemy
 import typer
-from rich.console import Console
-from sqlalchemy import create_engine, make_url
+from sqlalchemy import make_url
 
 from xngin.apiserver.dwh import dwh_utils
-from xngin.cli.common import SA_LOGGER_NAME_FOR_CLI, create_engine_and_database
+from xngin.cli.common import cli_engine, ensure_database_exists, fail
 
 if TYPE_CHECKING:
     from pandas import DataFrame
     from sqlalchemy.sql.compiler import IdentifierPreparer
 
 _TESTING_DWH_RAW_DATA = Path(__file__).resolve().parent.parent.parent / "apiserver/testdata/testing_dwh.csv.zst"
-
-_err_console = Console(stderr=True)
 
 
 def _truncate_with_ellipsis(value: str) -> str:
@@ -163,12 +161,12 @@ def _drop_and_create(cur, dest: _Dest, create_table_ddl: str) -> None:
     cur.execute(create_table_ddl)
 
 
-def _count(cur, dest: _Dest):
+def _count(cur, dest: _Dest) -> int:
     if dwh_utils.is_bigquery(dest.url):
         cur.execute(f"SELECT COUNT(*) FROM `{dest.url.database}.{dest.table_name}`")  # noqa: S608
     else:
         cur.execute(f"SELECT COUNT(*) FROM {dest.full_table_name}")  # noqa: S608
-    return cur.fetchone()[0]
+    return int(cur.fetchone()[0])
 
 
 def _maybe_create_views(cur, dest: _Dest) -> None:
@@ -183,46 +181,63 @@ def _maybe_create_views(cur, dest: _Dest) -> None:
         )
 
 
-def _table_is_populated(dest: _Dest, *, create_db: bool) -> bool:
+def _count_if_table_exists(cur, dest: _Dest) -> int | None:
+    """Returns the table's row count, or None if the table does not exist."""
+    if dwh_utils.is_bigquery(dest.url):
+        from google.api_core.exceptions import NotFound  # noqa: PLC0415
+        from google.cloud.bigquery.dbapi import exceptions as bq_exceptions  # noqa: PLC0415
+
+        try:
+            return _count(cur, dest)
+        except bq_exceptions.DatabaseError as exc:
+            # BigQuery collapses every server-side failure into DatabaseError; only the API error it wraps
+            # distinguishes a missing table from one we should not swallow.
+            if exc.args and isinstance(exc.args[0], NotFound):
+                return None
+            raise
+
+    try:
+        return _count(cur, dest)
+    except (
+        psycopg.errors.UndefinedTable,
+        psycopg2.errors.UndefinedTable,
+        sqlalchemy.exc.OperationalError,
+    ):
+        return None
+
+
+def _table_is_populated(dest: _Dest) -> bool:
     """Returns True iff the table already exists and contains one or more rows."""
-    if create_db:
-        engine = create_engine_and_database(dest.url)
-    else:
-        engine = create_engine(dest.url, logging_name=SA_LOGGER_NAME_FOR_CLI)
+    engine = cli_engine(dest.url)
     conn = engine.raw_connection()
     try:
-        with conn.cursor() as cur:
-            try:
-                ct = _count(cur, dest)
-            except (
-                psycopg.errors.UndefinedTable,
-                psycopg2.errors.UndefinedTable,
-                sqlalchemy.exc.OperationalError,
-            ):
-                print(f"Table {dest.table_name} does not exist; creating...\n")
-                return False
-            else:
-                if ct > 0:
-                    print(f"Table {dest.table_name} already exists (nrows={ct}).\n")
-                    return True
-                print(f"Table {dest.table_name} already exists but is empty.\n")
-                return False
+        # BigQuery's cursor implements close() but not the context manager protocol, so closing() is used rather
+        # than `with conn.cursor()`.
+        with contextlib.closing(conn.cursor()) as cur:
+            ct = _count_if_table_exists(cur, dest)
     finally:
         conn.close()
         engine.dispose()
+
+    if ct is None:
+        print(f"Table {dest.table_name} does not exist; creating...\n")
+        return False
+    if ct > 0:
+        print(f"Table {dest.table_name} already exists (nrows={ct}).\n")
+        return True
+    print(f"Table {dest.table_name} already exists but is empty.\n")
+    return False
 
 
 def _load_redshift(source: _Source, dest: _Dest, *, bucket: str | None, iam_role: str | None) -> None:
     import boto3  # noqa: PLC0415
 
     if not bucket:
-        print("--bucket is required when importing into Redshift.")
-        raise typer.Exit(2)
+        fail("--bucket is required when importing into Redshift.", code=2)
     if not iam_role:
-        print("--iam-role is required when importing into Redshift.")
-        raise typer.Exit(2)
+        fail("--iam-role is required when importing into Redshift.", code=2)
     # Workaround: Despite using a direct psycopg2 connection for Redshift, we use SQLAlchemy's quoter.
-    engine = create_engine(dest.url, logging_name=SA_LOGGER_NAME_FOR_CLI)
+    engine = cli_engine(dest.url)
     quoter = engine.dialect.identifier_preparer
     engine.dispose()
     with (
@@ -265,7 +280,7 @@ def _load_bigquery(source: _Source, dest: _Dest) -> None:
 
 
 def _load_postgres(source: _Source, dest: _Dest) -> None:
-    engine = create_engine(dest.url, logging_name=SA_LOGGER_NAME_FOR_CLI)
+    engine = cli_engine(dest.url)
     ddl = _get_ddl_magic(source, dest, engine.dialect.identifier_preparer, "postgres")
     with engine.begin() as conn:
         cursor = conn.connection.cursor()
@@ -383,7 +398,10 @@ def create_testing_dwh(
         views=views,
     )
 
-    if allow_existing and _table_is_populated(dest, create_db=create_db):
+    if create_db:
+        ensure_database_exists(dest.url)
+
+    if allow_existing and _table_is_populated(dest):
         return
 
     if dwh_utils.is_redshift(dest.url):
@@ -393,8 +411,7 @@ def create_testing_dwh(
     elif dwh_utils.is_postgres(dest.url):
         _load_postgres(source, dest)
     else:
-        _err_console.print("Unrecognized database driver.")
-        raise typer.Exit(2)
+        fail("Unrecognized database driver.", code=2)
 
 
 def register(app: typer.Typer) -> None:

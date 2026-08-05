@@ -6,16 +6,8 @@ from typing import Annotated
 
 import psycopg
 import typer
-from rich.console import Console
 
-from xngin.cli.common import CLI_DB_APPLICATION_NAME
-
-# CREATE DATABASE and DROP DATABASE run against the "postgres" database because it reliably exists, whereas the
-# database being created or dropped either does not exist or cannot be connected to while it is being modified.
-MAINTENANCE_DATABASE = "postgres"
-
-_console = Console(stderr=False)
-_err_console = Console(stderr=True)
+from xngin.cli.common import CLI_DB_APPLICATION_NAME, MAINTENANCE_DATABASE, console, fail
 
 DsnOption = Annotated[
     str,
@@ -43,8 +35,7 @@ def _maintenance_connection(dsn: str) -> Iterator[psycopg.Connection]:
             dbname=MAINTENANCE_DATABASE,
         )
     except (psycopg.OperationalError, psycopg.ProgrammingError) as exc:
-        _err_console.print(f"[bold red]Error:[/bold red] could not connect: {exc}")
-        raise typer.Exit(1) from exc
+        fail(f"could not connect: {exc}")
     try:
         yield conn
     finally:
@@ -67,13 +58,12 @@ def create_database(
         for name in names:
             try:
                 conn.execute(t"CREATE DATABASE {name:i}")  # type: ignore[misc]
-            except psycopg.errors.DuplicateDatabase as exc:
+            except psycopg.errors.DuplicateDatabase:
                 if not allow_existing:
-                    _err_console.print(f"[bold red]Error:[/bold red] database {name} already exists.")
-                    raise typer.Exit(1) from exc
-                _console.print(f"Database [cyan]{name}[/cyan] already exists.")
+                    fail(f"database {name} already exists.")
+                console.print(f"Database [cyan]{name}[/cyan] already exists.")
             else:
-                _console.print(f"Created database [cyan]{name}[/cyan].")
+                console.print(f"Created database [cyan]{name}[/cyan].")
 
 
 def drop_database(names: NamesArgument, dsn: DsnOption):
@@ -86,9 +76,8 @@ def drop_database(names: NamesArgument, dsn: DsnOption):
             try:
                 conn.execute(t"DROP DATABASE IF EXISTS {name:i} WITH (FORCE)")  # type: ignore[misc]
             except psycopg.errors.ObjectInUse as exc:
-                _err_console.print(f"[bold red]Error:[/bold red] database {name} could not be dropped: {exc}")
-                raise typer.Exit(1) from exc
-            _console.print(f"Dropped database [cyan]{name}[/cyan], if it existed.")
+                fail(f"database {name} could not be dropped: {exc}")
+            console.print(f"Dropped database [cyan]{name}[/cyan], if it existed.")
 
 
 def register(app: typer.Typer) -> None:
