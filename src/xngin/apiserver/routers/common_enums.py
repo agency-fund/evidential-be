@@ -187,6 +187,16 @@ class DataType(enum.StrEnum):
             case _:
                 raise RuntimeError(f"Unsupported data type {self}")
 
+    @classmethod
+    def is_numeric_type(cls, data_type: Self) -> bool:
+        """Returns True if the type is numeric."""
+        return data_type in {
+            DataType.INTEGER,
+            DataType.DOUBLE_PRECISION,
+            DataType.NUMERIC,
+            DataType.BIGINT,
+        }
+
 
 class DataTypeStorageClass(enum.StrEnum):
     """Internal helper for grouping our supported data types by how to store them."""

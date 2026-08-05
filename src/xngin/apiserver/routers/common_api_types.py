@@ -559,7 +559,7 @@ class BanditExperimentAnalysisResponse(ApiBaseModel):
                 "by the total number of outcomes observed for this experiment."
             )
         ),
-    ]
+    ] = 0.0
     created_at: Annotated[
         datetime.datetime,
         Field(description="The date and time the experiment analysis was created."),

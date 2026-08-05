@@ -482,10 +482,23 @@ async def create_bandit_online_experiment_impl(
 ) -> CreateExperimentResponse:
     """Create a bandit experiment and persist it to the database."""
     design_spec = request.design_spec
-
     match design_spec:
-        case MABExperimentSpec() | MABDwhExperimentSpec() | CMABExperimentSpec():
+        case MABExperimentSpec() | CMABExperimentSpec():
             pass
+        case MABDwhExperimentSpec():
+            target_type = DataType(field_type_map[design_spec.target_field_name]) if field_type_map else None
+            if target_type == DataType.BOOLEAN and design_spec.reward_type != LikelihoodTypes.BERNOULLI:
+                raise LateValidationError("Target field type BOOLEAN is only compatible with reward_type 'binary'.")
+
+            if (
+                target_type
+                and DataType.is_numeric_type(target_type)
+                and design_spec.reward_type != LikelihoodTypes.NORMAL
+            ):
+                raise LateValidationError(
+                    f"Target field {target_type} is only compatible with reward_type 'real-valued'."
+                )
+
         case _:
             raise MismatchedExperimentTypeError(f"can't create bandit exp of type: {design_spec.experiment_type}")
 
