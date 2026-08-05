@@ -313,8 +313,8 @@ AddWebhookToOrganizationRequest = Annotated[
 ]
 
 
-class AddWebhookToOrganizationResponse(AdminApiBaseModel):
-    """Information on the successfully created webhook."""
+class WebhookSummary(AdminApiBaseModel):
+    """Summarizes a Webhook configuration for an organization."""
 
     id: Annotated[str, Field(description="The ID of the newly created webhook.")]
     type: str
@@ -332,8 +332,8 @@ class AddWebhookToOrganizationResponse(AdminApiBaseModel):
     ]
 
 
-class WebhookSummary(AddWebhookToOrganizationResponse):
-    """Summarizes a Webhook configuration for an organization."""
+class AddWebhookToOrganizationResponse(WebhookSummary):
+    """Information on the successfully created webhook."""
 
 
 class UpdateOrganizationWebhookRequest(AdminApiBaseModel):
