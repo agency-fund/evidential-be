@@ -74,10 +74,13 @@ def drop_database(names: NamesArgument, dsn: DsnOption):
     with _maintenance_connection(dsn) as conn:
         for name in names:
             try:
-                conn.execute(t"DROP DATABASE IF EXISTS {name:i} WITH (FORCE)")  # type: ignore[misc]
+                conn.execute(t"DROP DATABASE {name:i} WITH (FORCE)")  # type: ignore[misc]
+            except psycopg.errors.InvalidCatalogName:
+                console.print(f"Database [cyan]{name}[/cyan] does not exist.")
             except psycopg.errors.ObjectInUse as exc:
                 fail(f"database {name} could not be dropped: {exc}")
-            console.print(f"Dropped database [cyan]{name}[/cyan], if it existed.")
+            else:
+                console.print(f"Dropped database [cyan]{name}[/cyan].")
 
 
 def register(app: typer.Typer) -> None:
