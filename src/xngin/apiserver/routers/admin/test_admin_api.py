@@ -214,11 +214,13 @@ async def make_bandit_online_experiment(
     experiment_type: ExperimentsType = ExperimentsType.MAB_ONLINE,
     prior_type: PriorTypes = PriorTypes.BETA,
     reward_type: LikelihoodTypes = LikelihoodTypes.BERNOULLI,
+    target_field_name: str = "is_onboarded",
 ) -> GetExperimentForUiResponse:
     request_obj = make_create_online_bandit_experiment_request(
         experiment_type=experiment_type,
         reward_type=reward_type,
         prior_type=prior_type,
+        target_field_name=target_field_name,
     )
     experiment_id = aclient.create_experiment(datasource_id=datasource_id, body=request_obj, random_state=42).data
     aclient.commit_experiment(datasource_id=datasource_id, experiment_id=experiment_id.experiment_id)
@@ -2214,7 +2216,7 @@ def test_create_online_cmab_experiment(testing_datasource, aclient: AdminAPIClie
         (ExperimentsType.CMAB_ONLINE, False, 24, 0.0),
         (ExperimentsType.MAB_ONLINE_DWH, False, 24, 0.0),
         (ExperimentsType.MAB_ONLINE, True, 48, 1.0),
-        (ExperimentsType.CMAB_ONLINE, True, 72, 0.5),
+        (ExperimentsType.CMAB_ONLINE, True, 72, 0.0),
         (ExperimentsType.MAB_ONLINE_DWH, True, 72, 0.0),
     ],
 )
@@ -2233,6 +2235,7 @@ def test_create_online_bandit_experiment_with_autofail(
         enable_autofail=enable_autofail,
         autofail_window=autofail_window,
         autofail_outcome_value=autofail_outcome_value,
+        reward_type=LikelihoodTypes.BERNOULLI,
     )
 
     created_experiment = aclient.create_experiment(datasource_id=datasource_id, body=request_obj, random_state=42).data
@@ -2580,6 +2583,7 @@ async def test_create_and_update_outcome_mab_dwh_happy_path(
         experiment_type=ExperimentsType.MAB_ONLINE_DWH,
         prior_type=PriorTypes.NORMAL,
         reward_type=LikelihoodTypes.NORMAL,
+        target_field_name="current_income",
     )
     experiment_id = experiment.config.experiment_id
     assert experiment.config.design_spec.experiment_type == ExperimentsType.MAB_ONLINE_DWH

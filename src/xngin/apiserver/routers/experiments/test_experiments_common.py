@@ -1722,6 +1722,7 @@ async def test_create_experiment_impl_for_mab_dwh_online(
     request = make_create_online_bandit_experiment_request(
         experiment_type=ExperimentsType.MAB_ONLINE_DWH,
         target_field_name=target_field_name,
+        reward_type=LikelihoodTypes.BERNOULLI if expected_data_type == "boolean" else LikelihoodTypes.NORMAL,
     )
 
     response = await create_experiment_impl(
@@ -1761,6 +1762,34 @@ async def test_create_experiment_impl_for_mab_dwh_missing_target_raises(xngin_se
     )
 
     with pytest.raises(LateValidationError, match="column_that_does_not_exist"):
+        await create_experiment_impl(
+            request=request,
+            datasource=testing_datasource.ds,
+            xngin_session=xngin_session,
+            stratify_on_metrics=False,
+            random_state=42,
+            validated_webhooks=[],
+        )
+
+
+@pytest.mark.parametrize(
+    ("target_field_name", "reward_type"),
+    [
+        ("is_onboarded", LikelihoodTypes.NORMAL),
+        ("current_income", LikelihoodTypes.BERNOULLI),
+    ],
+)
+async def test_create_experiment_impl_for_mab_dwh_incompatible_reward_type_raises(
+    xngin_session, testing_datasource, target_field_name: str, reward_type: LikelihoodTypes
+):
+    """MAB-DWH create with a target_field_name that doesn't exist in the DWH table fails loudly."""
+    request = make_create_online_bandit_experiment_request(
+        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
+        target_field_name=target_field_name,
+        reward_type=reward_type,
+    )
+
+    with pytest.raises(LateValidationError, match="only compatible with reward_type"):
         await create_experiment_impl(
             request=request,
             datasource=testing_datasource.ds,
