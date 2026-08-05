@@ -182,6 +182,8 @@ jobs:
             queries:
               - 'src/xngin/apiserver/dwh/**'
               - 'src/xngin/apiserver/conftest.py'
+              # bq-integration also exercises create-testing-dwh and bigquery-dataset-delete.
+              - 'src/xngin/cli/**'
             openapi:
               - 'src/**/*.py'
               - 'pyproject.toml'
@@ -357,12 +359,14 @@ jobs:
       - name: bq cleanup
         if: always()
         run: |
+          # Both datasets are attempted before the step fails.
+          status=0
           for ds in "${DWH_DATASET_NAME}" "${QUERIES_DATASET_NAME}"; do
             uv run xngin-cli bigquery-dataset-delete \
               --project-id xngin-development-dc \
-              --dataset-id "${ds}" \
-              || /bin/true
+              --dataset-id "${ds}" || status=$?
           done
+          exit "${status}"
 
   docker-builds:
     timeout-minutes: 15

@@ -137,7 +137,8 @@ def bigquery_dataset_delete(
     ],
     dataset_id: Annotated[str, typer.Option(..., help="The dataset name.")],
 ):
-    """Deletes a BigQuery dataset."""
+    """Deletes a BigQuery dataset, if it exists."""
+    from google.api_core.exceptions import GoogleAPICallError  # noqa: PLC0415
     from google.cloud import bigquery  # noqa: PLC0415
     from google.cloud.exceptions import NotFound  # noqa: PLC0415
 
@@ -146,7 +147,9 @@ def bigquery_dataset_delete(
     try:
         client.delete_dataset(dataset_ref, delete_contents=True)
     except NotFound:
-        fail(f"Dataset {dataset_ref} does not exist.")
+        print(f"Dataset {dataset_ref} does not exist.")
+    except GoogleAPICallError as exc:
+        fail(f"Dataset {dataset_ref} could not be deleted: {exc}")
     else:
         print(f"Dataset {dataset_ref} has been deleted.")
 
