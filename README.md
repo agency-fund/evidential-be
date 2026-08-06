@@ -12,8 +12,8 @@
 | src/xngin/apiserver/customlogging.py                                               |       66 |       13 |     80% |25-26, 48-68, 73-74, 102-107 |
 | src/xngin/apiserver/database.py                                                    |       48 |        5 |     90% |30, 41, 58, 64, 71 |
 | src/xngin/apiserver/dependencies.py                                                |       12 |        1 |     92% |        12 |
-| src/xngin/apiserver/dns/safe\_resolve.py                                           |       69 |       15 |     78% |41-52, 88, 107, 112-113 |
-| src/xngin/apiserver/dns/test\_safe\_resolve.py                                     |       35 |        1 |     97% |        49 |
+| src/xngin/apiserver/dns/safe\_resolve.py                                           |       68 |       14 |     79% |47-58, 90, 113-114 |
+| src/xngin/apiserver/dns/test\_safe\_resolve.py                                     |       45 |        2 |     96% |    49, 53 |
 | src/xngin/apiserver/dwh/dwh\_session.py                                            |      194 |       55 |     72% |71, 74, 137, 143, 154, 156-157, 168-223, 247-249, 264, 400-407, 411, 418-420, 439, 441-442, 453 |
 | src/xngin/apiserver/dwh/dwh\_utils.py                                              |       17 |        3 |     82% |20, 27, 35 |
 | src/xngin/apiserver/dwh/inspection\_types.py                                       |       55 |        5 |     91% |27, 45, 68, 79, 85 |
@@ -91,7 +91,7 @@
 | src/xngin/xsecrets/secretservice.py                                                |       63 |        5 |     92% |37, 49-50, 108, 130 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                                     |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                                         |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                                          | **15206** | **1100** | **93%** |           |
+| **TOTAL**                                                                          | **15215** | **1100** | **93%** |           |
 
 81 files skipped due to complete coverage.
 
