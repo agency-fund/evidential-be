@@ -20,8 +20,8 @@ dependencies = [
     "psycopg2>=2.9.11,<3; sys_platform == 'linux'",
     "psycopg[binary]>=3.3.2,<4",
     "pydantic>=2.13.4,<2.14",
+    "pyjwt[crypto]>=2.13.0,<3",
     "pynacl>=1.6.2",
-    "python-jose>=3.5.0,<3.6",
     "python-jsonpath>=2.0.1",
     "scipy>=1.12.0,<2",
     "sentry-sdk[fastapi,loguru,sqlalchemy]>=2.47.0,<3",
@@ -54,7 +54,6 @@ dev = [
     "scipy-stubs>=1.16.2,<2",
     "types-cachetools>=6.0.0.20250525",
     "types-psycopg2>=2.9.10,<3",
-    "types-python-jose>=3.5.0.20250531",
 ]
 
 [build-system]

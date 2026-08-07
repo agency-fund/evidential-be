@@ -220,15 +220,21 @@ def test_rejects_algorithm_confusion(oidc_config, signing_key, alg):
     assert exc.value.detail == "Invalid authentication credentials"
 
 
-def test_accepts_iat_in_the_future(oidc_config, signing_key):
-    """python-jose only checks that iat parses as an integer; it never compares it to the clock.
+def test_tolerates_small_clock_skew_on_iat(oidc_config, signing_key):
+    """A slightly future-dated iat is accepted, so a fast clock at Google does not break login."""
+    skewed = int(datetime.datetime.now(datetime.UTC).timestamp()) + 10
+    decoded = _validate(oidc_config, _mint(signing_key, _claims(iat=skewed)))
 
-    This is the one behavior that changes when we move to PyJWT, which rejects future-dated iat.
-    """
-    future = int(datetime.datetime.now(datetime.UTC).timestamp()) + 3600
-    decoded = _validate(oidc_config, _mint(signing_key, _claims(iat=future)))
+    assert decoded["iat"] == skewed
 
-    assert decoded["iat"] == future
+
+def test_rejects_iat_far_in_the_future(oidc_config, signing_key):
+    far_future = int(datetime.datetime.now(datetime.UTC).timestamp()) + 600
+    with pytest.raises(HTTPException) as exc:
+        _validate(oidc_config, _mint(signing_key, _claims(iat=far_future)))
+
+    assert exc.value.status_code == 401
+    assert exc.value.detail == "Invalid authentication credentials"
 
 
 def test_auth_callback_exchanges_code_for_a_session_token(oidc_config, signing_key):
