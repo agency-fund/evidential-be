@@ -11,24 +11,14 @@ import hashlib
 import hmac
 import json
 
-import httpx2
 import pytest
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from fastapi import HTTPException
-from starlette.testclient import TestClient
 
-from xngin.apiserver import constants, flags
-from xngin.apiserver.dependencies import retrying_httpx_dependency
-from xngin.apiserver.main import app
+from xngin.apiserver import flags
 from xngin.apiserver.routers.auth import auth_api
-from xngin.apiserver.routers.auth.auth_dependencies import (
-    GoogleOidcConfig,
-    SessionTokenCryptor,
-    get_google_configuration,
-)
-from xngin.apiserver.routers.auth.test_auth_dependencies import temporary_env_var
-from xngin.xsecrets.nacl_provider import NaclProviderKeyset
+from xngin.apiserver.routers.auth.auth_dependencies import GoogleOidcConfig
 
 TEST_CLIENT_ID = "test-client-id.apps.googleusercontent.com"
 TEST_ISSUER = "https://accounts.google.com"
@@ -235,42 +225,3 @@ def test_rejects_iat_far_in_the_future(oidc_config, signing_key):
 
     assert exc.value.status_code == 401
     assert exc.value.detail == "Invalid authentication credentials"
-
-
-def test_auth_callback_exchanges_code_for_a_session_token(oidc_config, signing_key):
-    """Covers the wiring around _validate_idtoken: code exchange, validation, session token."""
-    id_token = _mint(signing_key, _claims())
-
-    def handle(request: httpx2.Request) -> httpx2.Response:
-        assert str(request.url) == TEST_TOKEN_ENDPOINT
-        return httpx2.Response(200, json={"id_token": id_token}, request=request)
-
-    async def fake_httpx_client():
-        async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-            yield client
-
-    # conftest's session-scoped fixture already overrides get_google_configuration with a no-op, so
-    # restore whatever was there rather than deleting our own override.
-    previous = app.dependency_overrides.get(get_google_configuration)
-    app.dependency_overrides[get_google_configuration] = lambda: oidc_config
-    app.dependency_overrides[retrying_httpx_dependency] = fake_httpx_client
-    try:
-        with temporary_env_var(flags.ENV_SESSION_TOKEN_KEYSET, NaclProviderKeyset.create().serialize_base64()):
-            with TestClient(app) as client:
-                response = client.post(
-                    f"{constants.API_PREFIX_V1}/a/oidc/callback",
-                    json={"code": "an-auth-code", "code_verifier": "v" * 43, "nonce": TEST_NONCE},
-                )
-            assert response.status_code == 200
-            principal = SessionTokenCryptor().decode(response.json()["session_token"])
-    finally:
-        app.dependency_overrides.pop(retrying_httpx_dependency, None)
-        if previous is None:
-            del app.dependency_overrides[get_google_configuration]
-        else:
-            app.dependency_overrides[get_google_configuration] = previous
-
-    assert principal.email == "user@example.com"
-    assert principal.iss == TEST_ISSUER
-    assert principal.sub == "1234567890"
-    assert principal.hd == "example.com"

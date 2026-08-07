@@ -127,8 +127,6 @@ def _validate_idtoken(oidc_config: GoogleOidcConfig, *, id_token: str, nonce: st
             detail="Unable to find appropriate key",
         )
     try:
-        # PyJWK is constructed inside the try so that a malformed JWKS entry is reported as a 401 rather than a 500.
-        # algorithms= is what rejects a token whose header asks for a weaker algorithm than the key's own.
         decoded = jwt.decode(
             id_token,
             jwt.PyJWK(key),
