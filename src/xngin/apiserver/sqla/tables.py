@@ -7,7 +7,7 @@ from typing import Any, ClassVar, Literal, Self
 
 import sqlalchemy
 from pydantic import TypeAdapter
-from sqlalchemy import Boolean, Float, ForeignKey, ForeignKeyConstraint, Index, Numeric, String
+from sqlalchemy import Boolean, CheckConstraint, Float, ForeignKey, ForeignKeyConstraint, Index, Numeric, String
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncAttrs
@@ -621,6 +621,10 @@ class Draw(Base):
             arm_id,
             created_at.desc(),
             postgresql_where=sqlalchemy.text("outcome IS NOT NULL"),
+        ),
+        CheckConstraint(
+            "(outcome IS NULL) = (autofailed_outcome IS NULL)",
+            name="ck_draws_outcome_autofailed_paired",
         ),
     )
 
