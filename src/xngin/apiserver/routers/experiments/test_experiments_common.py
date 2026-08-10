@@ -2046,6 +2046,7 @@ async def make_experiment_with_assignments(
                     arm_id=arm1_id,
                     created_at=datetime(2025, 1, 1, tzinfo=UTC),
                     outcome=0.0,
+                    autofailed_outcome=False,
                 ),
                 tables.Draw(
                     experiment_id=experiment.id,
@@ -2053,6 +2054,7 @@ async def make_experiment_with_assignments(
                     arm_id=arm2_id,
                     created_at=datetime(2025, 1, 2, tzinfo=UTC),
                     outcome=1.0,
+                    autofailed_outcome=False,
                 ),
             ]
         case ExperimentsType.CMAB_ONLINE.value:
@@ -2065,6 +2067,7 @@ async def make_experiment_with_assignments(
                     observed_at=datetime(2025, 1, 3, tzinfo=UTC),
                     context_vals=[0.0, 0.0],
                     outcome=0.0,
+                    autofailed_outcome=False,
                 ),
                 tables.Draw(
                     experiment_id=experiment.id,
@@ -2074,6 +2077,7 @@ async def make_experiment_with_assignments(
                     observed_at=datetime(2025, 1, 4, tzinfo=UTC),
                     context_vals=[1.0, 1.0],
                     outcome=1.0,
+                    autofailed_outcome=False,
                 ),
             ]
         case _:
