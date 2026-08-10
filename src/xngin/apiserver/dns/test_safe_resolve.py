@@ -49,6 +49,10 @@ def _fail_lookup_v4(host: str):
     raise AssertionError(f"lookup_v4 must not be called for an IP literal: {host}")
 
 
+def _fail_resolver(*args, **kwargs):
+    raise AssertionError("localhost must be answered without consulting a resolver")
+
+
 @pytest.mark.parametrize(("addr", "expected"), _IP_CLASSIFICATION_CASES)
 def test_is_safe_ip_classifies_ipv4_and_non_ip_values(enforce_ip_safety, addr, expected):
     assert safe_resolve._is_safe_ip(addr) is expected
@@ -86,3 +90,17 @@ def test_safe_resolve_rejects_unsafe_ipv4_literal_without_resolving(enforce_ip_s
     monkeypatch.setattr(safe_resolve, "lookup_v4", _fail_lookup_v4)
     with pytest.raises(safe_resolve.DnsLookupUnsafeError):
         safe_resolve.safe_resolve("169.254.169.254")
+
+
+@pytest.mark.parametrize("host", ["localhost", "LocalHost"])
+def test_lookup_v4_answers_localhost_without_a_resolver(monkeypatch, host):
+    # Resolvers that forward upstream return NXDOMAIN for localhost, so it must never reach one.
+    monkeypatch.setattr(safe_resolve, "resolve", _fail_resolver)
+    monkeypatch.setattr(safe_resolve.socket, "getaddrinfo", _fail_resolver)
+    assert safe_resolve.lookup_v4(host) == ["127.0.0.1"]
+
+
+def test_safe_resolve_rejects_localhost_when_private_ips_disallowed(enforce_ip_safety):
+    # Answering localhost in lookup_v4() must not become a way to reach our own loopback interface.
+    with pytest.raises(safe_resolve.DnsLookupUnsafeError):
+        safe_resolve.safe_resolve("localhost")

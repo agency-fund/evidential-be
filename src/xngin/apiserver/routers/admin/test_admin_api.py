@@ -119,6 +119,8 @@ class HasName(Protocol):
 
 @dataclass(slots=True)
 class TestExperiment:
+    __test__ = False  # silence PytestCollectionWarning
+
     config: ExperimentConfig
     organization_id: str
     api_key: str
