@@ -158,10 +158,8 @@ tasks:
       local development server.
     internal: true
     status:
-      - test -f .xngin_session_token_keyset
-    cmd: |
-      uv run xngin-cli create-nacl-keyset > .xngin_session_token_keyset
-      chmod og= .xngin_session_token_keyset
+      - test -s .xngin_session_token_keyset
+    cmd: uv run xngin-cli create-nacl-keyset --output .xngin_session_token_keyset
   start:
     desc: "Starts apiserver locally with settings compatible with local dash dev server."
     interactive: true
