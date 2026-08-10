@@ -129,7 +129,7 @@ def _validate_idtoken(oidc_config: GoogleOidcConfig, *, id_token: str, nonce: st
     try:
         decoded = jwt.decode(
             id_token,
-            jwt.PyJWK(key),
+            jwt.PyJWK(key, algorithm="RS256"),
             algorithms=["RS256"],
             audience=flags.CLIENT_ID,
             issuer=oidc_config.config.get("issuer"),

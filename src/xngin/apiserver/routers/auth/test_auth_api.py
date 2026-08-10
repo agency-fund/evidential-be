@@ -210,6 +210,15 @@ def test_rejects_algorithm_confusion(oidc_config, signing_key, alg):
     assert exc.value.detail == "Invalid authentication credentials"
 
 
+def test_binds_jwk_algorithm_to_rs256(oidc_config, signing_key):
+    """Untrusted JWK metadata must not choose the signature algorithm."""
+    oidc_config.jwks["keys"][0]["alg"] = "none"
+
+    decoded = _validate(oidc_config, _mint(signing_key, _claims()))
+
+    assert decoded["sub"] == "1234567890"
+
+
 def test_tolerates_small_clock_skew_on_iat(oidc_config, signing_key):
     """A slightly future-dated iat is accepted, so a fast clock at Google does not break login."""
     skewed = int(datetime.datetime.now(datetime.UTC).timestamp()) + 10
