@@ -34,6 +34,7 @@ from xngin.apiserver.routers.common_api_types import (
     UpdateBanditArmOutcomeRequest,
 )
 from xngin.apiserver.routers.common_enums import ContextType, ExperimentState, Relation, StopAssignmentReason
+from xngin.apiserver.routers.experiments.test_experiments_common import insert_experiment_and_arms
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.admin_api_client import AdminAPIClientHTTPValidationError
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClientNotDefaultStatusError
@@ -1180,6 +1181,24 @@ async def test_update_bandit_arm_with_outcome_rejects_non_numeric_outcome(
         json={"outcome": "not-a-float"},
     )
     assert response.status_code == HTTPStatus.UNPROCESSABLE_CONTENT, response.content
+
+
+async def test_update_bandit_arm_with_outcome_rejected_for_mab_dwh(
+    xngin_session, testing_datasource, eclient: ExperimentsAPIClient
+):
+    """MAB-DWH outcomes are ingested from the org's DWH; the push endpoint rejects the type."""
+    experiment = await insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
+    )
+    response = eclient.client.post(
+        f"/v1/experiments/{experiment.id}/assignments/1/outcome",
+        headers={"X-API-Key": testing_datasource.key},
+        json={"outcome": 1.0},
+    )
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_CONTENT, response.content
+    assert "read from your data warehouse" in response.text
 
 
 async def test_get_assignment_cmab_cache_headers(

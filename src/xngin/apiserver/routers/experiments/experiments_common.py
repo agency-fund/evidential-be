@@ -9,6 +9,7 @@ from typing import assert_never
 import numpy as np
 import pandas as pd
 from fastapi import HTTPException, status
+from loguru import logger
 from pandas import DataFrame
 from psycopg import sql
 from sqlalchemy import Select, Table, func, insert, select, update
@@ -17,7 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from xngin.apiserver import constants, flags
+from xngin.apiserver import constants, database, flags
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.dwh.participant_metrics_queries import get_participant_metrics
@@ -921,8 +922,10 @@ def make_sample_calls(experiment: tables.Experiment) -> SampleCalls | None:
     experiment types that have no meaningful example yet (currently CMAB, whose assignment needs a
     context vector).
 
-    Requires experiment.arms to be loaded (experiment.experiment_fields for MAB_ONLINE_DWH
-    experiments, and experiment.experiment_filters for FREQ_ONLINE experiments).
+    MAB_ONLINE_DWH gets no outcome example because the outcome API rejects that type.
+
+    Requires experiment.arms to be loaded (experiment.experiment_filters for FREQ_ONLINE
+    experiments).
     """
     experiment_type = ExperimentsType(experiment.experiment_type)
     if experiment_type.is_cmab():
@@ -963,17 +966,12 @@ def make_sample_calls(experiment: tables.Experiment) -> SampleCalls | None:
         ),
     ]
 
-    if is_bandit and experiment.reward_type is not None:
-        # Pick a type-correct example outcome: 0/1 for a Bernoulli reward or a boolean DWH target
-        # column, otherwise an illustrative number.
+    if is_bandit and experiment.reward_type is not None and experiment_type != ExperimentsType.MAB_ONLINE_DWH:
+        # Pick a type-correct example outcome: 0/1 for a Bernoulli reward, otherwise an
+        # illustrative number.
         outcome_example: float = 1.5
         if LikelihoodTypes(experiment.reward_type) == LikelihoodTypes.BERNOULLI:
             outcome_example = 1
-        elif experiment_type == ExperimentsType.MAB_ONLINE_DWH:
-            # MAB-DWH always has an is_target field (target_field_name is required at create time).
-            target_field = next(ef for ef in experiment.experiment_fields if ef.is_target)
-            if DataType(target_field.data_type).storage_class() is DataTypeStorageClass.BOOLEAN:
-                outcome_example = 1
         outcome_request = UpdateBanditArmOutcomeRequest(outcome=outcome_example)
         outcome_response = ArmBandit(arm_id=arm_id_example, arm_name=arm_name_example)
         calls.append(
@@ -1155,6 +1153,117 @@ async def update_bandit_arm_with_outcome_impl(
         ) from e
 
     return arm_to_update
+
+
+@dataclass
+class IngestReport:
+    """Counts from one MAB-DWH outcome-ingestion run, reported on the snapshot record."""
+
+    ingested: int = 0
+    invalid: int = 0
+    pending: int = 0
+
+    def summary(self) -> str:
+        return f"ingested={self.ingested} invalid={self.invalid} pending={self.pending}"
+
+
+async def ingest_dwh_outcomes(experiment_id: str) -> IngestReport:
+    """Read newly landed outcomes for a MAB_ONLINE_DWH experiment from the org's DWH and apply
+    them through the standard per-outcome bandit update.
+
+    Opens its own database session so that each outcome commits independently of any transaction
+    held by the caller.
+
+    An interrupted run keeps the outcomes already committed; the next run
+    picks up the remainder because ingestion selects only draws that still have no outcome.
+    """
+    report = IngestReport()
+    experiment_query = (
+        select(tables.Experiment)
+        .where(tables.Experiment.id == experiment_id)
+        .options(
+            selectinload(tables.Experiment.arms),
+            selectinload(tables.Experiment.contexts),
+            selectinload(tables.Experiment.datasource),
+            selectinload(tables.Experiment.experiment_fields),
+        )
+    )
+    async with database.async_session() as session:
+        experiment = (await session.execute(experiment_query)).scalar_one()
+        if ExperimentsType(experiment.experiment_type) != ExperimentsType.MAB_ONLINE_DWH:
+            raise MismatchedExperimentTypeError(
+                f"Cannot ingest DWH outcomes for a {experiment.experiment_type} experiment."
+            )
+        unique_id_field = experiment.unique_id_field()
+        target_field = next((ef for ef in experiment.experiment_fields if ef.is_target), None)
+        if experiment.datasource_table is None or unique_id_field is None or target_field is None:
+            raise LateValidationError(
+                "MAB-DWH experiment is missing its datasource table, unique id field, or target field."
+            )
+
+        pending_ids = list(
+            (
+                await session.execute(
+                    select(tables.Draw.participant_id)
+                    .where(
+                        tables.Draw.experiment_id == experiment.id,
+                        tables.Draw.outcome.is_(None),
+                    )
+                    .order_by(tables.Draw.created_at)
+                )
+            ).scalars()
+        )
+        if not pending_ids:
+            return report
+
+        dsconfig = experiment.datasource.get_config()
+        async with DwhSession(dsconfig.dwh) as dwh:
+            sa_table = await dwh.inspect_table(experiment.datasource_table)
+            # model_construct: get_participant_metrics only reads field_name; the power-analysis
+            # fields the validator demands (metric_pct_change/metric_target) don't apply here.
+            target_metric = DesignSpecMetricRequest.model_construct(field_name=target_field.field_name)
+            participant_outcomes = await asyncio.to_thread(
+                get_participant_metrics,
+                dwh.session,
+                sa_table,
+                [target_metric],
+                unique_id_field.field_name,
+                pending_ids,
+            )
+
+        values_by_participant: dict[str, float | None] = {
+            po.participant_id: next(
+                (mv.metric_value for mv in po.metric_values if mv.metric_name == target_field.field_name),
+                None,
+            )
+            for po in participant_outcomes
+        }
+
+        for participant_id in pending_ids:
+            value = values_by_participant.get(participant_id)
+            if value is None:
+                # Not in the DWH yet, or the target column is still NULL: re-read next run.
+                report.pending += 1
+                continue
+            try:
+                await update_bandit_arm_with_outcome_impl(
+                    xngin_session=session,
+                    experiment=experiment,
+                    participant_id=participant_id,
+                    outcome=value,
+                )
+                report.ingested += 1
+            except (ExperimentsAssignmentError, LateValidationError) as exc:
+                # Value failed the reward/target validation (or a concurrent writer already
+                # recorded an outcome). Rejected draws keep outcome=NULL, so a corrected DWH
+                # value is picked up on a later run.
+                await session.rollback()
+                logger.info(f"{experiment_id}: skipping outcome for participant '{participant_id}': {exc}")
+                report.invalid += 1
+                # rollback() expires every object in the session; reload so later iterations
+                # don't trigger sync lazy loads on expired attributes.
+                experiment = (await session.execute(experiment_query)).scalar_one()
+    return report
 
 
 def convert_assignment_results_to_assign_summary(
