@@ -229,7 +229,7 @@ async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_da
     assert arm2.position == 2
 
     # Test 1: baseline arm is the position 1 arm.
-    await create_pending_snapshots(5)
+    await create_pending_snapshots(5, 5)
     snapshot_id = (
         await xngin_session.execute(
             select(tables.Snapshot.id)
@@ -259,7 +259,7 @@ async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_da
     await xngin_session.commit()
     await xngin_session.refresh(experiment, ["arms"])
 
-    await create_pending_snapshots(0)  # Force new snapshot immediately
+    await create_pending_snapshots(0, 0)  # Force new snapshot immediately
     snapshot_id = (
         await xngin_session.execute(
             select(tables.Snapshot.id)
@@ -289,7 +289,7 @@ async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_da
     assert experiment.arms[0].position is None
     assert experiment.arms[1].position is None
 
-    await create_pending_snapshots(0)  # Force new snapshot immediately
+    await create_pending_snapshots(0, 0)  # Force new snapshot immediately
     snapshot_id = (
         await xngin_session.execute(
             select(tables.Snapshot.id)
@@ -438,7 +438,7 @@ async def test_create_pending_snapshots_inserts_for_new_stale_and_failed_experim
     ])
     await xngin_session.commit()
 
-    await create_pending_snapshots(3600)
+    await create_pending_snapshots(3600, 3600)
 
     def list_snapshots(experiment_id: str):
         return aclient.list_snapshots(
@@ -464,6 +464,59 @@ async def test_create_pending_snapshots_inserts_for_new_stale_and_failed_experim
     assert [snapshot.status for snapshot in list_snapshots(inactive_experiment_id)] == []
 
 
+async def test_create_pending_snapshots_applies_separate_age_limit_to_mab_dwh(
+    xngin_session,
+    testing_datasource,
+    aclient: AdminAPIClient,
+):
+    """MAB-DWH experiments use their own age limit, so they can be due while other types are not."""
+    now = datetime.now(UTC)
+    freq_experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="freq age limit test")
+    mab_dwh_design_spec = MABDwhExperimentSpec(
+        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
+        experiment_name="mab dwh age limit test",
+        description="mab dwh age limit test",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            ArmBandit(arm_name="control", arm_description="", alpha_init=1, beta_init=1),
+            ArmBandit(arm_name="treatment", arm_description="", alpha_init=1, beta_init=1),
+        ],
+        prior_type=PriorTypes.BETA,
+        reward_type=LikelihoodTypes.BERNOULLI,
+        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
+        target_field_name="is_onboarded",
+    )
+    mab_dwh_experiment_id = aclient.create_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        body=CreateExperimentRequest(design_spec=mab_dwh_design_spec),
+    ).data.experiment_id
+    aclient.commit_experiment(datasource_id=testing_datasource.datasource_id, experiment_id=mab_dwh_experiment_id)
+
+    # Both experiments were last snapshot two hours ago: past the MAB-DWH limit, inside the default.
+    xngin_session.add_all([
+        tables.Snapshot(experiment_id=freq_experiment_id, status="success", updated_at=now - timedelta(hours=2)),
+        tables.Snapshot(experiment_id=mab_dwh_experiment_id, status="success", updated_at=now - timedelta(hours=2)),
+    ])
+    await xngin_session.commit()
+
+    await create_pending_snapshots(6 * 60 * 60, 60 * 60)
+
+    def statuses(experiment_id: str):
+        return [
+            snapshot.status
+            for snapshot in aclient.list_snapshots(
+                organization_id=testing_datasource.organization_id,
+                datasource_id=testing_datasource.datasource_id,
+                experiment_id=experiment_id,
+            ).data.items
+        ]
+
+    assert statuses(freq_experiment_id) == [SnapshotStatus.SUCCESS]
+    assert statuses(mab_dwh_experiment_id) == [SnapshotStatus.RUNNING, SnapshotStatus.SUCCESS]
+
+
 async def test_process_pending_snapshots_processes_until_empty(
     xngin_session,
     testing_datasource,
@@ -479,7 +532,7 @@ async def test_process_pending_snapshots_processes_until_empty(
         for i in range(2)
     ]
 
-    await create_pending_snapshots(0)
+    await create_pending_snapshots(0, 0)
 
     for experiment_id in experiment_ids:
         snapshots = aclient.list_snapshots(
@@ -646,6 +699,118 @@ async def test_create_snapshot_bandit_succeeds(
     data = snapshots[0].data
     assert isinstance(data, BanditExperimentAnalysisResponse)
     assert data.n_outcomes == 2
+
+
+async def test_create_snapshot_mab_dwh_ingests_outcomes(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+):
+    """MAB-DWH snapshots ingest outcomes from the org's DWH before recording the analysis."""
+    design_spec = MABDwhExperimentSpec(
+        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
+        experiment_name="snapshot mab dwh test",
+        description="snapshot mab dwh test",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            ArmBandit(arm_name="control", arm_description="", alpha_init=1, beta_init=1),
+            ArmBandit(arm_name="treatment", arm_description="", alpha_init=1, beta_init=1),
+        ],
+        prior_type=PriorTypes.BETA,
+        reward_type=LikelihoodTypes.BERNOULLI,
+        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
+        target_field_name="is_onboarded",
+    )
+    experiment_id = aclient.create_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        body=CreateExperimentRequest(design_spec=design_spec),
+    ).data.experiment_id
+    aclient.commit_experiment(datasource_id=testing_datasource.datasource_id, experiment_id=experiment_id)
+
+    # id=1 (is_onboarded=false) and id=2 (is_onboarded=true) exist in the testing DWH; the third
+    # participant does not, so its outcome stays pending. No outcomes are pushed.
+    for participant_id in ["1", "2", "99999999999"]:
+        eclient.get_assignment(
+            api_key=testing_datasource.key,
+            experiment_id=experiment_id,
+            participant_id=participant_id,
+        )
+
+    aclient.create_snapshot(
+        organization_id=testing_datasource.organization_id,
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=experiment_id,
+    )
+
+    snapshots = aclient.list_snapshots(
+        organization_id=testing_datasource.organization_id,
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=experiment_id,
+    ).data.items
+    assert len(snapshots) == 1
+    assert snapshots[0].status == SnapshotStatus.SUCCESS
+    assert snapshots[0].details == {"message": "ingested=2 invalid=0 pending=1"}
+    data = snapshots[0].data
+    assert isinstance(data, BanditExperimentAnalysisResponse)
+    assert data.n_outcomes == 2
+
+
+async def test_create_snapshot_mab_dwh_keeps_ingest_counts_when_analysis_fails(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+    mocker,
+):
+    """Ingestion commits per outcome, so a later failure must not erase the counts of what landed."""
+    design_spec = MABDwhExperimentSpec(
+        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
+        experiment_name="snapshot mab dwh failure test",
+        description="snapshot mab dwh failure test",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            ArmBandit(arm_name="control", arm_description="", alpha_init=1, beta_init=1),
+            ArmBandit(arm_name="treatment", arm_description="", alpha_init=1, beta_init=1),
+        ],
+        prior_type=PriorTypes.BETA,
+        reward_type=LikelihoodTypes.BERNOULLI,
+        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
+        target_field_name="is_onboarded",
+    )
+    experiment_id = aclient.create_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        body=CreateExperimentRequest(design_spec=design_spec),
+    ).data.experiment_id
+    aclient.commit_experiment(datasource_id=testing_datasource.datasource_id, experiment_id=experiment_id)
+
+    for participant_id in ["1", "2"]:
+        eclient.get_assignment(
+            api_key=testing_datasource.key,
+            experiment_id=experiment_id,
+            participant_id=participant_id,
+        )
+
+    # Fail the analysis that runs after ingestion.
+    mocker.patch(
+        "xngin.apiserver.snapshots.snapshotter._query_dwh_for_snapshot_data",
+        side_effect=RuntimeError("boom"),
+    )
+    aclient.create_snapshot(
+        organization_id=testing_datasource.organization_id,
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=experiment_id,
+    )
+
+    snapshots = aclient.list_snapshots(
+        organization_id=testing_datasource.organization_id,
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=experiment_id,
+    ).data.items
+    assert [snapshot.status for snapshot in snapshots] == [SnapshotStatus.FAILED]
+    assert snapshots[0].details == {"message": "ingested=2 invalid=0 pending=0; RuntimeError: boom"}
 
 
 async def test_create_snapshot_cmab_matches_admin_analysis_at_mean_contexts(

@@ -2,7 +2,6 @@
 
 import asyncio
 import os
-from datetime import timedelta
 from typing import Annotated
 
 import typer
@@ -25,10 +24,12 @@ sentry.setup()
 app = typer.Typer(help="Collects snapshots as needed.")
 
 
-async def acollect(snapshot_interval: int, snapshot_timeout: int, parallelism: int):
+async def acollect(
+    default_max_snapshot_age: int, mab_dwh_max_snapshot_age: int, snapshot_timeout: int, parallelism: int
+):
     """Collects snapshots (async wrapper)."""
     async with database.setup():
-        await snapshotter.create_pending_snapshots(snapshot_interval)
+        await snapshotter.create_pending_snapshots(default_max_snapshot_age, mab_dwh_max_snapshot_age)
         async with asyncio.TaskGroup() as task:
             for i in range(parallelism):
                 with logger.contextualize(task=i):
@@ -46,9 +47,25 @@ def collect(
             "Snapshots that take longer than this will be marked as failures.",
         ),
     ] = snapshotter.SNAPSHOT_TIMEOUT_SECS,
-    snapshot_interval: Annotated[
-        int, typer.Option("--interval", min=60, help="The target interval between snapshots (in seconds).")
-    ] = timedelta(hours=6).seconds,
+    default_max_snapshot_age: Annotated[
+        int,
+        typer.Option(
+            "--default-max-snapshot-age",
+            min=60,
+            help="The maximum age an experiment's newest snapshot may be (in seconds) before this job creates "
+            "another one. It acts as a staleness ceiling; the cron decides how often we look (default = 1 hour), "
+            "this decides what qualifies for a snapshot. Applies to every type except MAB-DWH.",
+        ),
+    ] = snapshotter.DEFAULT_MAX_SNAPSHOT_AGE_SECS,
+    mab_dwh_max_snapshot_age: Annotated[
+        int,
+        typer.Option(
+            "--mab-dwh-max-snapshot-age",
+            min=60,
+            help="The same limit for MAB-DWH experiments, whose snapshots also ingest outcomes from "
+            "the org's data warehouse. Set this at or below the cron period so every run ingests.",
+        ),
+    ] = snapshotter.DEFAULT_MAB_DWH_MAX_SNAPSHOT_AGE_SECS,
     parallelism: Annotated[
         int,
         typer.Option(
@@ -61,20 +78,26 @@ def collect(
 ):
     """Collect snapshots from the experiments that need them.
 
-    Experiments with successful snapshots will not be snapshot again before --snapshot-interval has elapsed between
-    the latest successful snapshot and the current time.
+    Experiments with successful snapshots will not be snapshot again until their newest snapshot is older
+    than the age limit for their type: --mab-dwh-max-snapshot-age for MAB-DWH, --default-max-snapshot-age
+    for the rest.
 
-    To enable automatic retries of failed jobs, and to allow for clock variances, the duration between invocations of
-    this job should be some fraction of --snapshot-interval. For example, if --snapshot-interval is set to 6 hours,
-    consider running this job every hour. This effectively enables hourly retries, allows for non-monotonic clock
-    behaviors, and some tolerance for unpredictable cron scheduling or missed invocations.
+    Neither flag schedules anything. This job only acts when the cron invokes it, so the cron period is the
+    frequency with which an experiment will be snapshotted, and the age limits decide what qualifies on a given run.
+
+    Run this job at some fraction of --default-max-snapshot-age so that failures retry promptly and a missed
+    invocation does not delay everything to the next full period. Running hourly against the 6 hour default
+    gives hourly retries plus tolerance for clock drift and unpredictable cron scheduling.
+
+    MAB-DWH ingests outcomes as part of snapshotting, so keep its limit at or below the cron period to ingest on every
+    run.
     """
     secretservice.setup()
 
     cronjob_monitor_slug = os.environ.get(ENV_CRONJOB_MONITOR_SLUG, "")
     if cronjob_monitor_slug:
         with monitor(monitor_slug=cronjob_monitor_slug):
-            asyncio.run(acollect(snapshot_interval, snapshot_timeout, parallelism))
+            asyncio.run(acollect(default_max_snapshot_age, mab_dwh_max_snapshot_age, snapshot_timeout, parallelism))
     else:
-        asyncio.run(acollect(snapshot_interval, snapshot_timeout, parallelism))
+        asyncio.run(acollect(default_max_snapshot_age, mab_dwh_max_snapshot_age, snapshot_timeout, parallelism))
     logger.info("collect() finished successfully.")
