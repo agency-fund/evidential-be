@@ -127,7 +127,7 @@ async def _call_turn_api(
     except ValidationError as exc:
         logger.error(f"Turn.io API returned unexpected response structure at {method} {TURN_JOURNEYS_URL}: {exc}")
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"The retrieved journeys from Turn.io did not have the expected fields 'name' and 'uuid'. "
             f"Details: {exc}",
         ) from exc

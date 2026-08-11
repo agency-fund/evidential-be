@@ -1,11 +1,12 @@
 """Implements a basic Google OIDC RP."""
 
+import datetime
 from contextlib import asynccontextmanager
 from typing import Annotated
 
 import httpx2
+import jwt
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
-from jose import JWTError, jwt
 from loguru import logger
 from starlette import status
 
@@ -19,6 +20,10 @@ from xngin.apiserver.routers.auth.auth_dependencies import (
     get_google_configuration,
 )
 from xngin.apiserver.routers.auth.principal import Principal
+
+# Google's token issuer and this server may disagree slightly about the wall clock. PyJWT applies this leeway to the
+# iat, nbf, and exp claims.
+CLOCK_SKEW_LEEWAY = datetime.timedelta(seconds=30)
 
 
 class OidcMisconfiguredError(Exception):
@@ -110,7 +115,7 @@ def _validate_idtoken(oidc_config: GoogleOidcConfig, *, id_token: str, nonce: st
     """Validates a Google ID token (JWT) and returns the claims as a Python dictionary."""
     try:
         header = jwt.get_unverified_header(id_token)
-    except JWTError as e:
+    except jwt.PyJWTError as e:
         logger.warning(f"JWT header parsing failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials"
@@ -124,17 +129,12 @@ def _validate_idtoken(oidc_config: GoogleOidcConfig, *, id_token: str, nonce: st
     try:
         decoded = jwt.decode(
             id_token,
-            key,
+            jwt.PyJWK(key, algorithm="RS256"),
             algorithms=["RS256"],
             audience=flags.CLIENT_ID,
             issuer=oidc_config.config.get("issuer"),
-            options={
-                "require_iss": True,
-                "require_aud": True,
-                "require_iat": True,
-                "require_exp": True,
-                "verify_at_hash": False,  # PKCE flow sends at_hash but we don't need to verify it.
-            },
+            leeway=CLOCK_SKEW_LEEWAY,
+            options={"require": ["iss", "aud", "iat", "exp"]},
         )
         # Confirming that authorized party (azp) and audience (aud) match is not strictly necessary but if Google ever
         # issues a token where azp an aud don't match then we would like to know about it.
@@ -142,7 +142,7 @@ def _validate_idtoken(oidc_config: GoogleOidcConfig, *, id_token: str, nonce: st
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid azp/aud")
         if decoded.get("nonce") != nonce:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid nonce")
-    except JWTError as e:
+    except jwt.PyJWTError as e:
         logger.warning(f"JWT validation failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials"
