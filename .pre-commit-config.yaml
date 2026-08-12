@@ -70,6 +70,6 @@ repos:
     hooks:
       - id: zizmor
   - repo: https://github.com/betterleaks/betterleaks
-    rev: v1.3.1
+    rev: ed69eef5c9d16d1b39f136846b7bbe5fb8471ef5  # frozen: v1.7.4
     hooks:
       - id: betterleaks
