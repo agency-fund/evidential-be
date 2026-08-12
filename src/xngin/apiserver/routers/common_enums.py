@@ -23,7 +23,7 @@ class ExperimentState(enum.StrEnum):
     [ASSIGNED]->{[[ABANDONED]], [[COMMITTED]]}
     """
 
-    ASSIGNED = "assigned"  # TODO: rename to "REVIEWING"
+    ASSIGNED = "assigned"
     ABANDONED = "abandoned"
     COMMITTED = "committed"
 
