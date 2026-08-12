@@ -756,6 +756,12 @@ async def test_create_snapshot_mab_dwh_ingests_outcomes(
     assert isinstance(data, BanditExperimentAnalysisResponse)
     assert data.n_outcomes == 2
 
+    # The snapshot must record the ingested outcomes, not the priors it started with. Both arms
+    # start at alpha=beta=1, so each total starts at 2; the one success adds 1 to alpha and the
+    # one failure adds 1 to beta, whichever arms they landed on.
+    assert sum(arm.alpha or 0 for arm in data.arm_analyses) == 3
+    assert sum(arm.beta or 0 for arm in data.arm_analyses) == 3
+
 
 async def test_create_snapshot_mab_dwh_keeps_ingest_counts_when_analysis_fails(
     testing_datasource,

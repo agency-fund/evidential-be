@@ -166,13 +166,13 @@ async def _handle_one_snapshot_safely(session: AsyncSession, snapshot: tables.Sn
         try:
             async with asyncio.timeout(snapshot_timeout):
                 if ExperimentsType(experiment.experiment_type) == ExperimentsType.MAB_ONLINE_DWH:
-                    # Ingestion commits per outcome on its own session; refresh this session's
-                    # arms so the analysis below sees the updated posteriors.
+                    # Ingestion commits on its own session, leaving this one holding stale state.
+                    # Refresh the experiment (which in turn refreshes the arms) so that the snapshot
+                    # query sees the newly ingested outcomes.
                     ingest_report = await experiments_common.ingest_dwh_outcomes(experiment.id)
                     ingest_message = ingest_report.summary()
                     logger.info(f"{experiment.id}.{snapshot.id}: {ingest_message}")
-                    for arm in experiment.arms:
-                        await session.refresh(arm)
+                    await session.refresh(experiment)
                 result = await _query_dwh_for_snapshot_data(session, datasource, experiment)
                 snapshot.data = result.model_dump(mode="json")
                 snapshot.status = "success"
