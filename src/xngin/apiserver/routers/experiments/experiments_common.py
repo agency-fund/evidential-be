@@ -1171,7 +1171,7 @@ async def ingest_dwh_outcomes(experiment_id: str) -> IngestReport:
     """Read newly landed outcomes for a MAB_ONLINE_DWH experiment from the org's DWH and apply
     them through the standard per-outcome bandit update.
 
-    Opens its own database session so that each outcome commits independently of any transaction
+    Opens its own database sessions so that each outcome commits independently of any transaction
     held by the caller.
 
     An interrupted run keeps the outcomes already committed; the next run
@@ -1188,6 +1188,8 @@ async def ingest_dwh_outcomes(experiment_id: str) -> IngestReport:
             selectinload(tables.Experiment.experiment_fields),
         )
     )
+
+    # 1: Collect what the DWH query needs
     async with database.async_session() as session:
         experiment = (await session.execute(experiment_query)).scalar_one()
         if ExperimentsType(experiment.experiment_type) != ExperimentsType.MAB_ONLINE_DWH:
@@ -1200,45 +1202,52 @@ async def ingest_dwh_outcomes(experiment_id: str) -> IngestReport:
             raise LateValidationError(
                 "MAB-DWH experiment is missing its datasource table, unique id field, or target field."
             )
+        dsconfig = experiment.datasource.get_config()
+        table_name = experiment.datasource_table
+        unique_id_field_name = unique_id_field.field_name
+        target_field_name = target_field.field_name
 
         pending_ids = list(
             (
                 await session.execute(
                     select(tables.Draw.participant_id)
                     .where(
-                        tables.Draw.experiment_id == experiment.id,
+                        tables.Draw.experiment_id == experiment_id,
                         tables.Draw.outcome.is_(None),
                     )
                     .order_by(tables.Draw.created_at)
                 )
             ).scalars()
         )
-        if not pending_ids:
-            return report
+    if not pending_ids:
+        return report
 
-        dsconfig = experiment.datasource.get_config()
-        async with DwhSession(dsconfig.dwh) as dwh:
-            sa_table = await dwh.inspect_table(experiment.datasource_table)
-            # model_construct: get_participant_metrics only reads field_name; the power-analysis
-            # fields the validator demands (metric_pct_change/metric_target) don't apply here.
-            target_metric = DesignSpecMetricRequest.model_construct(field_name=target_field.field_name)
-            participant_outcomes = await asyncio.to_thread(
-                get_participant_metrics,
-                dwh.session,
-                sa_table,
-                [target_metric],
-                unique_id_field.field_name,
-                pending_ids,
-            )
+    # 2: Read the DWH target column for those participants.
+    async with DwhSession(dsconfig.dwh) as dwh:
+        sa_table = await dwh.inspect_table(table_name)
+        # model_construct: get_participant_metrics only reads field_name; the power-analysis
+        # fields the validator demands (metric_pct_change/metric_target) don't apply here.
+        target_metric = DesignSpecMetricRequest.model_construct(field_name=target_field_name)
+        participant_outcomes = await asyncio.to_thread(
+            get_participant_metrics,
+            dwh.session,
+            sa_table,
+            [target_metric],
+            unique_id_field_name,
+            pending_ids,
+        )
 
-        values_by_participant: dict[str, float | None] = {
-            po.participant_id: next(
-                (mv.metric_value for mv in po.metric_values if mv.metric_name == target_field.field_name),
-                None,
-            )
-            for po in participant_outcomes
-        }
+    values_by_participant: dict[str, float | None] = {
+        po.participant_id: next(
+            (mv.metric_value for mv in po.metric_values if mv.metric_name == target_field_name),
+            None,
+        )
+        for po in participant_outcomes
+    }
 
+    # 3: Apply the values, committing one outcome at a time.
+    async with database.async_session() as session:
+        experiment = (await session.execute(experiment_query)).scalar_one()
         for participant_id in pending_ids:
             value = values_by_participant.get(participant_id)
             if value is None:
