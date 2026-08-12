@@ -19,8 +19,11 @@ class ExperimentState(enum.StrEnum):
     """
     Experiment lifecycle states.
 
-    note: [starting state], [[terminal state]]
-    [ASSIGNED]->{[[ABANDONED]], [[COMMITTED]]}
+    Experiments are born in to the ASSIGNED state. The abandon_experiment and commit_experiment APIs transition them to
+    the terminal ABANDONED or COMMITTED states, respectively.
+
+    The name of the ASSIGNED state was chosen when we only supported freq-preassigned experiments. Today it represents
+    an experiment in a draft state.
     """
 
     ASSIGNED = "assigned"
