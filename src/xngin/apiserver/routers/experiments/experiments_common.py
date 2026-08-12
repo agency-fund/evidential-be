@@ -1177,7 +1177,6 @@ async def ingest_dwh_outcomes(experiment_id: str) -> IngestReport:
     An interrupted run keeps the outcomes already committed; the next run
     picks up the remainder because ingestion selects only draws that still have no outcome.
     """
-    report = IngestReport()
     experiment_query = (
         select(tables.Experiment)
         .where(tables.Experiment.id == experiment_id)
@@ -1220,7 +1219,8 @@ async def ingest_dwh_outcomes(experiment_id: str) -> IngestReport:
             ).scalars()
         )
     if not pending_ids:
-        return report
+        # return a blank report
+        return IngestReport()
 
     # 2: Read the DWH target column for those participants.
     async with DwhSession(dsconfig.dwh) as dwh:
@@ -1244,8 +1244,8 @@ async def ingest_dwh_outcomes(experiment_id: str) -> IngestReport:
         )
         for po in participant_outcomes
     }
-
     # 3: Apply the values, committing one outcome at a time.
+    report = IngestReport()
     async with database.async_session() as session:
         experiment = (await session.execute(experiment_query)).scalar_one()
         for participant_id in pending_ids:
