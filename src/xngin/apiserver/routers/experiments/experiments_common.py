@@ -1155,7 +1155,7 @@ async def update_bandit_arm_with_outcome_impl(
     return arm_to_update
 
 
-@dataclass
+@dataclass(slots=True)
 class IngestReport:
     """Counts from one MAB-DWH outcome-ingestion run, reported on the snapshot record."""
 
