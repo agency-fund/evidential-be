@@ -1,11 +1,12 @@
 import asyncio
 import random
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 import numpy as np
 import sentry_sdk
 from loguru import logger
-from sqlalchemy import func, insert, or_, select, text
+from sqlalchemy import case, func, insert, or_, select, text
 from sqlalchemy.orm import selectinload
 
 from xngin.apiserver import database
@@ -22,16 +23,22 @@ if TYPE_CHECKING:
 # The snapshotter cron job can specify a different timeout via command line flags.
 SNAPSHOT_TIMEOUT_SECS = 90
 
+# Defaults for the --default-max-snapshot-age and --mab-dwh-max-snapshot-age flags. The Typer
+# help on those flags is the source of truth for what these values govern.
+DEFAULT_MAX_SNAPSHOT_AGE_SECS = int(timedelta(hours=6).total_seconds())
+DEFAULT_MAB_DWH_MAX_SNAPSHOT_AGE_SECS = int(timedelta(hours=1).total_seconds())
 
-async def create_pending_snapshots(snapshot_interval: int):
+
+async def create_pending_snapshots(default_max_snapshot_age_secs: int, mab_dwh_max_snapshot_age_secs: int):
     """
     Identify experiments that are due for fresh snapshots, or whose most recent snapshot failed, and insert snapshots
     with status=pending for them.
 
+    An experiment is due when its newest snapshot is older than the age limit for its type:
+    mab_dwh_max_snapshot_age_secs for MAB_ONLINE_DWH, default_max_snapshot_age_secs for everything else.
+
     This method establishes its own database connection.
     """
-    freshness_threshold = text(f"interval '{snapshot_interval} seconds'")
-
     async with database.async_session() as session, session.begin():
         # All active experiments will be snapshot by this method. We also include experiments
         # that start tomorrow, or ended yesterday, to collect +/- 1 day on both sides of the experiment.
@@ -39,7 +46,12 @@ async def create_pending_snapshots(snapshot_interval: int):
 
         # Find all experiments that are active, and their latest snapshot.
         experiments_snapshot_status = (
-            select(tables.Experiment.id, tables.Snapshot.updated_at, tables.Snapshot.status)
+            select(
+                tables.Experiment.id,
+                tables.Experiment.experiment_type,
+                tables.Snapshot.updated_at,
+                tables.Snapshot.status,
+            )
             .join(tables.Snapshot, isouter=True)
             .distinct(tables.Experiment.id)  # generates a PostgreSQL "DISTINCT ON"
             .where(
@@ -51,12 +63,21 @@ async def create_pending_snapshots(snapshot_interval: int):
             .order_by(tables.Experiment.id, tables.Snapshot.updated_at.desc())
             .cte()
         )
+
+        # How old an experiment's newest snapshot must be before it earns another one.
+        max_snapshot_age = case(
+            (
+                experiments_snapshot_status.c.experiment_type == ExperimentsType.MAB_ONLINE_DWH.value,
+                text(f"interval '{mab_dwh_max_snapshot_age_secs} seconds'"),
+            ),
+            else_=text(f"interval '{default_max_snapshot_age_secs} seconds'"),
+        )
         # Filter for snapshots that are late or failed.
         candidate_experiments = select(experiments_snapshot_status.c.id).where(
             or_(
                 # latest snapshot is too old
                 func.date_trunc("minute", experiments_snapshot_status.c.updated_at)
-                <= func.date_trunc("minute", func.now() + text("interval '1 minute'") - freshness_threshold),
+                <= func.date_trunc("minute", func.now() + text("interval '1 minute'") - max_snapshot_age),
                 # latest snapshot failed
                 experiments_snapshot_status.c.status == "failed",
                 # no snapshots exist for experiment
@@ -141,16 +162,29 @@ async def _handle_one_snapshot_safely(session: AsyncSession, snapshot: tables.Sn
     datasource = await experiment.awaitable_attrs.datasource
     with logger.contextualize(experiment_id=experiment.id):
         logger.info(f"{experiment.id}.{snapshot.id}: processing")
+        ingest_message = None
         try:
             async with asyncio.timeout(snapshot_timeout):
+                if ExperimentsType(experiment.experiment_type) == ExperimentsType.MAB_ONLINE_DWH:
+                    # Ingestion commits on its own session, leaving this one holding stale state.
+                    # Refresh the experiment (which in turn refreshes the arms) so that the snapshot
+                    # query sees the newly ingested outcomes.
+                    ingest_report = await experiments_common.ingest_dwh_outcomes(experiment.id)
+                    ingest_message = ingest_report.summary()
+                    logger.info(f"{experiment.id}.{snapshot.id}: {ingest_message}")
+                    await session.refresh(experiment)
                 result = await _query_dwh_for_snapshot_data(session, datasource, experiment)
                 snapshot.data = result.model_dump(mode="json")
                 snapshot.status = "success"
+                snapshot.message = ingest_message
         except Exception as exc:
             sentry_sdk.metrics.count("snapshots.failed", 1, attributes={"experiment_id": snapshot.experiment_id})
             logger.opt(exception=exc).info(f"{experiment.id}.{snapshot.id}: exception")
             snapshot.status = "failed"
-            snapshot.message = f"{type(exc).__name__}: {exc}"
+            # Outcomes ingested before the failure are already committed, so keep their counts
+            # alongside the error rather than replacing them.
+            error_message = f"{type(exc).__name__}: {exc}"
+            snapshot.message = f"{ingest_message}; {error_message}" if ingest_message else error_message
         sentry_sdk.metrics.count("snapshots.finished", 1, attributes={"experiment_id": snapshot.experiment_id})
         logger.info(f"{experiment.id}.{snapshot.id}: done")
 

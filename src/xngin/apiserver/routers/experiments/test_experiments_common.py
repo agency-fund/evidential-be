@@ -44,6 +44,7 @@ from xngin.apiserver.routers.common_api_types import (
 from xngin.apiserver.routers.common_enums import DataType, ExperimentState, Relation, StopAssignmentReason
 from xngin.apiserver.routers.experiments.experiments_common import (
     ExperimentsAssignmentError,
+    MismatchedExperimentTypeError,
     analyze_experiment_freq_impl,
     commit_experiment_impl,
     convert_assignment_results_to_assign_summary,
@@ -58,6 +59,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     get_existing_assignment_for_participant,
     get_experiment_impl,
     get_or_create_assignment_for_participant,
+    ingest_dwh_outcomes,
     make_sample_calls,
     make_schema_from_experiment,
     update_bandit_arm_with_outcome_impl,
@@ -2695,6 +2697,129 @@ async def test_update_bandit_arm_with_outcome_mab_dwh_numeric_target_accepts_any
     assert draws[0].outcome == 42.7
 
 
+async def test_ingest_dwh_outcomes_boolean_target(xngin_session, testing_datasource):
+    """Ingestion pulls target values for NULL-outcome draws, applies them, and reports counts."""
+    experiment = await insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
+        prior_type=PriorTypes.BETA,
+        reward_type=LikelihoodTypes.BERNOULLI,
+        target_field_name="is_onboarded",
+    )
+    # Testing DWH: id=1 has is_onboarded=false, id=2 has is_onboarded=true.
+    await create_assignment_for_participant(xngin_session, experiment, "1", None, random_state=66)
+    await create_assignment_for_participant(xngin_session, experiment, "2", None, random_state=67)
+    # Not present in the testing DWH.
+    await create_assignment_for_participant(xngin_session, experiment, "99999999999", None, random_state=68)
+
+    report = await ingest_dwh_outcomes(experiment.id)
+    assert (report.ingested, report.invalid, report.pending) == (2, 0, 1)
+
+    outcomes = dict(
+        (
+            await xngin_session.execute(
+                select(tables.Draw.participant_id, tables.Draw.outcome).where(
+                    tables.Draw.experiment_id == experiment.id
+                )
+            )
+        ).all()
+    )
+    assert outcomes == {"1": 0.0, "2": 1.0, "99999999999": None}
+
+    # The posteriors moved: one success adds 1 to an arm's alpha, one failure adds 1 to a beta.
+    alpha_gain = 0.0
+    beta_gain = 0.0
+    for arm in experiment.arms:
+        await xngin_session.refresh(arm)
+        assert arm.alpha is not None and arm.alpha_init is not None
+        assert arm.beta is not None and arm.beta_init is not None
+        alpha_gain += arm.alpha - arm.alpha_init
+        beta_gain += arm.beta - arm.beta_init
+    assert (alpha_gain, beta_gain) == (1.0, 1.0)
+
+    # Re-running ingests nothing new: filled draws no longer match the NULL-outcome query.
+    report = await ingest_dwh_outcomes(experiment.id)
+    assert (report.ingested, report.invalid, report.pending) == (0, 0, 1)
+
+
+async def test_ingest_dwh_outcomes_null_target_value_stays_pending(xngin_session, testing_datasource):
+    """A row whose target column is NULL is left pending, to be re-read on a later run."""
+    experiment = await insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
+        prior_type=PriorTypes.BETA,
+        reward_type=LikelihoodTypes.BERNOULLI,
+        # NULL for low ids in the testing DWH.
+        target_field_name="is_onboarded_onetime",
+    )
+    await create_assignment_for_participant(xngin_session, experiment, "1", None, random_state=66)
+
+    report = await ingest_dwh_outcomes(experiment.id)
+    assert (report.ingested, report.invalid, report.pending) == (0, 0, 1)
+
+
+async def test_ingest_dwh_outcomes_invalid_value_skipped_and_left_null(xngin_session, testing_datasource):
+    """A pulled value that fails validation is skipped and the draw stays NULL, so a corrected
+    warehouse value is picked up on a later run."""
+    experiment = await insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
+        prior_type=PriorTypes.BETA,
+        reward_type=LikelihoodTypes.BERNOULLI,
+        # id=1's current_income is 29912.0, which fails the Bernoulli 0/1 guard.
+        target_field_name="current_income",
+    )
+    await create_assignment_for_participant(xngin_session, experiment, "1", None, random_state=66)
+
+    report = await ingest_dwh_outcomes(experiment.id)
+    assert (report.ingested, report.invalid, report.pending) == (0, 1, 0)
+
+    draw = (
+        await xngin_session.execute(select(tables.Draw).where(tables.Draw.experiment_id == experiment.id))
+    ).scalar_one()
+    assert draw.outcome is None
+    for arm in experiment.arms:
+        await xngin_session.refresh(arm)
+        assert arm.alpha == arm.alpha_init
+        assert arm.beta == arm.beta_init
+
+
+async def test_ingest_dwh_outcomes_continues_after_a_rejected_value(xngin_session, testing_datasource):
+    """Rejecting a value rolls back, which expires the session's objects; later participants in the
+    same run must still be processed."""
+    experiment = await insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
+        prior_type=PriorTypes.BETA,
+        reward_type=LikelihoodTypes.BERNOULLI,
+        # No current_income in the testing DWH is 0 or 1, so every value fails the Bernoulli guard.
+        target_field_name="current_income",
+    )
+    await create_assignment_for_participant(xngin_session, experiment, "1", None, random_state=66)
+    await create_assignment_for_participant(xngin_session, experiment, "3", None, random_state=67)
+
+    report = await ingest_dwh_outcomes(experiment.id)
+
+    # invalid=2 means the loop reached the second participant after rolling back the first.
+    assert (report.ingested, report.invalid, report.pending) == (0, 2, 0)
+
+
+async def test_ingest_dwh_outcomes_rejects_non_dwh_experiment(xngin_session, testing_datasource):
+    experiment = await insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.MAB_ONLINE,
+        prior_type=PriorTypes.BETA,
+        reward_type=LikelihoodTypes.BERNOULLI,
+    )
+    with pytest.raises(MismatchedExperimentTypeError):
+        await ingest_dwh_outcomes(experiment.id)
+
+
 async def test_update_bandit_arm_with_freq_experiments_returns_422(xngin_session, testing_datasource):
     """Freq experiments should return 422 when updating bandit arm with outcome."""
     online_freq_experiment = await insert_experiment_and_arms(
@@ -2845,41 +2970,37 @@ async def test_arm_population_counter(xngin_session, testing_datasource):
 def _in_memory_experiment(
     experiment_type: ExperimentsType,
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
-    target_data_type: DataType | None = None,
     arms: list[tables.Arm] | None = None,
 ) -> tables.Experiment:
     """An in-memory (unpersisted) experiment with just the attributes make_sample_calls reads."""
-    fields = []
-    if target_data_type is not None:
-        fields = [tables.ExperimentField(field_name="target_col", data_type=target_data_type.value, is_target=True)]
     return tables.Experiment(
         id="exp_abc123",
         experiment_type=experiment_type.value,
         reward_type=reward_type.value,
-        experiment_fields=fields,
         arms=arms or [],
     )
 
 
 @pytest.mark.parametrize(
-    ("reward_type", "target_data_type", "expected_outcome"),
+    ("reward_type", "expected_outcome"),
     [
-        (LikelihoodTypes.BERNOULLI, None, 1),  # bernoulli MAB => binary
-        (LikelihoodTypes.NORMAL, None, 1.5),  # normal MAB => real
-        (LikelihoodTypes.NORMAL, DataType.BOOLEAN, 1),  # dwh boolean target => binary even under normal reward
-        (LikelihoodTypes.NORMAL, DataType.NUMERIC, 1.5),  # dwh numeric target => real
-        (LikelihoodTypes.BERNOULLI, DataType.NUMERIC, 1),  # bernoulli still forces binary
+        (LikelihoodTypes.BERNOULLI, 1),  # bernoulli MAB => binary
+        (LikelihoodTypes.NORMAL, 1.5),  # normal MAB => real
     ],
 )
-def test_make_sample_calls_outcome_example_value(reward_type, target_data_type, expected_outcome):
-    experiment_type = ExperimentsType.MAB_ONLINE_DWH if target_data_type is not None else ExperimentsType.MAB_ONLINE
-    calls = make_sample_calls(
-        _in_memory_experiment(experiment_type, reward_type=reward_type, target_data_type=target_data_type)
-    )
+def test_make_sample_calls_outcome_example_value(reward_type, expected_outcome):
+    calls = make_sample_calls(_in_memory_experiment(ExperimentsType.MAB_ONLINE, reward_type=reward_type))
     assert calls is not None
     assert calls.calls[1].body == {"outcome": expected_outcome}
     assert calls.calls[1].example_response is not None
     assert calls.calls[1].example_response["arm_id"] == "<arm_id>"
+
+
+def test_make_sample_calls_mab_dwh_get_assignment_only():
+    # The outcome API rejects MAB-DWH, so no outcome example is emitted.
+    calls = make_sample_calls(_in_memory_experiment(ExperimentsType.MAB_ONLINE_DWH))
+    assert calls is not None
+    assert [c.label for c in calls.calls] == ["Get assignment"]
 
 
 def test_make_sample_calls_freq_online_without_filters_get_assignment_only():

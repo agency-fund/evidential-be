@@ -394,7 +394,8 @@ async def get_assignment_cmab(
     - The participant must not already have a recorded outcome. Use the GET assignment endpoint to
       check whether an outcome is already recorded.
 
-    The endpoint returns a 422 error if a prerequisite is not met.
+    The endpoint returns a 422 error if a prerequisite is not met, or if the experiment is a MAB-DWH experiment.
+    Outcomes for MAB-DWH experiments are read from a data warehouse, and the outcome API is disabled.
     """,
 )
 async def update_bandit_arm_with_participant_outcome(
@@ -403,6 +404,11 @@ async def update_bandit_arm_with_participant_outcome(
     experiment: Annotated[tables.Experiment, Depends(experiment_and_datasource_dependency)],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> ArmBandit:
+    if experiment.experiment_type == ExperimentsType.MAB_ONLINE_DWH.value:
+        raise LateValidationError(
+            "Outcomes for this experiment are read from your data warehouse; the outcome API is disabled."
+        )
+
     # Update the arm with the outcome
     if experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value:
         await experiment.awaitable_attrs.contexts
