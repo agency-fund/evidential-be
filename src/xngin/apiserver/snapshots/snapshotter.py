@@ -1,5 +1,6 @@
 import asyncio
 import random
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -24,8 +25,8 @@ SNAPSHOT_TIMEOUT_SECS = 90
 
 # Defaults for the --default-max-snapshot-age and --mab-dwh-max-snapshot-age flags. The Typer
 # help on those flags is the source of truth for what these values govern.
-DEFAULT_MAX_SNAPSHOT_AGE_SECS = 6 * 60 * 60
-DEFAULT_MAB_DWH_MAX_SNAPSHOT_AGE_SECS = 60 * 60
+DEFAULT_MAX_SNAPSHOT_AGE_SECS = int(timedelta(hours=6).total_seconds())
+DEFAULT_MAB_DWH_MAX_SNAPSHOT_AGE_SECS = int(timedelta(hours=1).total_seconds())
 
 
 async def create_pending_snapshots(default_max_snapshot_age_secs: int, mab_dwh_max_snapshot_age_secs: int):
