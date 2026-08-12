@@ -22,17 +22,9 @@ if TYPE_CHECKING:
 # The snapshotter cron job can specify a different timeout via command line flags.
 SNAPSHOT_TIMEOUT_SECS = 90
 
-# Two independent things decide when an experiment gets a new snapshot:
-#   1. How often the cron wakes up and looks. Set in railway.snapshots.json, currently hourly.
-#   2. How old an experiment's newest snapshot must be to qualify when it does look. That is the
-#      age limit below, and it is a staleness limit at the default of
-#      6 hours against an hourly cron, an experiment qualifies on roughly one run in six.
+# Defaults for the --default-max-snapshot-age and --mab-dwh-max-snapshot-age flags. The Typer
+# help on those flags is the source of truth for what these values govern.
 DEFAULT_MAX_SNAPSHOT_AGE_SECS = 6 * 60 * 60
-
-# MAB-DWH is the one type whose snapshot also ingests outcomes from the org's data warehouse, so
-# for it this age limit doubles as how often we pull. Kept at or below the cron period so that
-# every run ingests. Applies to MAB-DWH only; plain MABs, CMABs and all frequentist types use the
-# default above.
 DEFAULT_MAB_DWH_MAX_SNAPSHOT_AGE_SECS = 60 * 60
 
 
@@ -42,8 +34,7 @@ async def create_pending_snapshots(default_max_snapshot_age_secs: int, mab_dwh_m
     with status=pending for them.
 
     An experiment is due when its newest snapshot is older than the age limit for its type:
-    mab_dwh_max_snapshot_age_secs for MAB_ONLINE_DWH, default_max_snapshot_age_secs for everything
-    else. Both are staleness bounds, so the cron period puts a floor on how often either can happen.
+    mab_dwh_max_snapshot_age_secs for MAB_ONLINE_DWH, default_max_snapshot_age_secs for everything else.
 
     This method establishes its own database connection.
     """

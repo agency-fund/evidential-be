@@ -52,9 +52,8 @@ def collect(
         typer.Option(
             "--default-max-snapshot-age",
             min=60,
-            help="The maximum age an experiment's newest snapshot may be (in seconds) before this job creates "
-            "another one. It acts as a staleness ceiling; the cron decides how often we look (default = 1 hour), "
-            "this decides what qualifies for a snapshot. Applies to every type except MAB-DWH.",
+            help="How old an experiment's newest snapshot may be (in seconds) before this job creates "
+            "another one. Applies to every type except MAB-DWH.",
         ),
     ] = snapshotter.DEFAULT_MAX_SNAPSHOT_AGE_SECS,
     mab_dwh_max_snapshot_age: Annotated[
@@ -63,7 +62,7 @@ def collect(
             "--mab-dwh-max-snapshot-age",
             min=60,
             help="The same limit for MAB-DWH experiments, whose snapshots also ingest outcomes from "
-            "the org's data warehouse. Set this at or below the cron period so every run ingests.",
+            "the org's data warehouse, so for them this also sets how often we pull.",
         ),
     ] = snapshotter.DEFAULT_MAB_DWH_MAX_SNAPSHOT_AGE_SECS,
     parallelism: Annotated[
@@ -82,12 +81,14 @@ def collect(
     than the age limit for their type: --mab-dwh-max-snapshot-age for MAB-DWH, --default-max-snapshot-age
     for the rest.
 
-    Neither flag schedules anything. This job only acts when the cron invokes it, so the cron period is the
-    frequency with which an experiment will be snapshotted, and the age limits decide what qualifies on a given run.
+    Neither flag schedules anything. This job only acts when the cron invokes it (schedule set in
+    railway.snapshots.json, currently hourly), so the cron period is the frequency with which an experiment
+    will be snapshotted, and the age limits decide what qualifies on a given run.
 
     Run this job at some fraction of --default-max-snapshot-age so that failures retry promptly and a missed
     invocation does not delay everything to the next full period. Running hourly against the 6 hour default
-    gives hourly retries plus tolerance for clock drift and unpredictable cron scheduling.
+    gives hourly retries plus tolerance for clock drift and unpredictable cron scheduling, and means an
+    experiment qualifies on roughly one run in six.
 
     MAB-DWH ingests outcomes as part of snapshotting, so keep its limit at or below the cron period to ingest on every
     run.
