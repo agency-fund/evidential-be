@@ -20,14 +20,12 @@ class ExperimentState(enum.StrEnum):
     Experiment lifecycle states.
 
     note: [starting state], [[terminal state]]
-    [DESIGNING]->[ASSIGNED]->{[[ABANDONED]], COMMITTED}->[[ABORTED]]
+    [ASSIGNED]->{[[ABANDONED]], [[COMMITTED]]}
     """
 
-    DESIGNING = "designing"  # TODO: https://github.com/agency-fund/xngin/issues/352
     ASSIGNED = "assigned"  # TODO: rename to "REVIEWING"
     ABANDONED = "abandoned"
     COMMITTED = "committed"
-    ABORTED = "aborted"
 
 
 class StopAssignmentReason(enum.StrEnum):
