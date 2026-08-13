@@ -1,4 +1,4 @@
-title = "evidential-fe betterleaks config"
+title = "evidential-be betterleaks config"
 
 [extend]
 useDefault = true
@@ -31,27 +31,5 @@ regex = '''(?i)railway[a-z_\-]*[\s=:"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-
 secretGroup = 1
 
 [[allowlists]]
-description = "Third-party code — not our secrets"
-paths = ['''node_modules/''']
-
-[[allowlists]]
 description = "Ignore scanner reports"
 paths = ['''findings?.*\.json$''']
-
-# Suppress the noisiest default rule in build output only.
-# Specific rules (github-pat, gcp-*, cloudflare-*, tailscale-key, railway-token,
-# internal-xa-token) still scan .next/, build/, dist/.
-[[rules]]
-id = "generic-api-key"
-
-  [[rules.allowlists]]
-  description = "generic-api-key is too noisy on webpack/minified bundles"
-  paths = ['''\.next/''', '''build/''', '''dist/''']
-
-# linkedin-client-id false-positives on Radix UI icon source maps.
-[[rules]]
-id = "linkedin-client-id"
-
-  [[rules.allowlists]]
-  description = "linkedin-client-id false-positives on bundled JS/source maps"
-  paths = ['''\.next/''', '''build/''', '''dist/''']
