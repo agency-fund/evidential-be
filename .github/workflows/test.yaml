@@ -70,12 +70,13 @@ jobs:
         env:
           BETTERLEAKS_VERSION: 1.7.4
         run: |
-          curl -sSfL -o betterleaks.tar.gz \
-            "https://github.com/betterleaks/betterleaks/releases/download/v${BETTERLEAKS_VERSION}/betterleaks_${BETTERLEAKS_VERSION}_linux_x64.tar.gz"
+          TARBALL="betterleaks_${BETTERLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o "${TARBALL}" \
+            "https://github.com/betterleaks/betterleaks/releases/download/v${BETTERLEAKS_VERSION}/${TARBALL}"
           curl -sSfL -o checksums.txt \
             "https://github.com/betterleaks/betterleaks/releases/download/v${BETTERLEAKS_VERSION}/checksums.txt"
-          grep "betterleaks_${BETTERLEAKS_VERSION}_linux_x64.tar.gz" checksums.txt | sha256sum -c -
-          tar -xzf betterleaks.tar.gz betterleaks
+          grep "${TARBALL}" checksums.txt | sha256sum -c -
+          tar -xzf "${TARBALL}" betterleaks
           sudo mv betterleaks /usr/local/bin/
           betterleaks version
       - name: Scan repo for secrets
