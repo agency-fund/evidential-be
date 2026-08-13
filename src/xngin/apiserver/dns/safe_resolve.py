@@ -17,7 +17,7 @@ UNSAFE_IP_FOR_TESTING = "127.0.0.9"
 # fixture flips this on so unit tests never depend on a working resolver. Hosts not in INTERCEPT_DNS_ALLOWLIST are
 # logged so we can spot tests that should be using a literal IP or a mock instead.
 INTERCEPT_DNS_FOR_TESTING = False
-INTERCEPT_DNS_ALLOWLIST = frozenset({"localhost", "example.com"})
+INTERCEPT_DNS_ALLOWLIST = frozenset({"example.com"})
 
 
 class DnsLookupError(Exception):
@@ -34,6 +34,12 @@ class DnsLookupUnsafeError(DnsLookupError):
 
 def lookup_v4(host: str) -> list[str] | None:
     """Returns the IP addresses for a hostname, or None if there was some kind of failure."""
+    if host.lower() == "localhost":
+        # localhost is a reserved name (RFC 6761). Resolvers that forward to an upstream server -- as in containers
+        # and most hosted environments -- usually answer it with NXDOMAIN, so dns.resolver.resolve() below fails it even
+        # though it is a perfectly valid loopback address. Whether it's actually safe to connect to is still decided
+        # by the caller's safety check.
+        return ["127.0.0.1"]
     if INTERCEPT_DNS_FOR_TESTING:
         if host not in INTERCEPT_DNS_ALLOWLIST:
             logger.warning(f"Intercepting unit test DNS lookup for unexpected host {host!r}; returning 127.0.0.1.")
@@ -71,10 +77,6 @@ def _is_safe_ip(ip: str):
     return parsed.is_global
 
 
-def _is_safe_ipset(ips: set[str]):
-    return all(_is_safe_ip(address) for address in ips)
-
-
 def _is_ip_literal(host: str) -> bool:
     try:
         ipaddress.ip_address(host)
@@ -102,10 +104,9 @@ def safe_resolve(host: str | None):
     answers = lookup_v4(host)
     if not answers:
         raise DnsLookupError(host)
-    safe = _is_safe_ipset(set(answers))
-    if not safe:
+    if not all(_is_safe_ip(address) for address in answers):
         raise DnsLookupUnsafeError(host)
-    return answers.pop()
+    return answers[0]
 
 
 if __name__ == "__main__":
