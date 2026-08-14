@@ -19,15 +19,16 @@ class ExperimentState(enum.StrEnum):
     """
     Experiment lifecycle states.
 
-    note: [starting state], [[terminal state]]
-    [DESIGNING]->[ASSIGNED]->{[[ABANDONED]], COMMITTED}->[[ABORTED]]
+    Experiments are born in to the ASSIGNED state. The abandon_experiment and commit_experiment APIs transition them to
+    the terminal ABANDONED or COMMITTED states, respectively.
+
+    The name of the ASSIGNED state was chosen when we only supported freq-preassigned experiments. Today it represents
+    an experiment in a draft state.
     """
 
-    DESIGNING = "designing"  # TODO: https://github.com/agency-fund/xngin/issues/352
-    ASSIGNED = "assigned"  # TODO: rename to "REVIEWING"
+    ASSIGNED = "assigned"
     ABANDONED = "abandoned"
     COMMITTED = "committed"
-    ABORTED = "aborted"
 
 
 class StopAssignmentReason(enum.StrEnum):

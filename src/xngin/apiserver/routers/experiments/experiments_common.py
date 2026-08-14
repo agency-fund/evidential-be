@@ -570,7 +570,7 @@ async def commit_experiment_impl(xngin_session: AsyncSession, experiment: tables
 def abandon_experiment_impl(experiment: tables.Experiment):
     if experiment.state == ExperimentState.ABANDONED:
         return AbandonExperimentResult.ABANDONED
-    if experiment.state not in {ExperimentState.DESIGNING, ExperimentState.ASSIGNED}:
+    if experiment.state != ExperimentState.ASSIGNED:
         return AbandonExperimentResult.INVALID_STATE
 
     experiment.state = ExperimentState.ABANDONED
@@ -627,7 +627,6 @@ async def list_organization_or_datasource_experiments_impl(
 
     stmt = stmt.where(
         tables.Experiment.state.in_([
-            ExperimentState.DESIGNING,
             ExperimentState.COMMITTED,
             ExperimentState.ASSIGNED,
         ])

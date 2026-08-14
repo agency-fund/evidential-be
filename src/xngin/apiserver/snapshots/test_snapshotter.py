@@ -144,13 +144,20 @@ def create_snapshot_experiment(
     name: str,
     desired_n: int = 2,
     end_date: datetime | None = None,
+    commit: bool = True,
 ) -> str:
+    """Creates a preassigned frequentist experiment.
+
+    If commit is True, the experiment will be in a COMMITTED state. If commit is False, the experiment will be in
+    an ASSIGNED state.
+    """
     design_spec = make_snapshot_design_spec(name, end_date=end_date).model_copy(update={"desired_n": desired_n})
     experiment_id = aclient.create_experiment(
         datasource_id=testing_datasource.datasource_id,
         body=CreateExperimentRequest(design_spec=design_spec),
     ).data.experiment_id
-    aclient.commit_experiment(datasource_id=testing_datasource.datasource_id, experiment_id=experiment_id)
+    if commit:
+        aclient.commit_experiment(datasource_id=testing_datasource.datasource_id, experiment_id=experiment_id)
     return experiment_id
 
 
@@ -462,6 +469,31 @@ async def test_create_pending_snapshots_inserts_for_new_stale_and_failed_experim
     assert [snapshot.status for snapshot in list_snapshots(fresh_experiment_id)] == [SnapshotStatus.SUCCESS]
 
     assert [snapshot.status for snapshot in list_snapshots(inactive_experiment_id)] == []
+
+
+@pytest.mark.parametrize("state", [ExperimentState.ASSIGNED, ExperimentState.ABANDONED])
+async def test_create_pending_snapshots_skips_experiments_that_are_not_committed(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    state: ExperimentState,
+):
+    experiment_id = create_snapshot_experiment(aclient, testing_datasource, name=f"{state} snapshot test", commit=False)
+    if state == ExperimentState.ABANDONED:
+        aclient.abandon_experiment(
+            datasource_id=testing_datasource.datasource_id,
+            experiment_id=experiment_id,
+        )
+
+    await create_pending_snapshots(3600)
+
+    assert (
+        aclient.list_snapshots(
+            organization_id=testing_datasource.organization_id,
+            datasource_id=testing_datasource.datasource_id,
+            experiment_id=experiment_id,
+        ).data.items
+        == []
+    )
 
 
 async def test_process_pending_snapshots_processes_until_empty(
