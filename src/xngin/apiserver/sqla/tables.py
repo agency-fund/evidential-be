@@ -7,7 +7,7 @@ from typing import Any, ClassVar, Literal, Self
 
 import sqlalchemy
 from pydantic import TypeAdapter
-from sqlalchemy import Boolean, Float, ForeignKey, ForeignKeyConstraint, Index, Numeric, String
+from sqlalchemy import Boolean, CheckConstraint, Float, ForeignKey, ForeignKeyConstraint, Index, Numeric, String
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncAttrs
@@ -30,6 +30,7 @@ def unique_id_factory(prefix: str):
 
 
 arm_id_factory = unique_id_factory("arm")
+autofail_update_id_factory = unique_id_factory("af")
 datasource_id_factory = unique_id_factory("ds")
 event_id_factory = unique_id_factory("evt")
 experiment_id_factory = unique_id_factory("exp")
@@ -466,6 +467,9 @@ class Experiment(Base):
     n_trials: Mapped[int] = mapped_column(server_default="0")
     prior_type: Mapped[str | None] = mapped_column()
     reward_type: Mapped[str | None] = mapped_column()
+    enable_autofail: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
+    autofail_window: Mapped[int] = mapped_column(server_default="24")
+    autofail_outcome_value: Mapped[float] = mapped_column(server_default="0.0")
 
     # Frequentist config params
     # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run
@@ -599,6 +603,7 @@ class Draw(Base):
     # after arm parameters are updated.
     observed_at: Mapped[datetime | None] = mapped_column()
     outcome: Mapped[float | None] = mapped_column()
+    autofailed_outcome: Mapped[bool | None] = mapped_column()
     # Context values are assumed to be sorted by the experiment's corresponding context ids in ascending order.
     context_vals: Mapped[list[float] | None] = mapped_column(ARRAY(Float))
     current_mu: Mapped[list[float] | None] = mapped_column(ARRAY(Float))
@@ -608,6 +613,7 @@ class Draw(Base):
 
     arm: Mapped[Arm] = relationship("Arm", back_populates="draws", lazy="joined")
     experiment: Mapped[Experiment] = relationship("Experiment", back_populates="draws", lazy="joined")
+    autofail_updates: Mapped[list[AutofailUpdate]] = relationship(back_populates="draw", viewonly=True)
 
     __table_args__ = (
         Index(
@@ -615,6 +621,10 @@ class Draw(Base):
             arm_id,
             created_at.desc(),
             postgresql_where=sqlalchemy.text("outcome IS NOT NULL"),
+        ),
+        CheckConstraint(
+            "(outcome IS NULL) = (autofailed_outcome IS NULL)",
+            name="ck_draws_outcome_autofailed_paired",
         ),
     )
 
@@ -755,3 +765,33 @@ class Snapshot(Base):
     data: Mapped[dict | None] = mapped_column(postgresql.JSONB)
 
     experiment: Mapped[Experiment] = relationship(back_populates="snapshots", viewonly=True)
+
+
+class AutofailUpdate(Base):
+    """Stores autofail updates for draws that have been autofailed."""
+
+    __tablename__ = "autofail_updates"
+
+    experiment_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    id: Mapped[str] = mapped_column(primary_key=True, default=autofail_update_id_factory, unique=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now()
+    )
+    status: Mapped[SnapshotStatus] = mapped_column(server_default="pending")
+    # An optional informative message about the state of this task (for example, if a snapshot fails, it might contain
+    # an informative error message).
+    message: Mapped[str | None] = mapped_column()
+    # JSON serialized form of an ExperimentAnalysisResponse. May be null if the snapshot is not yet a success.
+    data: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+
+    draw: Mapped[Draw] = relationship(back_populates="autofail_updates", viewonly=True)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["experiment_id", "participant_id"],
+            ["draws.experiment_id", "draws.participant_id"],
+            ondelete="CASCADE",
+        ),
+    )

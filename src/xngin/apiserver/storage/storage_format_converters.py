@@ -305,6 +305,7 @@ class ExperimentStorageConverter:
                 raise ValueError(f"Bandit experiment {self.experiment.id} must have prior_type and reward_type set.")
             contexts = None
             if self.experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value:
+                await self.experiment.awaitable_attrs.contexts
                 contexts = [
                     capi.Context(
                         context_id=context.id,
@@ -353,6 +354,9 @@ class ExperimentStorageConverter:
                 ],
                 "prior_type": capi.PriorTypes(self.experiment.prior_type),
                 "reward_type": capi.LikelihoodTypes(self.experiment.reward_type),
+                "enable_autofail": self.experiment.enable_autofail,
+                "autofail_window": self.experiment.autofail_window,
+                "autofail_outcome_value": self.experiment.autofail_outcome_value,
                 "contexts": contexts,
             })
         raise ValueError(f"Unsupported experiment type: {self.experiment.experiment_type}")
@@ -500,6 +504,9 @@ class ExperimentStorageConverter:
                 experiment.reward_type = design_spec.reward_type.value
                 experiment.prior_type = design_spec.prior_type.value
                 experiment.n_trials = n_trials
+                experiment.enable_autofail = design_spec.enable_autofail
+                experiment.autofail_window = design_spec.autofail_window
+                experiment.autofail_outcome_value = design_spec.autofail_outcome_value
 
                 arm_weights = design_spec.get_validated_arm_weights()
                 if arm_weights:

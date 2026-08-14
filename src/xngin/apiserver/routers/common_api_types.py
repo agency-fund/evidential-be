@@ -550,6 +550,16 @@ class BanditExperimentAnalysisResponse(ApiBaseModel):
         int,
         Field(description="The number of outcomes observed for this experiment."),
     ]
+    fraction_automatically_failed: Annotated[
+        float,
+        Field(
+            description=(
+                "The fraction of outcomes that were automatically failed by the system, rather than manually "
+                "reported by the user. This is calculated as the number of automatically failed outcomes divided "
+                "by the total number of outcomes observed for this experiment."
+            )
+        ),
+    ] = 0.0
     created_at: Annotated[
         datetime.datetime,
         Field(description="The date and time the experiment analysis was created."),
@@ -976,6 +986,34 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
             default=LikelihoodTypes.BERNOULLI,
         ),
     ]
+    enable_autofail: Annotated[
+        bool,
+        Field(
+            description=(
+                "When true, the experiment will automatically log a failure for participants who "
+                "do not report an outcome within a specified time window."
+            ),
+        ),
+    ] = False
+    autofail_window: Annotated[
+        int,
+        Field(
+            description=(
+                "The time window in hours after which a participant is considered to have failed if "
+                "no outcome is reported. Default is 24 hours. Required if enable_autofail is true."
+            ),
+            ge=1,
+        ),
+    ] = 24
+    autofail_outcome_value: Annotated[
+        float,
+        Field(
+            description=(
+                "The outcome value to assign to participants who are automatically failed. "
+                "Required if enable_autofail is true."
+            ),
+        ),
+    ] = 0.0
 
     @model_validator(mode="after")
     def check_arm_missing_params(self) -> Self:
@@ -1032,6 +1070,19 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
             raise ValueError("Contextual MAB experiments require at least one context.")
         if self.experiment_type != ExperimentsType.CMAB_ONLINE and self.contexts:
             raise ValueError("Contexts are only applicable for contextual MAB experiments.")
+        return self
+
+    @model_validator(mode="after")
+    def check_autofail_params(self) -> Self:
+        """
+        Validate that the autofail parameters are valid.
+        """
+        if (
+            self.enable_autofail
+            and self.reward_type == LikelihoodTypes.BERNOULLI
+            and self.autofail_outcome_value not in {0.0, 1.0}
+        ):
+            raise ValueError("Autofail outcome value must be 0.0 or 1.0 for binary-valued outcomes.")
         return self
 
 
@@ -1213,6 +1264,7 @@ class AssignmentTypedDict(TypedDict):
     strata: NotRequired[list[StrataTypedDict] | None]
     observed_at: NotRequired[str | None]
     outcome: NotRequired[float | None]
+    autofailed_outcome: NotRequired[bool | None]
     context_values: NotRequired[list[float] | None]
 
 
@@ -1274,6 +1326,15 @@ class Assignment(ApiBaseModel):
     ] = None
 
     outcome: Annotated[float | None, Field(description="The observed outcome for this assignment.")] = None
+    autofailed_outcome: Annotated[
+        bool | None,
+        Field(
+            description=(
+                "Whether the outcome was automatically failed by the system (True) or manually reported by "
+                "the user (False). Null if no outcome was recorded."
+            )
+        ),
+    ] = None
 
     context_values: Annotated[
         list[float] | None,
