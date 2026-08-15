@@ -1068,9 +1068,9 @@ async def _read_arm_draw_state(
 ) -> ArmDrawState | None:
     """Read a participant's draw and the arm it is on, or returns None if it does not exist.
 
-    This query uses Postgres' FOR UPDATE OF to ensure that no other active transactions acquire a write lock on the rows
-    that the caller is anticipated to update. Any other session updating these two rows will block until the current
-    transaction commits.
+    This query uses Postgres' FOR NO KEY UPDATE OF to ensure that no other active transactions acquire a write lock on
+    the rows that the caller is anticipated to update. Any other session updating these two rows will block until the
+    current transaction commits.
     """
     row: tables.Draw | None = (
         await xngin_session.execute(
@@ -1084,7 +1084,7 @@ async def _read_arm_draw_state(
                 contains_eager(tables.Draw.arm),  # workaround tables.Draw.arm being lazy="joined"
                 raiseload(tables.Draw.experiment),  # inhibit lazy-loading of tables.Draw.experiment
             )
-            .with_for_update(of=[tables.Arm, tables.Draw])
+            .with_for_update(of=[tables.Arm, tables.Draw], key_share=True)
             .execution_options(populate_existing=True)  # update ORM's cache of these rows from this read, if present.
         )
     ).scalar_one_or_none()

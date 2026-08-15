@@ -225,3 +225,33 @@ async def test_concurrent_outcomes_for_one_participant_refuse_the_second(
     alpha_after = _get_arm(aclient, testing_datasource.datasource_id, bandit).alpha
     assert alpha_after is not None
     assert alpha_after - alpha_before == 1
+
+
+async def test_outcome_update_does_not_block_new_assignment_on_same_arm(
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+    testing_datasource: DatasourceMetadata,
+):
+    bandit = await _create_contended_bandit(aclient, eclient, testing_datasource)
+    participant_id = bandit.participant_ids[0]
+
+    async with (
+        asyncio.timeout(30),
+        _hold_outcome_update(bandit.experiment_id, bandit.design_spec, participant_id, 1),
+        database.async_session() as assignment_session,
+    ):
+        experiment = await _load_experiment(assignment_session, bandit.experiment_id)
+        random_state = next(
+            seed
+            for seed in range(100)
+            if experiments_common.choose_bandit_arm(experiment, random_state=seed).id == bandit.arm_id
+        )
+        assignment = await experiments_common.create_assignment_for_participant(
+            assignment_session,
+            experiment,
+            "assignment-while-outcome-is-locked",
+            random_state=random_state,
+        )
+
+    assert assignment is not None
+    assert assignment.arm_id == bandit.arm_id
