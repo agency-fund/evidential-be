@@ -66,9 +66,10 @@
 | src/xngin/apiserver/storage/bootstrap.py                                           |       40 |        1 |     98% |        59 |
 | src/xngin/apiserver/storage/storage\_format\_converters.py                         |      203 |       11 |     95% |49, 151, 156-157, 267, 305, 325, 362, 486, 550-551 |
 | src/xngin/apiserver/testing/assertions.py                                          |        7 |        1 |     86% |         7 |
-| src/xngin/cli/commands/create\_testing\_dwh.py                                     |      176 |      138 |     22% |31-33, 37-41, 52-83, 109, 120-130, 142-144, 149-156, 160-163, 167-171, 175-181, 188-212, 216-255, 259-264, 268-292, 377-397 |
-| src/xngin/cli/common.py                                                            |       51 |       33 |     35% |26-27, 32-33, 45-84 |
-| src/xngin/cli/main.py                                                              |      208 |      139 |     33% |50-55, 65-69, 75-83, 127-134, 149-160, 173-184, 188-191, 233-281, 305-316, 327-328, 336-337, 344-407, 430-474, 478 |
+| src/xngin/cli/commands/create\_testing\_dwh.py                                     |      186 |      147 |     21% |30-32, 36-40, 51-82, 108, 119-129, 141-143, 148-155, 159-162, 166-170, 174-180, 187-207, 212-230, 234-271, 275-280, 284-308, 393-415 |
+| src/xngin/cli/commands/databases.py                                                |       75 |       50 |     33% |40-52, 57-61, 66-83, 92-115, 130-137, 145-154 |
+| src/xngin/cli/common.py                                                            |       44 |       17 |     61% |34-35, 40-41, 53-54, 62-64, 69-74, 79-82 |
+| src/xngin/cli/main.py                                                              |      193 |      130 |     33% |45-50, 56-64, 108-115, 130-143, 156-166, 170-173, 215-262, 286-297, 308-309, 317-318, 325-387, 410-448, 452 |
 | src/xngin/db\_extensions/custom\_functions.py                                      |       29 |        2 |     93% |    35, 55 |
 | src/xngin/db\_extensions/test\_custom\_functions.py                                |       41 |        6 |     85% |     58-67 |
 | src/xngin/events/common.py                                                         |       12 |        1 |     92% |        20 |
@@ -93,7 +94,7 @@
 | src/xngin/xsecrets/secretservice.py                                                |       64 |        7 |     89% |37, 45-46, 51-52, 104, 126 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                                     |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                                         |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                                          | **15673** | **1110** | **93%** |           |
+| **TOTAL**                                                                          | **15736** | **1144** | **93%** |           |
 
 83 files skipped due to complete coverage.
 
