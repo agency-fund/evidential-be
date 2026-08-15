@@ -159,6 +159,7 @@ jobs:
       pydependencies: ${{ steps.filter.outputs.pydependencies }}
       migrations: ${{ steps.filter.outputs.migrations }}
       queries: ${{ steps.filter.outputs.queries }}
+      bigquery: ${{ steps.filter.outputs.bigquery }}
       openapi: ${{ steps.filter.outputs.openapi }}
     steps:
       - if: github.event_name != 'pull_request'
@@ -182,6 +183,8 @@ jobs:
             queries:
               - 'src/xngin/apiserver/dwh/**'
               - 'src/xngin/apiserver/conftest.py'
+            bigquery:
+              - 'src/xngin/cli/**'
             openapi:
               - 'src/**/*.py'
               - 'pyproject.toml'
@@ -292,14 +295,11 @@ jobs:
           uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg2://postgres@127.0.0.1:5499/postgres \
             --schema-name alt2 --table-name=alt_table2
 
-          # Create the application database.
-          uv run xngin-cli create-apiserver-db
-
   bq-integration:
     timeout-minutes: 10
     runs-on: ubuntu-24.04
     needs: changes
-    if: needs.changes.outputs.queries == 'true' &&
+    if: (needs.changes.outputs.queries == 'true' || needs.changes.outputs.bigquery == 'true') &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     env:
       DWH_DATASET_NAME: bqintegration_${{ github.run_id }}_${{ github.run_attempt }}_dwh
@@ -324,32 +324,26 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@e06108dd0aef18192324c70427afc47652e63a82 # v7.5.0
       - run: uv sync --locked
-      - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           credentials_json: '${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}'
-      - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2.2.1
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
         with:
           project_id: "xngin-development-dc"
           install_components: "bq"
       - name: cli populates testing dwh in BigQuery
-        env:
-          GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
         run: |
           bq --location=us-west1 mk --dataset --default_table_expiration=86400 \
             xngin-development-dc:"${DWH_DATASET_NAME}"
 
           # Verify that we can populate a testing data warehouse in BigQuery.
-          export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/service_account.json
-          mkdir -p ~/.config && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > ~/.config/service_account.json
           uv run xngin-cli create-testing-dwh --dsn bigquery://xngin-development-dc/"${DWH_DATASET_NAME}" --nrows 10
       - name: dwh queries unit test
-        env:
-          GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
         run: |
           bq --location=us-west1 mk --dataset --default_table_expiration=86400 \
             xngin-development-dc:"${QUERIES_DATASET_NAME}"
 
-          CREDENTIALS=credentials_base64=$(echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" | base64 -w 0)
+          CREDENTIALS=credentials_base64=$(base64 -w 0 "${GOOGLE_APPLICATION_CREDENTIALS}")
           # Verify that the query generation unit tests pass when run on BigQuery.
           export XNGIN_QUERIES_TEST_URI="bigquery://xngin-development-dc/${QUERIES_DATASET_NAME}?${CREDENTIALS}"
           export DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
@@ -357,12 +351,14 @@ jobs:
       - name: bq cleanup
         if: always()
         run: |
+          # Both datasets are attempted before the step fails.
+          status=0
           for ds in "${DWH_DATASET_NAME}" "${QUERIES_DATASET_NAME}"; do
             uv run xngin-cli bigquery-dataset-delete \
               --project-id xngin-development-dc \
-              --dataset-id "${ds}" \
-              || /bin/true
+              --dataset-id "${ds}" || status=$?
           done
+          exit "${status}"
 
   docker-builds:
     timeout-minutes: 15
