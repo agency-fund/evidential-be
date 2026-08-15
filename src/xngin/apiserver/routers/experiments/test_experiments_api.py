@@ -33,10 +33,17 @@ from xngin.apiserver.routers.common_api_types import (
     Stratum,
     UpdateBanditArmOutcomeRequest,
 )
-from xngin.apiserver.routers.common_enums import ContextType, ExperimentState, Relation, StopAssignmentReason
+from xngin.apiserver.routers.common_enums import (
+    ContextType,
+    ExperimentState,
+    Relation,
+    StopAssignmentReason,
+    UpdateTypeNormal,
+)
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.admin_api_client import AdminAPIClientHTTPValidationError
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClientNotDefaultStatusError
+from xngin.stats.bandit_sampling import update_arm
 
 if TYPE_CHECKING:
     from xngin.apiserver.testing.admin_api_client import AdminAPIClient
@@ -1166,6 +1173,107 @@ async def test_get_assignment_mab_cache_headers(
     assert response.data.assignment is not None
     assert response.data.assignment.outcome == 1.0
     assert response.response.headers["Cache-Control"] == "private, max-age=3600"
+
+
+async def test_normal_prior_binary_reward_fits_each_outcome_exactly_once(
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+):
+    """Recording one outcome moves the arm's posterior by exactly one observation.
+
+    A Normal prior with a binary reward is the one combination whose update is a numerical fit over
+    a set of observations rather than a closed-form step, so it is the only one that can fit the
+    same outcome more than once -- which it used to, by refitting a window of past outcomes that
+    already included the one being recorded. Beta priors and Normal priors with real-valued rewards
+    take a single observation by construction, so this has to use reward_type=BERNOULLI to be
+    capable of failing at all.
+    """
+    # A single arm dimension keeps the posterior easy to read. Arms start at
+    # mu=[mu_init] and covariance=diag([sigma_init]) (storage_format_converters.py:532).
+    initial_mu = [0.0]
+    initial_covariance = [[1.0]]
+    design_spec = MABExperimentSpec(
+        experiment_type=ExperimentsType.MAB_ONLINE,
+        experiment_name="normal prior binary reward",
+        description="normal prior binary reward",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            ArmBandit(arm_name="control", arm_description="", mu_init=initial_mu[0], sigma_init=1.0),
+            ArmBandit(arm_name="treatment", arm_description="", mu_init=initial_mu[0], sigma_init=1.0),
+        ],
+        prior_type=PriorTypes.NORMAL,
+        reward_type=LikelihoodTypes.BERNOULLI,
+        contexts=None,
+    )
+    experiment_id = aclient.create_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        body=CreateExperimentRequest(design_spec=design_spec),
+    ).data.experiment_id
+    aclient.commit_experiment(datasource_id=testing_datasource.datasource_id, experiment_id=experiment_id)
+
+    eclient.get_assignment(
+        api_key=testing_datasource.key,
+        experiment_id=experiment_id,
+        participant_id="1",
+    )
+    updated_arm = eclient.update_bandit_arm_with_participant_outcome(
+        api_key=testing_datasource.key,
+        body=UpdateBanditArmOutcomeRequest(outcome=1.0),
+        experiment_id=experiment_id,
+        participant_id="1",
+    ).data
+
+    # Oracle: the same model fitted with the one outcome that was actually recorded. Using
+    # update_arm itself keeps the expectation free of any reimplementation of the math.
+    expected = update_arm(
+        experiment=tables.Experiment(
+            experiment_type=ExperimentsType.MAB_ONLINE.value,
+            prior_type=PriorTypes.NORMAL.value,
+            reward_type=LikelihoodTypes.BERNOULLI.value,
+        ),
+        arm_to_update=tables.Arm(mu=initial_mu, covariance=initial_covariance),
+        outcomes=[1.0],
+        context=None,
+    )
+    assert isinstance(expected, UpdateTypeNormal)
+
+    assert updated_arm.mu == pytest.approx(expected.mu)
+
+
+async def test_update_bandit_arm_with_outcome_rejects_non_binary_outcome_for_binary_reward(
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+):
+    """An experiment whose reward is binary accepts only 0 or 1."""
+    experiment_id = aclient.create_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        body=CreateExperimentRequest(
+            design_spec=MABExperimentSpec(
+                experiment_type=ExperimentsType.MAB_ONLINE,
+                experiment_name="binary reward",
+                description="binary reward",
+                start_date=datetime(2024, 1, 1, tzinfo=UTC),
+                end_date=datetime.now(UTC) + timedelta(days=1),
+                arms=[
+                    ArmBandit(arm_name="control", arm_description="", alpha_init=1, beta_init=1),
+                    ArmBandit(arm_name="treatment", arm_description="", alpha_init=1, beta_init=1),
+                ],
+                prior_type=PriorTypes.BETA,
+                reward_type=LikelihoodTypes.BERNOULLI,
+                contexts=None,
+            )
+        ),
+    ).data.experiment_id
+    aclient.commit_experiment(datasource_id=testing_datasource.datasource_id, experiment_id=experiment_id)
+    eclient.get_assignment(api_key=testing_datasource.key, experiment_id=experiment_id, participant_id="1")
+
+    response = eclient.client.post(
+        f"/v1/experiments/{experiment_id}/assignments/1/outcome",
+        headers={"X-API-Key": testing_datasource.key},
+        json={"outcome": 0.5},
+    )
+
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_CONTENT, response.content
+    assert "Must be 0 or 1" in response.text
 
 
 async def test_update_bandit_arm_with_outcome_rejects_non_numeric_outcome(

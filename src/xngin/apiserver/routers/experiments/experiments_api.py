@@ -55,7 +55,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     get_experiment_impl,
     get_or_create_assignment_for_participant,
     list_organization_or_datasource_experiments_impl,
-    update_bandit_arm_with_outcome_impl,
+    update_bandit_with_outcome_impl,
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import (
     CsvStreamingResponse,
@@ -403,27 +403,27 @@ async def update_bandit_arm_with_participant_outcome(
     experiment: Annotated[tables.Experiment, Depends(experiment_and_datasource_dependency)],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> ArmBandit:
-    # Update the arm with the outcome
     if experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value:
         await experiment.awaitable_attrs.contexts
 
-    updated_arm = await update_bandit_arm_with_outcome_impl(
+    arm = await update_bandit_with_outcome_impl(
         xngin_session=session,
         experiment=experiment,
         participant_id=participant_id,
         outcome=body.outcome,
     )
+    await session.commit()
 
     return ArmBandit(
-        arm_id=updated_arm.id,
-        arm_name=updated_arm.name,
-        arm_description=updated_arm.description,
-        alpha_init=updated_arm.alpha_init,
-        beta_init=updated_arm.beta_init,
-        alpha=updated_arm.alpha,
-        beta=updated_arm.beta,
-        mu_init=updated_arm.mu_init,
-        sigma_init=updated_arm.sigma_init,
-        mu=updated_arm.mu,
-        covariance=updated_arm.covariance,
+        arm_id=arm.id,
+        arm_name=arm.name,
+        arm_description=arm.description,
+        alpha_init=arm.alpha_init,
+        beta_init=arm.beta_init,
+        alpha=arm.alpha,
+        beta=arm.beta,
+        mu_init=arm.mu_init,
+        sigma_init=arm.sigma_init,
+        mu=arm.mu,
+        covariance=arm.covariance,
     )

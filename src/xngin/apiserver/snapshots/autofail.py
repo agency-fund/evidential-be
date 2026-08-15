@@ -82,13 +82,12 @@ async def _make_one_autofail_update(
 
     try:
         async with asyncio.timeout(autofail_update_timeout):
-            await experiments_common.update_bandit_arm_with_outcome_impl(
+            await experiments_common.update_bandit_with_outcome_impl(
                 xngin_session=session,
                 experiment=draw.experiment,
                 participant_id=draw.participant_id,
                 outcome=draw.experiment.autofail_outcome_value,
                 autofailed_outcome=True,
-                commit_on_success=False,
             )
             update.status = "success"
             update.message = (

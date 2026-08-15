@@ -11,11 +11,11 @@ import pandas as pd
 from fastapi import HTTPException, status
 from pandas import DataFrame
 from psycopg import sql
-from sqlalchemy import Integer, Select, Table, func, insert, select, update
+from sqlalchemy import Integer, Select, Table, func, insert, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import contains_eager, raiseload, selectinload
 
 from xngin.apiserver import constants, flags
 from xngin.apiserver.dwh.dwh_session import DwhSession
@@ -41,6 +41,7 @@ from xngin.apiserver.routers.common_api_types import (
     CMABExperimentSpec,
     CreateExperimentRequest,
     CreateExperimentResponse,
+    DesignSpec,
     DesignSpecMetricRequest,
     Filter,
     FreqExperimentAnalysisResponse,
@@ -1041,54 +1042,63 @@ def _check_outcome_against_mab_dwh_target(
         )
 
 
-async def _fetch_outcomes_and_context_for_arm(
+@dataclass(frozen=True, slots=True)
+class ArmDrawState:
+    """A participant's draw and the arm it is on, as of one read."""
+
+    arm: tables.Arm
+    draw: tables.Draw
+
+
+@dataclass(frozen=True, slots=True)
+class OutcomeUpdatePlan:
+    """Describes the input to a bandit update, and the computed output."""
+
+    state: ArmDrawState
+    outcome: float
+    autofailed_outcome: bool
+
+    parameters: UpdateTypeBeta | UpdateTypeNormal
+
+
+async def _read_arm_draw_state(
     xngin_session: AsyncSession,
     experiment_id: str,
-    arm_id: str,
-    outcome: float,
-    context_vals: list[float] | None,
-) -> tuple[list[float], list[list[float]] | None]:
-    """Return the just-recorded outcome plus the arm's prior outcomes, newest first.
+    participant_id: str,
+) -> ArmDrawState | None:
+    """Read a participant's draw and the arm it is on, or returns None if it does not exist.
 
-    Context values are aggregated alongside the outcomes and returned only for contextual
-    bandits, i.e. when the current draw carries context.
+    This query uses Postgres' FOR UPDATE OF to ensure that no other active transactions acquire a write lock on the rows
+    that the caller is anticipated to update. Any other session updating these two rows will block until the current
+    transaction commits.
     """
-    has_context = context_vals is not None
-    subq = (
-        select(tables.Draw.outcome, tables.Draw.context_vals)
-        .where(
-            tables.Draw.experiment_id == experiment_id,
-            tables.Draw.arm_id == arm_id,
-            tables.Draw.outcome.is_not(None),
+    row: tables.Draw | None = (
+        await xngin_session.execute(
+            select(tables.Draw)
+            .join(tables.Draw.arm)
+            .where(
+                tables.Draw.experiment_id == experiment_id,
+                tables.Draw.participant_id == participant_id,
+            )
+            .options(
+                contains_eager(tables.Draw.arm),  # workaround tables.Draw.arm being lazy="joined"
+                raiseload(tables.Draw.experiment),  # inhibit lazy-loading of tables.Draw.experiment
+            )
+            .with_for_update(of=[tables.Arm, tables.Draw])
+            .execution_options(populate_existing=True)  # update ORM's cache of these rows from this read, if present.
         )
-        .order_by(tables.Draw.created_at.desc())
-        .limit(100)  # TODO: Make draw limiting configurable
-        .subquery()
-    )
-    agg_cols = [func.array_agg(subq.c.outcome)]
-    if has_context:
-        agg_cols.append(func.array_agg(subq.c.context_vals))
-    agg_result = await xngin_session.execute(select(*agg_cols).select_from(subq))
-    agg_row = agg_result.one()
-
-    all_prior_outcomes = agg_row[0]
-    outcomes = [outcome] + (all_prior_outcomes or [])
-    all_context_vals = ([context_vals] + (agg_row[1] or [])) if has_context else None
-    return outcomes, all_context_vals
+    ).scalar_one_or_none()
+    return None if row is None else ArmDrawState(arm=row.arm, draw=row)
 
 
-async def update_bandit_arm_with_outcome_impl(
-    xngin_session: AsyncSession,
+def _validate_outcome_update(
     experiment: tables.Experiment,
+    design_spec: DesignSpec,
+    state: ArmDrawState | None,
     participant_id: str,
     outcome: float,
-    autofailed_outcome: bool = False,
-    commit_on_success: bool = True,
-) -> tables.Arm:
-    """Update the Draw table with the outcome for a bandit experiment."""
-    # Not supported for frequentist experiments
-    design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
-
+) -> ArmDrawState:
+    """Validate a request to update an outcome and return its non-optional locked state."""
     match design_spec:
         case MABExperimentSpec() | MABDwhExperimentSpec() | CMABExperimentSpec():
             pass
@@ -1096,19 +1106,6 @@ async def update_bandit_arm_with_outcome_impl(
             raise LateValidationError("Cannot dynamically update arms for frequentist experiments.")
         case _:
             assert_never(design_spec)
-
-    # Look up the participant's assignment if it exists
-    assignment = await get_existing_assignment_for_participant(
-        xngin_session, experiment.id, participant_id, experiment.experiment_type
-    )
-    if not assignment:
-        raise ExperimentsAssignmentError(
-            f"Participant {participant_id} does not have an assignment for which to record an outcome.",
-        )
-    if assignment.outcome is not None:
-        raise ExperimentsAssignmentError(
-            f"Participant {participant_id} already has an outcome recorded.",
-        )
 
     if design_spec.reward_type == LikelihoodTypes.BERNOULLI and outcome not in {
         0,
@@ -1120,83 +1117,80 @@ async def update_bandit_arm_with_outcome_impl(
     if isinstance(design_spec, MABDwhExperimentSpec):
         _check_outcome_against_mab_dwh_target(experiment.experiment_fields, outcome)
 
-    try:
-        result = await xngin_session.execute(
-            update(tables.Draw)
-            .where(
-                tables.Draw.participant_id == participant_id,
-                tables.Draw.experiment_id == experiment.id,
-                tables.Draw.outcome.is_(None),  # guard against double-write at DB level
-            )
-            .values(observed_at=datetime.now(UTC), outcome=outcome, autofailed_outcome=autofailed_outcome)
-            .returning(tables.Draw.arm_id, tables.Draw.context_vals)
-        )
-        draw_record = result.one_or_none()
-        if draw_record is None:
-            raise ExperimentsAssignmentError(
-                f"Participant '{participant_id}' already has a recorded outcome for this experiment.",
-            )
-
-        arm_to_update = next(arm for arm in experiment.arms if arm.id == draw_record.arm_id)
-
-        # Get all prior draws for this arm, sorted by creation date
-        outcomes, context_vals = await _fetch_outcomes_and_context_for_arm(
-            xngin_session,
-            experiment_id=experiment.id,
-            arm_id=draw_record.arm_id,
-            outcome=outcome,
-            context_vals=draw_record.context_vals,
-        )
-
-        updated_parameters = update_bandit_arm(
-            experiment=experiment,
-            arm_to_update=arm_to_update,
-            outcomes=outcomes,
-            context=context_vals,
-        )
-
-        # Update the draw record and arm with the new parameters
-        update_draw_params: dict[str, float | list[float] | list[list[float]]]
-        match updated_parameters:
-            case UpdateTypeBeta():
-                update_draw_params = {
-                    "current_alpha": updated_parameters.alpha,
-                    "current_beta": updated_parameters.beta,
-                }
-                arm_to_update.alpha = updated_parameters.alpha
-                arm_to_update.beta = updated_parameters.beta
-            case UpdateTypeNormal():
-                update_draw_params = {
-                    "current_mu": updated_parameters.mu,
-                    "current_covariance": updated_parameters.covariance,
-                }
-                arm_to_update.mu = updated_parameters.mu
-                arm_to_update.covariance = updated_parameters.covariance
-            case _:
-                raise ExperimentsAssignmentError(
-                    f"Unsupported prior update type: {type(updated_parameters)} for prior type {experiment.prior_type}"
-                )
-
-        await xngin_session.execute(
-            update(tables.Draw)
-            .where(
-                tables.Draw.participant_id == participant_id,
-                tables.Draw.experiment_id == experiment.id,
-                tables.Draw.arm_id == arm_to_update.id,
-            )
-            .values(**update_draw_params)
-        )
-        xngin_session.add(arm_to_update)
-        if commit_on_success:
-            await xngin_session.commit()
-
-    except IntegrityError as e:
-        await xngin_session.rollback()
+    if state is None:
         raise ExperimentsAssignmentError(
-            f"Failed to update assignment for participant '{participant_id}' with outcome {outcome}: {e}"
-        ) from e
+            f"Participant {participant_id} does not have an assignment for which to record an outcome.",
+        )
+    if state.draw.outcome is not None:
+        raise ExperimentsAssignmentError(
+            f"Participant {participant_id} already has an outcome recorded.",
+        )
+    return state
 
-    return arm_to_update
+
+def _compute_update(
+    experiment: tables.Experiment,
+    state: ArmDrawState,
+    outcome: float,
+    *,
+    autofailed_outcome: bool = False,
+) -> OutcomeUpdatePlan:
+    """Compute the row updates given their current state and the new outcome."""
+    parameters = update_bandit_arm(
+        experiment=experiment,
+        arm_to_update=state.arm,
+        outcomes=[outcome],
+        context=None if state.draw.context_vals is None else [state.draw.context_vals],
+    )
+    return OutcomeUpdatePlan(
+        state=state,
+        outcome=outcome,
+        autofailed_outcome=autofailed_outcome,
+        parameters=parameters,
+    )
+
+
+def _apply_update_plan(plan: OutcomeUpdatePlan) -> None:
+    """Apply a planned update to the rows it was planned against."""
+    plan.state.draw.observed_at = datetime.now(UTC)
+    plan.state.draw.outcome = plan.outcome
+    plan.state.draw.autofailed_outcome = plan.autofailed_outcome
+
+    match plan.parameters:
+        case UpdateTypeBeta(alpha=alpha, beta=beta):
+            plan.state.arm.alpha, plan.state.arm.beta = alpha, beta
+            plan.state.draw.current_alpha, plan.state.draw.current_beta = alpha, beta
+        case UpdateTypeNormal(mu=mu, covariance=covariance):
+            plan.state.arm.mu, plan.state.arm.covariance = mu, covariance
+            plan.state.draw.current_mu, plan.state.draw.current_covariance = mu, covariance
+
+
+async def update_bandit_with_outcome_impl(
+    xngin_session: AsyncSession,
+    experiment: tables.Experiment,
+    participant_id: str,
+    outcome: float,
+    *,
+    autofailed_outcome: bool = False,
+) -> tables.Arm:
+    """Read, validate, compute and write one recorded outcome."""
+    design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
+    state = await _read_arm_draw_state(xngin_session, experiment.id, participant_id)
+    state = _validate_outcome_update(
+        experiment,
+        design_spec,
+        state,
+        participant_id,
+        outcome,
+    )
+    plan = _compute_update(
+        experiment,
+        state,
+        outcome,
+        autofailed_outcome=autofailed_outcome,
+    )
+    _apply_update_plan(plan)
+    return plan.state.arm
 
 
 def convert_assignment_results_to_assign_summary(

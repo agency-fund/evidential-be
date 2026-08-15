@@ -33,7 +33,7 @@ from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 
-UPDATE_OUTCOME_IMPL = "xngin.apiserver.routers.experiments.experiments_common.update_bandit_arm_with_outcome_impl"
+UPDATE_OUTCOME_IMPL = "xngin.apiserver.routers.experiments.experiments_common.update_bandit_with_outcome_impl"
 
 
 async def create_autofail_experiment(
@@ -455,7 +455,7 @@ async def test_process_pending_autofail_updates_survives_a_failure(
     await age_draws(xngin_session, experiment_id, hours=2)
     await create_pending_autofail_updates()
 
-    original = experiments_common.update_bandit_arm_with_outcome_impl
+    original = experiments_common.update_bandit_with_outcome_impl
 
     async def fail_first_participant(*args, **kwargs):
         if kwargs["participant_id"] == "0":
