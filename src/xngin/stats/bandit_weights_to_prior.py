@@ -1,9 +1,12 @@
 import numpy as np
 from scipy.integrate import quad
 from scipy.optimize import minimize
-from scipy.stats import norm
+from scipy.special import ndtr
 
 from xngin.apiserver.routers.common_api_types import PriorTypes
+
+# Normalizing constant of the standard normal density, hoisted out of the integrand below.
+_SQRT_2PI = np.sqrt(2 * np.pi)
 
 
 def bandit_weights_to_beta_prior(
@@ -104,9 +107,13 @@ def bandit_weights_to_normal_prior(
 
         def prob_n_is_max(n: int) -> float:
             def integrand(x: float) -> float:
-                pdf_n = norm.pdf(x, loc=mus, scale=sigma_params)
-                cdf_n = norm.cdf(x, loc=mus, scale=sigma_params)
-                return float((np.prod(cdf_n) / (cdf_n[n] + 0.00001)) * pdf_n[n])  # type: ignore
+                # scipy.stats.norm is avoided here: quad evaluates this integrand hundreds of times per arm and
+                # per objective evaluation, and the frozen distribution's argument validation dominates the
+                # actual arithmetic. ndtr is the standard normal CDF and the density is written out directly.
+                z = (x - mus) / sigma_params
+                pdf_n = np.exp(-0.5 * z**2) / (sigma_params * _SQRT_2PI)
+                cdf_n = ndtr(z)
+                return float((np.prod(cdf_n) / (cdf_n[n] + 0.00001)) * pdf_n[n])
 
             result, _ = quad(integrand, -np.inf, np.inf)
             return float(result)
