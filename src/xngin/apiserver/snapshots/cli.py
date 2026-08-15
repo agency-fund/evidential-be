@@ -10,7 +10,7 @@ from loguru import logger
 from sentry_sdk.crons import monitor
 
 from xngin.apiserver import customlogging, database
-from xngin.apiserver.snapshots import snapshotter
+from xngin.apiserver.snapshots import autofail, snapshotter
 from xngin.ops import sentry
 from xngin.xsecrets import secretservice
 
@@ -22,17 +22,27 @@ NPROC = max(4, len(os.sched_getaffinity(0)) // 4) if hasattr(os, "sched_getaffin
 customlogging.setup()
 sentry.setup()
 
-app = typer.Typer(help="Collects snapshots as needed.")
+app = typer.Typer(help="Collects snapshots and autofail updates as needed.")
 
 
-async def acollect(snapshot_interval: int, snapshot_timeout: int, parallelism: int):
-    """Collects snapshots (async wrapper)."""
+async def snapshot_acollect(snapshot_interval: int, snapshot_timeout: int, parallelism: int):
+    """Collects snapshots and autofail updates (async wrapper)."""
     async with database.setup():
         await snapshotter.create_pending_snapshots(snapshot_interval)
         async with asyncio.TaskGroup() as task:
             for i in range(parallelism):
                 with logger.contextualize(task=i):
                     _ = task.create_task(snapshotter.process_pending_snapshots(snapshot_timeout), name=f"sn{i}")
+
+
+async def autofail_acollect(autofail_timeout: int, parallelism: int):
+    """Collects snapshots and autofail updates (async wrapper)."""
+    async with database.setup():
+        await autofail.create_pending_autofail_updates()
+        async with asyncio.TaskGroup() as task:
+            for i in range(parallelism):
+                with logger.contextualize(task=i):
+                    _ = task.create_task(autofail.process_pending_autofail_updates(autofail_timeout), name=f"af{i}")
 
 
 @app.command()
@@ -46,6 +56,15 @@ def collect(
             "Snapshots that take longer than this will be marked as failures.",
         ),
     ] = snapshotter.SNAPSHOT_TIMEOUT_SECS,
+    autofail_timeout: Annotated[
+        int,
+        typer.Option(
+            "--autofail-max-time",
+            min=1,
+            help="Maximum duration of a single autofail update (in seconds). "
+            "Autofail updates that take longer than this will be marked as failures.",
+        ),
+    ] = autofail.AUTOFAIL_TIMEOUT_SECS,
     snapshot_interval: Annotated[
         int, typer.Option("--interval", min=60, help="The target interval between snapshots (in seconds).")
     ] = timedelta(hours=6).seconds,
@@ -74,7 +93,9 @@ def collect(
     cronjob_monitor_slug = os.environ.get(ENV_CRONJOB_MONITOR_SLUG, "")
     if cronjob_monitor_slug:
         with monitor(monitor_slug=cronjob_monitor_slug):
-            asyncio.run(acollect(snapshot_interval, snapshot_timeout, parallelism))
+            asyncio.run(snapshot_acollect(snapshot_interval, snapshot_timeout, parallelism))
+            asyncio.run(autofail_acollect(autofail_timeout, parallelism))
     else:
-        asyncio.run(acollect(snapshot_interval, snapshot_timeout, parallelism))
+        asyncio.run(snapshot_acollect(snapshot_interval, snapshot_timeout, parallelism))
+        asyncio.run(autofail_acollect(autofail_timeout, parallelism))
     logger.info("collect() finished successfully.")

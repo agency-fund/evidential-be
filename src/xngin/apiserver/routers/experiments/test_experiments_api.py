@@ -553,7 +553,7 @@ async def test_get_experiment_assignments_streams_bandit_assignments(
 
     p1 = assignments_by_participant_id["p1"]
     assert updated_first_assignment is not None
-    assert updated_first_assignment.model_copy(update={"strata": None}) == p1
+    assert updated_first_assignment.model_copy(update={"strata": None, "autofailed_outcome": None}) == p1
     assert p1.arm_name == arms_by_id[p1.arm_id]
     assert p1.created_at is not None
     assert p1.observed_at is not None
@@ -564,7 +564,7 @@ async def test_get_experiment_assignments_streams_bandit_assignments(
 
     p2 = assignments_by_participant_id["p2"]
     assert updated_second_assignment is not None
-    assert updated_second_assignment.model_copy(update={"strata": None}) == p2
+    assert updated_second_assignment.model_copy(update={"strata": None, "autofailed_outcome": None}) == p2
     assert p2.arm_name == arms_by_id[p2.arm_id]
     assert p2.created_at is not None
     assert p2.observed_at is None
@@ -652,7 +652,7 @@ async def test_get_experiment_assignments_streams_cmab_context_values(
     assert p1.outcome == 1.5
     assert p1.strata is None
     assert p1.context_values == [1.0, 1.0]
-    assert first_assignment.model_copy(update={"strata": None}) == p1
+    assert first_assignment.model_copy(update={"strata": None, "autofailed_outcome": None}) == p1
 
     p2 = assignments_by_participant_id["p2"]
     assert p2.created_at is not None

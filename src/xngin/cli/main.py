@@ -21,7 +21,14 @@ from sqlalchemy.orm import Session
 
 from xngin.cli.commands import create_testing_dwh as _create_testing_dwh_cmd
 from xngin.cli.commands import databases as _databases_cmd
-from xngin.cli.common import cli_async_engine, cli_engine, console, create_engine_and_database, fail
+from xngin.cli.common import (
+    cli_async_engine,
+    cli_engine,
+    console,
+    create_engine_and_database,
+    fail,
+    write_file_atomically,
+)
 from xngin.xsecrets import secretservice
 
 app = typer.Typer(help=__doc__)
@@ -80,7 +87,12 @@ def export_json_schemas(output: Path = Path(".schemas")):
 
 
 @app.command()
-def export_openapi_spec(output: Path = Path("openapi.json")):
+def export_openapi_spec(
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="The file to write the spec to."),
+    ] = Path("openapi.json"),
+):
     """Writes the OpenAPI spec to the file specified by --output."""
     from fastapi import FastAPI  # noqa: PLC0415
 
@@ -90,8 +102,7 @@ def export_openapi_spec(output: Path = Path("openapi.json")):
     from xngin.apiserver import routes  # noqa: PLC0415
 
     routes.register(app)
-    with open(output, "w") as outf:
-        json.dump(xngin.apiserver.openapi.custom_openapi(app), outf, sort_keys=True, indent=2)
+    write_file_atomically(output, json.dumps(xngin.apiserver.openapi.custom_openapi(app), sort_keys=True, indent=2))
 
 
 @app.command()
@@ -275,24 +286,37 @@ async def add_user(
 
 @app.command()
 def create_nacl_keyset(
-    output: Annotated[
+    output_format: Annotated[
         Base64OrJson,
-        typer.Option(help="Output format. Use base64 when generating a key for use in an environment variable."),
+        typer.Option(
+            "--format",
+            "-f",
+            help="Output format. Use base64 when generating a key for use in an environment variable.",
+        ),
     ] = Base64OrJson.base64,
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Write the keyset to this file instead of stdout."),
+    ] = None,
 ):
     """Generate an encryption keyset for the "nacl" secret provider.
 
-    The encoded encryption key will be written to stdout.
+    The encoded encryption key will be written to stdout, or to the file named by --output.
 
-    When --output=base64 (default), the output can be used as the XNGIN_SECRETS_NACL_KEYSET environment variable.
+    When --format=base64 (default), the output can be used as the XNGIN_SECRETS_NACL_KEYSET environment variable.
     """
     from xngin.xsecrets.nacl_provider import NaclProviderKeyset  # noqa: PLC0415
 
     keyset = NaclProviderKeyset.create()
-    if output == Base64OrJson.base64:
-        print(keyset.serialize_base64())
+    if output_format == Base64OrJson.base64:
+        serialized = keyset.serialize_base64()
     else:
-        print(keyset.serialize_json())
+        serialized = keyset.serialize_json()
+
+    if output is None:
+        print(serialized)
+    else:
+        write_file_atomically(output, serialized + "\n", private=True)
 
 
 @app.command()

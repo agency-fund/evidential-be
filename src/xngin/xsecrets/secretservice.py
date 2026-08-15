@@ -40,10 +40,6 @@ def setup(*, allow_noop: bool = False):
                 f"Set {ENV_XNGIN_SECRETS_BACKEND} to a real encryption backend (e.g. '{nacl_provider.NAME}' "
                 f"or '{gcp_kms_provider.NAME}')."
             )
-        logger.warning(
-            f"Secrets: Encryption is disabled because {ENV_XNGIN_SECRETS_BACKEND} is unset "
-            f"or set to {noop_provider.NAME}."
-        )
         noop_provider.initialize(registry)
         backend_spec = noop_provider.NAME
     elif backend_spec not in registered:
@@ -51,9 +47,9 @@ def setup(*, allow_noop: bool = False):
             f"Requested backend '{backend_spec}' is not registered (available: {', '.join(registered)})"
         )
 
-    logger.info(
-        f"Secrets: Using '{backend_spec}' for encryption (available: {', '.join(registered) if registered else 'none'})"
-    )
+    if not flags.is_dev_environment():
+        available = ", ".join(registered) if registered else "none"
+        logger.info(f"Secrets: Using '{backend_spec}' for encryption (available: {available})")
     _SERVICE = SecretService(registry, backend_spec)
 
 

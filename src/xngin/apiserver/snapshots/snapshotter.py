@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from xngin.apiserver import database
 from xngin.apiserver.routers.common_api_types import ExperimentAnalysisResponse
-from xngin.apiserver.routers.common_enums import ContextType, ExperimentsType
+from xngin.apiserver.routers.common_enums import ContextType, ExperimentState, ExperimentsType
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
@@ -47,6 +47,7 @@ async def create_pending_snapshots(snapshot_interval: int):
                     func.date_trunc("minute", tables.Experiment.start_date - buffer),
                     func.date_trunc("minute", tables.Experiment.end_date + buffer),
                 ),
+                tables.Experiment.state == ExperimentState.COMMITTED.value,
             )
             .order_by(tables.Experiment.id, tables.Snapshot.updated_at.desc())
             .cte()
