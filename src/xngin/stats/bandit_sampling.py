@@ -263,7 +263,7 @@ def update_arm(
     context: list[list[float]] | None = None,
 ) -> PriorUpdateType:
     """
-    Update the arm parameters based on the experiment type and reward.
+    Returns the updates to apply to arm_to_update based on the experiment and outcomes.
 
     Parameters
     ----------
