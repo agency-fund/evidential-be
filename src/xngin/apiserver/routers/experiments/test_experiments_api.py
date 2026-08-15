@@ -1178,14 +1178,14 @@ async def test_get_assignment_mab_cache_headers(
 async def test_normal_prior_binary_reward_fits_each_outcome_exactly_once(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
-    """Recording one outcome moves the arm's posterior by exactly one observation.
+    """The endpoint folds one recorded outcome into a Normal/Bernoulli posterior exactly once.
 
-    A Normal prior with a binary reward is the one combination whose update is a numerical fit over
-    a set of observations rather than a closed-form step, so it is the only one that can fit the
-    same outcome more than once -- which it used to, by refitting a window of past outcomes that
-    already included the one being recorded. Beta priors and Normal priors with real-valued rewards
-    take a single observation by construction, so this has to use reward_type=BERNOULLI to be
-    capable of failing at all.
+    Normal/Bernoulli is the only update_arm branch that consumes every entry in its outcomes
+    argument; the Beta/Bernoulli and Normal/Normal branches use only outcomes[0]. This makes it the
+    branch that detects if the endpoint accidentally supplies duplicate or previously absorbed
+    outcomes instead of the intended singleton. Draw rows continue to retain the complete outcome
+    and context history, so a future batch implementation can deliberately recompute from the
+    original prior without weakening this incremental-update invariant.
     """
     # A single arm dimension keeps the posterior easy to read. Arms start at
     # mu=[mu_init] and covariance=diag([sigma_init]) (storage_format_converters.py:532).

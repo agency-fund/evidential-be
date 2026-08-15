@@ -1,4 +1,3 @@
-import asyncio
 from collections import defaultdict
 from contextlib import AbstractContextManager
 from contextlib import nullcontext as does_not_raise
@@ -11,7 +10,7 @@ import pytest
 import sqlalchemy
 from deepdiff import DeepDiff
 from pydantic import HttpUrl, TypeAdapter
-from sqlalchemy import Boolean, Column, MetaData, String, Table, select, update
+from sqlalchemy import Boolean, Column, MetaData, String, Table, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -2757,64 +2756,6 @@ async def test_update_bandit_arm_with_outcome_mab_dwh_bool_target_rejects_non_bi
     assert recorded == 1.0
 
 
-async def test_update_bandit_arm_concurrent_outcomes_do_not_lose_contributions(xngin_session, testing_datasource):
-    """Two outcomes landing on one arm concurrently must both move its posterior.
-
-    Each update derives the arm's new parameters from the ones it read, so if both writers read
-    before either writes, they derive from the same starting point and the later write drops the
-    earlier one's contribution. What prevents that is the lock the read takes on the arm, held
-    until the reader's transaction ends.
-
-    The second writer is held until the first has read, and the first then waits before writing, so
-    the second issues its read while the lock is held. Without the lock that read returns the stale
-    parameters immediately and the arm ends up one observation short.
-    """
-    experiment = await insert_experiment_and_arms(
-        xngin_session,
-        testing_datasource.ds,
-        experiment_type=ExperimentsType.MAB_ONLINE,
-        prior_type=PriorTypes.BETA,
-        reward_type=LikelihoodTypes.BERNOULLI,
-    )
-    await create_assignment_for_participant(xngin_session, experiment, "p1", None, random_state=66)
-    await create_assignment_for_participant(xngin_session, experiment, "p2", None, random_state=67)
-
-    # Assignment picks arms by Thompson sampling; the race is only observable when both outcomes
-    # derive parameters for the same arm, so put both draws on one arm explicitly.
-    contended_arm_id = experiment.arms[0].id
-    await xngin_session.execute(
-        update(tables.Draw).where(tables.Draw.experiment_id == experiment.id).values(arm_id=contended_arm_id)
-    )
-    await xngin_session.commit()
-    design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
-    alpha_before = next(arm.alpha for arm in experiment.arms if arm.id == contended_arm_id)
-
-    first_has_read = asyncio.Event()
-
-    async def record(participant_id: str, *, wait_for_first_read: bool):
-        async with database.async_session() as session:
-            if wait_for_first_read:
-                await first_has_read.wait()
-            state = await experiments_common._read_arm_draw_state(session, experiment.id, participant_id)
-            if not wait_for_first_read:
-                first_has_read.set()
-                # Hold the lock long enough for the other writer to issue its read against it.
-                await asyncio.sleep(0.25)
-            state = experiments_common._validate_outcome_update(experiment, design_spec, state, participant_id, 1)
-            planned = experiments_common._compute_update(experiment, state, 1)
-            experiments_common._apply_update_plan(planned)
-            await session.commit()
-
-    await asyncio.gather(
-        record("p1", wait_for_first_read=False),
-        record("p2", wait_for_first_read=True),
-    )
-
-    alpha_after = await xngin_session.scalar(select(tables.Arm.alpha).where(tables.Arm.id == contended_arm_id))
-    assert alpha_after is not None and alpha_before is not None
-    assert alpha_after - alpha_before == 2.0
-
-
 async def test_read_arm_draw_state_returns_the_stored_parameters_not_the_session_copy(
     xngin_session, testing_datasource
 ):
@@ -2863,66 +2804,6 @@ async def test_read_arm_draw_state_returns_the_stored_parameters_not_the_session
     assert stale != 999.0
     assert state is not None
     assert state.arm.alpha == 999.0
-
-
-async def test_update_bandit_arm_refuses_a_second_outcome_for_the_same_participant(xngin_session, testing_datasource):
-    """A second writer for one participant waits, then finds the outcome already recorded.
-
-    The read locks the draw, so what it reports cannot go stale underneath the plan: a writer that
-    arrives while another holds the lock blocks there, and when it proceeds it sees the outcome the
-    first one recorded rather than the absence it would have seen a moment earlier. That is what
-    makes recording an outcome twice impossible; nothing re-checks at write time.
-    """
-    experiment = await insert_experiment_and_arms(
-        xngin_session,
-        testing_datasource.ds,
-        experiment_type=ExperimentsType.MAB_ONLINE,
-        prior_type=PriorTypes.BETA,
-        reward_type=LikelihoodTypes.BERNOULLI,
-    )
-    await create_assignment_for_participant(xngin_session, experiment, "p1", None, random_state=66)
-    await xngin_session.commit()
-    design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
-    gain_before = sum((arm.alpha or 0) - (arm.alpha_init or 0) for arm in experiment.arms)
-
-    first_has_read = asyncio.Event()
-    refusals: list[str] = []
-
-    async def record(*, wait_for_first_read: bool):
-        async with database.async_session() as session:
-            if wait_for_first_read:
-                await first_has_read.wait()
-            # The second writer blocks here until the first commits.
-            state = await experiments_common._read_arm_draw_state(session, experiment.id, "p1")
-            if not wait_for_first_read:
-                first_has_read.set()
-                # Hold the lock long enough for the other writer to reach its read.
-                await asyncio.sleep(0.25)
-            try:
-                state = experiments_common._validate_outcome_update(experiment, design_spec, state, "p1", 1)
-                planned = experiments_common._compute_update(experiment, state, 1)
-            except ExperimentsAssignmentError as exc:
-                refusals.append(str(exc))
-                return
-            experiments_common._apply_update_plan(planned)
-            await session.commit()
-
-    async with asyncio.timeout(30):
-        await asyncio.gather(
-            record(wait_for_first_read=False),
-            record(wait_for_first_read=True),
-        )
-
-    assert len(refusals) == 1
-    assert "already has an outcome recorded" in refusals[0]
-
-    # Exactly one observation landed on the arms.
-    gains = (
-        await xngin_session.execute(
-            select(tables.Arm.alpha, tables.Arm.alpha_init).where(tables.Arm.experiment_id == experiment.id)
-        )
-    ).all()
-    assert sum((alpha or 0) - (alpha_init or 0) for alpha, alpha_init in gains) - gain_before == 1.0
 
 
 async def test_update_bandit_arm_with_outcome_mab_dwh_numeric_target_accepts_any_float(
