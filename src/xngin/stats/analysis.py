@@ -95,7 +95,9 @@ def analyze_experiment(
 
     # Calculate NaN counts for all metrics. Since assignments_df may have participants that are not
     # yet in the dwh (e.g. in an online experiment) we're also counting missing participants as having NaN as well.
-    nan_counts_df = merged_df.groupby(arm_col, observed=False)[metric_columns].agg(lambda s: s.isna().sum())
+    # count() ignores NaN, so rows-per-arm minus non-null-values-per-arm is the number of missing values.
+    grouped = merged_df.groupby(arm_col, observed=False)
+    nan_counts_df = grouped[metric_columns].count().rsub(grouped.size(), axis=0)
 
     # Prep our dict of analyses to return.
     metric_analyses: dict[str, dict[str, ArmAnalysisResult]] = {}
