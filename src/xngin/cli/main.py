@@ -14,21 +14,13 @@ from typing import Annotated
 
 import typer
 from email_validator import EmailNotValidError, validate_email
-from sqlalchemy import make_url
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from xngin.cli.commands import create_testing_dwh as _create_testing_dwh_cmd
 from xngin.cli.commands import databases as _databases_cmd
-from xngin.cli.common import (
-    cli_async_engine,
-    cli_engine,
-    console,
-    create_engine_and_database,
-    fail,
-    write_file_atomically,
-)
+from xngin.cli.common import cli_async_engine, cli_engine, console, fail, write_file_atomically
 from xngin.xsecrets import secretservice
 
 app = typer.Typer(help=__doc__)
@@ -56,20 +48,6 @@ def parse_iso_datetime(value: str | None) -> datetime | None:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=UTC)
     return parsed
-
-
-@app.command()
-def create_apiserver_db(
-    dsn: Annotated[
-        str,
-        typer.Option(help="The SQLAlchemy URL for the database.", envvar="DATABASE_URL"),
-    ],
-):
-    from xngin.apiserver.sqla import tables  # noqa: PLC0415
-
-    console.print(f"DSN: [cyan]{dsn}[/cyan]")
-    engine = create_engine_and_database(make_url(dsn))
-    tables.Base.metadata.create_all(bind=engine)
 
 
 @app.command()

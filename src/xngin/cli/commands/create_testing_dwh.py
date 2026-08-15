@@ -16,7 +16,8 @@ import typer
 from sqlalchemy import make_url
 
 from xngin.apiserver.dwh import dwh_utils
-from xngin.cli.common import cli_engine, ensure_database_exists, fail
+from xngin.cli.commands.databases import create_database_if_absent
+from xngin.cli.common import cli_engine, fail
 
 if TYPE_CHECKING:
     from pandas import DataFrame
@@ -399,7 +400,7 @@ def create_testing_dwh(
     )
 
     if create_db:
-        ensure_database_exists(dest.url)
+        create_database_if_absent(dest.url)
 
     if allow_existing and _table_is_populated(dest):
         return

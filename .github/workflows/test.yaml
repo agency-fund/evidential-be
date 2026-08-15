@@ -295,9 +295,6 @@ jobs:
           uv run xngin-cli create-testing-dwh --dsn postgresql+psycopg2://postgres@127.0.0.1:5499/postgres \
             --schema-name alt2 --table-name=alt_table2
 
-          # Create the application database.
-          uv run xngin-cli create-apiserver-db
-
   bq-integration:
     timeout-minutes: 10
     runs-on: ubuntu-24.04
