@@ -58,7 +58,7 @@ jobs:
       - uses: astral-sh/setup-uv@e06108dd0aef18192324c70427afc47652e63a82 # v7.5.0
       - uses: j178/prek-action@bdca6f102f98e2b4c7029491a53dfd366469e33d # v2.0.4
 
-  betterleaks:
+  secret-scan:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -66,21 +66,13 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Install betterleaks
-        env:
-          BETTERLEAKS_VERSION: 1.7.4
-        run: |
-          TARBALL="betterleaks_${BETTERLEAKS_VERSION}_linux_x64.tar.gz"
-          curl -sSfL -o "${TARBALL}" \
-            "https://github.com/betterleaks/betterleaks/releases/download/v${BETTERLEAKS_VERSION}/${TARBALL}"
-          curl -sSfL -o checksums.txt \
-            "https://github.com/betterleaks/betterleaks/releases/download/v${BETTERLEAKS_VERSION}/checksums.txt"
-          grep "${TARBALL}" checksums.txt | sha256sum -c -
-          tar -xzf "${TARBALL}" betterleaks
-          sudo mv betterleaks /usr/local/bin/
-          betterleaks version
-      - name: Scan repo for secrets
-        run: betterleaks dir . -v --no-banner --exit-code 1
+      - uses: dortort/betterleaks-action@cd0b905aa4befb8f42f8b1ab98150180c9e77515 # v0.1.0
+        with:
+          version: 'v1.7.4'
+          scan-mode: 'auto'
+          fail-on-leak: 'true'
+          redact: 'true'
+          verbose: 'true'
 
   check-migrations:
     needs: changes
