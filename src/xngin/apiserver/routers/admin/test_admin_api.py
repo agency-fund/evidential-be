@@ -70,6 +70,7 @@ from xngin.apiserver.routers.common_api_types import (
     GetExperimentResponse,
     GetParticipantAssignmentResponse,
     LikelihoodTypes,
+    MABDwhExperimentSpec,
     MABExperimentSpec,
     OnlineFrequentistExperimentSpec,
     PowerRequest,
@@ -215,11 +216,13 @@ async def make_bandit_online_experiment(
     experiment_type: ExperimentsType = ExperimentsType.MAB_ONLINE,
     prior_type: PriorTypes = PriorTypes.BETA,
     reward_type: LikelihoodTypes = LikelihoodTypes.BERNOULLI,
+    target_field_name: str = "is_onboarded",
 ) -> GetExperimentForUiResponse:
     request_obj = make_create_online_bandit_experiment_request(
         experiment_type=experiment_type,
         reward_type=reward_type,
         prior_type=prior_type,
+        target_field_name=target_field_name,
     )
     experiment_id = aclient.create_experiment(datasource_id=datasource_id, body=request_obj, random_state=42).data
     aclient.commit_experiment(datasource_id=datasource_id, experiment_id=experiment_id.experiment_id)
@@ -2209,6 +2212,47 @@ def test_create_online_cmab_experiment(testing_datasource, aclient: AdminAPIClie
 
 
 @pytest.mark.parametrize(
+    ("experiment_type", "enable_autofail", "autofail_window", "autofail_outcome_value"),
+    [
+        (ExperimentsType.MAB_ONLINE, False, 24, 0.0),
+        (ExperimentsType.CMAB_ONLINE, False, 24, 0.0),
+        (ExperimentsType.MAB_ONLINE_DWH, False, 24, 0.0),
+        (ExperimentsType.MAB_ONLINE, True, 48, 1.0),
+        (ExperimentsType.CMAB_ONLINE, True, 72, 0.0),
+        (ExperimentsType.MAB_ONLINE_DWH, True, 72, 0.0),
+    ],
+)
+def test_create_online_bandit_experiment_with_autofail(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    experiment_type,
+    enable_autofail,
+    autofail_window,
+    autofail_outcome_value,
+):
+    """Autofail settings should survive creation and be readable back from the API."""
+    datasource_id = testing_datasource.datasource_id
+    request_obj = make_create_online_bandit_experiment_request(
+        experiment_type=experiment_type,
+        enable_autofail=enable_autofail,
+        autofail_window=autofail_window,
+        autofail_outcome_value=autofail_outcome_value,
+        reward_type=LikelihoodTypes.BERNOULLI,
+    )
+
+    created_experiment = aclient.create_experiment(datasource_id=datasource_id, body=request_obj, random_state=42).data
+    parsed_experiment_id = created_experiment.experiment_id
+    assert parsed_experiment_id is not None
+
+    fetched_resp = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=parsed_experiment_id).data
+    for design_spec in (created_experiment.design_spec, fetched_resp.config.design_spec):
+        assert isinstance(design_spec, MABExperimentSpec | CMABExperimentSpec | MABDwhExperimentSpec)
+        assert design_spec.enable_autofail == enable_autofail
+        assert design_spec.autofail_window == autofail_window
+        assert design_spec.autofail_outcome_value == autofail_outcome_value
+
+
+@pytest.mark.parametrize(
     ("experiment_type", "reward_type", "prior_type"),
     [
         (ExperimentsType.MAB_ONLINE, LikelihoodTypes.NORMAL, PriorTypes.NORMAL),
@@ -2541,6 +2585,7 @@ async def test_create_and_update_outcome_mab_dwh_happy_path(
         experiment_type=ExperimentsType.MAB_ONLINE_DWH,
         prior_type=PriorTypes.NORMAL,
         reward_type=LikelihoodTypes.NORMAL,
+        target_field_name="current_income",
     )
     experiment_id = experiment.config.experiment_id
     assert experiment.config.design_spec.experiment_type == ExperimentsType.MAB_ONLINE_DWH

@@ -74,7 +74,6 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     ListUsersResponse,
     ListWebhooksResponse,
     PatchUserRequest,
-    SnapshotStatus,
     UpdateArmRequest,
     UpdateDatasourceRequest,
     UpdateExperimentRequest,
@@ -93,6 +92,7 @@ from xngin.apiserver.routers.common_api_types import (
     PowerRequest,
     PowerResponse,
 )
+from xngin.apiserver.routers.common_enums import SnapshotStatus
 
 if TYPE_CHECKING:
     from fastapi import FastAPI

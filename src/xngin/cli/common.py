@@ -3,16 +3,24 @@
 import os
 import stat
 from pathlib import Path
+from typing import NoReturn
 
 import sqlalchemy
+import typer
+from rich.console import Console
 from sqlalchemy import create_engine
-from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from xngin.apiserver.dwh import dwh_utils
 
 SA_LOGGER_NAME_FOR_CLI = "cli_dwh"
 
+CLI_DB_APPLICATION_NAME = f"cli-{os.getpid()}"
+
 OWNER_ONLY_MODE = stat.S_IRUSR | stat.S_IWUSR
+
+console = Console()
+err_console = Console(stderr=True)
 
 
 def write_file_atomically(path: Path, content: str, *, private: bool = False) -> None:
@@ -37,48 +45,38 @@ def write_file_atomically(path: Path, content: str, *, private: bool = False) ->
         temp_path.unlink(missing_ok=True)
 
 
-def create_engine_and_database(url: sqlalchemy.URL, *, connect_args: dict | None = None):
-    """Connects to a SQLAlchemy URL and creates the database if it doesn't exist.
+def fail(message: str, *, code: int = 1) -> NoReturn:
+    """Prints an error to stderr and exits.
 
-    Only implemented for psycopg/psycopg2.
+    Use code 2 to indicate user error.
     """
-    import psycopg.errors  # noqa: PLC0415
-    import psycopg2.errors  # noqa: PLC0415
+    err_console.print(f"[bold red]Error:[/bold red] {message}")
+    raise typer.Exit(code)
 
-    connect_args = connect_args or {}
 
-    try:
-        engine = create_engine(url, connect_args=connect_args, logging_name=SA_LOGGER_NAME_FOR_CLI)
-        dwh_utils.extra_engine_setup(engine)
-        with engine.connect():
-            print("Connected.")
-    except OperationalError as exc:
-        if not dwh_utils.is_postgres(url) or (
-            # 1st case: psycopg2 driver
-            "does not exist" not in str(exc)
-            # 2nd case: psycopg driver
-            and "Connection refused" not in str(exc)
-        ):
-            raise
-        print(f"Creating database {url.database}...")
-        engine = create_engine(
-            url.set(database="postgres"), connect_args=connect_args, logging_name=SA_LOGGER_NAME_FOR_CLI
-        )
-        dwh_utils.extra_engine_setup(engine)
-        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
-            # Creating a database can fail in many ways.
-            try:
-                conn.execute(sqlalchemy.text(f"CREATE DATABASE {url.database}"))
-            except psycopg.errors.DuplicateDatabase, psycopg2.errors.DuplicateDatabase:
-                pass
-            except psycopg.errors.IntegrityError, psycopg2.errors.IntegrityError:
-                pass
-            except ProgrammingError as exc:
-                if "already exists" not in str(exc):
-                    raise
-            except IntegrityError as exc:
-                if "pg_database_datname_index" not in str(exc):
-                    raise
-        return create_engine(url, connect_args=connect_args, logging_name=SA_LOGGER_NAME_FOR_CLI)
-    else:
-        return engine
+def cli_connect_args(url: sqlalchemy.URL) -> dict:
+    """Returns the connect_args identifying this process to the server, for dialects that accept them.
+
+    Only the Postgres drivers understand application_name.
+    """
+    if dwh_utils.is_postgres(url):
+        return {"application_name": CLI_DB_APPLICATION_NAME}
+    return {}
+
+
+def cli_engine(url: sqlalchemy.URL | str, *, connect_args: dict | None = None, echo: bool = False) -> sqlalchemy.Engine:
+    """Creates an Engine with the logging name, application name, and dialect workarounds the CLI expects."""
+    url = sqlalchemy.make_url(url)
+    engine = create_engine(
+        url, connect_args=cli_connect_args(url) | (connect_args or {}), logging_name=SA_LOGGER_NAME_FOR_CLI, echo=echo
+    )
+    dwh_utils.extra_engine_setup(engine)
+    return engine
+
+
+def cli_async_engine(url: sqlalchemy.URL | str) -> AsyncEngine:
+    """Creates an Engine comparable to what cli_engine would create, but async."""
+    url = sqlalchemy.make_url(url)
+    engine = create_async_engine(url, connect_args=cli_connect_args(url), logging_name=SA_LOGGER_NAME_FOR_CLI)
+    dwh_utils.extra_engine_setup(engine.sync_engine)
+    return engine

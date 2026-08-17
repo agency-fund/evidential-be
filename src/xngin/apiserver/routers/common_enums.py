@@ -19,15 +19,16 @@ class ExperimentState(enum.StrEnum):
     """
     Experiment lifecycle states.
 
-    note: [starting state], [[terminal state]]
-    [DESIGNING]->[ASSIGNED]->{[[ABANDONED]], COMMITTED}->[[ABORTED]]
+    Experiments are born in to the ASSIGNED state. The abandon_experiment and commit_experiment APIs transition them to
+    the terminal ABANDONED or COMMITTED states, respectively.
+
+    The name of the ASSIGNED state was chosen when we only supported freq-preassigned experiments. Today it represents
+    an experiment in a draft state.
     """
 
-    DESIGNING = "designing"  # TODO: https://github.com/agency-fund/xngin/issues/352
-    ASSIGNED = "assigned"  # TODO: rename to "REVIEWING"
+    ASSIGNED = "assigned"
     ABANDONED = "abandoned"
     COMMITTED = "committed"
-    ABORTED = "aborted"
 
 
 class StopAssignmentReason(enum.StrEnum):
@@ -186,6 +187,16 @@ class DataType(enum.StrEnum):
                 return DataTypeStorageClass.NUMERIC
             case _:
                 raise RuntimeError(f"Unsupported data type {self}")
+
+    @classmethod
+    def is_numeric_type(cls, data_type: Self) -> bool:
+        """Returns True if the type is numeric."""
+        return data_type in {
+            DataType.INTEGER,
+            DataType.DOUBLE_PRECISION,
+            DataType.NUMERIC,
+            DataType.BIGINT,
+        }
 
 
 class DataTypeStorageClass(enum.StrEnum):
@@ -397,3 +408,11 @@ class ExperimentAnalysisType(enum.StrEnum):
 
     FREQ = "freq"
     BANDIT = "bandit"
+
+
+class SnapshotStatus(enum.StrEnum):
+    """Describes the status of a snapshot."""
+
+    SUCCESS = "success"
+    RUNNING = "running"
+    FAILED = "failed"

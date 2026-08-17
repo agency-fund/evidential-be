@@ -80,12 +80,27 @@ def make_createexperimentrequest_json(
     primary_key: str | None = None,
     desired_n: int | None = None,
     target_field_name: str = "is_onboarded",
+    enable_autofail: bool = False,
+    autofail_window: int = 24,
+    autofail_outcome_value: float = 0.0,
 ):
     """Make a basic CreateExperimentRequest JSON object.
 
     This does not add any power analyses or balance checks, nor do any validation.
+
+    The autofail arguments only apply to the bandit experiment types; frequentist specs have no
+    such fields.
     """
     experiment_type = ExperimentsType(experiment_type)
+    autofail_spec = (
+        {
+            "enable_autofail": enable_autofail,
+            "autofail_window": autofail_window,
+            "autofail_outcome_value": autofail_outcome_value,
+        }
+        if enable_autofail
+        else {}
+    )
     match experiment_type:
         case ExperimentsType.FREQ_PREASSIGNED | ExperimentsType.FREQ_ONLINE:
             table_name = table_name or TESTING_DWH_PARTICIPANT_DEF.table_name
@@ -157,6 +172,7 @@ def make_createexperimentrequest_json(
                     "prior_type": prior_type,
                     "reward_type": reward_type,
                     "arms": arms,
+                    **autofail_spec,
                 }
             }
         case ExperimentsType.MAB_ONLINE_DWH:
@@ -194,6 +210,7 @@ def make_createexperimentrequest_json(
                     "table_name": table_name or TESTING_DWH_PARTICIPANT_DEF.table_name,
                     "primary_key": primary_key or "id",
                     "target_field_name": target_field_name,
+                    **autofail_spec,
                 }
             }
         case ExperimentsType.CMAB_ONLINE:
@@ -238,6 +255,7 @@ def make_createexperimentrequest_json(
                             "value_type": "real-valued",
                         },
                     ],
+                    **autofail_spec,
                 }
             }
         case _:
@@ -288,12 +306,18 @@ def make_create_online_bandit_experiment_request(
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
     prior_type: PriorTypes = PriorTypes.NORMAL,
     target_field_name: str = "is_onboarded",
+    enable_autofail: bool = False,
+    autofail_window: int = 24,
+    autofail_outcome_value: float = 0.0,
 ) -> CreateExperimentRequest:
     request = make_createexperimentrequest_json(
         experiment_type=experiment_type,
         prior_type=prior_type,
         reward_type=reward_type,
         target_field_name=target_field_name,
+        enable_autofail=enable_autofail,
+        autofail_window=autofail_window,
+        autofail_outcome_value=autofail_outcome_value,
     )
     return CreateExperimentRequest.model_validate(request)
 
@@ -1698,6 +1722,7 @@ async def test_create_experiment_impl_for_mab_dwh_online(
     request = make_create_online_bandit_experiment_request(
         experiment_type=ExperimentsType.MAB_ONLINE_DWH,
         target_field_name=target_field_name,
+        reward_type=LikelihoodTypes.BERNOULLI if expected_data_type == "boolean" else LikelihoodTypes.NORMAL,
     )
 
     response = await create_experiment_impl(
@@ -1737,6 +1762,34 @@ async def test_create_experiment_impl_for_mab_dwh_missing_target_raises(xngin_se
     )
 
     with pytest.raises(LateValidationError, match="column_that_does_not_exist"):
+        await create_experiment_impl(
+            request=request,
+            datasource=testing_datasource.ds,
+            xngin_session=xngin_session,
+            stratify_on_metrics=False,
+            random_state=42,
+            validated_webhooks=[],
+        )
+
+
+@pytest.mark.parametrize(
+    ("target_field_name", "reward_type"),
+    [
+        ("is_onboarded", LikelihoodTypes.NORMAL),
+        ("current_income", LikelihoodTypes.BERNOULLI),
+    ],
+)
+async def test_create_experiment_impl_for_mab_dwh_incompatible_reward_type_raises(
+    xngin_session, testing_datasource, target_field_name: str, reward_type: LikelihoodTypes
+):
+    """MAB-DWH create with a target_field_name that doesn't exist in the DWH table fails loudly."""
+    request = make_create_online_bandit_experiment_request(
+        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
+        target_field_name=target_field_name,
+        reward_type=reward_type,
+    )
+
+    with pytest.raises(LateValidationError, match="only compatible with reward_type"):
         await create_experiment_impl(
             request=request,
             datasource=testing_datasource.ds,
@@ -1993,6 +2046,7 @@ async def make_experiment_with_assignments(
                     arm_id=arm1_id,
                     created_at=datetime(2025, 1, 1, tzinfo=UTC),
                     outcome=0.0,
+                    autofailed_outcome=False,
                 ),
                 tables.Draw(
                     experiment_id=experiment.id,
@@ -2000,6 +2054,7 @@ async def make_experiment_with_assignments(
                     arm_id=arm2_id,
                     created_at=datetime(2025, 1, 2, tzinfo=UTC),
                     outcome=1.0,
+                    autofailed_outcome=False,
                 ),
             ]
         case ExperimentsType.CMAB_ONLINE.value:
@@ -2012,6 +2067,7 @@ async def make_experiment_with_assignments(
                     observed_at=datetime(2025, 1, 3, tzinfo=UTC),
                     context_vals=[0.0, 0.0],
                     outcome=0.0,
+                    autofailed_outcome=False,
                 ),
                 tables.Draw(
                     experiment_id=experiment.id,
@@ -2021,6 +2077,7 @@ async def make_experiment_with_assignments(
                     observed_at=datetime(2025, 1, 4, tzinfo=UTC),
                     context_vals=[1.0, 1.0],
                     outcome=1.0,
+                    autofailed_outcome=False,
                 ),
             ]
         case _:
