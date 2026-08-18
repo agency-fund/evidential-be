@@ -204,5 +204,6 @@ CONVENTIONS.md
 prompts
 .claude
 CLAUDE.local.md
+.agents/
 
 openapi.json
