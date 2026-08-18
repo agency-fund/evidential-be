@@ -4,7 +4,7 @@ import io
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import assert_never
+from typing import TypedDict, assert_never
 
 import numpy as np
 import pandas as pd
@@ -1077,6 +1077,34 @@ async def _fetch_outcomes_and_context_for_arm(
     return outcomes, all_context_vals
 
 
+class PartialUpdateDrawBeta(TypedDict):
+    """Subset of fields on tables.Draw, used for type-safe partial updates."""
+
+    current_alpha: float | None
+    current_beta: float | None
+
+
+class PartialUpdateDrawNormal(TypedDict):
+    """Subset of fields on tables.Draw, used for type-safe partial updates."""
+
+    current_mu: list[float] | None
+    current_covariance: list[list[float]] | None
+
+
+class PartialUpdateArmBeta(TypedDict):
+    """Subset of fields on tables.Arm, used for type-safe partial updates."""
+
+    alpha: float | None
+    beta: float | None
+
+
+class PartialUpdateArmNormal(TypedDict):
+    """Subset of fields on tables.Arm, used for type-safe partial updates."""
+
+    mu: list[float] | None
+    covariance: list[list[float]] | None
+
+
 async def update_bandit_arm_with_outcome_impl(
     xngin_session: AsyncSession,
     experiment: tables.Experiment,
@@ -1154,30 +1182,20 @@ async def update_bandit_arm_with_outcome_impl(
     )
 
     # Update the draw record and arm with the new parameters
-    update_draw_params: dict[str, float | list[float] | list[list[float]]]
-    update_arm_params: dict[str, float | list[float] | list[list[float]]]
+    update_draw_params: PartialUpdateDrawBeta | PartialUpdateDrawNormal
+    update_arm_params: PartialUpdateArmBeta | PartialUpdateArmNormal
     match updated_parameters:
         case UpdateTypeBeta():
-            update_draw_params = {
-                "current_alpha": updated_parameters.alpha,
-                "current_beta": updated_parameters.beta,
-            }
-            update_arm_params = {
-                "alpha": updated_parameters.alpha,
-                "beta": updated_parameters.beta,
-            }
+            update_draw_params = PartialUpdateDrawBeta(
+                current_alpha=updated_parameters.alpha, current_beta=updated_parameters.beta
+            )
+            update_arm_params = PartialUpdateArmBeta(alpha=updated_parameters.alpha, beta=updated_parameters.beta)
         case UpdateTypeNormal():
-            update_draw_params = {
-                "current_mu": updated_parameters.mu,
-                "current_covariance": updated_parameters.covariance,
-            }
-            update_arm_params = {
-                "mu": updated_parameters.mu,
-                "covariance": updated_parameters.covariance,
-            }
-        case _:
-            raise ExperimentsAssignmentError(
-                f"Unsupported prior update type: {type(updated_parameters)} for prior type {experiment.prior_type}"
+            update_draw_params = PartialUpdateDrawNormal(
+                current_mu=updated_parameters.mu, current_covariance=updated_parameters.covariance
+            )
+            update_arm_params = PartialUpdateArmNormal(
+                mu=updated_parameters.mu, covariance=updated_parameters.covariance
             )
 
     await xngin_session.execute(
