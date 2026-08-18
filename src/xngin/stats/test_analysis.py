@@ -1,6 +1,7 @@
 import math
 import random
 import uuid
+from collections import Counter
 from typing import Any
 
 import numpy as np
@@ -220,6 +221,59 @@ def test_analysis_with_one_arm_missing_all_outcomes(test_assignments, test_outco
     result = analyze_experiment(test_assignments, test_outcomes)
     assert len(result) == 1  # One metric
     assert len(result["bool_field"]) == 0  # No arm analyses
+
+
+def test_analysis_counts_participants_absent_from_outcomes(test_assignments, test_outcomes):
+    """Assigned participants with no outcome row at all (e.g. not yet in the dwh) count as missing."""
+    absent_ids = {str(i) for i in range(100)}
+    outcomes = [outcome for outcome in test_outcomes if outcome.participant_id not in absent_ids]
+    assert len(outcomes) == len(test_outcomes) - len(absent_ids)
+
+    result = analyze_experiment(test_assignments, outcomes)
+
+    bool_field_results = result["bool_field"]
+    assert len(bool_field_results) == 3  # Three arms
+    arm_map = test_assignments.set_index("participant_id")["arm_id"].to_dict()
+    expected_per_arm = Counter(arm_map[participant_id] for participant_id in absent_ids)
+    for arm_id, arm_results in bool_field_results.items():
+        assert arm_results.num_missing_values == expected_per_arm[arm_id], arm_id
+    assert sum(r.num_missing_values for r in bool_field_results.values()) == len(absent_ids)
+
+
+def test_analysis_with_multiple_metrics(test_assignments):
+    """Each metric's missing value counts are tallied independently of the other metrics'."""
+    rand = random.Random(44)
+    bool_field_missing = {str(i) for i in range(100)}
+    revenue_missing = {str(i) for i in range(500, 800)}
+    none: Any = None
+    outcomes = [
+        ParticipantOutcome(
+            participant_id=str(i),
+            metric_values=[
+                MetricValue(
+                    metric_name="bool_field",
+                    metric_value=none if str(i) in bool_field_missing else rand.choice([0, 1]),
+                ),
+                MetricValue(
+                    metric_name="revenue",
+                    metric_value=none if str(i) in revenue_missing else rand.random() * 100,
+                ),
+            ],
+        )
+        for i in range(len(test_assignments))
+    ]
+
+    result = analyze_experiment(test_assignments, outcomes)
+
+    assert set(result.keys()) == {"bool_field", "revenue"}
+    arm_map = test_assignments.set_index("participant_id")["arm_id"].to_dict()
+    for metric_name, missing_ids in (("bool_field", bool_field_missing), ("revenue", revenue_missing)):
+        metric_results = result[metric_name]
+        assert len(metric_results) == 3  # Three arms
+        expected_per_arm = Counter(arm_map[participant_id] for participant_id in missing_ids)
+        for arm_id, arm_results in metric_results.items():
+            assert arm_results.num_missing_values == expected_per_arm[arm_id], (metric_name, arm_id)
+        assert sum(r.num_missing_values for r in metric_results.values()) == len(missing_ids)
 
 
 def test_analysis_rejects_assignments_with_extra_columns(test_assignments, test_outcomes):
