@@ -1380,6 +1380,7 @@ async def test_update_bandit_arm_with_outcome_mab_dwh_numeric_target_accepts_any
     ).data.assignment
     assert assignment is not None
     assert assignment.outcome == 42.7
+    assert assignment.observed_at is not None
 
 
 @pytest.mark.parametrize("experiment_type", [ExperimentsType.FREQ_ONLINE, ExperimentsType.FREQ_PREASSIGNED])
