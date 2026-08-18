@@ -60,6 +60,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     get_or_create_assignment_for_participant,
     make_sample_calls,
     make_schema_from_experiment,
+    update_bandit_arm_with_outcome_impl,
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import get_experiment_assignments_as_csv_impl
 from xngin.apiserver.sqla import tables
@@ -2634,6 +2635,44 @@ async def test_get_or_create_assignment_for_participant_without_filters(
         assert response.experiment_id == experiment.id
         assert response.participant_id == "user_id"
         assert (response.assignment is not None) == has_assignment
+
+
+async def test_update_bandit_arm_with_outcome_multiple_times_in_one_transaction(xngin_session, testing_datasource):
+    bandit_experiment = await insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.MAB_ONLINE,
+        prior_type=PriorTypes.BETA,
+        reward_type=LikelihoodTypes.BERNOULLI,
+    )
+    for participant_id in ("participant-1", "participant-2"):
+        await create_assignment_for_participant(
+            xngin_session,
+            bandit_experiment,
+            participant_id,
+            random_state=66,
+        )
+
+    for participant_id, outcome in (("participant-1", 1.0), ("participant-2", 0.0)):
+        await update_bandit_arm_with_outcome_impl(
+            xngin_session=xngin_session,
+            experiment=bandit_experiment,
+            participant_id=participant_id,
+            outcome=outcome,
+        )
+
+    assert xngin_session.in_transaction()
+    await xngin_session.commit()
+    recorded_outcomes = dict(
+        (
+            await xngin_session.execute(
+                select(tables.Draw.participant_id, tables.Draw.outcome).where(
+                    tables.Draw.experiment_id == bandit_experiment.id
+                )
+            )
+        ).all()
+    )
+    assert recorded_outcomes == {"participant-1": 1.0, "participant-2": 0.0}
 
 
 async def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_session, testing_datasource):

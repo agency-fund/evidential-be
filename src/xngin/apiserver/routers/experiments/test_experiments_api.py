@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 from pydantic import TypeAdapter
+from sqlalchemy.exc import IntegrityError
 
 from xngin.apiserver.conftest import DatasourceMetadata
 from xngin.apiserver.routers.common_api_types import (
@@ -49,6 +50,9 @@ from xngin.stats.bandit_sampling import update_arm
 if TYPE_CHECKING:
     from xngin.apiserver.testing.admin_api_client import AdminAPIClient
     from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
+
+
+UPDATE_OUTCOME_IMPL = "xngin.apiserver.routers.experiments.experiments_api.update_bandit_arm_with_outcome_impl"
 
 
 async def create_experiment(
@@ -1608,3 +1612,36 @@ async def test_update_bandit_arm_with_outcome_rejects_non_numeric_outcome(
         json={"outcome": "not-a-float"},
     )
     assert response.status_code == HTTPStatus.UNPROCESSABLE_CONTENT, response.content
+
+
+async def test_update_bandit_arm_with_outcome_handles_integrity_error(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+    mocker,
+):
+    mab_experiment = await create_experiment(testing_datasource, aclient, experiment_type=ExperimentsType.MAB_ONLINE)
+    eclient.get_assignment(
+        api_key=testing_datasource.key,
+        experiment_id=mab_experiment.experiment_id,
+        participant_id="1",
+    )
+    update_mock = mocker.patch(
+        UPDATE_OUTCOME_IMPL,
+        side_effect=IntegrityError("UPDATE draws", {}, RuntimeError("constraint violation")),
+    )
+
+    response = eclient.client.post(
+        f"/v1/experiments/{mab_experiment.experiment_id}/assignments/1/outcome",
+        headers={"X-API-Key": testing_datasource.key},
+        json={"outcome": 1.0},
+    )
+
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_CONTENT, response.content
+    mocker.stop(update_mock)
+    eclient.update_bandit_arm_with_participant_outcome(
+        api_key=testing_datasource.key,
+        body=UpdateBanditArmOutcomeRequest(outcome=1.0),
+        experiment_id=mab_experiment.experiment_id,
+        participant_id="1",
+    )

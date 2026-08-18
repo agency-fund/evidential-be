@@ -20,6 +20,7 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 from loguru import logger
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import constants
@@ -50,6 +51,7 @@ from xngin.apiserver.routers.experiments.dependencies import (
     experiment_with_contexts_dependency,
 )
 from xngin.apiserver.routers.experiments.experiments_common import (
+    ExperimentsAssignmentError,
     create_assignment_for_participant,
     get_existing_assignment_for_participant,
     get_experiment_impl,
@@ -407,12 +409,19 @@ async def update_bandit_arm_with_participant_outcome(
     if experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value:
         await experiment.awaitable_attrs.contexts
 
-    updated_arm = await update_bandit_arm_with_outcome_impl(
-        xngin_session=session,
-        experiment=experiment,
-        participant_id=participant_id,
-        outcome=body.outcome,
-    )
+    try:
+        updated_arm = await update_bandit_arm_with_outcome_impl(
+            xngin_session=session,
+            experiment=experiment,
+            participant_id=participant_id,
+            outcome=body.outcome,
+        )
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise ExperimentsAssignmentError(
+            f"Failed to update assignment for participant '{participant_id}' with outcome {body.outcome}: {exc}"
+        ) from exc
 
     return ArmBandit(
         arm_id=updated_arm.id,
