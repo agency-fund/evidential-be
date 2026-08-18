@@ -2645,13 +2645,24 @@ async def test_update_bandit_arm_with_outcome_multiple_times_in_one_transaction(
         prior_type=PriorTypes.BETA,
         reward_type=LikelihoodTypes.BERNOULLI,
     )
+    assignments = []
     for participant_id in ("participant-1", "participant-2"):
-        await create_assignment_for_participant(
+        assignment = await create_assignment_for_participant(
             xngin_session,
             bandit_experiment,
             participant_id,
             random_state=66,
         )
+        assert assignment is not None
+        assignments.append(assignment)
+
+    assigned_arm_ids = {assignment.arm_id for assignment in assignments}
+    assert len(assigned_arm_ids) == 1
+    assigned_arm = next(arm for arm in bandit_experiment.arms if arm.id in assigned_arm_ids)
+    assert assigned_arm.alpha is not None
+    assert assigned_arm.beta is not None
+    initial_alpha = assigned_arm.alpha
+    initial_beta = assigned_arm.beta
 
     for participant_id, outcome in (("participant-1", 1.0), ("participant-2", 0.0)):
         await update_bandit_arm_with_outcome_impl(
@@ -2662,6 +2673,8 @@ async def test_update_bandit_arm_with_outcome_multiple_times_in_one_transaction(
         )
 
     assert xngin_session.in_transaction()
+    assert assigned_arm.alpha == initial_alpha + 1
+    assert assigned_arm.beta == initial_beta + 1
     await xngin_session.commit()
     recorded_outcomes = dict(
         (
@@ -2673,6 +2686,11 @@ async def test_update_bandit_arm_with_outcome_multiple_times_in_one_transaction(
         ).all()
     )
     assert recorded_outcomes == {"participant-1": 1.0, "participant-2": 0.0}
+    persisted_alpha, persisted_beta = (
+        await xngin_session.execute(select(tables.Arm.alpha, tables.Arm.beta).where(tables.Arm.id == assigned_arm.id))
+    ).one()
+    assert persisted_alpha == initial_alpha + 1
+    assert persisted_beta == initial_beta + 1
 
 
 async def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_session, testing_datasource):

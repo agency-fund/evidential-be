@@ -1155,21 +1155,26 @@ async def update_bandit_arm_with_outcome_impl(
 
     # Update the draw record and arm with the new parameters
     update_draw_params: dict[str, float | list[float] | list[list[float]]]
+    update_arm_params: dict[str, float | list[float] | list[list[float]]]
     match updated_parameters:
         case UpdateTypeBeta():
             update_draw_params = {
                 "current_alpha": updated_parameters.alpha,
                 "current_beta": updated_parameters.beta,
             }
-            arm_to_update.alpha = updated_parameters.alpha
-            arm_to_update.beta = updated_parameters.beta
+            update_arm_params = {
+                "alpha": updated_parameters.alpha,
+                "beta": updated_parameters.beta,
+            }
         case UpdateTypeNormal():
             update_draw_params = {
                 "current_mu": updated_parameters.mu,
                 "current_covariance": updated_parameters.covariance,
             }
-            arm_to_update.mu = updated_parameters.mu
-            arm_to_update.covariance = updated_parameters.covariance
+            update_arm_params = {
+                "mu": updated_parameters.mu,
+                "covariance": updated_parameters.covariance,
+            }
         case _:
             raise ExperimentsAssignmentError(
                 f"Unsupported prior update type: {type(updated_parameters)} for prior type {experiment.prior_type}"
@@ -1184,8 +1189,14 @@ async def update_bandit_arm_with_outcome_impl(
         )
         .values(**update_draw_params)
     )
-    xngin_session.add(arm_to_update)
-    await xngin_session.flush()
+    await xngin_session.execute(
+        update(tables.Arm)
+        .where(
+            tables.Arm.id == arm_to_update.id,
+            tables.Arm.experiment_id == experiment.id,
+        )
+        .values(**update_arm_params)
+    )
 
     return arm_to_update
 
