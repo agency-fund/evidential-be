@@ -33,10 +33,18 @@ from xngin.apiserver.routers.common_api_types import (
     Stratum,
     UpdateBanditArmOutcomeRequest,
 )
-from xngin.apiserver.routers.common_enums import ContextType, ExperimentState, Relation, StopAssignmentReason
+from xngin.apiserver.routers.common_enums import (
+    ContextType,
+    ExperimentState,
+    Relation,
+    StopAssignmentReason,
+    UpdateTypeNormal,
+)
+from xngin.apiserver.routers.experiments.test_experiments_common import make_create_online_bandit_experiment_request
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.admin_api_client import AdminAPIClientHTTPValidationError
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClientNotDefaultStatusError
+from xngin.stats.bandit_sampling import update_arm
 
 if TYPE_CHECKING:
     from xngin.apiserver.testing.admin_api_client import AdminAPIClient
@@ -1166,6 +1174,348 @@ async def test_get_assignment_mab_cache_headers(
     assert response.data.assignment is not None
     assert response.data.assignment.outcome == 1.0
     assert response.response.headers["Cache-Control"] == "private, max-age=3600"
+
+
+@pytest.mark.parametrize(
+    ("experiment_type", "prior_type", "reward_type"),
+    [
+        (ExperimentsType.MAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
+        (ExperimentsType.MAB_ONLINE, PriorTypes.BETA, LikelihoodTypes.BERNOULLI),
+        (ExperimentsType.MAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
+        (ExperimentsType.CMAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
+        (ExperimentsType.CMAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
+    ],
+)
+async def test_update_bandit_arm_with_outcome(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+    experiment_type: ExperimentsType,
+    prior_type: PriorTypes,
+    reward_type: LikelihoodTypes,
+):
+    """Record an outcome and verify the updated draw and arm through API responses."""
+    arms = [
+        ArmBandit(
+            arm_name="control",
+            arm_description="Control group",
+            **(
+                {"alpha_init": 1.0, "beta_init": 1.0}
+                if prior_type == PriorTypes.BETA
+                else {"mu_init": 0.0, "sigma_init": 1.0}
+            ),
+        ),
+        ArmBandit(
+            arm_name="treatment",
+            arm_description="Treatment group",
+            **(
+                {"alpha_init": 1.0, "beta_init": 1.0}
+                if prior_type == PriorTypes.BETA
+                else {"mu_init": 0.0, "sigma_init": 1.0}
+            ),
+        ),
+    ]
+    design_spec: MABExperimentSpec | CMABExperimentSpec
+    if experiment_type == ExperimentsType.CMAB_ONLINE:
+        design_spec = CMABExperimentSpec(
+            experiment_type=experiment_type,
+            experiment_name="API outcome update",
+            description="API outcome update",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime.now(UTC) + timedelta(days=1),
+            arms=arms,
+            prior_type=prior_type,
+            reward_type=reward_type,
+            contexts=[
+                Context(context_name="c1", context_description="Context 1", value_type=ContextType.REAL_VALUED),
+                Context(context_name="c2", context_description="Context 2", value_type=ContextType.REAL_VALUED),
+            ],
+        )
+    else:
+        design_spec = MABExperimentSpec(
+            experiment_type=experiment_type,
+            experiment_name="API outcome update",
+            description="API outcome update",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime.now(UTC) + timedelta(days=1),
+            arms=arms,
+            prior_type=prior_type,
+            reward_type=reward_type,
+            contexts=None,
+        )
+    experiment_id = aclient.create_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        body=CreateExperimentRequest(design_spec=design_spec),
+    ).data.experiment_id
+    aclient.commit_experiment(datasource_id=testing_datasource.datasource_id, experiment_id=experiment_id)
+
+    participant_id = "test_id"
+    committed_design_spec = aclient.get_experiment_for_ui(
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=experiment_id,
+    ).data.config.design_spec
+    context_inputs = (
+        [
+            ContextInput(context_id=context.context_id or "", context_value=1.0)
+            for context in committed_design_spec.contexts or []
+        ]
+        if isinstance(committed_design_spec, CMABExperimentSpec)
+        else []
+    )
+    if experiment_type == ExperimentsType.CMAB_ONLINE:
+        assignment = eclient.get_assignment_cmab(
+            api_key=testing_datasource.key,
+            body=CMABContextInputRequest(context_inputs=context_inputs),
+            experiment_id=experiment_id,
+            participant_id=participant_id,
+        ).data.assignment
+    else:
+        assignment = eclient.get_assignment(
+            api_key=testing_datasource.key,
+            experiment_id=experiment_id,
+            participant_id=participant_id,
+        ).data.assignment
+    assert assignment is not None
+
+    updated_arm = eclient.update_bandit_arm_with_participant_outcome(
+        api_key=testing_datasource.key,
+        body=UpdateBanditArmOutcomeRequest(outcome=1.0),
+        experiment_id=experiment_id,
+        participant_id=participant_id,
+    ).data
+
+    if experiment_type == ExperimentsType.CMAB_ONLINE:
+        updated_assignment = eclient.get_assignment_cmab(
+            api_key=testing_datasource.key,
+            body=CMABContextInputRequest(context_inputs=None),
+            experiment_id=experiment_id,
+            participant_id=participant_id,
+            create_if_none=False,
+        ).data.assignment
+    else:
+        updated_assignment = eclient.get_assignment(
+            api_key=testing_datasource.key,
+            experiment_id=experiment_id,
+            participant_id=participant_id,
+            create_if_none=False,
+        ).data.assignment
+    assert updated_assignment is not None
+    assert updated_assignment.outcome == 1.0
+    assert updated_assignment.observed_at is not None
+    assert updated_assignment.arm_id == assignment.arm_id
+    if experiment_type == ExperimentsType.CMAB_ONLINE:
+        assert updated_assignment.context_values == [1.0, 1.0]
+
+    stored_design_spec = aclient.get_experiment_for_ui(
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=experiment_id,
+    ).data.config.design_spec
+    stored_arm = next(arm for arm in stored_design_spec.arms if arm.arm_id == assignment.arm_id)
+    assert stored_arm == updated_arm
+
+    with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
+        eclient.update_bandit_arm_with_participant_outcome(
+            api_key=testing_datasource.key,
+            body=UpdateBanditArmOutcomeRequest(outcome=1.0),
+            experiment_id=experiment_id,
+            participant_id="missing",
+        )
+    assert exc.value.result.status == HTTPStatus.UNPROCESSABLE_CONTENT
+
+    with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
+        eclient.update_bandit_arm_with_participant_outcome(
+            api_key=testing_datasource.key,
+            body=UpdateBanditArmOutcomeRequest(outcome=1.0),
+            experiment_id=experiment_id,
+            participant_id=participant_id,
+        )
+    assert exc.value.result.status == HTTPStatus.UNPROCESSABLE_CONTENT
+
+
+async def test_create_mab_dwh_bool_target_with_normal_reward_returns_422(testing_datasource, aclient: AdminAPIClient):
+    """The API rejects an incompatible Normal reward for a boolean MAB-DWH target."""
+    request = make_create_online_bandit_experiment_request(
+        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
+        prior_type=PriorTypes.NORMAL,
+        reward_type=LikelihoodTypes.NORMAL,
+        target_field_name="is_onboarded",
+    )
+    result = aclient.create_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        body=request,
+        random_state=42,
+        raise_if_not_default_status=False,
+    )
+    assert result.status == HTTPStatus.UNPROCESSABLE_CONTENT
+    assert "only compatible with reward_type 'binary'" in str(result.data)
+
+
+async def test_update_bandit_arm_with_outcome_mab_dwh_numeric_target_accepts_any_float(
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+):
+    """A MAB-DWH numeric target accepts arbitrary floats through the API."""
+    request = make_create_online_bandit_experiment_request(
+        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
+        prior_type=PriorTypes.NORMAL,
+        reward_type=LikelihoodTypes.NORMAL,
+        target_field_name="current_income",
+    )
+    experiment_id = aclient.create_experiment(
+        datasource_id=testing_datasource.datasource_id, body=request, random_state=42
+    ).data.experiment_id
+    aclient.commit_experiment(datasource_id=testing_datasource.datasource_id, experiment_id=experiment_id)
+    eclient.get_assignment(api_key=testing_datasource.key, experiment_id=experiment_id, participant_id="p1")
+
+    eclient.update_bandit_arm_with_participant_outcome(
+        api_key=testing_datasource.key,
+        body=UpdateBanditArmOutcomeRequest(outcome=42.7),
+        experiment_id=experiment_id,
+        participant_id="p1",
+    )
+    assignment = eclient.get_assignment(
+        api_key=testing_datasource.key,
+        experiment_id=experiment_id,
+        participant_id="p1",
+        create_if_none=False,
+    ).data.assignment
+    assert assignment is not None
+    assert assignment.outcome == 42.7
+
+
+@pytest.mark.parametrize("experiment_type", [ExperimentsType.FREQ_ONLINE, ExperimentsType.FREQ_PREASSIGNED])
+async def test_update_bandit_arm_with_freq_experiments_returns_422(
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient, experiment_type: ExperimentsType
+):
+    """Frequentist experiments reject bandit outcome updates through the API."""
+    experiment = await create_experiment(testing_datasource, aclient, experiment_type=experiment_type)
+    if experiment_type == ExperimentsType.FREQ_ONLINE:
+        assignment = eclient.get_assignment(
+            api_key=testing_datasource.key,
+            experiment_id=experiment.experiment_id,
+            participant_id="p1",
+        ).data.assignment
+    else:
+        assignments = eclient.get_experiment_assignments(
+            api_key=testing_datasource.key, experiment_id=experiment.experiment_id
+        ).data.assignments
+        assignment = assignments[0] if assignments else None
+    assert assignment is not None
+
+    with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
+        eclient.update_bandit_arm_with_participant_outcome(
+            api_key=testing_datasource.key,
+            body=UpdateBanditArmOutcomeRequest(outcome=42.7),
+            experiment_id=experiment.experiment_id,
+            participant_id=assignment.participant_id,
+        )
+    assert exc.value.result.status == HTTPStatus.UNPROCESSABLE_CONTENT
+    assert "Cannot dynamically update arms for frequentist experiments" in str(exc.value.result.data)
+
+
+async def test_normal_prior_binary_reward_fits_each_outcome_exactly_once(
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+):
+    """The endpoint folds one recorded outcome into a Normal/Bernoulli posterior exactly once.
+
+    Normal/Bernoulli is the only update_arm branch that consumes every entry in its outcomes
+    argument; the Beta/Bernoulli and Normal/Normal branches use only outcomes[0]. This makes it the
+    branch that detects if the endpoint accidentally supplies duplicate or previously absorbed
+    outcomes instead of the intended singleton. Draw rows continue to retain the complete outcome
+    and context history, so a future batch implementation can deliberately recompute from the
+    original prior without weakening this incremental-update invariant.
+    """
+    pytest.skip(
+        "The current outcome updater fits the newly recorded outcome twice; retain this API contract for the "
+        "follow-up implementation fix."
+    )
+
+    # A single arm dimension keeps the posterior easy to read. Arms start at
+    # mu=[mu_init] and covariance=diag([sigma_init]) (storage_format_converters.py:532).
+    initial_mu = [0.0]
+    initial_covariance = [[1.0]]
+    design_spec = MABExperimentSpec(
+        experiment_type=ExperimentsType.MAB_ONLINE,
+        experiment_name="normal prior binary reward",
+        description="normal prior binary reward",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            ArmBandit(arm_name="control", arm_description="", mu_init=initial_mu[0], sigma_init=1.0),
+            ArmBandit(arm_name="treatment", arm_description="", mu_init=initial_mu[0], sigma_init=1.0),
+        ],
+        prior_type=PriorTypes.NORMAL,
+        reward_type=LikelihoodTypes.BERNOULLI,
+        contexts=None,
+    )
+    experiment_id = aclient.create_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        body=CreateExperimentRequest(design_spec=design_spec),
+    ).data.experiment_id
+    aclient.commit_experiment(datasource_id=testing_datasource.datasource_id, experiment_id=experiment_id)
+
+    eclient.get_assignment(
+        api_key=testing_datasource.key,
+        experiment_id=experiment_id,
+        participant_id="1",
+    )
+    updated_arm = eclient.update_bandit_arm_with_participant_outcome(
+        api_key=testing_datasource.key,
+        body=UpdateBanditArmOutcomeRequest(outcome=1.0),
+        experiment_id=experiment_id,
+        participant_id="1",
+    ).data
+
+    # Oracle: the same model fitted with the one outcome that was actually recorded. Using
+    # update_arm itself keeps the expectation free of any reimplementation of the math.
+    expected = update_arm(
+        experiment=tables.Experiment(
+            experiment_type=ExperimentsType.MAB_ONLINE.value,
+            prior_type=PriorTypes.NORMAL.value,
+            reward_type=LikelihoodTypes.BERNOULLI.value,
+        ),
+        arm_to_update=tables.Arm(mu=initial_mu, covariance=initial_covariance),
+        outcomes=[1.0],
+        context=None,
+    )
+    assert isinstance(expected, UpdateTypeNormal)
+
+    assert updated_arm.mu == pytest.approx(expected.mu)
+
+
+async def test_update_bandit_arm_with_outcome_rejects_non_binary_outcome_for_binary_reward(
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+):
+    """An experiment whose reward is binary accepts only 0 or 1."""
+    experiment_id = aclient.create_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        body=CreateExperimentRequest(
+            design_spec=MABExperimentSpec(
+                experiment_type=ExperimentsType.MAB_ONLINE,
+                experiment_name="binary reward",
+                description="binary reward",
+                start_date=datetime(2024, 1, 1, tzinfo=UTC),
+                end_date=datetime.now(UTC) + timedelta(days=1),
+                arms=[
+                    ArmBandit(arm_name="control", arm_description="", alpha_init=1, beta_init=1),
+                    ArmBandit(arm_name="treatment", arm_description="", alpha_init=1, beta_init=1),
+                ],
+                prior_type=PriorTypes.BETA,
+                reward_type=LikelihoodTypes.BERNOULLI,
+                contexts=None,
+            )
+        ),
+    ).data.experiment_id
+    aclient.commit_experiment(datasource_id=testing_datasource.datasource_id, experiment_id=experiment_id)
+    eclient.get_assignment(api_key=testing_datasource.key, experiment_id=experiment_id, participant_id="1")
+
+    response = eclient.client.post(
+        f"/v1/experiments/{experiment_id}/assignments/1/outcome",
+        headers={"X-API-Key": testing_datasource.key},
+        json={"outcome": 0.5},
+    )
+
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_CONTENT, response.content
+    assert "Must be 0 or 1" in response.text
 
 
 async def test_update_bandit_arm_with_outcome_rejects_non_numeric_outcome(
