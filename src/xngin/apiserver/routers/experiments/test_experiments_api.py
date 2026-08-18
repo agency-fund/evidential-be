@@ -1141,16 +1141,32 @@ async def test_get_assignment_online_cache_headers(
     assert exc.value.result.status == HTTPStatus.UNPROCESSABLE_CONTENT
 
 
-async def test_get_assignment_mab_cache_headers(
-    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+@pytest.mark.parametrize("experiment_type", [ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE])
+async def test_get_assignment_bandit_cache_headers(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+    experiment_type: ExperimentsType,
 ):
-    """Test Cache-Control headers for MAB experiments (only cached after outcome recorded)."""
-    mab_experiment = await create_experiment(testing_datasource, aclient, experiment_type=ExperimentsType.MAB_ONLINE)
+    """Bandit assignments are cached only after an outcome is recorded."""
+    experiment = await create_experiment(testing_datasource, aclient, experiment_type=experiment_type)
+
+    if experiment_type == ExperimentsType.CMAB_ONLINE:
+        context_inputs = [
+            {"context_id": context.context_id, "context_value": 1.0}
+            for context in sorted(experiment.design_spec.contexts, key=lambda context: context.context_id)
+        ]
+        eclient.get_assignment_cmab(
+            api_key=testing_datasource.key,
+            body=CMABContextInputRequest(context_inputs=context_inputs),
+            experiment_id=experiment.experiment_id,
+            participant_id="1",
+        )
 
     # Get assignment - no cache header since no outcome yet
     response = eclient.get_assignment(
         api_key=testing_datasource.key,
-        experiment_id=mab_experiment.experiment_id,
+        experiment_id=experiment.experiment_id,
         participant_id="1",
     )
     assert response.data.assignment is not None
@@ -1161,14 +1177,14 @@ async def test_get_assignment_mab_cache_headers(
     _ = eclient.update_bandit_arm_with_participant_outcome(
         api_key=testing_datasource.key,
         body=UpdateBanditArmOutcomeRequest(outcome=1.0),
-        experiment_id=mab_experiment.experiment_id,
+        experiment_id=experiment.experiment_id,
         participant_id="1",
     )
 
     # Get assignment again - should have cache header now
     response = eclient.get_assignment(
         api_key=testing_datasource.key,
-        experiment_id=mab_experiment.experiment_id,
+        experiment_id=experiment.experiment_id,
         participant_id="1",
     )
     assert response.data.assignment is not None
@@ -1531,51 +1547,3 @@ async def test_update_bandit_arm_with_outcome_rejects_non_numeric_outcome(
         json={"outcome": "not-a-float"},
     )
     assert response.status_code == HTTPStatus.UNPROCESSABLE_CONTENT, response.content
-
-
-async def test_get_assignment_cmab_cache_headers(
-    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
-):
-    """Test Cache-Control headers for CMAB experiments (only cached after outcome recorded)."""
-    cmab_experiment = await create_experiment(testing_datasource, aclient, experiment_type=ExperimentsType.CMAB_ONLINE)
-
-    context_inputs = [
-        {"context_id": context.context_id, "context_value": 1.0}
-        for context in sorted(cmab_experiment.design_spec.contexts, key=lambda c: c.context_id)
-    ]
-
-    # Create assignment via CMAB endpoint
-    _ = eclient.get_assignment_cmab(
-        api_key=testing_datasource.key,
-        body=CMABContextInputRequest(context_inputs=context_inputs),
-        experiment_id=cmab_experiment.experiment_id,
-        participant_id="1",
-    )
-
-    # Get assignment via GET - no cache header since no outcome yet
-    response = eclient.get_assignment(
-        api_key=testing_datasource.key,
-        experiment_id=cmab_experiment.experiment_id,
-        participant_id="1",
-    )
-    assert response.data.assignment is not None
-    assert response.data.assignment.outcome is None
-    assert "Cache-Control" not in response.response.headers
-
-    # Record outcome
-    _ = eclient.update_bandit_arm_with_participant_outcome(
-        api_key=testing_datasource.key,
-        body=UpdateBanditArmOutcomeRequest(outcome=1.0),
-        experiment_id=cmab_experiment.experiment_id,
-        participant_id="1",
-    )
-
-    # Get assignment again - should have cache header now
-    response = eclient.get_assignment(
-        api_key=testing_datasource.key,
-        experiment_id=cmab_experiment.experiment_id,
-        participant_id="1",
-    )
-    assert response.data.assignment is not None
-    assert response.data.assignment.outcome == 1.0
-    assert response.response.headers["Cache-Control"] == "private, max-age=3600"
