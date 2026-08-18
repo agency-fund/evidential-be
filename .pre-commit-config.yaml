@@ -69,3 +69,7 @@ repos:
     rev: 9257c6050c0261b8c57e712f632dc4a8010109a9  # frozen: v1.25.2
     hooks:
       - id: zizmor
+  - repo: https://github.com/betterleaks/betterleaks
+    rev: ed69eef5c9d16d1b39f136846b7bbe5fb8471ef5  # frozen: v1.7.4
+    hooks:
+      - id: betterleaks

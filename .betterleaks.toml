@@ -1,0 +1,35 @@
+title = "evidential-be betterleaks config"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "internal-xa-token"
+description = "Internal xa_ prefixed token"
+keywords = ["xa_"]
+regex = '''xa_[A-Za-z0-9_\-=]{40,}'''
+
+[[rules]]
+id = "internal-xat-token"
+description = "Internal xat_ prefixed access token"
+keywords = ["xat_"]
+regex = '''xat_[A-Za-z0-9_\-=]{40,}'''
+
+[[rules]]
+id = "tailscale-key"
+description = "Tailscale auth/API/SCIM/OAuth key (tskey-*)"
+keywords = ["tskey"]
+regex = '''tskey-(?:auth|api|scim|client)-[A-Za-z0-9]{10,}-[A-Za-z0-9]{20,}'''
+
+# Railway tokens are raw UUIDs with no dedicated prefix, so anchor on the
+# "railway" keyword to avoid flagging every UUID in the codebase.
+[[rules]]
+id = "railway-token"
+description = "Railway API/project token (UUID anchored to 'railway' keyword)"
+keywords = ["railway"]
+regex = '''(?i)railway[a-z_\-]*[\s=:"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'''
+secretGroup = 1
+
+[[allowlists]]
+description = "Ignore scanner reports"
+paths = ['''findings?.*\.json$''']

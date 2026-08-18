@@ -58,6 +58,22 @@ jobs:
       - uses: astral-sh/setup-uv@e06108dd0aef18192324c70427afc47652e63a82 # v7.5.0
       - uses: j178/prek-action@bdca6f102f98e2b4c7029491a53dfd366469e33d # v2.0.4
 
+  secret-scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dortort/betterleaks-action@cd0b905aa4befb8f42f8b1ab98150180c9e77515 # v0.1.0
+        with:
+          version: 'v1.7.4'
+          scan-mode: 'auto'
+          fail-on-leak: 'true'
+          redact: 'true'
+          verbose: 'true'
+
   check-migrations:
     needs: changes
     if: needs.changes.outputs.pydependencies == 'true' || needs.changes.outputs.migrations == 'true'
