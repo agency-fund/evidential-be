@@ -2477,7 +2477,7 @@ async def test_update_arm_invalid(testing_datasource, testing_experiment, aclien
         )
 
 
-def test_freq_experiments_analyze(testing_experiment, aclient: AdminAPIClient):
+def test_freq_experiments_analyze(testing_experiment, aclient: AdminAPIClient, use_deterministic_random):
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
 
