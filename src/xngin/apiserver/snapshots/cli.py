@@ -43,11 +43,11 @@ async def autofail_acollect(
     autofail_batch_size: int,
     *,
     database_setup: Callable[[], AbstractAsyncContextManager[None]] = database.setup,
-    process_updates: Callable[[float, float, int], Awaitable[None]] = autofail.process_autofail_updates,
+    process_autofails: Callable[[float, float, int], Awaitable[None]] = autofail.process_autofails,
 ) -> None:
     """Process eligible autofail updates within a bounded runtime."""
     async with database_setup():
-        await process_updates(autofail_timeout, autofail_batch_sleep, autofail_batch_size)
+        await process_autofails(autofail_timeout, autofail_batch_sleep, autofail_batch_size)
 
 
 @app.command()
@@ -68,7 +68,7 @@ def collect(
             min=1,
             help="Maximum total autofail processing time (in seconds). The timeout is checked before each batch.",
         ),
-    ] = autofail.AUTOFAIL_TIMEOUT_SECS,
+    ] = autofail.DEFAULT_AUTOFAIL_TIMEOUT_SECS,
     autofail_batch_sleep: Annotated[
         float,
         typer.Option(
@@ -76,7 +76,7 @@ def collect(
             min=0,
             help="Delay between committed autofail batches (in seconds).",
         ),
-    ] = autofail.AUTOFAIL_BATCH_SLEEP_SECS,
+    ] = autofail.DEFAULT_AUTOFAIL_BATCH_SLEEP_SECS,
     autofail_batch_size: Annotated[
         int,
         typer.Option(
@@ -84,7 +84,7 @@ def collect(
             min=1,
             help="Maximum number of autofail updates to commit in one transaction.",
         ),
-    ] = autofail.AUTOFAIL_BATCH_SIZE,
+    ] = autofail.DEFAULT_AUTOFAIL_BATCH_SIZE,
     snapshot_interval: Annotated[
         int, typer.Option("--interval", min=60, help="The target interval between snapshots (in seconds).")
     ] = timedelta(hours=6).seconds,
