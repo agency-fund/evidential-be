@@ -1494,6 +1494,7 @@ async def test_update_bandit_arm_with_freq_experiments_returns_422(
     assert "Cannot dynamically update arms for frequentist experiments" in str(exc.value.result.data)
 
 
+@pytest.mark.skip("EVE-171")
 async def test_normal_prior_binary_reward_fits_each_outcome_exactly_once(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
@@ -1506,11 +1507,6 @@ async def test_normal_prior_binary_reward_fits_each_outcome_exactly_once(
     and context history, so a future batch implementation can deliberately recompute from the
     original prior without weakening this incremental-update invariant.
     """
-    pytest.skip(
-        "The current outcome updater fits the newly recorded outcome twice; retain this API contract for the "
-        "follow-up implementation fix."
-    )
-
     # A single arm dimension keeps the posterior easy to read. Arms start at
     # mu=[mu_init] and covariance=diag([sigma_init]) (storage_format_converters.py:532).
     initial_mu = [0.0]
