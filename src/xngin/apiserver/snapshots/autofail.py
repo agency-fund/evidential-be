@@ -179,6 +179,7 @@ async def process_autofails(
 
     draws_processed = 0
     batches_processed = 0
+    experiments_failed = 0
     logger.info(
         f"Autofail run started with batch_size={batch_size}, timeout={autofail_timeout}s, batch_sleep={batch_sleep}s."
     )
@@ -199,10 +200,9 @@ async def process_autofails(
                 )
             except Exception as exc:
                 logger.opt(exception=exc).error(f"Autofail batch {batch} failed and was rolled back.")
-                sentry_sdk.metrics.count(
-                    "autofail.batches.failed", 1, attributes={"batch": batch, "experiment_id": experiment_id}
-                )
-                raise
+                sentry_sdk.metrics.count("autofail.batches.failed", 1, attributes={"experiment_id": experiment_id})
+                experiments_failed += 1
+                continue
             if processed_in_batch is None:
                 continue
             draws_processed += processed_in_batch
@@ -217,10 +217,11 @@ async def process_autofails(
             await sleep(batch_sleep)
 
     elapsed = monotonic() - started_at
-    if active_experiment_ids:
+    if active_experiment_ids or experiments_failed:
         logger.warning(
             f"Autofail did not finish processing all eligible experiments within the deadline: elapsed={elapsed:.2f}s; "
             f"experiments remaining={len(active_experiment_ids)}; "
+            f"experiments failed={experiments_failed}; "
             f"committed {draws_processed} updates in {batches_processed} batches."
         )
     else:

@@ -509,17 +509,21 @@ async def test_autofail_experiment_discovery_excludes_completed_experiments(
     assert pending_experiment_id in discovered_experiment_ids
 
 
-async def test_autofail_rolls_back_the_batch_on_failure(
+async def test_autofail_rolls_back_failed_experiment_and_continues_others(
     xngin_session: AsyncSession,
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
 ):
-    experiment_id = await create_autofail_experiment(
-        aclient, eclient, testing_datasource, autofail_window=1, name="atomic batch"
+    failing_experiment_id = await create_autofail_experiment(
+        aclient, eclient, testing_datasource, autofail_window=1, name="failing experiment"
     )
-    await age_draws(xngin_session, experiment_id, hours=2)
-    update_count = 0
+    healthy_experiment_id = await create_autofail_experiment(
+        aclient, eclient, testing_datasource, autofail_window=1, name="healthy experiment"
+    )
+    await age_draws(xngin_session, failing_experiment_id, hours=2)
+    await age_draws(xngin_session, healthy_experiment_id, hours=2)
+    failing_update_count = 0
 
     async def fail_after_second_update(
         xngin_session: AsyncSession,
@@ -528,7 +532,7 @@ async def test_autofail_rolls_back_the_batch_on_failure(
         outcome: float,
         autofailed_outcome: bool = False,
     ) -> tables.Arm:
-        nonlocal update_count
+        nonlocal failing_update_count
         arm = await experiments_common.update_bandit_arm_with_outcome_impl(
             xngin_session=xngin_session,
             experiment=experiment,
@@ -536,20 +540,22 @@ async def test_autofail_rolls_back_the_batch_on_failure(
             outcome=outcome,
             autofailed_outcome=autofailed_outcome,
         )
-        update_count += 1
-        if update_count == 2:
+        if experiment.id != failing_experiment_id:
+            return arm
+        failing_update_count += 1
+        if failing_update_count == 2:
             raise RuntimeError(f"failed after updating {participant_id}")
         return arm
 
-    with pytest.raises(RuntimeError, match="failed after updating"):
-        await process_autofails(
-            DEFAULT_AUTOFAIL_TIMEOUT_SECS,
-            batch_sleep=0,
-            update_outcome=fail_after_second_update,
-        )
+    await process_autofails(
+        DEFAULT_AUTOFAIL_TIMEOUT_SECS,
+        batch_sleep=0,
+        update_outcome=fail_after_second_update,
+    )
 
-    assert update_count == 2
-    assert all(draw.outcome is None for draw in await get_draws(xngin_session, experiment_id))
+    assert failing_update_count == 2
+    assert all(draw.outcome is None for draw in await get_draws(xngin_session, failing_experiment_id))
+    assert all(draw.outcome == 0.0 for draw in await get_draws(xngin_session, healthy_experiment_id))
 
 
 async def test_autofail_keeps_prior_batches_when_a_later_batch_fails(
@@ -585,13 +591,12 @@ async def test_autofail_keeps_prior_batches_when_a_later_batch_fails(
             raise RuntimeError("second batch failed")
         return arm
 
-    with pytest.raises(RuntimeError, match="second batch failed"):
-        await process_autofails(
-            DEFAULT_AUTOFAIL_TIMEOUT_SECS,
-            batch_sleep=0,
-            batch_size=1,
-            update_outcome=fail_second_update,
-        )
+    await process_autofails(
+        DEFAULT_AUTOFAIL_TIMEOUT_SECS,
+        batch_sleep=0,
+        batch_size=1,
+        update_outcome=fail_second_update,
+    )
 
     draws = await get_draws(xngin_session, experiment_id)
     assert sum(draw.outcome is not None for draw in draws) == 1
