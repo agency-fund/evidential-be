@@ -30,7 +30,6 @@ def unique_id_factory(prefix: str):
 
 
 arm_id_factory = unique_id_factory("arm")
-autofail_update_id_factory = unique_id_factory("af")
 datasource_id_factory = unique_id_factory("ds")
 event_id_factory = unique_id_factory("evt")
 experiment_id_factory = unique_id_factory("exp")
@@ -613,8 +612,6 @@ class Draw(Base):
 
     arm: Mapped[Arm] = relationship("Arm", back_populates="draws", lazy="joined")
     experiment: Mapped[Experiment] = relationship("Experiment", back_populates="draws", lazy="joined")
-    autofail_updates: Mapped[list[AutofailUpdate]] = relationship(back_populates="draw", viewonly=True)
-
     __table_args__ = (
         Index(
             "ix_draws_arm_id_created_at",
@@ -765,33 +762,3 @@ class Snapshot(Base):
     data: Mapped[dict | None] = mapped_column(postgresql.JSONB)
 
     experiment: Mapped[Experiment] = relationship(back_populates="snapshots", viewonly=True)
-
-
-class AutofailUpdate(Base):
-    """Stores autofail updates for draws that have been autofailed."""
-
-    __tablename__ = "autofail_updates"
-
-    experiment_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
-    id: Mapped[str] = mapped_column(primary_key=True, default=autofail_update_id_factory, unique=True)
-    created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now()
-    )
-    status: Mapped[SnapshotStatus] = mapped_column(server_default="pending")
-    # An optional informative message about the state of this task (for example, if a snapshot fails, it might contain
-    # an informative error message).
-    message: Mapped[str | None] = mapped_column()
-    # JSON serialized form of an ExperimentAnalysisResponse. May be null if the snapshot is not yet a success.
-    data: Mapped[dict | None] = mapped_column(postgresql.JSONB)
-
-    draw: Mapped[Draw] = relationship(back_populates="autofail_updates", viewonly=True)
-
-    __table_args__ = (
-        ForeignKeyConstraint(
-            ["experiment_id", "participant_id"],
-            ["draws.experiment_id", "draws.participant_id"],
-            ondelete="CASCADE",
-        ),
-    )
