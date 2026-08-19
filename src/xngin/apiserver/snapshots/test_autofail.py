@@ -646,7 +646,7 @@ async def test_autofail_acollect_forwards_timing_options():
         calls.append(("setup",))
         yield
 
-    async def fake_process_updates(autofail_timeout: float, batch_sleep: float, batch_size: int) -> None:
+    async def fake_process_autofails(autofail_timeout: float, batch_sleep: float, batch_size: int) -> None:
         calls.append(("process", autofail_timeout, batch_sleep, batch_size))
 
     await cli.autofail_acollect(
@@ -654,7 +654,7 @@ async def test_autofail_acollect_forwards_timing_options():
         autofail_batch_sleep=1.5,
         autofail_batch_size=123,
         database_setup=fake_database_setup,
-        process_autofails=fake_process_updates,
+        process_autofails=fake_process_autofails,
     )
 
     assert calls == [("setup",), ("process", 42, 1.5, 123)]
