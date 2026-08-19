@@ -1342,6 +1342,28 @@ async def test_update_bandit_arm_with_outcome(
                     assert updated_arm_after.mu != initial_assigned_arm.mu
                     assert updated_arm_after.covariance != initial_assigned_arm.covariance
                     # Deferring further assertions: see test_normal_prior_binary_reward_fits_each_outcome_exactly_once
+    else:
+        assert experiment_type == ExperimentsType.CMAB_ONLINE
+        assert prior_type == PriorTypes.NORMAL
+        assert updated_arm_after.alpha == initial_assigned_arm.alpha
+        assert updated_arm_after.beta == initial_assigned_arm.beta
+        assert updated_arm_after.mu == updated_arm.mu
+        assert updated_arm_after.covariance == updated_arm.covariance
+
+        if reward_type == LikelihoodTypes.NORMAL:
+            assert updated_arm_after.mu == pytest.approx([1 / 3, 1 / 3])
+            assert updated_arm_after.covariance is not None
+            expected_covariance = [[1 / 3, 0.0], [0.0, 1 / 3]]
+            for actual_row, expected_row in zip(
+                updated_arm_after.covariance,
+                expected_covariance,
+                strict=True,
+            ):
+                assert actual_row == pytest.approx(expected_row)
+        else:
+            assert updated_arm_after.mu != initial_assigned_arm.mu
+            assert updated_arm_after.covariance != initial_assigned_arm.covariance
+            # Deferring further assertions: see test_normal_prior_binary_reward_fits_each_outcome_exactly_once
 
     if experiment_type == ExperimentsType.CMAB_ONLINE:
         updated_assignment = eclient.get_assignment_cmab(
