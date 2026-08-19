@@ -466,6 +466,8 @@ class Experiment(Base):
     n_trials: Mapped[int] = mapped_column(server_default="0")
     prior_type: Mapped[str | None] = mapped_column()
     reward_type: Mapped[str | None] = mapped_column()
+
+    # enable_autofail must match draws.enable_autofail.
     enable_autofail: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
     autofail_window: Mapped[int] = mapped_column(server_default="24")
     autofail_outcome_value: Mapped[float] = mapped_column(server_default="0.0")
@@ -597,6 +599,9 @@ class Draw(Base):
     participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     arm_id: Mapped[str] = mapped_column(ForeignKey("arms.id", ondelete="CASCADE"))
     created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
+    # Denormalized enable_autofail column allows us to build a partial index containing only outcomes eligible for
+    # autofailing. This value must match experiment.enable_autofail.
+    enable_autofail: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
 
     # Observation data: these fields are set when an outcome is observed for this draw
     # after arm parameters are updated.
@@ -618,6 +623,12 @@ class Draw(Base):
             arm_id,
             created_at.desc(),
             postgresql_where=sqlalchemy.text("outcome IS NOT NULL"),
+        ),
+        Index(
+            "ix_draws_pending_autofail",
+            experiment_id,
+            created_at,
+            postgresql_where=sqlalchemy.text("enable_autofail IS TRUE AND outcome IS NULL"),
         ),
         CheckConstraint(
             "(outcome IS NULL) = (autofailed_outcome IS NULL)",
