@@ -1,12 +1,13 @@
 import asyncio
-import random
-from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+import time
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, Protocol
 
 import sentry_sdk
 from loguru import logger
-from sqlalchemy import and_, func, select
-from sqlalchemy.orm import selectinload
+from sqlalchemy import func, select, text
+from sqlalchemy.orm import contains_eager
+from sqlalchemy.sql import Select
 
 from xngin.apiserver import database
 from xngin.apiserver.routers.common_api_types import ExperimentsType
@@ -16,143 +17,138 @@ from xngin.apiserver.sqla import tables
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
+AUTOFAIL_BATCH_SIZE = 500
+AUTOFAIL_TIMEOUT_SECS = 45 * 60
+AUTOFAIL_BATCH_SLEEP_SECS = 1.0
 
-# The amount of time the API server will wait for an autofail update to complete.
-AUTOFAIL_TIMEOUT_SECS = 90
+
+class AutofailOutcomeUpdater(Protocol):
+    async def __call__(
+        self,
+        xngin_session: AsyncSession,
+        experiment: tables.Experiment,
+        participant_id: str,
+        outcome: float,
+        autofailed_outcome: bool = False,
+    ) -> tables.Arm: ...
 
 
-async def create_pending_autofail_updates() -> None:
-    """
-    Identify experiments and corresponding assignments for which we should create pending autofail updates.
-    For each experiment with autofail enabled, we check the assignments that don't have an outcome recorded.
-    Of these assignments, those that have exceeded the set autofail window (e.g., 1 hour) we create a new entry
-    in the PendingAutofailUpdate table to indicate that an autofailed outcome update should be processed.
-    """
-    async with database.async_session() as session:
-        # Query for experiments that are running and have autofail enabled.
-        stmt = (
-            select(tables.Draw)
-            .join(
-                tables.Experiment,
-                tables.Draw.experiment_id == tables.Experiment.id,
-            )
-            .where(
-                tables.Experiment.enable_autofail.is_(True),
-                tables.Experiment.experiment_type.in_([
-                    ExperimentsType.MAB_ONLINE,
-                    ExperimentsType.MAB_ONLINE_DWH,
-                    ExperimentsType.CMAB_ONLINE,
-                ]),
-                tables.Draw.outcome.is_(None),
-            )
+def _eligible_draws_query(batch_size: int) -> Select[tuple[tables.Draw]]:
+    experiment_loader = contains_eager(tables.Draw.experiment)
+    return (
+        select(tables.Draw)
+        .join(tables.Draw.experiment)
+        .where(
+            tables.Experiment.enable_autofail.is_(True),
+            tables.Experiment.experiment_type.in_([
+                ExperimentsType.MAB_ONLINE,
+                ExperimentsType.MAB_ONLINE_DWH,
+                ExperimentsType.CMAB_ONLINE,
+            ]),
+            tables.Draw.outcome.is_(None),
+            tables.Draw.created_at < func.now() - tables.Experiment.autofail_window * text("interval '1 hour'"),
         )
-
-        result = await session.execute(stmt)
-        draws = result.scalars().all()
-        n_autofail_updates = 0
-        for draw in draws:
-            experiment = draw.experiment
-            # Check if the draw has no outcome and has exceeded the threshold time.
-            now = datetime.now(UTC)
-            if ((now - draw.created_at).total_seconds() / 3600) > experiment.autofail_window:
-                # Create a pending autofail update for this draw.
-                pending_update = tables.AutofailUpdate(
-                    participant_id=draw.participant_id,
-                    experiment_id=experiment.id,
-                    created_at=func.now(),
-                    status="pending",
-                )
-                n_autofail_updates += 1
-                session.add(pending_update)
-        await session.commit()
-        logger.info(f"Created {n_autofail_updates} pending autofail updates.")
+        .order_by(tables.Draw.created_at, tables.Draw.experiment_id, tables.Draw.participant_id)
+        .limit(batch_size)
+        .with_for_update(of=tables.Draw, skip_locked=True)
+        .options(
+            experiment_loader.selectinload(tables.Experiment.arms),
+            experiment_loader.selectinload(tables.Experiment.contexts),
+            experiment_loader.selectinload(tables.Experiment.experiment_fields),
+        )
+    )
 
 
-async def _make_one_autofail_update(
-    update: tables.AutofailUpdate,
-    draw: tables.Draw,
+async def _update_one_draw(
     session: AsyncSession,
-    autofail_update_timeout: int,
+    draw: tables.Draw,
+    update_outcome: AutofailOutcomeUpdater,
 ) -> None:
-    """
-    Process one pending autofail update. This function is intended to be called repeatedly,
-    e.g., in a loop or by a scheduler. It checks for any pending autofail updates and processes
-    one of them by updating the corresponding draw's outcome to "autofailed".
-    """
     experiment = draw.experiment
-    experiment_id = draw.experiment_id
-    participant_id = draw.participant_id
-    outcome = experiment.autofail_outcome_value
+    with logger.contextualize(experiment_id=experiment.id, participant_id=draw.participant_id):
+        await update_outcome(
+            xngin_session=session,
+            experiment=experiment,
+            participant_id=draw.participant_id,
+            outcome=experiment.autofail_outcome_value,
+            autofailed_outcome=True,
+        )
 
-    try:
-        async with asyncio.timeout(autofail_update_timeout):
-            async with session.begin_nested():
-                await experiments_common.update_bandit_arm_with_outcome_impl(
-                    xngin_session=session,
-                    experiment=experiment,
-                    participant_id=participant_id,
-                    outcome=outcome,
-                    autofailed_outcome=True,
+
+async def process_autofail_updates(
+    autofail_timeout: float,
+    batch_sleep: float,
+    batch_size: int = AUTOFAIL_BATCH_SIZE,
+    *,
+    update_outcome: AutofailOutcomeUpdater = experiments_common.update_bandit_arm_with_outcome_impl,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> None:
+    """Autofail eligible draws in atomic batches until no work remains or the run deadline is reached."""
+    if autofail_timeout < 0:
+        raise ValueError("autofail_timeout must be non-negative")
+    if batch_sleep < 0:
+        raise ValueError("batch_sleep must be non-negative")
+    if batch_size < 1:
+        raise ValueError("batch_size must be at least one")
+
+    started_at = monotonic()
+    deadline = started_at + autofail_timeout
+    processed = 0
+    batches = 0
+    logger.info(
+        f"Autofail run started with batch_size={batch_size}, timeout={autofail_timeout}s, batch_sleep={batch_sleep}s."
+    )
+
+    async with database.async_session() as session:
+        while monotonic() < deadline:
+            batch_number = batches + 1
+            current_experiment_id: str | None = None
+            attempted_in_batch = 0
+            try:
+                async with session.begin():
+                    draws: list[tables.Draw] = list(
+                        (await session.execute(_eligible_draws_query(batch_size))).scalars().all()
+                    )
+                    if not draws:
+                        elapsed = monotonic() - started_at
+                        logger.info(
+                            f"Autofail run finished after {elapsed:.2f}s; "
+                            f"committed {processed} updates in {batches} batches."
+                        )
+                        return
+
+                    logger.info(f"Autofail batch {batch_number} selected {len(draws)} eligible draws.")
+                    for draw in draws:
+                        current_experiment_id = draw.experiment_id
+                        await _update_one_draw(session, draw, update_outcome)
+                        attempted_in_batch += 1
+            except Exception as exc:
+                attributes: dict[str, str | int] = {"batch": batch_number}
+                if current_experiment_id is not None:
+                    attributes.update({"experiment_id": current_experiment_id})
+                logger.opt(exception=exc).error(
+                    f"Autofail batch {batch_number} failed after {attempted_in_batch} attempted updates and was rolled "
+                    f"back; processed={processed}, attributes={attributes}."
                 )
-            update.status = "success"
-            update.message = (
-                f"Autofail processed successfully. Participant {participant_id} recorded outcome {outcome}."
+                sentry_sdk.metrics.count("autofail_update.failed", 1, attributes=attributes)
+                raise
+
+            processed += len(draws)
+            batches += 1
+            sentry_sdk.metrics.count(
+                "autofail_update.finished",
+                len(draws),
+                attributes={"experiment_id": draw.experiment_id},
+            )
+            logger.info(
+                f"Autofail batch {batches} committed {len(draws)} updates; total committed updates={processed}."
             )
 
-    except Exception as exc:
-        logger.opt(exception=exc).error(
-            f"Failed to process autofail update for experiment {experiment_id} and participant {participant_id}: "
-            f"{exc!s}"
-        )
-        sentry_sdk.capture_exception(exc)
-        sentry_sdk.metrics.count(
-            "autofail_update.failed",
-            1,
-            attributes={"experiment_id": experiment_id, "participant_id": participant_id},
-        )
-        update.status = "failed"
-        update.message = f"{type(exc).__name__}: {exc}"
+            await sleep(batch_sleep)
 
-    sentry_sdk.metrics.count(
-        "autofail_update.finished",
-        1,
-        attributes={"experiment_id": experiment_id, "participant_id": participant_id},
+    elapsed = monotonic() - started_at
+    logger.info(
+        f"Autofail run reached its deadline after {elapsed:.2f}s; committed {processed} updates in {batches} batches."
     )
-    logger.info(f"Autofail update for experiment {experiment_id} and participant {participant_id}: done")
-
-
-async def process_pending_autofail_updates(autofail_update_timeout: int, *, max_jitter_secs: float = 2):
-    """
-    Process pending autofail updates. For each pending update, we check if the corresponding draw still has no outcome.
-    If so, we update the draw's outcome to indicate that it has been autofailed. We also mark the pending update
-    as processed.
-    """
-    autofail_update = (
-        select(tables.AutofailUpdate)
-        .join(
-            tables.Draw,
-            and_(
-                tables.AutofailUpdate.experiment_id == tables.Draw.experiment_id,
-                tables.AutofailUpdate.participant_id == tables.Draw.participant_id,
-            ),
-        )
-        .join(tables.Experiment, tables.Draw.experiment_id == tables.Experiment.id)
-        .where(tables.AutofailUpdate.status == "pending")
-        .limit(1)
-        .with_for_update(skip_locked=True)
-        .options(selectinload(tables.AutofailUpdate.draw).joinedload(tables.Draw.experiment))
-    )
-    while True:
-        await asyncio.sleep(random.uniform(0, max_jitter_secs))  # jitter  # noqa: S311
-        async with database.async_session() as session, session.begin():
-            one_update = (await session.execute(autofail_update)).scalar_one_or_none()
-            if one_update is None:
-                logger.info("No pending autofail updates found.")
-                return
-            draw = one_update.draw
-            await _make_one_autofail_update(
-                update=one_update,
-                draw=draw,
-                session=session,
-                autofail_update_timeout=autofail_update_timeout,
-            )
+    return
