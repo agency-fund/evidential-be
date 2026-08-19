@@ -1195,8 +1195,8 @@ async def test_get_assignment_bandit_cache_headers(
 @pytest.mark.parametrize(
     ("experiment_type", "prior_type", "reward_type"),
     [
-        (ExperimentsType.MAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
         (ExperimentsType.MAB_ONLINE, PriorTypes.BETA, LikelihoodTypes.BERNOULLI),
+        (ExperimentsType.MAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
         (ExperimentsType.MAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
         (ExperimentsType.CMAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
         (ExperimentsType.CMAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
@@ -1270,18 +1270,22 @@ async def test_update_bandit_arm_with_outcome(
         datasource_id=testing_datasource.datasource_id,
         experiment_id=experiment_id,
     ).data.config.design_spec
-    context_inputs = (
-        [
-            ContextInput(context_id=context.context_id or "", context_value=1.0)
-            for context in committed_design_spec.contexts or []
-        ]
-        if isinstance(committed_design_spec, CMABExperimentSpec)
-        else []
-    )
+    assert isinstance(committed_design_spec, MABExperimentSpec | CMABExperimentSpec)
+    initial_arms = {arm.arm_id: arm for arm in committed_design_spec.arms}
+
     if experiment_type == ExperimentsType.CMAB_ONLINE:
         assignment = eclient.get_assignment_cmab(
             api_key=testing_datasource.key,
-            body=CMABContextInputRequest(context_inputs=context_inputs),
+            body=CMABContextInputRequest(
+                context_inputs=(
+                    [
+                        ContextInput(context_id=context.context_id or "", context_value=1.0)
+                        for context in committed_design_spec.contexts or []
+                    ]
+                    if isinstance(committed_design_spec, CMABExperimentSpec)
+                    else []
+                )
+            ),
             experiment_id=experiment_id,
             participant_id=participant_id,
         ).data.assignment
@@ -1299,6 +1303,45 @@ async def test_update_bandit_arm_with_outcome(
         experiment_id=experiment_id,
         participant_id=participant_id,
     ).data
+
+    updated_design_spec = aclient.get_experiment_for_ui(
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=experiment_id,
+    ).data.config.design_spec
+    assert isinstance(updated_design_spec, MABExperimentSpec | CMABExperimentSpec)
+    arms_on_experiment_after = {arm.arm_id: arm for arm in updated_design_spec.arms}
+
+    # Verify arm state has been updated as expected.
+    updated_arm_after = arms_on_experiment_after[assignment.arm_id]
+    initial_assigned_arm = initial_arms[assignment.arm_id]
+    if experiment_type == ExperimentsType.MAB_ONLINE:
+        match prior_type:
+            case PriorTypes.BETA:
+                assert initial_assigned_arm.alpha is not None
+                assert initial_assigned_arm.beta is not None
+                assert updated_arm_after.alpha == initial_assigned_arm.alpha + 1
+                assert updated_arm_after.beta == initial_assigned_arm.beta
+
+                assert updated_arm_after.mu == initial_assigned_arm.mu
+                assert updated_arm_after.covariance == initial_assigned_arm.covariance
+            case PriorTypes.NORMAL:
+                assert updated_arm_after.alpha == initial_assigned_arm.alpha
+                assert updated_arm_after.beta == initial_assigned_arm.beta
+
+                assert updated_arm_after.mu == updated_arm.mu
+                assert updated_arm_after.covariance == updated_arm.covariance
+
+                if reward_type == LikelihoodTypes.NORMAL:
+                    assert updated_arm_after.mu != initial_assigned_arm.mu
+                    assert updated_arm_after.covariance != initial_assigned_arm.covariance
+
+                    assert updated_arm_after.mu == pytest.approx([0.5])
+                    assert updated_arm_after.covariance is not None
+                    assert updated_arm_after.covariance[0] == pytest.approx([0.5])
+                else:
+                    assert updated_arm_after.mu != initial_assigned_arm.mu
+                    assert updated_arm_after.covariance != initial_assigned_arm.covariance
+                    # Deferring further assertions: see test_normal_prior_binary_reward_fits_each_outcome_exactly_once
 
     if experiment_type == ExperimentsType.CMAB_ONLINE:
         updated_assignment = eclient.get_assignment_cmab(
