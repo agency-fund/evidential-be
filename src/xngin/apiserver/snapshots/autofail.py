@@ -31,6 +31,11 @@ AUTOFAIL_EXPERIMENT_TYPES = (
 
 
 class AutofailOutcomeUpdater(Protocol):
+    """Protocol for the updater so we can inject alternate implementations for testing purposes in a type-safe way.
+
+    This should match the current implementation of update_bandit_arm_with_outcome_impl.
+    """
+
     async def __call__(
         self,
         xngin_session: AsyncSession,
@@ -172,8 +177,8 @@ async def process_autofails(
     started_at = monotonic()
     deadline = started_at + autofail_timeout
 
-    processed = 0
-    batches = 0
+    draws_processed = 0
+    batches_processed = 0
     logger.info(
         f"Autofail run started with batch_size={batch_size}, timeout={autofail_timeout}s, batch_sleep={batch_sleep}s."
     )
@@ -185,7 +190,7 @@ async def process_autofails(
     while active_experiment_ids and monotonic() < deadline:
         experiment_id = active_experiment_ids.popleft()
         with logger.contextualize(experiment_id=experiment_id):
-            batch_number = batches + 1
+            batch = batches_processed + 1
             try:
                 processed_in_batch = await _process_autofail_batch_for_experiment(
                     experiment_id,
@@ -193,28 +198,22 @@ async def process_autofails(
                     update_outcome,
                 )
             except Exception as exc:
-                logger.opt(exception=exc).error(f"Autofail batch {batch_number} failed and was rolled back.")
+                logger.opt(exception=exc).error(f"Autofail batch {batch} failed and was rolled back.")
                 sentry_sdk.metrics.count(
-                    "autofail.batches.failed",
-                    1,
-                    attributes={"batch": batch_number, "experiment_id": experiment_id},
+                    "autofail.batches.failed", 1, attributes={"batch": batch, "experiment_id": experiment_id}
                 )
                 raise
             if processed_in_batch is None:
                 continue
-            processed += processed_in_batch
-            batches += 1
+            draws_processed += processed_in_batch
+            batches_processed += 1
             active_experiment_ids.append(experiment_id)
 
             logger.info(
-                f"Autofail batch {batches} committed {processed_in_batch} updates for experiment {experiment_id}; "
-                f"total committed updates={processed}."
+                f"Autofail batch {batches_processed} committed {processed_in_batch} updates for experiment "
+                f"{experiment_id}; total committed updates={draws_processed}."
             )
-            sentry_sdk.metrics.count(
-                "autofail.batches.finished",
-                1,
-                attributes={"experiment_id": experiment_id},
-            )
+            sentry_sdk.metrics.count("autofail.batches.finished", 1, attributes={"experiment_id": experiment_id})
             await sleep(batch_sleep)
 
     elapsed = monotonic() - started_at
@@ -222,10 +221,10 @@ async def process_autofails(
         logger.warning(
             f"Autofail did not finish processing all eligible experiments within the deadline: elapsed={elapsed:.2f}s; "
             f"experiments remaining={len(active_experiment_ids)}; "
-            f"committed {processed} updates in {batches} batches."
+            f"committed {draws_processed} updates in {batches_processed} batches."
         )
     else:
         logger.info(
-            f"Autofail finished processing all eligible experiments in {elapsed:.2f}s; committed {processed} "
-            f"updates in {batches} batches."
+            f"Autofail finished processing all eligible experiments in {elapsed:.2f}s; committed {draws_processed} "
+            f"updates in {batches_processed} batches."
         )
