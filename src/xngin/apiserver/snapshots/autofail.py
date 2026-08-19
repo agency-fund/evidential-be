@@ -90,7 +90,7 @@ def _eligible_draw_participant_ids_query(
         )
         .order_by(tables.Draw.created_at)
         .limit(batch_size)
-        .with_for_update(of=tables.Draw, skip_locked=True)
+        .with_for_update(of=tables.Draw, skip_locked=True, key_share=True)
     )
 
 
