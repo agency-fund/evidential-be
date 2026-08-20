@@ -79,33 +79,36 @@ async def _make_one_autofail_update(
     e.g., in a loop or by a scheduler. It checks for any pending autofail updates and processes
     one of them by updating the corresponding draw's outcome to "autofailed".
     """
+    experiment = draw.experiment
+    experiment_id = draw.experiment_id
+    participant_id = draw.participant_id
+    outcome = experiment.autofail_outcome_value
 
     try:
         async with asyncio.timeout(autofail_update_timeout):
-            await experiments_common.update_bandit_arm_with_outcome_impl(
-                xngin_session=session,
-                experiment=draw.experiment,
-                participant_id=draw.participant_id,
-                outcome=draw.experiment.autofail_outcome_value,
-                autofailed_outcome=True,
-                commit_on_success=False,
-            )
+            async with session.begin_nested():
+                await experiments_common.update_bandit_arm_with_outcome_impl(
+                    xngin_session=session,
+                    experiment=experiment,
+                    participant_id=participant_id,
+                    outcome=outcome,
+                    autofailed_outcome=True,
+                )
             update.status = "success"
             update.message = (
-                f"Autofail processed successfully. Participant {draw.participant_id} "
-                f"recorded outcome {draw.experiment.autofail_outcome_value}."
+                f"Autofail processed successfully. Participant {participant_id} recorded outcome {outcome}."
             )
 
     except Exception as exc:
         logger.opt(exception=exc).error(
-            f"Failed to process autofail update for experiment {draw.experiment_id} and "
-            f"participant {draw.participant_id}: {exc!s}"
+            f"Failed to process autofail update for experiment {experiment_id} and participant {participant_id}: "
+            f"{exc!s}"
         )
         sentry_sdk.capture_exception(exc)
         sentry_sdk.metrics.count(
             "autofail_update.failed",
             1,
-            attributes={"experiment_id": draw.experiment_id, "participant_id": draw.participant_id},
+            attributes={"experiment_id": experiment_id, "participant_id": participant_id},
         )
         update.status = "failed"
         update.message = f"{type(exc).__name__}: {exc}"
@@ -113,9 +116,9 @@ async def _make_one_autofail_update(
     sentry_sdk.metrics.count(
         "autofail_update.finished",
         1,
-        attributes={"experiment_id": draw.experiment_id, "participant_id": draw.participant_id},
+        attributes={"experiment_id": experiment_id, "participant_id": participant_id},
     )
-    logger.info(f"Autofail update for experiment {draw.experiment_id} and participant {draw.participant_id}: done")
+    logger.info(f"Autofail update for experiment {experiment_id} and participant {participant_id}: done")
 
 
 async def process_pending_autofail_updates(autofail_update_timeout: int, *, max_jitter_secs: float = 2):
