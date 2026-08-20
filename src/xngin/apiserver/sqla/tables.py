@@ -30,7 +30,6 @@ def unique_id_factory(prefix: str):
 
 
 arm_id_factory = unique_id_factory("arm")
-autofail_update_id_factory = unique_id_factory("af")
 datasource_id_factory = unique_id_factory("ds")
 event_id_factory = unique_id_factory("evt")
 experiment_id_factory = unique_id_factory("exp")
@@ -467,6 +466,8 @@ class Experiment(Base):
     n_trials: Mapped[int] = mapped_column(server_default="0")
     prior_type: Mapped[str | None] = mapped_column()
     reward_type: Mapped[str | None] = mapped_column()
+
+    # enable_autofail must match draws.enable_autofail.
     enable_autofail: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
     autofail_window: Mapped[int] = mapped_column(server_default="24")
     autofail_outcome_value: Mapped[float] = mapped_column(server_default="0.0")
@@ -598,6 +599,9 @@ class Draw(Base):
     participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     arm_id: Mapped[str] = mapped_column(ForeignKey("arms.id", ondelete="CASCADE"))
     created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
+    # Denormalized enable_autofail column allows us to build a partial index containing only outcomes eligible for
+    # autofailing. This value must match experiment.enable_autofail.
+    enable_autofail: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
 
     # Observation data: these fields are set when an outcome is observed for this draw
     # after arm parameters are updated.
@@ -613,14 +617,18 @@ class Draw(Base):
 
     arm: Mapped[Arm] = relationship("Arm", back_populates="draws", lazy="joined")
     experiment: Mapped[Experiment] = relationship("Experiment", back_populates="draws", lazy="joined")
-    autofail_updates: Mapped[list[AutofailUpdate]] = relationship(back_populates="draw", viewonly=True)
-
     __table_args__ = (
         Index(
             "ix_draws_arm_id_created_at",
             arm_id,
             created_at.desc(),
             postgresql_where=sqlalchemy.text("outcome IS NOT NULL"),
+        ),
+        Index(
+            "ix_draws_pending_autofail",
+            experiment_id,
+            created_at,
+            postgresql_where=sqlalchemy.text("enable_autofail IS TRUE AND outcome IS NULL"),
         ),
         CheckConstraint(
             "(outcome IS NULL) = (autofailed_outcome IS NULL)",
@@ -765,33 +773,3 @@ class Snapshot(Base):
     data: Mapped[dict | None] = mapped_column(postgresql.JSONB)
 
     experiment: Mapped[Experiment] = relationship(back_populates="snapshots", viewonly=True)
-
-
-class AutofailUpdate(Base):
-    """Stores autofail updates for draws that have been autofailed."""
-
-    __tablename__ = "autofail_updates"
-
-    experiment_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
-    id: Mapped[str] = mapped_column(primary_key=True, default=autofail_update_id_factory, unique=True)
-    created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now()
-    )
-    status: Mapped[SnapshotStatus] = mapped_column(server_default="pending")
-    # An optional informative message about the state of this task (for example, if a snapshot fails, it might contain
-    # an informative error message).
-    message: Mapped[str | None] = mapped_column()
-    # JSON serialized form of an ExperimentAnalysisResponse. May be null if the snapshot is not yet a success.
-    data: Mapped[dict | None] = mapped_column(postgresql.JSONB)
-
-    draw: Mapped[Draw] = relationship(back_populates="autofail_updates", viewonly=True)
-
-    __table_args__ = (
-        ForeignKeyConstraint(
-            ["experiment_id", "participant_id"],
-            ["draws.experiment_id", "draws.participant_id"],
-            ondelete="CASCADE",
-        ),
-    )

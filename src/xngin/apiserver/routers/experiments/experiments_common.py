@@ -895,6 +895,7 @@ async def create_assignment_for_participant(
                             participant_id=participant_id,
                             arm_id=chosen_arm.id,
                             context_vals=sorted_context_vals,
+                            enable_autofail=experiment.enable_autofail,
                         )
                         .returning(tables.Draw.created_at)
                     )
