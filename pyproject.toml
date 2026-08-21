@@ -74,9 +74,10 @@ log_cli = 0  # set to 1 for live logs
 log_cli_level = "warn"
 markers = [
     "integration: integration tests that rely on remote resources",
-    "benchmark: performance benchmarks; opt-in via -m benchmark"
+    "benchmark: performance benchmarks; opt-in via -m benchmark",
+    "benchmark_bandits: before/after benchmarks for bandit prior conversion; opt-in via -m benchmark_bandits"
 ]
-addopts = "-m 'not integration and not benchmark'"
+addopts = "-m 'not integration and not benchmark and not benchmark_bandits'"
 # filtewarnings can be used to silence warnings during tests.
 # format is: action:message:category:module
 filterwarnings = [
