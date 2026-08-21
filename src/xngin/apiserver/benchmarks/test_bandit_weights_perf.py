@@ -12,6 +12,18 @@ directly.
 _legacy_normal_prior() below is that original implementation. It is frozen here as a measurement baseline
 and is deliberately NOT kept in sync with the production function: if the production implementation changes
 again, this stays as the historical reference point that the speedup is quoted against.
+
+The two parameters that drive the cost map onto POST /datasources/{datasource_id}/experiments as follows.
+Participant volume and metric count do not appear: they drive the assignment and power-analysis paths
+instead, and are not inputs to this conversion.
+
+    arms=N   len(design_spec.arms), for a bandit spec where every arm sets arm_weight (weights must be
+             set on all arms and sum to 100, or get_validated_arm_weights() returns None and no
+             conversion happens at all). Bounded by limits.MAX_NUMBER_OF_ARMS = 20.
+    dims=D   num_contexts, which storage_format_converters.init_from_components() computes as
+             len(design_spec.contexts) or 1. So D is the number of contexts on a CMAB spec, and 1 for
+             MABExperimentSpec and MABDwhExperimentSpec, which have no contexts. Bounded by
+             limits.MAX_NUMBER_OF_CONTEXTS = 10.
 """
 
 import statistics
@@ -31,16 +43,31 @@ from xngin.stats.bandit_weights_to_prior import (
 
 pytestmark = pytest.mark.benchmark_bandits
 
-ITERATIONS = 3
+# Cost grows roughly cubically in the number of arms: the objective integrates once per arm, each integrand
+# does work proportional to the arm count, and minimize() needs one finite-difference evaluation per
+# parameter per step. The legacy implementation takes ~23s for ten arms, so large cases are timed once.
+_ITERATIONS_FOR_LARGE_CASES = 1
+_ITERATIONS_FOR_SMALL_CASES = 3
+_LARGE_CASE_ARM_COUNT = 8
 
-# The arm weight distributions exercised by test_bandit_weights_to_prior.py, as (weights, num_dimensions).
-# Equal weights short-circuit before the optimizer runs, which is why one case is nearly free.
+# The arm weight distributions exercised by test_bandit_weights_to_prior.py, as (weights, num_dimensions),
+# plus a ten-arm case. Equal weights short-circuit before the optimizer runs, which is why one case is
+# nearly free. MAX_NUMBER_OF_ARMS is 20, so ten arms is a realistic but not worst-case load; twenty arms
+# takes ~13s with the current implementation and ~110s with the legacy one, which is too slow to time here.
 CASES = [
     ([12.5, 12.5, 25.0, 50.0], 1),
     ([25.0, 75.0], 2),
     ([33.33, 33.33, 33.34], 1),
     ([10.0, 20.0, 30.0, 40.0], 3),
+    ([2.5, 5.0, 5.0, 7.5, 7.5, 10.0, 12.5, 15.0, 17.5, 17.5], 1),
 ]
+
+
+def _iterations(weights: list[float]) -> int:
+    if len(weights) >= _LARGE_CASE_ARM_COUNT:
+        return _ITERATIONS_FOR_LARGE_CASES
+    return _ITERATIONS_FOR_SMALL_CASES
+
 
 # The conversion functions scale their argument in place (np.asarray returns the same object for a float64
 # array), so every call in these benchmarks gets its own array. Production callers go through
@@ -48,9 +75,7 @@ CASES = [
 _MINIMUM_EXPECTED_SPEEDUP = 3.0
 
 
-def _legacy_normal_prior(
-    expected_probabilities: np.ndarray, num_dimensions: int = 1
-) -> tuple[np.ndarray, np.ndarray]:
+def _legacy_normal_prior(expected_probabilities: np.ndarray, num_dimensions: int = 1) -> tuple[np.ndarray, np.ndarray]:
     """The scipy.stats.norm implementation of bandit_weights_to_normal_prior(), kept for comparison."""
     expected_probabilities = np.asarray(expected_probabilities, dtype=np.float64)
     expected_probabilities *= 0.01  # Normalize to sum to 1
@@ -83,9 +108,9 @@ def _legacy_normal_prior(
 
 
 def _time_conversion(fn, weights: list[float], num_dimensions: int) -> list[float]:
-    """Times fn over ITERATIONS runs, giving each run its own input array."""
+    """Times fn, giving each run its own input array."""
     timings = []
-    for _ in range(ITERATIONS):
+    for _ in range(_iterations(weights)):
         arg = np.array(weights, dtype=np.float64)
         started = time.perf_counter()
         fn(arg, num_dimensions=num_dimensions)
@@ -122,7 +147,7 @@ def test_normal_prior_is_faster_than_legacy_implementation(weights: list[float],
     The floor is deliberately far below the ~9x observed when this was written so that a loaded machine
     does not fail the build; the printed numbers are the useful output.
     """
-    label = f"[{','.join(str(w) for w in weights)}],dims={num_dimensions}"
+    label = f"arms={len(weights)},dims={num_dimensions}"
     legacy_timings = _time_conversion(_legacy_normal_prior, weights, num_dimensions)
     current_timings = _time_conversion(bandit_weights_to_normal_prior, weights, num_dimensions)
 
@@ -144,7 +169,7 @@ def test_convert_arm_weights_to_prior_params_totals():
     """Times the entry point the experiment-creation request path actually calls, for both prior types."""
     for prior_type in (PriorTypes.BETA, PriorTypes.NORMAL):
         timings = []
-        for _ in range(ITERATIONS):
+        for _ in range(_ITERATIONS_FOR_SMALL_CASES):
             started = time.perf_counter()
             convert_arm_weights_to_prior_params([25.0, 75.0], prior_type=prior_type, num_contexts=2)
             timings.append(time.perf_counter() - started)
