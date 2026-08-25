@@ -1523,17 +1523,7 @@ async def test_update_bandit_arm_with_freq_experiments_returns_422(
 async def test_normal_prior_binary_reward_fits_each_outcome_exactly_once(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
-    """The endpoint folds one recorded outcome into a Normal/Bernoulli posterior exactly once.
-
-    Normal/Bernoulli is the only update_arm branch that consumes every entry in its outcomes
-    argument; the Beta/Bernoulli and Normal/Normal branches use only outcomes[0]. This makes it the
-    branch that detects if the endpoint accidentally supplies duplicate or previously absorbed
-    outcomes instead of the intended singleton. Draw rows continue to retain the complete outcome
-    and context history, so a future batch implementation can deliberately recompute from the
-    original prior without weakening this incremental-update invariant.
-    """
-    # A single arm dimension keeps the posterior easy to read. Arms start at
-    # mu=[mu_init] and covariance=diag([sigma_init]) (storage_format_converters.py:532).
+    """The endpoint folds one recorded outcome into a Normal/Bernoulli posterior exactly once."""
     initial_mu = [0.0]
     initial_covariance = [[1.0]]
     design_spec = MABExperimentSpec(
@@ -1568,8 +1558,6 @@ async def test_normal_prior_binary_reward_fits_each_outcome_exactly_once(
         participant_id="1",
     ).data
 
-    # Oracle: the same model fitted with the one outcome that was actually recorded. Using
-    # update_arm itself keeps the expectation free of any reimplementation of the math.
     expected = update_arm(
         experiment=tables.Experiment(
             experiment_type=ExperimentsType.MAB_ONLINE.value,
