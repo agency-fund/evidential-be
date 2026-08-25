@@ -2,13 +2,14 @@ import csv
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from io import StringIO
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeIs
 
 import pytest
 from pydantic import TypeAdapter
 
 from xngin.apiserver.conftest import DatasourceMetadata
 from xngin.apiserver.routers.common_api_types import (
+    AnyBanditDesignSpec,
     AnyFrequentistDesignSpec,
     Arm,
     ArmBandit,
@@ -18,12 +19,14 @@ from xngin.apiserver.routers.common_api_types import (
     Context,
     ContextInput,
     CreateExperimentRequest,
+    DesignSpec,
     DesignSpecMetricRequest,
     ExperimentConfig,
     ExperimentsType,
     Filter,
     GetParticipantAssignmentResponse,
     LikelihoodTypes,
+    MABDwhExperimentSpec,
     MABExperimentSpec,
     OnlineAssignmentWithFiltersRequest,
     OnlineFrequentistExperimentSpec,
@@ -44,6 +47,7 @@ from xngin.apiserver.routers.experiments.test_experiments_common import make_cre
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.admin_api_client import AdminAPIClientHTTPValidationError
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClientNotDefaultStatusError
+from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 from xngin.stats.bandit_sampling import update_arm
 
 if TYPE_CHECKING:
@@ -1198,6 +1202,9 @@ async def test_get_assignment_bandit_cache_headers(
         (ExperimentsType.MAB_ONLINE, PriorTypes.BETA, LikelihoodTypes.BERNOULLI),
         (ExperimentsType.MAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
         (ExperimentsType.MAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
+        (ExperimentsType.MAB_ONLINE_DWH, PriorTypes.BETA, LikelihoodTypes.BERNOULLI),
+        (ExperimentsType.MAB_ONLINE_DWH, PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
+        (ExperimentsType.MAB_ONLINE_DWH, PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
         (ExperimentsType.CMAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
         (ExperimentsType.CMAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
     ],
@@ -1211,6 +1218,18 @@ async def test_update_bandit_arm_with_outcome(
     reward_type: LikelihoodTypes,
 ):
     """Record an outcome and verify the updated draw and arm through API responses."""
+
+    def has_expected_experiment_type(spec: DesignSpec) -> TypeIs[AnyBanditDesignSpec]:
+        match experiment_type:
+            case ExperimentsType.MAB_ONLINE_DWH:
+                return isinstance(spec, MABDwhExperimentSpec)
+            case ExperimentsType.MAB_ONLINE:
+                return isinstance(spec, MABExperimentSpec)
+            case ExperimentsType.CMAB_ONLINE:
+                return isinstance(spec, CMABExperimentSpec)
+            case _:
+                return False
+
     arms = [
         ArmBandit(
             arm_name="control",
@@ -1231,7 +1250,7 @@ async def test_update_bandit_arm_with_outcome(
             ),
         ),
     ]
-    design_spec: MABExperimentSpec | CMABExperimentSpec
+    design_spec: MABDwhExperimentSpec | MABExperimentSpec | CMABExperimentSpec
     if experiment_type == ExperimentsType.CMAB_ONLINE:
         design_spec = CMABExperimentSpec(
             experiment_type=experiment_type,
@@ -1246,6 +1265,30 @@ async def test_update_bandit_arm_with_outcome(
                 Context(context_name="c1", context_description="Context 1", value_type=ContextType.REAL_VALUED),
                 Context(context_name="c2", context_description="Context 2", value_type=ContextType.REAL_VALUED),
             ],
+        )
+    elif experiment_type == ExperimentsType.MAB_ONLINE_DWH:
+        design_spec = MABDwhExperimentSpec(
+            experiment_type=experiment_type,
+            experiment_name="mab dwh api outcome update",
+            description="",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime.now(UTC) + timedelta(days=1),
+            arms=[
+                ArmBandit(
+                    arm_name=arm_name,
+                    arm_description="",
+                    alpha_init=1 if prior_type == PriorTypes.BETA else None,
+                    beta_init=1 if prior_type == PriorTypes.BETA else None,
+                    mu_init=0 if prior_type == PriorTypes.NORMAL else None,
+                    sigma_init=1 if prior_type == PriorTypes.NORMAL else None,
+                )
+                for arm_name in ("control", "treatment")
+            ],
+            prior_type=prior_type,
+            reward_type=reward_type,
+            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+            primary_key="id",
+            target_field_name="is_onboarded" if reward_type is LikelihoodTypes.BERNOULLI else "income",
         )
     else:
         design_spec = MABExperimentSpec(
@@ -1270,7 +1313,7 @@ async def test_update_bandit_arm_with_outcome(
         datasource_id=testing_datasource.datasource_id,
         experiment_id=experiment_id,
     ).data.config.design_spec
-    assert isinstance(committed_design_spec, MABExperimentSpec | CMABExperimentSpec)
+    assert has_expected_experiment_type(committed_design_spec), type(committed_design_spec)
     initial_arms = {arm.arm_id: arm for arm in committed_design_spec.arms}
 
     if experiment_type == ExperimentsType.CMAB_ONLINE:
@@ -1308,13 +1351,13 @@ async def test_update_bandit_arm_with_outcome(
         datasource_id=testing_datasource.datasource_id,
         experiment_id=experiment_id,
     ).data.config.design_spec
-    assert isinstance(updated_design_spec, MABExperimentSpec | CMABExperimentSpec)
+    assert has_expected_experiment_type(updated_design_spec), type(updated_design_spec)
     arms_on_experiment_after = {arm.arm_id: arm for arm in updated_design_spec.arms}
 
     # Verify arm state has been updated as expected.
     updated_arm_after = arms_on_experiment_after[assignment.arm_id]
     initial_assigned_arm = initial_arms[assignment.arm_id]
-    if experiment_type == ExperimentsType.MAB_ONLINE:
+    if experiment_type in {ExperimentsType.MAB_ONLINE, ExperimentsType.MAB_ONLINE_DWH}:
         match prior_type:
             case PriorTypes.BETA:
                 assert initial_assigned_arm.alpha is not None
