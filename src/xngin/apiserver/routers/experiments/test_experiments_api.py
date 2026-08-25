@@ -1456,24 +1456,6 @@ async def test_update_bandit_arm_with_outcome(
     assert exc.value.result.status == HTTPStatus.UNPROCESSABLE_CONTENT
 
 
-async def test_create_mab_dwh_bool_target_with_normal_reward_returns_422(testing_datasource, aclient: AdminAPIClient):
-    """The API rejects an incompatible Normal reward for a boolean MAB-DWH target."""
-    request = make_create_online_bandit_experiment_request(
-        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
-        prior_type=PriorTypes.NORMAL,
-        reward_type=LikelihoodTypes.NORMAL,
-        target_field_name="is_onboarded",
-    )
-    result = aclient.create_experiment(
-        datasource_id=testing_datasource.datasource_id,
-        body=request,
-        random_state=42,
-        raise_if_not_default_status=False,
-    )
-    assert result.status == HTTPStatus.UNPROCESSABLE_CONTENT
-    assert "only compatible with reward_type 'binary'" in str(result.data)
-
-
 async def test_update_bandit_arm_with_outcome_mab_dwh_numeric_target_accepts_any_float(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):

@@ -4527,3 +4527,21 @@ async def test_create_freq_preassigned_experiment_cluster_key_has_nulls(
         assert arm_id is not None
         assert arm_size.cluster_count is not None
         assert arm_size.cluster_count == len(clusters_by_arm[arm_id])
+
+
+async def test_create_mab_dwh_bool_target_with_normal_reward_returns_422(testing_datasource, aclient: AdminAPIClient):
+    """The API rejects an incompatible Normal reward for a boolean MAB-DWH target."""
+    request = make_create_online_bandit_experiment_request(
+        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
+        prior_type=PriorTypes.NORMAL,
+        reward_type=LikelihoodTypes.NORMAL,
+        target_field_name="is_onboarded",
+    )
+    result = aclient.create_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        body=request,
+        random_state=42,
+        raise_if_not_default_status=False,
+    )
+    assert result.status == HTTPStatus.UNPROCESSABLE_CONTENT
+    assert "only compatible with reward_type 'binary'" in str(result.data)
