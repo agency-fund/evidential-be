@@ -78,7 +78,7 @@ def make_webhook_outbound_handler(dsn: str, *, transport: httpx2.BaseTransport |
 
         The payload is assumed to be a WebhookOutboundTask.
         """
-        if not task.payload:
+        if task.payload is None:
             logger.error("Task payload is empty")
             raise ValueError("Task payload is empty")
 
@@ -183,7 +183,7 @@ def make_turn_journeys_changed_handler(dsn: str, *, transport: httpx2.AsyncBaseT
 
         The payload is assumed to be a TurnJourneysChangedTask.
         """
-        if not task.payload:
+        if task.payload is None:
             logger.error("Task payload is empty")
             raise ValueError("Task payload is empty")
 

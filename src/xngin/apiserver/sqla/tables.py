@@ -246,7 +246,7 @@ class Task(Base):
     # Number of times this task has been retried.
     retry_count: Mapped[int] = mapped_column(server_default="0")
     # The task payload. This will be a JSON object with task-specific data.
-    payload: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+    payload: Mapped[dict | None] = mapped_column(postgresql.JSONB(none_as_null=True))
     # An optional informative message about the state of this task.
     message: Mapped[str | None] = mapped_column()
 

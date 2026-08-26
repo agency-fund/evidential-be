@@ -3,6 +3,25 @@ from sqlalchemy import select
 from xngin.apiserver.sqla import tables
 
 
+async def test_task_payload_none_is_sql_null(xngin_session):
+    task = tables.Task(task_type="test", payload={})
+    xngin_session.add(task)
+    await xngin_session.flush()
+    assert task.payload == {}
+    payload_is_sql_null = await xngin_session.scalar(
+        select(tables.Task.payload.is_(None)).where(tables.Task.id == task.id)
+    )
+    assert payload_is_sql_null is False
+
+    task.payload = None
+    await xngin_session.flush()
+    assert task.payload is None
+    payload_is_sql_null = await xngin_session.scalar(
+        select(tables.Task.payload.is_(None)).where(tables.Task.id == task.id)
+    )
+    assert payload_is_sql_null is True
+
+
 async def test_participant_type_inspection_response_none_is_sql_null(xngin_session, testing_datasource):
     inspection = tables.ParticipantTypesInspected(
         datasource_id=testing_datasource.datasource_id,
