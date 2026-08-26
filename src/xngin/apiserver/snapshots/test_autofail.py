@@ -1,13 +1,15 @@
-import asyncio
-import contextlib
 from collections.abc import Sequence
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver.routers.common_api_types import (
     ArmBandit,
+    Assignment,
     CMABContextInputRequest,
     CMABExperimentSpec,
     Context,
@@ -24,16 +26,14 @@ from xngin.apiserver.routers.common_api_types import (
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.snapshots import cli
 from xngin.apiserver.snapshots.autofail import (
-    AUTOFAIL_TIMEOUT_SECS,
-    create_pending_autofail_updates,
-    process_pending_autofail_updates,
+    DEFAULT_AUTOFAIL_TIMEOUT_SECS,
+    _autofail_experiment_ids_query,  # noqa: PLC2701
+    process_autofails,
 )
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
-
-UPDATE_OUTCOME_IMPL = "xngin.apiserver.routers.experiments.experiments_common.update_bandit_arm_with_outcome_impl"
 
 
 async def create_autofail_experiment(
@@ -50,9 +50,7 @@ async def create_autofail_experiment(
     participants: Sequence[str] = ("0", "1"),
     name: str = "autofail test",
 ) -> str:
-    """
-    Creates a committed bandit experiment and draws an assignment for each participant.
-    """
+    """Create a committed bandit experiment and draw an assignment for each participant."""
     autofail_config = {
         "enable_autofail": enable_autofail,
         "autofail_window": autofail_window,
@@ -161,7 +159,7 @@ def get_sorted_context_inputs(
     experiment_id: str,
     value: float = 1.0,
 ) -> list[ContextInput]:
-    """Returns context inputs for a CMAB, sorted by context id as the assignment path expects."""
+    """Return context inputs sorted as the assignment path expects."""
     config = aclient.get_experiment_for_ui(
         datasource_id=testing_datasource.datasource_id,
         experiment_id=experiment_id,
@@ -170,17 +168,17 @@ def get_sorted_context_inputs(
     assert config.design_spec.contexts is not None
     return [
         ContextInput(context_id=context.context_id or "", context_value=value)
-        for context in sorted(config.design_spec.contexts, key=lambda c: c.context_id or "")
+        for context in sorted(config.design_spec.contexts, key=lambda context: context.context_id or "")
     ]
 
 
 async def age_draws(
-    xngin_session,
+    xngin_session: AsyncSession,
     experiment_id: str,
     hours: float,
     participant_ids: Sequence[str] | None = None,
 ) -> None:
-    """Updates the created_at timestamp of draws to be older than the autofail window."""
+    """Set draw creation times relative to their autofail eligibility window."""
     stmt = update(tables.Draw).where(tables.Draw.experiment_id == experiment_id)
     if participant_ids is not None:
         stmt = stmt.where(tables.Draw.participant_id.in_(participant_ids))
@@ -188,18 +186,55 @@ async def age_draws(
     await xngin_session.commit()
 
 
-async def get_autofail_updates(xngin_session, experiment_id: str | None = None) -> list[tables.AutofailUpdate]:
+async def get_draws(xngin_session: AsyncSession, experiment_id: str) -> list[tables.Draw]:
     xngin_session.expire_all()
-    stmt = select(tables.AutofailUpdate).order_by(
-        tables.AutofailUpdate.experiment_id, tables.AutofailUpdate.participant_id
+    return list(
+        (
+            await xngin_session.execute(
+                select(tables.Draw)
+                .where(tables.Draw.experiment_id == experiment_id)
+                .order_by(tables.Draw.participant_id)
+            )
+        )
+        .scalars()
+        .all()
     )
-    if experiment_id is not None:
-        stmt = stmt.where(tables.AutofailUpdate.experiment_id == experiment_id)
-    return list((await xngin_session.execute(stmt)).scalars().all())
 
 
-async def test_create_pending_autofail_updates_boundary(
-    xngin_session,
+def get_assignments_via_api(
+    eclient: ExperimentsAPIClient,
+    testing_datasource,
+    experiment_id: str,
+    participant_ids: Sequence[str] = ("0", "1"),
+) -> list[Assignment]:
+    assignments: list[Assignment] = []
+    for participant_id in participant_ids:
+        assignment = eclient.get_assignment(
+            api_key=testing_datasource.key,
+            experiment_id=experiment_id,
+            participant_id=participant_id,
+            create_if_none=False,
+        ).data.assignment
+        assert assignment is not None
+        assignments.append(assignment)
+    return assignments
+
+
+@dataclass(slots=True)
+class ManualClock:
+    now: float = 0.0
+    sleeps: list[float] = field(default_factory=list)
+
+    def monotonic(self) -> float:
+        return self.now
+
+    async def sleep(self, duration: float) -> None:
+        self.sleeps.append(duration)
+        self.now += duration
+
+
+async def test_autofail_eligibility_uses_window_boundary(
+    xngin_session: AsyncSession,
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
@@ -210,14 +245,14 @@ async def test_create_pending_autofail_updates_boundary(
     await age_draws(xngin_session, experiment_id, hours=0.9, participant_ids=["0"])
     await age_draws(xngin_session, experiment_id, hours=1.1, participant_ids=["1"])
 
-    await create_pending_autofail_updates()
+    await process_autofails(DEFAULT_AUTOFAIL_TIMEOUT_SECS, batch_sleep=0)
 
-    updates = await get_autofail_updates(xngin_session)
-    assert [u.participant_id for u in updates] == ["1"]
+    draws = await get_draws(xngin_session, experiment_id)
+    assert [(draw.participant_id, draw.outcome) for draw in draws] == [("0", None), ("1", 0.0)]
 
 
-async def test_create_pending_autofail_updates_skips_experiments_without_autofail(
-    xngin_session,
+async def test_autofail_skips_experiments_without_autofail(
+    xngin_session: AsyncSession,
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
@@ -232,13 +267,38 @@ async def test_create_pending_autofail_updates_skips_experiments_without_autofai
     )
     await age_draws(xngin_session, experiment_id, hours=100)
 
-    await create_pending_autofail_updates()
+    await process_autofails(DEFAULT_AUTOFAIL_TIMEOUT_SECS, batch_sleep=0)
 
-    assert await get_autofail_updates(xngin_session) == []
+    draws = await get_draws(xngin_session, experiment_id)
+    assert all(draw.enable_autofail is False for draw in draws)
+    assert all(draw.outcome is None for draw in draws)
 
 
-async def test_create_pending_autofail_updates_skips_draws_with_outcomes(
-    xngin_session,
+async def test_autofail_skips_draws_without_autofail_flag(
+    xngin_session: AsyncSession,
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+):
+    experiment_id = await create_autofail_experiment(
+        aclient, eclient, testing_datasource, autofail_window=1, name="draw autofail disabled"
+    )
+    await xngin_session.execute(
+        update(tables.Draw)
+        .where(tables.Draw.experiment_id == experiment_id, tables.Draw.participant_id == "0")
+        .values(enable_autofail=False)
+    )
+    await xngin_session.commit()
+    await age_draws(xngin_session, experiment_id, hours=2)
+
+    await process_autofails(DEFAULT_AUTOFAIL_TIMEOUT_SECS, batch_sleep=0)
+
+    draws = await get_draws(xngin_session, experiment_id)
+    assert [(draw.participant_id, draw.outcome) for draw in draws] == [("0", None), ("1", 0.0)]
+
+
+async def test_autofail_skips_draws_with_outcomes(
+    xngin_session: AsyncSession,
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
@@ -254,46 +314,22 @@ async def test_create_pending_autofail_updates_skips_draws_with_outcomes(
     )
     await age_draws(xngin_session, experiment_id, hours=100)
 
-    await create_pending_autofail_updates()
+    await process_autofails(DEFAULT_AUTOFAIL_TIMEOUT_SECS, batch_sleep=0)
 
-    updates = await get_autofail_updates(xngin_session)
-    assert [u.participant_id for u in updates] == ["1"]
-
-
-@pytest.mark.parametrize(
-    "experiment_type", [ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE, ExperimentsType.MAB_ONLINE_DWH]
-)
-async def test_create_pending_autofail_updates_covers_mab_and_cmab(
-    xngin_session,
-    testing_datasource,
-    aclient: AdminAPIClient,
-    eclient: ExperimentsAPIClient,
-    experiment_type: ExperimentsType,
-):
-    experiment_id = await create_autofail_experiment(
-        aclient,
-        eclient,
-        testing_datasource,
-        experiment_type=experiment_type,
-        autofail_window=1,
-        name=f"pending updates {experiment_type}",
-    )
-    await age_draws(xngin_session, experiment_id, hours=2)
-
-    await create_pending_autofail_updates()
-
-    updates = await get_autofail_updates(xngin_session)
-    assert [(u.experiment_id, u.participant_id, u.status) for u in updates] == [
-        (experiment_id, "0", "pending"),
-        (experiment_id, "1", "pending"),
+    assignments = get_assignments_via_api(eclient, testing_datasource, experiment_id)
+    assert [
+        (assignment.participant_id, assignment.outcome, assignment.autofailed_outcome) for assignment in assignments
+    ] == [
+        ("0", 1.0, False),
+        ("1", 0.0, True),
     ]
 
 
 @pytest.mark.parametrize(
     "experiment_type", [ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE, ExperimentsType.MAB_ONLINE_DWH]
 )
-async def test_process_pending_autofail_updates_records_outcome(
-    xngin_session,
+async def test_autofail_records_outcomes_for_supported_bandits(
+    xngin_session: AsyncSession,
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
@@ -310,185 +346,320 @@ async def test_process_pending_autofail_updates_records_outcome(
     )
     await age_draws(xngin_session, experiment_id, hours=2)
 
-    await create_pending_autofail_updates()
-    await process_pending_autofail_updates(AUTOFAIL_TIMEOUT_SECS, max_jitter_secs=0)
+    await process_autofails(DEFAULT_AUTOFAIL_TIMEOUT_SECS, batch_sleep=0)
 
-    updates = await get_autofail_updates(xngin_session)
-    assert [u.status for u in updates] == ["success", "success"]
-    assert all(u.message for u in updates)
+    assignments = get_assignments_via_api(eclient, testing_datasource, experiment_id)
+    assert all(assignment.outcome == 0.0 for assignment in assignments)
+    assert all(assignment.autofailed_outcome is True for assignment in assignments)
+    assert all(assignment.observed_at is not None for assignment in assignments)
 
 
-async def test_process_pending_autofail_updates_processes_until_empty(
-    xngin_session,
+async def test_autofail_processes_in_bounded_batches_and_sleeps_between_them(
+    xngin_session: AsyncSession,
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
 ):
-    first_id = await create_autofail_experiment(
+    experiment_id = await create_autofail_experiment(
+        aclient,
+        eclient,
+        testing_datasource,
+        autofail_window=1,
+        participants=["0", "1", "2", "3"],
+        name="bounded batches",
+    )
+    await age_draws(xngin_session, experiment_id, hours=2)
+    clock = ManualClock()
+
+    await process_autofails(
+        autofail_timeout=100,
+        batch_sleep=3,
+        batch_size=2,
+        sleep=clock.sleep,
+        monotonic=clock.monotonic,
+    )
+
+    assert clock.sleeps == [3, 3]
+    assert all(draw.outcome == 0.0 for draw in await get_draws(xngin_session, experiment_id))
+
+
+async def test_autofail_reloads_experiment_config_for_each_batch(
+    xngin_session: AsyncSession,
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+):
+    experiment_id = await create_autofail_experiment(
         aclient,
         eclient,
         testing_datasource,
         autofail_window=1,
         autofail_outcome_value=0.0,
-        name="until empty a",
-    )
-    second_id = await create_autofail_experiment(
-        aclient,
-        eclient,
-        testing_datasource,
-        autofail_window=1,
-        autofail_outcome_value=1.0,
-        name="until empty b",
-    )
-    for experiment_id in (first_id, second_id):
-        await age_draws(xngin_session, experiment_id, hours=2)
-
-    await create_pending_autofail_updates()
-    assert len(await get_autofail_updates(xngin_session)) == 4
-
-    await process_pending_autofail_updates(AUTOFAIL_TIMEOUT_SECS, max_jitter_secs=0)
-
-    updates = await get_autofail_updates(xngin_session)
-    assert [u.status for u in updates] == ["success"] * 4
-
-
-async def test_process_pending_autofail_updates_is_noop_when_none_pending(
-    xngin_session,
-    testing_datasource,
-    aclient: AdminAPIClient,
-    eclient: ExperimentsAPIClient,
-):
-    experiment_id = await create_autofail_experiment(
-        aclient, eclient, testing_datasource, autofail_window=1, name="nothing pending"
+        participants=["0", "1"],
+        name="reload configuration",
     )
     await age_draws(xngin_session, experiment_id, hours=2)
+    config_updated = False
 
-    # Nothing in the table at all.
-    await process_pending_autofail_updates(AUTOFAIL_TIMEOUT_SECS, max_jitter_secs=0)
-    assert await get_autofail_updates(xngin_session) == []
-
-    # A terminal row is not reprocessed.
-    xngin_session.add(
-        tables.AutofailUpdate(
-            experiment_id=experiment_id,
-            participant_id="0",
-            status="success",
-            message="already done",
-        )
-    )
-    await xngin_session.commit()
-
-    await process_pending_autofail_updates(AUTOFAIL_TIMEOUT_SECS, max_jitter_secs=0)
-
-    updates = await get_autofail_updates(xngin_session)
-    assert [(u.status, u.message) for u in updates] == [("success", "already done")]
-
-
-async def test_process_pending_autofail_updates_marks_failed_on_exception(
-    xngin_session,
-    testing_datasource,
-    aclient: AdminAPIClient,
-    eclient: ExperimentsAPIClient,
-    mocker,
-):
-    experiment_id = await create_autofail_experiment(
-        aclient,
-        eclient,
-        testing_datasource,
-        autofail_window=1,
-        participants=["0"],
-        name="failure recorded",
-    )
-    await age_draws(xngin_session, experiment_id, hours=2)
-    await create_pending_autofail_updates()
-
-    mocker.patch(UPDATE_OUTCOME_IMPL, side_effect=RuntimeError("boom"))
-
-    await process_pending_autofail_updates(AUTOFAIL_TIMEOUT_SECS, max_jitter_secs=0)
-
-    updates = await get_autofail_updates(xngin_session)
-    assert [(u.status, u.message) for u in updates] == [("failed", "RuntimeError: boom")]
-
-
-async def test_process_pending_autofail_updates_marks_failed_on_timeout(
-    xngin_session,
-    testing_datasource,
-    aclient: AdminAPIClient,
-    eclient: ExperimentsAPIClient,
-    mocker,
-):
-    experiment_id = await create_autofail_experiment(
-        aclient,
-        eclient,
-        testing_datasource,
-        autofail_window=1,
-        participants=["0"],
-        name="timeout recorded",
-    )
-    await age_draws(xngin_session, experiment_id, hours=2)
-    await create_pending_autofail_updates()
-
-    async def slow_update(*args, **kwargs):
-        await asyncio.sleep(0.01)
-
-    mocker.patch(UPDATE_OUTCOME_IMPL, side_effect=slow_update)
-
-    await process_pending_autofail_updates(0, max_jitter_secs=0)
-
-    updates = await get_autofail_updates(xngin_session)
-    assert len(updates) == 1
-    assert updates[0].status == "failed"
-    assert updates[0].message is not None
-    assert "TimeoutError" in updates[0].message
-
-
-async def test_process_pending_autofail_updates_survives_a_failure(
-    xngin_session,
-    testing_datasource,
-    aclient: AdminAPIClient,
-    eclient: ExperimentsAPIClient,
-    mocker,
-):
-    experiment_id = await create_autofail_experiment(
-        aclient, eclient, testing_datasource, autofail_window=1, name="drain past failure"
-    )
-    await age_draws(xngin_session, experiment_id, hours=2)
-    await create_pending_autofail_updates()
-
-    original = experiments_common.update_bandit_arm_with_outcome_impl
-
-    async def fail_first_participant(*args, **kwargs):
-        if kwargs["participant_id"] == "0":
-            await original(*args, **kwargs)
-            raise RuntimeError("boom")
-        return await original(*args, **kwargs)
-
-    mocker.patch(UPDATE_OUTCOME_IMPL, side_effect=fail_first_participant)
-
-    await process_pending_autofail_updates(AUTOFAIL_TIMEOUT_SECS, max_jitter_secs=0)
-
-    updates = await get_autofail_updates(xngin_session)
-    assert [(u.participant_id, u.status) for u in updates] == [("0", "failed"), ("1", "success")]
-    draws = (
+    async def update_config_after_first_batch(_duration: float) -> None:
+        nonlocal config_updated
+        if config_updated:
+            return
         await xngin_session.execute(
-            select(tables.Draw).where(tables.Draw.experiment_id == experiment_id).order_by(tables.Draw.participant_id)
+            update(tables.Experiment).where(tables.Experiment.id == experiment_id).values(autofail_outcome_value=1.0)
         )
-    ).scalars()
-    assert [(draw.participant_id, draw.outcome) for draw in draws] == [("0", None), ("1", 0.0)]
+        await xngin_session.commit()
+        config_updated = True
+
+    await process_autofails(
+        autofail_timeout=DEFAULT_AUTOFAIL_TIMEOUT_SECS,
+        batch_sleep=0,
+        batch_size=1,
+        sleep=update_config_after_first_batch,
+    )
+
+    draws = await get_draws(xngin_session, experiment_id)
+    assert sorted(draw.outcome for draw in draws if draw.outcome is not None) == [0.0, 1.0]
 
 
-async def test_autofail_acollect_creates_then_processes(mocker):
+async def test_autofail_processes_one_batch_per_experiment_before_repeating(
+    xngin_session: AsyncSession,
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+):
+    experiment_ids = [
+        await create_autofail_experiment(
+            aclient,
+            eclient,
+            testing_datasource,
+            autofail_window=1,
+            participants=["0", "1"],
+            name=f"round robin {index}",
+        )
+        for index in range(2)
+    ]
+    for experiment_id in experiment_ids:
+        await age_draws(xngin_session, experiment_id, hours=2)
+    clock = ManualClock()
+    processed_experiment_ids: list[str] = []
 
-    @contextlib.asynccontextmanager
-    async def noop_setup():
+    async def update_two_experiments_then_reach_deadline(
+        xngin_session: AsyncSession,
+        experiment: tables.Experiment,
+        participant_id: str,
+        outcome: float,
+        autofailed_outcome: bool = False,
+    ) -> tables.Arm:
+        arm = await experiments_common.update_bandit_arm_with_outcome_impl(
+            xngin_session=xngin_session,
+            experiment=experiment,
+            participant_id=participant_id,
+            outcome=outcome,
+            autofailed_outcome=autofailed_outcome,
+        )
+        processed_experiment_ids.append(experiment.id)
+        if len(processed_experiment_ids) == 2:
+            clock.now = 10
+        return arm
+
+    await process_autofails(
+        autofail_timeout=10,
+        batch_sleep=0,
+        batch_size=1,
+        update_outcome=update_two_experiments_then_reach_deadline,
+        monotonic=clock.monotonic,
+    )
+
+    assert set(processed_experiment_ids) == set(experiment_ids)
+    for experiment_id in experiment_ids:
+        draws = await get_draws(xngin_session, experiment_id)
+        assert sum(draw.outcome is not None for draw in draws) == 1
+
+
+async def test_autofail_experiment_discovery_excludes_completed_experiments(
+    xngin_session: AsyncSession,
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+):
+    completed_experiment_id = await create_autofail_experiment(
+        aclient,
+        eclient,
+        testing_datasource,
+        autofail_window=1,
+        participants=["0"],
+        name="completed autofail",
+    )
+    await age_draws(xngin_session, completed_experiment_id, hours=2)
+    await process_autofails(DEFAULT_AUTOFAIL_TIMEOUT_SECS, batch_sleep=0)
+
+    pending_experiment_id = await create_autofail_experiment(
+        aclient,
+        eclient,
+        testing_datasource,
+        autofail_window=1,
+        participants=["0"],
+        name="pending autofail",
+    )
+
+    discovered_experiment_ids = set((await xngin_session.scalars(_autofail_experiment_ids_query())).all())
+
+    assert completed_experiment_id not in discovered_experiment_ids
+    assert pending_experiment_id in discovered_experiment_ids
+
+
+async def test_autofail_rolls_back_failed_experiment_and_continues_others(
+    xngin_session: AsyncSession,
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+):
+    failing_experiment_id = await create_autofail_experiment(
+        aclient, eclient, testing_datasource, autofail_window=1, name="failing experiment"
+    )
+    healthy_experiment_id = await create_autofail_experiment(
+        aclient, eclient, testing_datasource, autofail_window=1, name="healthy experiment"
+    )
+    await age_draws(xngin_session, failing_experiment_id, hours=2)
+    await age_draws(xngin_session, healthy_experiment_id, hours=2)
+    failing_update_count = 0
+
+    async def fail_after_second_update(
+        xngin_session: AsyncSession,
+        experiment: tables.Experiment,
+        participant_id: str,
+        outcome: float,
+        autofailed_outcome: bool = False,
+    ) -> tables.Arm:
+        nonlocal failing_update_count
+        arm = await experiments_common.update_bandit_arm_with_outcome_impl(
+            xngin_session=xngin_session,
+            experiment=experiment,
+            participant_id=participant_id,
+            outcome=outcome,
+            autofailed_outcome=autofailed_outcome,
+        )
+        if experiment.id != failing_experiment_id:
+            return arm
+        failing_update_count += 1
+        if failing_update_count == 2:
+            raise RuntimeError(f"failed after updating {participant_id}")
+        return arm
+
+    await process_autofails(
+        DEFAULT_AUTOFAIL_TIMEOUT_SECS,
+        batch_sleep=0,
+        update_outcome=fail_after_second_update,
+    )
+
+    assert failing_update_count == 2
+    assert all(draw.outcome is None for draw in await get_draws(xngin_session, failing_experiment_id))
+    assert all(draw.outcome == 0.0 for draw in await get_draws(xngin_session, healthy_experiment_id))
+
+
+async def test_autofail_keeps_prior_batches_when_a_later_batch_fails(
+    xngin_session: AsyncSession,
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+):
+    experiment_id = await create_autofail_experiment(
+        aclient, eclient, testing_datasource, autofail_window=1, name="later batch failure"
+    )
+    await age_draws(xngin_session, experiment_id, hours=2)
+
+    update_count = 0
+
+    async def fail_second_update(
+        xngin_session: AsyncSession,
+        experiment: tables.Experiment,
+        participant_id: str,
+        outcome: float,
+        autofailed_outcome: bool = False,
+    ) -> tables.Arm:
+        nonlocal update_count
+        arm = await experiments_common.update_bandit_arm_with_outcome_impl(
+            xngin_session=xngin_session,
+            experiment=experiment,
+            participant_id=participant_id,
+            outcome=outcome,
+            autofailed_outcome=autofailed_outcome,
+        )
+        update_count += 1
+        if update_count == 2:
+            raise RuntimeError("second batch failed")
+        return arm
+
+    await process_autofails(
+        DEFAULT_AUTOFAIL_TIMEOUT_SECS,
+        batch_sleep=0,
+        batch_size=1,
+        update_outcome=fail_second_update,
+    )
+
+    draws = await get_draws(xngin_session, experiment_id)
+    assert sum(draw.outcome is not None for draw in draws) == 1
+
+
+async def test_autofail_deadline_is_checked_before_the_next_batch(
+    xngin_session: AsyncSession,
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+):
+    experiment_id = await create_autofail_experiment(
+        aclient, eclient, testing_datasource, autofail_window=1, name="deadline between batches"
+    )
+    await age_draws(xngin_session, experiment_id, hours=2)
+    clock = ManualClock()
+
+    async def update_then_reach_deadline(
+        xngin_session: AsyncSession,
+        experiment: tables.Experiment,
+        participant_id: str,
+        outcome: float,
+        autofailed_outcome: bool = False,
+    ) -> tables.Arm:
+        arm = await experiments_common.update_bandit_arm_with_outcome_impl(
+            xngin_session=xngin_session,
+            experiment=experiment,
+            participant_id=participant_id,
+            outcome=outcome,
+            autofailed_outcome=autofailed_outcome,
+        )
+        clock.now = 10
+        return arm
+
+    await process_autofails(
+        autofail_timeout=10,
+        batch_sleep=0,
+        batch_size=1,
+        update_outcome=update_then_reach_deadline,
+        monotonic=clock.monotonic,
+    )
+
+    draws = await get_draws(xngin_session, experiment_id)
+    assert sum(draw.outcome is not None for draw in draws) == 1
+
+
+async def test_autofail_acollect_forwards_timing_options():
+    calls: list[tuple[str, float, float, int] | tuple[str]] = []
+
+    @asynccontextmanager
+    async def fake_database_setup():
+        calls.append(("setup",))
         yield
 
-    mocker.patch("xngin.apiserver.snapshots.cli.database.setup", noop_setup)
-    create_mock = mocker.patch("xngin.apiserver.snapshots.cli.autofail.create_pending_autofail_updates")
-    process_mock = mocker.patch("xngin.apiserver.snapshots.cli.autofail.process_pending_autofail_updates")
+    async def fake_process_autofails(autofail_timeout: float, batch_sleep: float, batch_size: int) -> None:
+        calls.append(("process", autofail_timeout, batch_sleep, batch_size))
 
-    await cli.autofail_acollect(autofail_timeout=42, parallelism=3)
+    await cli.autofail_acollect(
+        autofail_timeout=42,
+        autofail_batch_sleep=1.5,
+        autofail_batch_size=123,
+        database_setup=fake_database_setup,
+        process_autofails=fake_process_autofails,
+    )
 
-    create_mock.assert_awaited_once_with()
-    assert process_mock.await_count == 3
-    assert all(call.args == (42,) for call in process_mock.await_args_list)
+    assert calls == [("setup",), ("process", 42, 1.5, 123)]
