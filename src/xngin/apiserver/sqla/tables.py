@@ -478,7 +478,7 @@ class Experiment(Base):
     power_analyses: Mapped[dict | None] = mapped_column(postgresql.JSONB(none_as_null=True))
     # JSON serialized form of a BalanceCheck. May be null if the experiment type doesn't support
     # balance checks.
-    balance_check: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+    balance_check: Mapped[dict | None] = mapped_column(postgresql.JSONB(none_as_null=True))
     power: Mapped[float | None] = mapped_column()
     alpha: Mapped[float | None] = mapped_column()
     fstat_thresh: Mapped[float | None] = mapped_column()

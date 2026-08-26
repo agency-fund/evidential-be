@@ -1512,6 +1512,11 @@ async def test_create_experiment_impl_for_freq_online(xngin_session, testing_dat
     # Verify design_spec was stored correctly
     converter = ExperimentStorageConverter(experiment)
     assert await converter.get_design_spec() == response.design_spec
+    assert experiment.balance_check is None
+    balance_check_is_sql_null = await xngin_session.scalar(
+        select(tables.Experiment.balance_check.is_(None)).where(tables.Experiment.id == experiment.id)
+    )
+    assert balance_check_is_sql_null is True
     # Verify no power_analyses for online experiments
     assert experiment.power_analyses is None
     power_analyses_is_sql_null = await xngin_session.scalar(
