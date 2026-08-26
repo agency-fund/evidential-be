@@ -459,6 +459,7 @@ async def test_process_pending_autofail_updates_survives_a_failure(
 
     async def fail_first_participant(*args, **kwargs):
         if kwargs["participant_id"] == "0":
+            await original(*args, **kwargs)
             raise RuntimeError("boom")
         return await original(*args, **kwargs)
 
@@ -468,6 +469,12 @@ async def test_process_pending_autofail_updates_survives_a_failure(
 
     updates = await get_autofail_updates(xngin_session)
     assert [(u.participant_id, u.status) for u in updates] == [("0", "failed"), ("1", "success")]
+    draws = (
+        await xngin_session.execute(
+            select(tables.Draw).where(tables.Draw.experiment_id == experiment_id).order_by(tables.Draw.participant_id)
+        )
+    ).scalars()
+    assert [(draw.participant_id, draw.outcome) for draw in draws] == [("0", None), ("1", 0.0)]
 
 
 async def test_autofail_acollect_creates_then_processes(mocker):
