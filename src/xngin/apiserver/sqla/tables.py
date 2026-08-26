@@ -149,7 +149,7 @@ class TurnConnection(Base):
     encrypted_turn_api_token: Mapped[str] = mapped_column()
     turn_api_token_preview: Mapped[str] = mapped_column(String(4))
 
-    journeys_dict: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+    journeys_dict: Mapped[dict | None] = mapped_column(postgresql.JSONB(none_as_null=True))
 
     created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
     updated_at: Mapped[datetime] = mapped_column(
