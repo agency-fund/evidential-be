@@ -770,6 +770,6 @@ class Snapshot(Base):
     # an informative error message).
     message: Mapped[str | None] = mapped_column()
     # JSON serialized form of an ExperimentAnalysisResponse. May be null if the snapshot is not yet a success.
-    data: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+    data: Mapped[dict | None] = mapped_column(postgresql.JSONB(none_as_null=True))
 
     experiment: Mapped[Experiment] = relationship(back_populates="snapshots", viewonly=True)

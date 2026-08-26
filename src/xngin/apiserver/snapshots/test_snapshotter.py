@@ -330,9 +330,14 @@ async def test_make_first_snapshot_is_noop_when_missing_or_not_pending(
         experiment_id=experiment_id,
         status="failed",
         message="already failed",
+        data=None,
     )
     xngin_session.add(completed_snapshot)
     await xngin_session.commit()
+    snapshot_data_is_sql_null = await xngin_session.scalar(
+        select(tables.Snapshot.data.is_(None)).where(tables.Snapshot.id == completed_snapshot.id)
+    )
+    assert snapshot_data_is_sql_null is True
 
     def list_snapshots():
         return aclient.list_snapshots(
