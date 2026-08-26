@@ -3,6 +3,34 @@ from sqlalchemy import select
 from xngin.apiserver.sqla import tables
 
 
+async def test_participant_type_inspection_response_none_is_sql_null(xngin_session, testing_datasource):
+    inspection = tables.ParticipantTypesInspected(
+        datasource_id=testing_datasource.datasource_id,
+        participant_type="participant_type",
+        response={},
+    )
+    xngin_session.add(inspection)
+    await xngin_session.flush()
+    response_is_sql_null = await xngin_session.scalar(
+        select(tables.ParticipantTypesInspected.response.is_(None)).where(
+            tables.ParticipantTypesInspected.datasource_id == inspection.datasource_id,
+            tables.ParticipantTypesInspected.participant_type == inspection.participant_type,
+        )
+    )
+    assert response_is_sql_null is False
+
+    inspection.response = None
+    await xngin_session.flush()
+    assert inspection.response is None
+    response_is_sql_null = await xngin_session.scalar(
+        select(tables.ParticipantTypesInspected.response.is_(None)).where(
+            tables.ParticipantTypesInspected.datasource_id == inspection.datasource_id,
+            tables.ParticipantTypesInspected.participant_type == inspection.participant_type,
+        )
+    )
+    assert response_is_sql_null is True
+
+
 async def test_datasource_table_inspection_response_none_is_sql_null(xngin_session, testing_datasource):
     inspection = tables.DatasourceTablesInspected(
         datasource_id=testing_datasource.datasource_id,
