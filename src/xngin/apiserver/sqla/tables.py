@@ -475,7 +475,7 @@ class Experiment(Base):
     # Frequentist config params
     # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run
     # power analyses.
-    power_analyses: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+    power_analyses: Mapped[dict | None] = mapped_column(postgresql.JSONB(none_as_null=True))
     # JSON serialized form of a BalanceCheck. May be null if the experiment type doesn't support
     # balance checks.
     balance_check: Mapped[dict | None] = mapped_column(postgresql.JSONB)
