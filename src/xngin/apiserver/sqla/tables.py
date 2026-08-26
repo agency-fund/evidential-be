@@ -379,7 +379,7 @@ class DatasourceTablesInspected(Base):
     table_name: Mapped[str] = mapped_column(primary_key=True)
 
     # Serialized InspectDatasourceTablesResponse.
-    response: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+    response: Mapped[dict | None] = mapped_column(postgresql.JSONB(none_as_null=True))
     # Timestamp of the last update to `response`
     response_last_updated: Mapped[datetime | None] = mapped_column()
 

@@ -3,6 +3,34 @@ from sqlalchemy import select
 from xngin.apiserver.sqla import tables
 
 
+async def test_datasource_table_inspection_response_none_is_sql_null(xngin_session, testing_datasource):
+    inspection = tables.DatasourceTablesInspected(
+        datasource_id=testing_datasource.datasource_id,
+        table_name="table_name",
+        response={},
+    )
+    xngin_session.add(inspection)
+    await xngin_session.flush()
+    response_is_sql_null = await xngin_session.scalar(
+        select(tables.DatasourceTablesInspected.response.is_(None)).where(
+            tables.DatasourceTablesInspected.datasource_id == inspection.datasource_id,
+            tables.DatasourceTablesInspected.table_name == inspection.table_name,
+        )
+    )
+    assert response_is_sql_null is False
+
+    inspection.response = None
+    await xngin_session.flush()
+    assert inspection.response is None
+    response_is_sql_null = await xngin_session.scalar(
+        select(tables.DatasourceTablesInspected.response.is_(None)).where(
+            tables.DatasourceTablesInspected.datasource_id == inspection.datasource_id,
+            tables.DatasourceTablesInspected.table_name == inspection.table_name,
+        )
+    )
+    assert response_is_sql_null is True
+
+
 async def test_turn_connection_journeys_dict_none_is_sql_null(xngin_session, testing_datasource):
     turn_connection = tables.TurnConnection(
         organization_id=testing_datasource.organization_id,
