@@ -54,8 +54,8 @@
             </div>
         </aside>
         <h2>
-            <span class="text">1748 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">1745<span class="text"> run</span></button>
+            <span class="text">1753 statements &nbsp;</span>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">1750<span class="text"> run</span></button>
             <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">3<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_272f90c4dc99306b_test_admin_extra_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-08-18 18:18 +0000
+            created at 2026-08-26 19:08 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -4609,6 +4609,24 @@
     <p class="run"><span class="n"><a id="t4527" href="#t4527">4527</a></span><span class="t">        <span class="key">assert</span> <span class="nam">arm_id</span> <span class="key">is</span> <span class="key">not</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t4528" href="#t4528">4528</a></span><span class="t">        <span class="key">assert</span> <span class="nam">arm_size</span><span class="op">.</span><span class="nam">cluster_count</span> <span class="key">is</span> <span class="key">not</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t4529" href="#t4529">4529</a></span><span class="t">        <span class="key">assert</span> <span class="nam">arm_size</span><span class="op">.</span><span class="nam">cluster_count</span> <span class="op">==</span> <span class="nam">len</span><span class="op">(</span><span class="nam">clusters_by_arm</span><span class="op">[</span><span class="nam">arm_id</span><span class="op">]</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t4530" href="#t4530">4530</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t4531" href="#t4531">4531</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t4532" href="#t4532">4532</a></span><span class="t"><span class="key">async</span> <span class="key">def</span> <span class="nam">test_create_mab_dwh_bool_target_with_normal_reward_returns_422</span><span class="op">(</span><span class="nam">testing_datasource</span><span class="op">,</span> <span class="nam">aclient</span><span class="op">:</span> <span class="nam">AdminAPIClient</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t4533" href="#t4533">4533</a></span><span class="t">    <span class="str">&quot;&quot;&quot;The API rejects an incompatible Normal reward for a boolean MAB-DWH target.&quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t4534" href="#t4534">4534</a></span><span class="t">    <span class="nam">request</span> <span class="op">=</span> <span class="nam">make_create_online_bandit_experiment_request</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t4535" href="#t4535">4535</a></span><span class="t">        <span class="nam">experiment_type</span><span class="op">=</span><span class="nam">ExperimentsType</span><span class="op">.</span><span class="nam">MAB_ONLINE_DWH</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t4536" href="#t4536">4536</a></span><span class="t">        <span class="nam">prior_type</span><span class="op">=</span><span class="nam">PriorTypes</span><span class="op">.</span><span class="nam">NORMAL</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t4537" href="#t4537">4537</a></span><span class="t">        <span class="nam">reward_type</span><span class="op">=</span><span class="nam">LikelihoodTypes</span><span class="op">.</span><span class="nam">NORMAL</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t4538" href="#t4538">4538</a></span><span class="t">        <span class="nam">target_field_name</span><span class="op">=</span><span class="str">&quot;is_onboarded&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t4539" href="#t4539">4539</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t4540" href="#t4540">4540</a></span><span class="t">    <span class="nam">result</span> <span class="op">=</span> <span class="nam">aclient</span><span class="op">.</span><span class="nam">create_experiment</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t4541" href="#t4541">4541</a></span><span class="t">        <span class="nam">datasource_id</span><span class="op">=</span><span class="nam">testing_datasource</span><span class="op">.</span><span class="nam">datasource_id</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t4542" href="#t4542">4542</a></span><span class="t">        <span class="nam">body</span><span class="op">=</span><span class="nam">request</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t4543" href="#t4543">4543</a></span><span class="t">        <span class="nam">random_state</span><span class="op">=</span><span class="num">42</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t4544" href="#t4544">4544</a></span><span class="t">        <span class="nam">raise_if_not_default_status</span><span class="op">=</span><span class="key">False</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t4545" href="#t4545">4545</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t4546" href="#t4546">4546</a></span><span class="t">    <span class="key">assert</span> <span class="nam">result</span><span class="op">.</span><span class="nam">status</span> <span class="op">==</span> <span class="nam">HTTPStatus</span><span class="op">.</span><span class="nam">UNPROCESSABLE_CONTENT</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t4547" href="#t4547">4547</a></span><span class="t">    <span class="key">assert</span> <span class="str">&quot;only compatible with reward_type &#x27;binary&#x27;&quot;</span> <span class="key">in</span> <span class="nam">str</span><span class="op">(</span><span class="nam">result</span><span class="op">.</span><span class="nam">data</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -4618,7 +4636,7 @@
             <a class="nav" href="z_272f90c4dc99306b_test_admin_extra_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-08-18 18:18 +0000
+            created at 2026-08-26 19:08 +0000
         </p>
     </div>
 </footer>
