@@ -322,7 +322,7 @@ class Datasource(Base):
     config: Mapped[dict] = mapped_column(postgresql.JSONB)
 
     # List of table names available in this datasource
-    table_list: Mapped[list[str] | None] = mapped_column(postgresql.JSONB)
+    table_list: Mapped[list[str] | None] = mapped_column(postgresql.JSONB(none_as_null=True))
     # Timestamp of the last update to `inspected_tables`
     table_list_updated: Mapped[datetime | None] = mapped_column()
 
