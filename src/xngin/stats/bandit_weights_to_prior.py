@@ -78,16 +78,20 @@ def bandit_weights_to_beta_prior(
     return np.array([*np.abs(result.x).tolist(), 1.0]), beta_params
 
 
-def bandit_weights_to_normal_prior(
-    expected_probabilities: np.ndarray, num_dimensions: int = 1
-) -> tuple[np.ndarray, np.ndarray]:
+def bandit_weights_to_normal_prior(expected_probabilities: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
     Convert bandit weights to Normal prior parameters (mu, sigma) for each arm.
+
+    For multi-dimensional Normal distributions (CMABs), the mean parameters are optimized
+    to minimize the squared error between the expected probabilities and the probabilities derived
+    from the univariate Normal cdf -- this is a simplification in order to avoid precision errors
+    from computing the multivariate Normal cdf.
+    As the number of dimensions increases, the approximation diverges from the true probabilities.
+    However, this is a reasonable error tolerance for the purposes of setting prior parameters for CMABs.
 
     Args:
         expected_probabilities (np.ndarray): Array of shape (n_arms,) containing the expected
             probabilities for each arm.
-        num_dimensions (int): The number of dimensions for the Normal distribution. Default is 1.
     Returns:
         mu (np.ndarray): Array of shape (n_arms,) containing the mean parameters for the Normal
             distribution.
@@ -112,11 +116,7 @@ def bandit_weights_to_normal_prior(
             return float(result)
 
         computed_probabilities = np.array([prob_n_is_max(n) for n in range(len(expected_probabilities))])
-        return float(
-            np.sum(
-                (computed_probabilities**num_dimensions - expected_probabilities) ** 2 + 0.01 * num_dimensions * mus**2
-            )
-        )
+        return float(np.sum((computed_probabilities - expected_probabilities) ** 2 + 0.01 * mus**2))
 
     if (expected_probabilities.round(1) == expected_probabilities[0].round(1)).all():
         return mu_params, sigma_params
@@ -125,7 +125,7 @@ def bandit_weights_to_normal_prior(
 
 
 def convert_arm_weights_to_prior_params(
-    arm_weights: list[float], prior_type: PriorTypes, num_contexts: int = 1
+    arm_weights: list[float], prior_type: PriorTypes
 ) -> tuple[list[float], list[float]]:
     expected_probabilities = np.array(arm_weights, dtype=np.float64)
 
@@ -133,6 +133,6 @@ def convert_arm_weights_to_prior_params(
         alpha, beta = bandit_weights_to_beta_prior(expected_probabilities)
         return alpha.tolist(), beta.tolist()
     if prior_type == PriorTypes.NORMAL:
-        mu, sigma = bandit_weights_to_normal_prior(expected_probabilities, num_dimensions=num_contexts)
+        mu, sigma = bandit_weights_to_normal_prior(expected_probabilities)
         return mu.tolist(), sigma.tolist()
     raise ValueError(f"Unsupported prior type: {prior_type}")

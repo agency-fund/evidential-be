@@ -27,18 +27,16 @@ def test_bandit_weights_to_beta_prior(expected_probabilities: list[float], expec
 
 
 @pytest.mark.parametrize(
-    ("expected_probabilities", "num_dimensions", "expected_mus"),
+    ("expected_probabilities", "expected_mus"),
     [
-        ([12.5, 12.5, 25, 50], 1, [-0.815, -0.815, -0.454, 0.0]),
-        ([25, 75], 2, [-1.141, 0.0]),
-        ([33.33, 33.33, 33.34], 1, [0.0, 0.0, 0.0]),
-        ([10, 20, 30, 40], 3, [-0.353, -0.335, 0.874, 0.0]),
+        ([12.5, 12.5, 25, 50], [-0.815, -0.815, -0.454, 0.0]),
+        ([25, 75], [-0.8725, 0.0]),
+        ([33.33, 33.33, 33.34], [0.0, 0.0, 0.0]),
+        ([10, 20, 30, 40], [-0.735, -0.42, -0.158, 0.0]),
     ],
 )
-def test_bandit_weights_to_normal_prior(
-    expected_probabilities: list[float], num_dimensions: int, expected_mus: list[float]
-):
-    mu, sigma = bandit_weights_to_normal_prior(np.array(expected_probabilities), num_dimensions=num_dimensions)
+def test_bandit_weights_to_normal_prior(expected_probabilities: list[float], expected_mus: list[float]):
+    mu, sigma = bandit_weights_to_normal_prior(np.array(expected_probabilities))
 
     assert len(mu) == len(expected_probabilities)
     assert len(sigma) == len(expected_probabilities)
