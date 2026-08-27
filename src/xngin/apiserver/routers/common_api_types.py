@@ -147,10 +147,12 @@ class DesignSpecMetric(DesignSpecMetricBase):
 
 
 class DesignSpecMetricRequest(DesignSpecMetricBase):
-    """Defines a request to look up baseline stats for a metric to measure in an experiment."""
+    """Defines a request to look up baseline stats for a metric to measure in an experiment.
 
-    # TODO: consider supporting {metric_baseline, metric_stddev, available_n} as inputs when the metric may not exist or
-    # be usable yet in the dwh, so that it it can be used as a general power/sizing calculator.
+    Baseline stats may optionally be supplied (e.g. echoed back from a prior power check's
+    `MetricPowerAnalysis.metric_spec`), in which case the server reuses them instead of
+    re-querying the data warehouse.
+    """
 
     # Override the descriptions from above:
     metric_pct_change: Annotated[
@@ -168,6 +170,33 @@ class DesignSpecMetricRequest(DesignSpecMetricBase):
         ),
     ] = None
 
+    # Optional baseline stats, mirroring the fields of DesignSpecMetric. When all are provided
+    # (metric_stddev only for NUMERIC metrics), the server skips the dwh stats query for this metric.
+    metric_type: Annotated[
+        MetricType | None,
+        Field(description="Type of the metric. Set together with the other baseline stats to reuse them."),
+    ] = None
+    metric_baseline: Annotated[
+        float | None,
+        Field(description="Mean of the tracked metric, e.g. from a prior power check response."),
+    ] = None
+    metric_stddev: Annotated[
+        float | None,
+        Field(description="Standard deviation of the tracked metric. Only valid for MetricType.NUMERIC metrics."),
+    ] = None
+    available_nonnull_n: Annotated[
+        int | None,
+        Field(
+            description=(
+                "The number of participants who meet the filtering criteria and have a non-null value for this metric."
+            )
+        ),
+    ] = None
+    available_n: Annotated[
+        int | None,
+        Field(description="The number of participants who meet the filtering criteria."),
+    ] = None
+
     @model_validator(mode="after")
     def check_has_only_one_of_pct_change_or_target(self) -> Self:
         if self.metric_pct_change is not None and self.metric_target is not None:
@@ -175,6 +204,41 @@ class DesignSpecMetricRequest(DesignSpecMetricBase):
         if self.metric_pct_change is None and self.metric_target is None:
             raise ValueError("Must set one of metric_pct_change or metric_target")
         return self
+
+    @model_validator(mode="after")
+    def check_baseline_stats(self) -> Self:
+        """Enforce that baseline stats are either all set or all unset, so that a power calculation
+        never mixes supplied stats with dwh-derived ones for the same metric."""
+        stats_fields = (self.metric_type, self.metric_baseline, self.available_nonnull_n, self.available_n)
+        if any(f is not None for f in stats_fields) and any(f is None for f in stats_fields):
+            raise ValueError(
+                "metric_type, metric_baseline, available_nonnull_n, and available_n must all be set "
+                "together or all be None"
+            )
+        if self.metric_stddev is not None and self.metric_type is not MetricType.NUMERIC:
+            raise ValueError("metric_stddev may only be set for NUMERIC metrics")
+        return self
+
+    @property
+    def has_baseline_stats(self) -> bool:
+        """True when this request carries the baseline stats needed to skip the dwh stats query."""
+        return self.metric_baseline is not None
+
+    def to_design_spec_metric(self) -> DesignSpecMetric:
+        """Converts a request carrying baseline stats into the equivalent dwh-derived metric."""
+        return DesignSpecMetric(
+            field_name=self.field_name,
+            metric_pct_change=self.metric_pct_change,
+            metric_target=self.metric_target,
+            icc=self.icc,
+            avg_cluster_size=self.avg_cluster_size,
+            cv=self.cv,
+            metric_type=self.metric_type,
+            metric_baseline=self.metric_baseline,
+            metric_stddev=self.metric_stddev,
+            available_nonnull_n=self.available_nonnull_n,
+            available_n=self.available_n,
+        )
 
 
 class ParticipantProperty(ApiBaseModel):

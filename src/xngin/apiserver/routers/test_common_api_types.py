@@ -3,13 +3,15 @@ from pydantic import ValidationError
 
 from xngin.apiserver.routers.common_api_types import (
     CreateExperimentRequest,
+    DesignSpecMetric,
+    DesignSpecMetricRequest,
     Filter,
     MABDwhExperimentSpec,
     PreassignedFrequentistExperimentSpec,
     SampleCall,
     SampleCalls,
 )
-from xngin.apiserver.routers.common_enums import Relation
+from xngin.apiserver.routers.common_enums import MetricType, Relation
 
 VALID_COLUMN_NAMES = [
     "column_name",
@@ -334,3 +336,70 @@ def test_sample_calls_labels_must_be_unique():
     # Duplicate labels are rejected (the FE keys its rendered list on them).
     with pytest.raises(ValidationError, match="calls must have unique labels"):
         SampleCalls(calls=[call("Get assignment"), call("Get assignment")])
+
+
+def test_design_spec_metric_request_baseline_stats_all_or_none():
+    # No baseline stats is valid.
+    no_stats = DesignSpecMetricRequest(field_name="metric1", metric_pct_change=0.1)
+    assert no_stats.has_baseline_stats is False
+
+    # All baseline stats together is valid.
+    full_stats = DesignSpecMetricRequest(
+        field_name="metric1",
+        metric_pct_change=0.1,
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100.0,
+        metric_stddev=15.0,
+        available_nonnull_n=900,
+        available_n=1000,
+    )
+    assert full_stats.has_baseline_stats is True
+
+    # A partial set of baseline stats is rejected.
+    with pytest.raises(ValidationError, match="must all be set together"):
+        DesignSpecMetricRequest(
+            field_name="metric1",
+            metric_pct_change=0.1,
+            metric_baseline=100.0,
+        )
+
+
+def test_design_spec_metric_request_stddev_requires_numeric():
+    with pytest.raises(ValidationError, match="metric_stddev may only be set for NUMERIC metrics"):
+        DesignSpecMetricRequest(
+            field_name="metric1",
+            metric_pct_change=0.1,
+            metric_type=MetricType.BINARY,
+            metric_baseline=0.4,
+            metric_stddev=0.2,
+            available_nonnull_n=900,
+            available_n=1000,
+        )
+
+
+def test_design_spec_metric_request_to_design_spec_metric():
+    request = DesignSpecMetricRequest(
+        field_name="metric1",
+        metric_pct_change=0.1,
+        icc=0.05,
+        avg_cluster_size=20.0,
+        cv=0.3,
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100.0,
+        metric_stddev=15.0,
+        available_nonnull_n=900,
+        available_n=1000,
+    )
+    metric = request.to_design_spec_metric()
+    assert metric == DesignSpecMetric(
+        field_name="metric1",
+        metric_pct_change=0.1,
+        icc=0.05,
+        avg_cluster_size=20.0,
+        cv=0.3,
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100.0,
+        metric_stddev=15.0,
+        available_nonnull_n=900,
+        available_n=1000,
+    )
