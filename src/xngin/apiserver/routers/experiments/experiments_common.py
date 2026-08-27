@@ -251,10 +251,6 @@ async def create_experiment_impl(
             cluster_key = preassigned_spec.cluster_key
             desired_n = preassigned_spec.desired_n
             desired_n_clusters = preassigned_spec.desired_n_clusters
-            if cluster_key is not None and desired_n_clusters is None:
-                raise LateValidationError("Cluster-randomized preassigned experiments must have a desired_n_clusters.")
-            if cluster_key is None and desired_n is None:
-                raise LateValidationError("Individual-randomized preassigned experiments must have a desired_n.")
 
             table_name = preassigned_spec.table_name
             primary_key = preassigned_spec.primary_key
@@ -277,7 +273,7 @@ async def create_experiment_impl(
             ds_config = datasource.get_config()
             async with DwhSession(ds_config.dwh) as dwh:
                 if cluster_key is not None:
-                    assert desired_n_clusters is not None  # covered by LateValidationError above
+                    assert desired_n_clusters is not None  # covered by CreateExperimentRequest validation
                     result = await dwh.get_clusters_of_participants(
                         table_name,
                         select_columns=select_columns,
@@ -286,7 +282,7 @@ async def create_experiment_impl(
                         cluster_key=cluster_key,
                     )
                 else:
-                    assert desired_n is not None  # covered by LateValidationError above
+                    assert desired_n is not None  # covered by CreateExperimentRequest validation
                     result = await dwh.get_participants(
                         table_name,
                         select_columns=select_columns,

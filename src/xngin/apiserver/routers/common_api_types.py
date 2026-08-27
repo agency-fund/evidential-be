@@ -1114,7 +1114,8 @@ class PreassignedFrequentistExperimentSpec(BaseFrequentistDesignSpec):
             ge=1,
             description=(
                 "Desired number of clusters to sample when creating a cluster-randomized preassigned experiment. "
-                "Only valid when cluster_key is set. All eligible participants in each sampled cluster are included."
+                "Required and only valid when cluster_key is set. "
+                "All eligible participants in each sampled cluster are included."
             ),
         ),
     ] = None
@@ -1413,6 +1414,18 @@ class CreateExperimentRequest(ApiBaseModel):
         if len(v) != len(set(v)):
             raise ValueError("Webhook IDs must be unique")
         return v
+
+    @model_validator(mode="after")
+    def validate_preassigned_creation_sample_size(self) -> Self:
+        """Desired sample-size fields are required at experiment creation for preassigned experiments."""
+        design_spec = self.design_spec
+        if not isinstance(design_spec, PreassignedFrequentistExperimentSpec):
+            return self
+        if design_spec.cluster_key is not None and design_spec.desired_n_clusters is None:
+            raise ValueError("Cluster-randomized preassigned experiments must set desired_n_clusters.")
+        if design_spec.cluster_key is None and design_spec.desired_n is None:
+            raise ValueError("Individual-randomized preassigned experiments must set desired_n.")
+        return self
 
 
 class AssignSummary(ApiBaseModel):
