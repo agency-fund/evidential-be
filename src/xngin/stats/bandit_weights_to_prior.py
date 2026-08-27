@@ -89,7 +89,6 @@ def bandit_weights_to_normal_prior(expected_probabilities: np.ndarray) -> tuple[
     As the number of dimensions increases, the approximation diverges from the true probabilities.
     However, this is a reasonable error tolerance for the purposes of setting prior parameters for CMABs.
 
-
     Args:
         expected_probabilities (np.ndarray): Array of shape (n_arms,) containing the expected
             probabilities for each arm.
