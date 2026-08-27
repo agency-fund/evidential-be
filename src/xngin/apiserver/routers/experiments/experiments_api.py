@@ -413,6 +413,7 @@ async def update_bandit_arm_with_participant_outcome(
         participant_id=participant_id,
         outcome=body.outcome,
     )
+    await session.commit()
 
     return ArmBandit(
         arm_id=updated_arm.id,
