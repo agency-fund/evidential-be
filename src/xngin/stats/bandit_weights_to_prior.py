@@ -6,9 +6,7 @@ from scipy.stats import norm
 from xngin.apiserver.routers.common_api_types import PriorTypes
 
 
-def bandit_weights_to_beta_prior(
-    expected_probabilities: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
+def bandit_weights_to_beta_prior(expected_probabilities: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
     Convert bandit weights to Beta prior parameters (alpha, beta) for each arm.
 
@@ -23,6 +21,10 @@ def bandit_weights_to_beta_prior(
             parameters for the Beta distribution.
     """
     expected_probabilities = np.asarray(expected_probabilities, dtype=np.float64)
+
+    if expected_probabilities.sum() != 100:
+        raise ValueError("Expected probabilities must sum to 100.")
+
     expected_probabilities *= 0.01  # Normalize to sum to 1
     beta_params = np.ones_like(expected_probabilities)  # Initialize beta parameters to 1
     alpha_params = np.ones_like(expected_probabilities)  # Initialize alpha parameters to 1
@@ -50,6 +52,9 @@ def bandit_weights_to_beta_prior(
         $\min_{\alpha_1, \alpha_2, ..., \alpha_{N-1}} \sum_{n=1}^{N} (2 *
         \frac{(\alpha_n)^N}{\prod_{i=1}^{N} (\alpha_i + \alpha_n)} - p_n)^2$
 
+        We note that the problem is overdetermined (i.e. there are N equations and N-1 unknowns),
+        so we can only find an approximate solution.
+
         Args:
             params (np.ndarray): Array of shape (n_arms-1,) containing the alpha
                 parameters for the Beta distribution, excluding the last arm.
@@ -58,7 +63,7 @@ def bandit_weights_to_beta_prior(
             float: The squared error between the expected probabilities and
             the probabilities derived from the Beta cdf.
         """
-        alphas = np.abs(np.array([*params.tolist(), 1.0]))
+        alphas = np.abs(np.array(params.tolist()))
 
         alpha_mesh_1, alpha_mesh_2 = np.meshgrid(alphas, alphas)
         pairwise_sums = alpha_mesh_1 + alpha_mesh_2
@@ -74,8 +79,8 @@ def bandit_weights_to_beta_prior(
     if (expected_probabilities == expected_probabilities[0]).all():
         return alpha_params, beta_params
 
-    result = minimize(objective, alpha_params[:-1])
-    return np.array([*np.abs(result.x).tolist(), 1.0]), beta_params
+    result = minimize(objective, alpha_params)
+    return np.array(np.abs(result.x).tolist()), beta_params
 
 
 def bandit_weights_to_normal_prior(expected_probabilities: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -89,6 +94,9 @@ def bandit_weights_to_normal_prior(expected_probabilities: np.ndarray) -> tuple[
     As the number of dimensions increases, the approximation diverges from the true probabilities.
     However, this is a reasonable error tolerance for the purposes of setting prior parameters for CMABs.
 
+    We note that the problem is overdetermined (i.e. there are N equations and N-1 unknowns),
+    so we can only find an approximate solution.
+
     Args:
         expected_probabilities (np.ndarray): Array of shape (n_arms,) containing the expected
             probabilities for each arm.
@@ -99,12 +107,16 @@ def bandit_weights_to_normal_prior(expected_probabilities: np.ndarray) -> tuple[
             for the Normal distribution.
     """
     expected_probabilities = np.asarray(expected_probabilities, dtype=np.float64)
+
+    if expected_probabilities.sum() != 100:
+        raise ValueError("Expected probabilities must sum to 100.")
+
     expected_probabilities *= 0.01  # Normalize to sum to 1
     sigma_params = np.ones_like(expected_probabilities)  # Initialize beta parameters to 1
     mu_params = np.zeros_like(expected_probabilities)  # Initialize alpha parameters to 1
 
     def objective(params: np.ndarray) -> float:
-        mus = np.array([*params.tolist(), 0.0])
+        mus = np.array(params.tolist())
 
         def prob_n_is_max(n: int) -> float:
             def integrand(x: float) -> float:
@@ -116,12 +128,12 @@ def bandit_weights_to_normal_prior(expected_probabilities: np.ndarray) -> tuple[
             return float(result)
 
         computed_probabilities = np.array([prob_n_is_max(n) for n in range(len(expected_probabilities))])
-        return float(np.sum((computed_probabilities - expected_probabilities) ** 2 + 0.01 * mus**2))
+        return float(np.sum((computed_probabilities - expected_probabilities) ** 2 + 0.1 * mus**2))
 
-    if (expected_probabilities.round(1) == expected_probabilities[0].round(1)).all():
+    if (np.abs(expected_probabilities - expected_probabilities[0]) / expected_probabilities[0] < 1e-1).all():
         return mu_params, sigma_params
-    result = minimize(objective, mu_params[:-1])
-    return np.array([*result.x.tolist(), 0.0]), sigma_params
+    result = minimize(objective, mu_params)
+    return result.x, sigma_params
 
 
 def convert_arm_weights_to_prior_params(
