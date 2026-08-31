@@ -149,7 +149,7 @@ class TurnConnection(Base):
     encrypted_turn_api_token: Mapped[str] = mapped_column()
     turn_api_token_preview: Mapped[str] = mapped_column(String(4))
 
-    journeys_dict: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+    journeys_dict: Mapped[dict | None] = mapped_column(postgresql.JSONB(none_as_null=True))
 
     created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -246,7 +246,7 @@ class Task(Base):
     # Number of times this task has been retried.
     retry_count: Mapped[int] = mapped_column(server_default="0")
     # The task payload. This will be a JSON object with task-specific data.
-    payload: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+    payload: Mapped[dict | None] = mapped_column(postgresql.JSONB(none_as_null=True))
     # An optional informative message about the state of this task.
     message: Mapped[str | None] = mapped_column()
 
@@ -322,7 +322,7 @@ class Datasource(Base):
     config: Mapped[dict] = mapped_column(postgresql.JSONB)
 
     # List of table names available in this datasource
-    table_list: Mapped[list[str] | None] = mapped_column(postgresql.JSONB)
+    table_list: Mapped[list[str] | None] = mapped_column(postgresql.JSONB(none_as_null=True))
     # Timestamp of the last update to `inspected_tables`
     table_list_updated: Mapped[datetime | None] = mapped_column()
 
@@ -379,7 +379,7 @@ class DatasourceTablesInspected(Base):
     table_name: Mapped[str] = mapped_column(primary_key=True)
 
     # Serialized InspectDatasourceTablesResponse.
-    response: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+    response: Mapped[dict | None] = mapped_column(postgresql.JSONB(none_as_null=True))
     # Timestamp of the last update to `response`
     response_last_updated: Mapped[datetime | None] = mapped_column()
 
@@ -393,7 +393,7 @@ class ParticipantTypesInspected(Base):
     participant_type: Mapped[str] = mapped_column(primary_key=True)
 
     # Serialized InspectParticipantTypesResponse.
-    response: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+    response: Mapped[dict | None] = mapped_column(postgresql.JSONB(none_as_null=True))
     # Timestamp of the last update to `response`
     response_last_updated: Mapped[datetime | None] = mapped_column()
 
@@ -475,10 +475,10 @@ class Experiment(Base):
     # Frequentist config params
     # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run
     # power analyses.
-    power_analyses: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+    power_analyses: Mapped[dict | None] = mapped_column(postgresql.JSONB(none_as_null=True))
     # JSON serialized form of a BalanceCheck. May be null if the experiment type doesn't support
     # balance checks.
-    balance_check: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+    balance_check: Mapped[dict | None] = mapped_column(postgresql.JSONB(none_as_null=True))
     power: Mapped[float | None] = mapped_column()
     alpha: Mapped[float | None] = mapped_column()
     fstat_thresh: Mapped[float | None] = mapped_column()
@@ -770,6 +770,6 @@ class Snapshot(Base):
     # an informative error message).
     message: Mapped[str | None] = mapped_column()
     # JSON serialized form of an ExperimentAnalysisResponse. May be null if the snapshot is not yet a success.
-    data: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+    data: Mapped[dict | None] = mapped_column(postgresql.JSONB(none_as_null=True))
 
     experiment: Mapped[Experiment] = relationship(back_populates="snapshots", viewonly=True)
