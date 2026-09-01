@@ -29,7 +29,7 @@ from xngin.apiserver.routers.common_enums import ExperimentsType, Relation
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.admin_integrations_api_client import AdminIntegrationsAPIClient
-from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
+from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
 
 
 class FakeAsyncClient:
@@ -526,7 +526,7 @@ async def test_get_experiment_sample_calls_preassigned_frequentist_get_assignmen
                 experiment_type=ExperimentsType.FREQ_PREASSIGNED,
                 experiment_name="test experiment",
                 description="test experiment",
-                table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+                table_name=TESTING_DWH_TABLE_NAME,
                 primary_key="id",
                 start_date=datetime(2024, 1, 1, tzinfo=UTC),
                 end_date=datetime.now(UTC) + timedelta(days=1),
@@ -562,7 +562,7 @@ async def test_get_experiment_sample_calls_freq_online_with_filters(
                 experiment_type=ExperimentsType.FREQ_ONLINE,
                 experiment_name="test experiment",
                 description="test experiment",
-                table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+                table_name=TESTING_DWH_TABLE_NAME,
                 primary_key="id",
                 start_date=datetime(2024, 1, 1, tzinfo=UTC),
                 end_date=datetime.now(UTC) + timedelta(days=1),

@@ -33,7 +33,7 @@ from xngin.apiserver.snapshots.autofail import (
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
-from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
+from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
 
 
 async def create_autofail_experiment(
@@ -119,7 +119,7 @@ async def create_autofail_experiment(
                 ],
                 prior_type=prior_type,
                 reward_type=reward_type,
-                table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+                table_name=TESTING_DWH_TABLE_NAME,
                 primary_key="id",
                 target_field_name="is_onboarded",
                 **autofail_config,

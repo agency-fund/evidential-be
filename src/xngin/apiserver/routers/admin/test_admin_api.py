@@ -92,8 +92,8 @@ from xngin.apiserver.testing.experiments_api_client import (
     ExperimentsAPIClient,
     ExperimentsAPIClientNotDefaultStatusError,
 )
-from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
-from xngin.apiserver.testing.wide_dwh_def import WIDE_DWH_PARTICIPANT_DEF
+from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
+from xngin.apiserver.testing.wide_dwh_def import WIDE_DWH_TABLE_NAME
 
 SAMPLE_GCLOUD_SERVICE_ACCOUNT = {
     "auth_provider_x509_cert_url": "",
@@ -182,7 +182,7 @@ async def make_freq_online_experiment(
                 experiment_type=ExperimentsType.FREQ_ONLINE,
                 experiment_name="test experiment",
                 description="test experiment",
-                table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+                table_name=TESTING_DWH_TABLE_NAME,
                 primary_key="id",
                 start_date=datetime(2024, 1, 1, tzinfo=UTC),
                 end_date=end_date,
@@ -255,7 +255,7 @@ async def fixture_testing_experiment(testing_datasource, aclient: AdminAPIClient
                 experiment_type=ExperimentsType.FREQ_PREASSIGNED,
                 experiment_name="test experiment",
                 description="test experiment",
-                table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+                table_name=TESTING_DWH_TABLE_NAME,
                 primary_key="id",
                 start_date=datetime(2024, 1, 1, tzinfo=UTC),
                 end_date=datetime.now(UTC) + timedelta(days=1),
@@ -3816,7 +3816,7 @@ async def test_power_check_with_missing_cluster_key_raises(testing_datasource, a
         description="test power check with missing cluster key",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
         end_date=datetime.now(UTC) + timedelta(days=1),
-        table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
+        table_name=WIDE_DWH_TABLE_NAME,
         primary_key="id",
         arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
         metrics=[DesignSpecMetricRequest(field_name="household_income", metric_pct_change=0.1)],
@@ -3840,7 +3840,7 @@ async def test_power_check_with_manual_icc_and_nulls_in_cluster_key(testing_data
         description="Verify null cluster key rows are excluded from manual ICC in power check.",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
         end_date=datetime.now(UTC) + timedelta(days=1),
-        table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
+        table_name=WIDE_DWH_TABLE_NAME,
         primary_key="id",
         arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
         metrics=[
@@ -3895,7 +3895,7 @@ async def test_power_check_with_desired_n_clusters(testing_datasource, aclient: 
             description="Verify desired_n_clusters drives the MDE calculation in power check.",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
             end_date=datetime.now(UTC) + timedelta(days=1),
-            table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
+            table_name=WIDE_DWH_TABLE_NAME,
             primary_key="id",
             arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
             metrics=[
@@ -3955,7 +3955,7 @@ async def test_power_check_with_db_derived_icc_and_nulls_in_cluster_key(testing_
         description="Verify null cluster key rows are excluded from DB-derived ICC in power check.",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
         end_date=datetime.now(UTC) + timedelta(days=1),
-        table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
+        table_name=WIDE_DWH_TABLE_NAME,
         primary_key="id",
         arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
         metrics=[DesignSpecMetricRequest(field_name="household_income", metric_pct_change=0.1)],
@@ -4245,7 +4245,7 @@ async def test_create_freq_preassigned_experiment_with_missing_cluster_key_raise
             experiment_type="freq_preassigned",
             experiment_name="Missing cluster key",
             description="Cluster key column does not exist in the table.",
-            table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
+            table_name=WIDE_DWH_TABLE_NAME,
             primary_key="id",
             cluster_key="missing_key",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -4274,7 +4274,7 @@ async def test_create_freq_preassigned_experiment_cluster_key_has_nulls(
             experiment_type="freq_preassigned",
             experiment_name="Cluster key with null values",
             description="Cluster key has null values that should be excluded.",
-            table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
+            table_name=WIDE_DWH_TABLE_NAME,
             primary_key="id",
             cluster_key="age",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
