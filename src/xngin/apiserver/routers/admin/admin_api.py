@@ -1328,7 +1328,7 @@ async def create_datasource(
 
     raise_unless_safe_hostname(body.dsn)
 
-    config = RemoteDatabaseConfig(participants=[], type="remote", dwh=api_dsn_to_settings_dwh(body.dsn))
+    config = RemoteDatabaseConfig(type="remote", dwh=api_dsn_to_settings_dwh(body.dsn))
     if connectivity_check and config.dwh.driver != "none":
         async with DwhSession(config.dwh) as dwh:
             await dwh.connectivity_check()

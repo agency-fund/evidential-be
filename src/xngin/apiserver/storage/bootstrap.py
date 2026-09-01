@@ -27,7 +27,8 @@ from xngin.apiserver.snapshots.fake_data import (
     seed_historical_snapshots,
 )
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
+from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
+from xngin.apiserver.testing.wide_dwh_def import WIDE_DWH_TABLE_NAME
 
 DEFAULT_ORGANIZATION_NAME = "My Organization"
 TESTING_DWH_DATASOURCE_NAME = "Local DWH"
@@ -58,8 +59,6 @@ async def _maybe_create_developer_samples(
     if not testing_dwh_dsn:
         return
 
-    from xngin.apiserver.testing.wide_dwh_def import WIDE_DWH_PARTICIPANT_DEF  # noqa: PLC0415
-
     _ = admin_common.create_webhook_impl(
         session,
         organization.id,
@@ -73,7 +72,6 @@ async def _maybe_create_developer_samples(
         organization,
         TESTING_DWH_DATASOURCE_NAME,
         RemoteDatabaseConfig(
-            participants=[TESTING_DWH_PARTICIPANT_DEF],
             type="remote",
             dwh=Dsn.from_url(testing_dwh_dsn),
         ),
@@ -84,7 +82,6 @@ async def _maybe_create_developer_samples(
         organization,
         ALT_TESTING_DWH_DATASOURCE_NAME,
         RemoteDatabaseConfig(
-            participants=[WIDE_DWH_PARTICIPANT_DEF],
             type="remote",
             dwh=Dsn.from_url(testing_dwh_dsn),
         ),
@@ -98,7 +95,7 @@ async def _maybe_create_developer_samples(
             design_spec=PreassignedFrequentistExperimentSpec(
                 experiment_name="Preassigned - steady gain",
                 description="Hypothesis",
-                table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+                table_name=TESTING_DWH_TABLE_NAME,
                 primary_key="id",
                 start_date=datetime.datetime.now() - datetime.timedelta(days=7),
                 end_date=datetime.datetime.now() + datetime.timedelta(days=7),
@@ -122,7 +119,7 @@ async def _maybe_create_developer_samples(
             design_spec=PreassignedFrequentistExperimentSpec(
                 experiment_name="Preassigned - late breakout",
                 description="Hypothesis",
-                table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+                table_name=TESTING_DWH_TABLE_NAME,
                 primary_key="id",
                 start_date=datetime.datetime.now() - datetime.timedelta(days=7),
                 end_date=datetime.datetime.now() + datetime.timedelta(days=7),
@@ -146,7 +143,7 @@ async def _maybe_create_developer_samples(
             design_spec=OnlineFrequentistExperimentSpec(
                 experiment_name="Online",
                 description="Hypothesis",
-                table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+                table_name=TESTING_DWH_TABLE_NAME,
                 primary_key="id",
                 start_date=datetime.datetime.now() - datetime.timedelta(days=7),
                 end_date=datetime.datetime.now() + datetime.timedelta(days=7),
@@ -216,7 +213,7 @@ async def _maybe_create_developer_samples(
             design_spec=PreassignedFrequentistExperimentSpec(
                 experiment_name="Preassigned - wide",
                 description="Hypothesis",
-                table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
+                table_name=WIDE_DWH_TABLE_NAME,
                 primary_key="id",
                 start_date=datetime.datetime.now() - datetime.timedelta(days=7),
                 end_date=datetime.datetime.now() + datetime.timedelta(days=7),
