@@ -145,26 +145,6 @@ class DataType(enum.StrEnum):
         """Returns True if the type is supported as a strata, filter, and/or metric."""
         return DataType.is_supported_type(self)
 
-    def filter_class(self, field_name):
-        """Classifies a DataType into a filter class."""
-        match self:
-            case _ if field_name.lower().endswith("_id"):
-                return FilterClass.DISCRETE
-            case DataType.BOOLEAN | DataType.CHARACTER_VARYING | DataType.UUID:
-                return FilterClass.DISCRETE
-            case (
-                DataType.DATE
-                | DataType.TIMESTAMP_WITHOUT_TIMEZONE
-                | DataType.TIMESTAMP_WITH_TIMEZONE
-                | DataType.INTEGER
-                | DataType.DOUBLE_PRECISION
-                | DataType.NUMERIC
-                | DataType.BIGINT
-            ):
-                return FilterClass.NUMERIC
-            case _:
-                raise RuntimeError(f"Unsupported data type {self} for field {field_name}")
-
     def storage_class(self):
         """Classifies a DataType into a storage class."""
         match self:
@@ -205,25 +185,6 @@ class DataTypeStorageClass(enum.StrEnum):
     STRING = enum.auto()
     NUMERIC = enum.auto()
     BOOLEAN = enum.auto()
-
-
-class FilterClass(enum.StrEnum):
-    """Internal helper for grouping our supported data types by what filter relations they can use."""
-
-    DISCRETE = "discrete"
-    NUMERIC = "numeric"
-
-    def valid_relations(self):
-        """Gets the valid relation operators for this data type class."""
-        match self:
-            case FilterClass.DISCRETE:
-                return [Relation.INCLUDES, Relation.EXCLUDES]
-            case FilterClass.NUMERIC:
-                return [
-                    Relation.BETWEEN,
-                    Relation.EXCLUDES,
-                    Relation.INCLUDES,
-                ]
 
 
 class Relation(enum.StrEnum):
