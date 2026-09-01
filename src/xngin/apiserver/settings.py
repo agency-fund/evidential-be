@@ -67,7 +67,7 @@ class ParticipantsDef(ParticipantsSchema):
         bool,
         Field(
             default=False,
-            description="If true, this participant type is hidden from list_participant_types. "
+            description="If true, this legacy participant type is hidden from user interfaces. "
             "Used for auto-generated participant types.",
         ),
     ] = False

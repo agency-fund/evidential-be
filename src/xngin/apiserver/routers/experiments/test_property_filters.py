@@ -5,8 +5,8 @@ from dataclasses import dataclass
 import pytest
 
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.routers.common_api_types import DataType, Filter, PropertyValueTypes
-from xngin.apiserver.routers.common_enums import Relation
+from xngin.apiserver.routers.common_api_types import Filter, PropertyValueTypes
+from xngin.apiserver.routers.common_enums import DataType, Relation
 from xngin.apiserver.routers.experiments.property_filters import passes_filters
 
 

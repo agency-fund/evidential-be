@@ -19,8 +19,6 @@ from pydantic import HttpUrl
 from xngin.apiserver import flags
 from xngin.apiserver.conftest import convert_dwh_to_create_api_dsn, expect_status_code
 from xngin.apiserver.dns import safe_resolve
-from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
-from xngin.apiserver.dwh.inspections import ColumnDeleted, Drift, FieldChangedType
 from xngin.apiserver.routers.admin.admin_api_converters import CREDENTIALS_UNAVAILABLE_MESSAGE
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddExperimentCreatedWebhookRequest,
@@ -28,7 +26,6 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     BqDsn,
     CreateDatasourceRequest,
     CreateOrganizationRequest,
-    CreateParticipantsTypeRequest,
     DeleteExperimentDataRequest,
     FieldMetadata,
     GcpServiceAccount,
@@ -39,12 +36,10 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     RedshiftDsn,
     RevealedStr,
     SnapshotStatus,
-    TableDeleted,
     UpdateArmRequest,
     UpdateDatasourceRequest,
     UpdateExperimentRequest,
     UpdateOrganizationWebhookRequest,
-    UpdateParticipantsTypeRequest,
 )
 from xngin.apiserver.routers.admin.admin_common import DEFAULT_NO_DWH_SOURCE_NAME
 from xngin.apiserver.routers.auth.auth_dependencies import (
@@ -61,7 +56,6 @@ from xngin.apiserver.routers.common_api_types import (
     ContextInput,
     CreateExperimentRequest,
     CreateExperimentResponse,
-    DataType,
     DesignSpecMetricRequest,
     ExperimentConfig,
     ExperimentsType,
@@ -80,6 +74,7 @@ from xngin.apiserver.routers.common_api_types import (
     UpdateBanditArmOutcomeRequest,
 )
 from xngin.apiserver.routers.common_enums import (
+    DataType,
     ExperimentState,
     MetricPowerAnalysisMessageType,
     Relation,
@@ -1031,194 +1026,6 @@ def test_update_webhook_rejects_ssrf_url(aclient: AdminAPIClient):
         )
 
 
-def test_participants_lifecycle(testing_datasource, aclient: AdminAPIClient):
-    """Test getting, creating, listing, updating, and deleting a participant type."""
-    ds_id = testing_datasource.datasource_id
-
-    # Get participants
-    parsed = aclient.get_participant_type(datasource_id=ds_id, participant_id="test_participant_type").data.current
-    assert parsed.type == "schema"
-    assert parsed.participant_type == "test_participant_type"
-    assert parsed.table_name == "dwh"
-
-    # Create participant
-    create_pt_response = aclient.create_participant_type(
-        datasource_id=ds_id,
-        body=CreateParticipantsTypeRequest(
-            participant_type="newpt",
-            schema_def=ParticipantsSchema(
-                table_name="dwh",
-                fields=[
-                    FieldDescriptor(
-                        field_name="id",
-                        data_type=DataType.BIGINT,
-                        description="test",
-                        is_unique_id=True,
-                        is_strata=False,
-                        is_filter=False,
-                        is_metric=False,
-                    )
-                ],
-            ),
-        ),
-    ).data
-    assert create_pt_response.participant_type == "newpt"
-
-    # List participants
-    list_pt_response = aclient.list_participant_types(datasource_id=ds_id).data
-    assert len(list_pt_response.items) == 2, list_pt_response
-
-    # Update participant
-    update_pt_response = aclient.update_participant_type(
-        datasource_id=ds_id, participant_id="newpt", body=UpdateParticipantsTypeRequest(participant_type="renamedpt")
-    ).data
-    assert update_pt_response.participant_type == "renamedpt"
-
-    # List participants (again)
-    list_pt_response = aclient.list_participant_types(datasource_id=ds_id).data
-    assert len(list_pt_response.items) == 2, list_pt_response
-
-    # Get the named participant type
-    participants_def = aclient.get_participant_type(datasource_id=ds_id, participant_id="renamedpt").data.current
-    assert participants_def.participant_type == "renamedpt"
-
-    # Delete the renamed participant type.
-    aclient.delete_participant(datasource_id=ds_id, participant_id="renamedpt")
-
-    # Delete the renamed participant type again.
-    with expect_status_code(404):
-        aclient.delete_participant(datasource_id=ds_id, participant_id="renamedpt")
-
-    # Delete the renamed participant type again w/allow_missing.
-    aclient.delete_participant(datasource_id=ds_id, participant_id="renamedpt", allow_missing=True)
-
-    # Get the named participant type after it has been deleted
-    with expect_status_code(404):
-        aclient.get_participant_type(datasource_id=ds_id, participant_id="renamedpt")
-
-    # Delete the testing participant type.
-    aclient.delete_participant(datasource_id=ds_id, participant_id="test_participant_type")
-
-    # Delete the testing participant type a 2nd time.
-    with expect_status_code(404):
-        aclient.delete_participant(datasource_id=ds_id, participant_id="test_participant_type")
-
-    # Delete a participant type in a non-existent datasource.
-    with expect_status_code(403):
-        aclient.delete_participant(datasource_id="ds-not-exist", participant_id="test_participant_type")
-
-
-def test_create_participants_type_without_unique_id(testing_datasource, aclient: AdminAPIClient):
-    response = aclient.create_participant_type(
-        datasource_id=testing_datasource.datasource_id,
-        body=CreateParticipantsTypeRequest.model_construct(
-            participant_type="newpt",
-            schema_def=ParticipantsSchema.model_construct(
-                table_name="dwh",
-                fields=[
-                    FieldDescriptor(
-                        field_name="newf",
-                        data_type=DataType.INTEGER,
-                        description="test",
-                        is_unique_id=False,  # previously used to require a field be set to true
-                        is_strata=False,
-                        is_filter=False,
-                        is_metric=False,
-                    )
-                ],
-            ),
-        ),
-    )
-    assert response.data.participant_type == "newpt"
-    assert response.data.schema_def.fields[0].is_unique_id is False
-
-
-def test_get_participants_type_with_schema_drift(testing_datasource, aclient: AdminAPIClient):
-    """Test schema drift detection when a column is missing from the table and a type changed."""
-    ds_id = testing_datasource.datasource_id
-    # Initial schema: simulate a type change and a missing column
-    schema = ParticipantsSchema(
-        table_name="dwh",
-        fields=[
-            FieldDescriptor(
-                field_name="id",
-                data_type=DataType.INTEGER,
-                description="simulating integer -> bigint",
-                is_unique_id=True,
-            ),
-            FieldDescriptor(
-                field_name="is_engaged",
-                data_type=DataType.BOOLEAN,
-                description="ok",
-                is_filter=True,
-            ),
-            FieldDescriptor(
-                field_name="missing_col",
-                data_type=DataType.CHARACTER_VARYING,
-                description="simulates a deleted column",
-                is_metric=True,
-            ),
-        ],
-    )
-
-    # Create participant type with the initial schema
-    aclient.create_participant_type(
-        datasource_id=ds_id, body=CreateParticipantsTypeRequest(participant_type="pt", schema_def=schema)
-    )
-
-    # Get the participant type to fetch drift info
-    get_response = aclient.get_participant_type(datasource_id=ds_id, participant_id="pt").data
-
-    # First verify the drift is as expected.
-    assert get_response.drift == Drift(
-        schema_diff=[
-            FieldChangedType(table_name="dwh", column_name="id", old_type=DataType.INTEGER, new_type=DataType.BIGINT),
-            ColumnDeleted(table_name="dwh", column_name="missing_col"),
-        ]
-    )
-
-    # Verify that the current (last known) schema is the dehydrated minimal schema.
-    current = get_response.current.fields
-    assert current == schema.fields
-
-    # Verify the full proposed schema has the expected field changes.
-    proposed = get_response.proposed.fields
-    assert len(proposed) > len(current)
-    id_field = next((f for f in proposed if f.field_name == "id"), None)
-    assert id_field == schema.fields[0].model_copy(update={"data_type": DataType.BIGINT})
-    is_engaged_field = next((f for f in proposed if f.field_name == "is_engaged"), None)
-    assert is_engaged_field == schema.fields[1]
-    missing_col_field = next((f for f in proposed if f.field_name == schema.fields[2].field_name), None)
-    assert missing_col_field is None
-
-
-def test_get_participants_type_bad_table(testing_datasource, aclient: AdminAPIClient):
-    ds_id = testing_datasource.datasource_id
-    schema = ParticipantsSchema(
-        table_name="deleted_dwh",
-        fields=[
-            FieldDescriptor(
-                field_name="newf",
-                data_type=DataType.INTEGER,
-                description="test",
-                is_unique_id=True,
-            )
-        ],
-    )
-    aclient.create_participant_type(
-        datasource_id=ds_id, body=CreateParticipantsTypeRequest(participant_type="newpt", schema_def=schema)
-    )
-    # Now verify that the underlying table looks like it was deleted.
-    get_response = aclient.get_participant_type(datasource_id=ds_id, participant_id="newpt").data
-    assert get_response.drift == Drift(schema_diff=[TableDeleted(table_name=schema.table_name)])
-    # And that the old known state is still returned as well.
-    current_def = get_response.current
-    assert current_def.participant_type == "newpt"
-    assert current_def.table_name == schema.table_name
-    assert current_def.fields == schema.fields
-    assert get_response.proposed == current_def
-
-
 async def test_lifecycle_with_db(testing_datasource, aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
     """Exercises the admin API methods that require an external database."""
     # Add the privileged user to the organization.
@@ -1298,49 +1105,7 @@ async def test_lifecycle_with_db(testing_datasource, aclient: AdminAPIClient, ac
         ],
     )
 
-    # Create participant
-    participant_type = "participant_type_dwh"
-    created_participant_type = aclient.create_participant_type(
-        datasource_id=testing_datasource.datasource_id,
-        body=CreateParticipantsTypeRequest(
-            participant_type=participant_type,
-            schema_def=ParticipantsSchema(
-                table_name="dwh",
-                fields=[
-                    FieldDescriptor(
-                        field_name="id",
-                        data_type=DataType.BIGINT,
-                        description="test",
-                        is_unique_id=True,
-                        is_strata=False,
-                        is_filter=False,
-                        is_metric=False,
-                    ),
-                    FieldDescriptor(
-                        field_name="current_income",
-                        data_type=DataType.NUMERIC,
-                        description="test",
-                        is_unique_id=False,
-                        is_strata=False,
-                        is_filter=False,
-                        is_metric=True,
-                    ),
-                    FieldDescriptor(
-                        field_name="is_engaged",
-                        data_type=DataType.BOOLEAN,
-                        description="test",
-                        is_unique_id=False,
-                        is_strata=False,
-                        is_filter=True,
-                        is_metric=True,
-                    ),
-                ],
-            ),
-        ),
-    ).data
-    assert created_participant_type.participant_type == participant_type
-
-    # Create experiment using that participant type.
+    # Create an experiment using the inspected datasource table.
     create_exp_dict = make_createexperimentrequest_json(desired_n=100)
     create_exp_request = CreateExperimentRequest.model_validate(create_exp_dict)
     create_exp_request.design_spec.design_url = HttpUrl("https://example.com/design")
@@ -3086,14 +2851,6 @@ def test_snapshots(aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
         )
     ).data
 
-    aclient.create_participant_type(
-        datasource_id=create_datasource_response.id,
-        body=CreateParticipantsTypeRequest(
-            participant_type="test_participant_type",
-            schema_def=TESTING_DWH_PARTICIPANT_DEF,
-        ),
-    )
-
     experiment_id = aclient.create_experiment(
         datasource_id=create_datasource_response.id,
         body=CreateExperimentRequest(
@@ -3669,7 +3426,6 @@ async def test_create_freq_online_experiment_with_table_name_and_primary_key(
     ds_id = testing_datasource.datasource_id
 
     request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
-    initial_participant_count = len(aclient.list_participant_types(datasource_id=ds_id).data.items)
     experiment_request = CreateExperimentRequest.model_validate(request_json)
 
     created = aclient.create_experiment(
@@ -3677,9 +3433,6 @@ async def test_create_freq_online_experiment_with_table_name_and_primary_key(
         body=experiment_request,
         random_state=42,
     ).data
-
-    # Verify no participant type was persisted to datasource config.
-    assert len(aclient.list_participant_types(datasource_id=ds_id).data.items) == initial_participant_count
 
     # Verify datasource_table is set to the requested table name
     experiment = aclient.get_experiment_for_ui(datasource_id=ds_id, experiment_id=created.experiment_id).data
@@ -3746,14 +3499,6 @@ def test_list_snapshots_pagination(aclient: AdminAPIClient):
             dsn=valid_dsn,
         )
     ).data
-
-    aclient.create_participant_type(
-        datasource_id=ds.id,
-        body=CreateParticipantsTypeRequest(
-            participant_type="test_participant_type",
-            schema_def=TESTING_DWH_PARTICIPANT_DEF,
-        ),
-    )
 
     experiment_id = aclient.create_experiment(
         datasource_id=ds.id,
