@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 from scipy.integrate import quad
 from scipy.optimize import minimize
@@ -10,6 +12,8 @@ def bandit_weights_to_beta_prior(expected_probabilities: np.ndarray) -> tuple[np
     """
     Convert bandit weights to Beta prior parameters (alpha, beta) for each arm.
 
+    We simply rescale the alpha parameters based on the expected probabilities and a regularization term.
+
     Args:
         expected_probabilities (np.ndarray): Array of shape (n_arms,) containing the expected
             probabilities for each arm.
@@ -20,67 +24,28 @@ def bandit_weights_to_beta_prior(expected_probabilities: np.ndarray) -> tuple[np
         beta (np.ndarray): Array of shape (n_arms,) containing the beta
             parameters for the Beta distribution.
     """
-    expected_probabilities = np.asarray(expected_probabilities, dtype=np.float64)
+    normalized_expected_probabilities = np.asarray(expected_probabilities, dtype=np.float64)
 
-    if expected_probabilities.sum() != 100:
+    if not math.isclose(expected_probabilities.sum(), 100.0, rel_tol=1e-9):
         raise ValueError("Expected probabilities must sum to 100.")
 
-    expected_probabilities *= 0.01  # Normalize to sum to 1
-    beta_params = np.ones_like(expected_probabilities)  # Initialize beta parameters to 1
-    alpha_params = np.ones_like(expected_probabilities)  # Initialize alpha parameters to 1
+    normalized_expected_probabilities *= 0.01  # Normalize to sum to 1
 
-    def objective(params: np.ndarray) -> float:
-        r"""
-        The objective function to minimize, which calculates the squared error between the
-        expected probabilities and the probabilities derived from the Beta cdf.
-
-        i.e. for each arm i, the arm weight represent the probability that a
-        sample from the Beta distribution of arm i is greater than samples from
-        the Beta distributions of all other arms.
-        This can be calculated using the cumulative distribution function (CDF)
-        of the Beta distribution (given its parameters $\alpha_i$ and $\beta_i$).
-
-        $p(\theta_n | \theta_i)_{i=1, i \neq n}^{N}$ = \prod_{i=1, i \neq n}^{N}
-        \mathcal{E}_{\theta_n}[(1 - CDF(\theta_i, \alpha_i, \beta_i))]$
-
-        If we assume that $\beta_{i} = 1, \forall i$, then the above equation can
-        be simplified to:
-        $p(\theta_n | \theta_i)_{i=1, i \neq n}^{N}$ = 2 * \frac{(\alpha_n)^N}
-        {\prod_{i=1}^{N} (\alpha_i + \alpha_n)} $
-
-        This can be reduced to the following optimization problem:
-        $\min_{\alpha_1, \alpha_2, ..., \alpha_{N-1}} \sum_{n=1}^{N} (2 *
-        \frac{(\alpha_n)^N}{\prod_{i=1}^{N} (\alpha_i + \alpha_n)} - p_n)^2$
-
-        We note that the problem is overdetermined (i.e. there are N equations and N-1 unknowns),
-        so we can only find an approximate solution.
-
-        Args:
-            params (np.ndarray): Array of shape (n_arms-1,) containing the alpha
-                parameters for the Beta distribution, excluding the last arm.
-
-        Returns:
-            float: The squared error between the expected probabilities and
-            the probabilities derived from the Beta cdf.
-        """
-        alphas = np.abs(np.array(params.tolist()))
-
-        alpha_mesh_1, alpha_mesh_2 = np.meshgrid(alphas, alphas)
-        pairwise_sums = alpha_mesh_1 + alpha_mesh_2
-
-        numerator = 2 * alphas ** len(expected_probabilities)
-        denominator = np.prod(pairwise_sums, axis=1)
-        return float(
-            np.sum(
-                ((numerator / denominator) - expected_probabilities) ** 2 + 0.01 * (alphas - np.ones_like(alphas)) ** 2
-            )
+    if (
+        np.abs(
+            (normalized_expected_probabilities.max() - normalized_expected_probabilities.min())
+            / (normalized_expected_probabilities.min() + 1e-4)
         )
+        < 1e-2
+    ).all():
+        return np.ones_like(normalized_expected_probabilities), np.ones_like(normalized_expected_probabilities)
 
-    if (expected_probabilities == expected_probabilities[0]).all():
-        return alpha_params, beta_params
+    regularization = 1.0 / (10 * (normalized_expected_probabilities.min() + 1e-4))
 
-    result = minimize(objective, alpha_params)
-    return np.array(np.abs(result.x).tolist()), beta_params
+    alpha_params = regularization * normalized_expected_probabilities
+    beta_params = np.ones_like(normalized_expected_probabilities)  # Initialize beta parameters to 1
+
+    return alpha_params, beta_params
 
 
 def bandit_weights_to_normal_prior(expected_probabilities: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -94,8 +59,9 @@ def bandit_weights_to_normal_prior(expected_probabilities: np.ndarray) -> tuple[
     As the number of dimensions increases, the approximation diverges from the true probabilities.
     However, this is a reasonable error tolerance for the purposes of setting prior parameters for CMABs.
 
-    We note that the problem is overdetermined (i.e. there are N equations and N-1 unknowns),
-    so we can only find an approximate solution.
+    We note that the problem is also underdetermined (i.e. N parameters, but only N-1 degrees of freedom,
+    because the probabilities must sum to 1). Pinning one of the mu values warps the solution space, so we
+    elect to regularize mu values to arrive at an approximate solution instead.
 
     Args:
         expected_probabilities (np.ndarray): Array of shape (n_arms,) containing the expected
@@ -106,14 +72,14 @@ def bandit_weights_to_normal_prior(expected_probabilities: np.ndarray) -> tuple[
         sigma (np.ndarray): Array of shape (n_arms,) containing the standard deviation parameters
             for the Normal distribution.
     """
-    expected_probabilities = np.asarray(expected_probabilities, dtype=np.float64)
+    normalized_expected_probabilities = np.asarray(expected_probabilities, dtype=np.float64)
 
-    if expected_probabilities.sum() != 100:
+    if not math.isclose(normalized_expected_probabilities.sum(), 100.0, rel_tol=1e-9):
         raise ValueError("Expected probabilities must sum to 100.")
 
-    expected_probabilities *= 0.01  # Normalize to sum to 1
-    sigma_params = np.ones_like(expected_probabilities)  # Initialize beta parameters to 1
-    mu_params = np.zeros_like(expected_probabilities)  # Initialize alpha parameters to 1
+    normalized_expected_probabilities *= 0.01  # Normalize to sum to 1
+    sigma_params = np.ones_like(normalized_expected_probabilities)  # Initialize beta parameters to 1
+    mu_params = np.zeros_like(normalized_expected_probabilities)  # Initialize alpha parameters to 1
 
     def objective(params: np.ndarray) -> float:
         mus = np.array(params.tolist())
@@ -127,10 +93,16 @@ def bandit_weights_to_normal_prior(expected_probabilities: np.ndarray) -> tuple[
             result, _ = quad(integrand, -np.inf, np.inf)
             return float(result)
 
-        computed_probabilities = np.array([prob_n_is_max(n) for n in range(len(expected_probabilities))])
-        return float(np.sum((computed_probabilities - expected_probabilities) ** 2 + 0.1 * mus**2))
+        computed_probabilities = np.array([prob_n_is_max(n) for n in range(len(normalized_expected_probabilities))])
+        return float(np.sum((computed_probabilities - normalized_expected_probabilities) ** 2 + 0.01 * mus**2))
 
-    if (np.abs(expected_probabilities - expected_probabilities[0]) / expected_probabilities[0] < 1e-1).all():
+    if (
+        np.abs(
+            (normalized_expected_probabilities.max() - normalized_expected_probabilities.min())
+            / (normalized_expected_probabilities.min() + 1e-4)
+        )
+        < 1e-2
+    ).all():
         return mu_params, sigma_params
     result = minimize(objective, mu_params)
     return result.x, sigma_params
