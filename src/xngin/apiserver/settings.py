@@ -322,6 +322,17 @@ type Dwh = Annotated[Dsn | BqDsn | NoDwh, Field(discriminator="driver")]
 class RemoteDatabaseConfig(ConfigBaseModel):
     """RemoteDatabaseConfig defines a configuration for a remote data warehouse."""
 
+    # Temporarily relaxed from the inherited extra="forbid" so this release tolerates datasources
+    # whose config still carries the removed "participants" key. That field was required with no
+    # default, so every row written before migration 20260901184333 has it, and get_config() runs on
+    # every authenticated request via datasource_dependency -- forbidding it would 422 the whole
+    # public API for any datasource the migration had not yet reached.
+    #
+    # This makes the code deployable in any order relative to the migration. Restore extra="forbid"
+    # in a follow-up release once the migration has been applied everywhere. Note that only this
+    # model is relaxed: the nested Dsn/BqDsn/NoDwh models still forbid unknown keys.
+    model_config = ConfigDict(extra="ignore")
+
     type: Literal["remote"]
 
     dwh: Dwh
