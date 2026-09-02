@@ -43,7 +43,7 @@ from xngin.apiserver.routers.common_enums import (
     StopAssignmentReason,
     UpdateTypeNormal,
 )
-from xngin.apiserver.routers.experiments.test_experiments_common import make_create_online_bandit_experiment_request
+from xngin.apiserver.routers.experiments.test_experiments_common import insert_experiment_and_arms
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.admin_api_client import AdminAPIClientHTTPValidationError
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClientNotDefaultStatusError
@@ -1202,9 +1202,8 @@ async def test_get_assignment_bandit_cache_headers(
         (ExperimentsType.MAB_ONLINE, PriorTypes.BETA, LikelihoodTypes.BERNOULLI),
         (ExperimentsType.MAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
         (ExperimentsType.MAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
-        (ExperimentsType.MAB_ONLINE_DWH, PriorTypes.BETA, LikelihoodTypes.BERNOULLI),
-        (ExperimentsType.MAB_ONLINE_DWH, PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
-        (ExperimentsType.MAB_ONLINE_DWH, PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
+        # MAB_ONLINE_DWH is absent: it reads outcomes from the warehouse and rejects this endpoint.
+        # See test_update_bandit_arm_with_outcome_rejected_for_mab_dwh.
         (ExperimentsType.CMAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
         (ExperimentsType.CMAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
     ],
@@ -1456,39 +1455,6 @@ async def test_update_bandit_arm_with_outcome(
     assert exc.value.result.status == HTTPStatus.UNPROCESSABLE_CONTENT
 
 
-async def test_update_bandit_arm_with_outcome_mab_dwh_numeric_target_accepts_any_float(
-    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
-):
-    """A MAB-DWH numeric target accepts arbitrary floats through the API."""
-    request = make_create_online_bandit_experiment_request(
-        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
-        prior_type=PriorTypes.NORMAL,
-        reward_type=LikelihoodTypes.NORMAL,
-        target_field_name="current_income",
-    )
-    experiment_id = aclient.create_experiment(
-        datasource_id=testing_datasource.datasource_id, body=request, random_state=42
-    ).data.experiment_id
-    aclient.commit_experiment(datasource_id=testing_datasource.datasource_id, experiment_id=experiment_id)
-    eclient.get_assignment(api_key=testing_datasource.key, experiment_id=experiment_id, participant_id="p1")
-
-    eclient.update_bandit_arm_with_participant_outcome(
-        api_key=testing_datasource.key,
-        body=UpdateBanditArmOutcomeRequest(outcome=42.7),
-        experiment_id=experiment_id,
-        participant_id="p1",
-    )
-    assignment = eclient.get_assignment(
-        api_key=testing_datasource.key,
-        experiment_id=experiment_id,
-        participant_id="p1",
-        create_if_none=False,
-    ).data.assignment
-    assert assignment is not None
-    assert assignment.outcome == 42.7
-    assert assignment.observed_at is not None
-
-
 @pytest.mark.parametrize("experiment_type", [ExperimentsType.FREQ_ONLINE, ExperimentsType.FREQ_PREASSIGNED])
 async def test_update_bandit_arm_with_freq_experiments_returns_422(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient, experiment_type: ExperimentsType
@@ -1621,3 +1587,21 @@ async def test_update_bandit_arm_with_outcome_rejects_non_numeric_outcome(
         json={"outcome": "not-a-float"},
     )
     assert response.status_code == HTTPStatus.UNPROCESSABLE_CONTENT, response.content
+
+
+async def test_update_bandit_arm_with_outcome_rejected_for_mab_dwh(
+    xngin_session, testing_datasource, eclient: ExperimentsAPIClient
+):
+    """MAB-DWH outcomes are read from the org's DWH; the push endpoint rejects the type."""
+    experiment = await insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
+    )
+    response = eclient.client.post(
+        f"/v1/experiments/{experiment.id}/assignments/1/outcome",
+        headers={"X-API-Key": testing_datasource.key},
+        json={"outcome": 1.0},
+    )
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_CONTENT, response.content
+    assert "reads outcomes from a connected data warehouse" in response.text

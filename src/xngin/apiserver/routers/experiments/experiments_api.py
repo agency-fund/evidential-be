@@ -389,6 +389,8 @@ async def get_assignment_cmab(
     Used only for bandit experiments.
 
     Prerequisites:
+    - The experiment must record outcomes through this API. Experiments of type `mab_online_dwh`
+      read their outcomes from a connected data warehouse instead, and reject this call.
     - The participant must already have an assignment. Create one with the GET assignment endpoint
       first.
     - The participant must not already have a recorded outcome. Use the GET assignment endpoint to
@@ -403,6 +405,12 @@ async def update_bandit_arm_with_participant_outcome(
     experiment: Annotated[tables.Experiment, Depends(experiment_and_datasource_dependency)],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> ArmBandit:
+    if experiment.experiment_type == ExperimentsType.MAB_ONLINE_DWH.value:
+        raise LateValidationError(
+            "Cannot record an outcome for this experiment because it reads outcomes from a connected "
+            "data warehouse. Remove this call from your integration."
+        )
+
     # Update the arm with the outcome
     if experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value:
         await experiment.awaitable_attrs.contexts
