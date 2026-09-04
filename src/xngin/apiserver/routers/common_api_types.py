@@ -94,18 +94,8 @@ class DesignSpecMetricBase(ApiBaseModel):
         Field(description="Coefficient of variation in cluster sizes (0 = equal sizes)."),
     ] = None
 
-    @model_validator(mode="after")
-    def cluster_fields_check(self) -> Self:
-        """Enforce that cluster fields are either all set or all unset."""
-        cluster_fields = (self.icc, self.avg_cluster_size, self.cv)
-        if any(f is not None for f in cluster_fields) and any(f is None for f in cluster_fields):
-            raise ValueError("icc, avg_cluster_size, and cv must all be set together or all be None")
-        return self
-
-
-class DesignSpecMetric(DesignSpecMetricBase):
-    """Defines a metric to measure in an experiment with its baseline stats."""
-
+    # Baseline stats. On responses (DesignSpecMetric) the server fills these in from the dwh; on
+    # requests (DesignSpecMetricRequest) they may be supplied to reuse stats from a prior response.
     metric_type: Annotated[MetricType | None, Field(description="Inferred from the data warehouse column type.")] = None
     metric_baseline: Annotated[float | None, Field(description="Mean of the tracked metric.")] = None
     metric_stddev: Annotated[
@@ -138,6 +128,18 @@ class DesignSpecMetric(DesignSpecMetricBase):
     ] = None
 
     @model_validator(mode="after")
+    def cluster_fields_check(self) -> Self:
+        """Enforce that cluster fields are either all set or all unset."""
+        cluster_fields = (self.icc, self.avg_cluster_size, self.cv)
+        if any(f is not None for f in cluster_fields) and any(f is None for f in cluster_fields):
+            raise ValueError("icc, avg_cluster_size, and cv must all be set together or all be None")
+        return self
+
+
+class DesignSpecMetric(DesignSpecMetricBase):
+    """Defines a metric to measure in an experiment with its baseline stats."""
+
+    @model_validator(mode="after")
     def stddev_check(self):
         """Enforce that metric_stddev is empty for non-NUMERICs. The frontend handles numerics without a
         stddev (the all-null case)."""
@@ -168,33 +170,6 @@ class DesignSpecMetricRequest(DesignSpecMetricBase):
             description="The absolute value you want to be able to detect. Cannot be set together with "
             "metric_pct_change."
         ),
-    ] = None
-
-    # Optional baseline stats, mirroring the fields of DesignSpecMetric. When all are provided
-    # (metric_stddev only for NUMERIC metrics), the server skips the dwh stats query for this metric.
-    metric_type: Annotated[
-        MetricType | None,
-        Field(description="Type of the metric. Set together with the other baseline stats to reuse them."),
-    ] = None
-    metric_baseline: Annotated[
-        float | None,
-        Field(description="Mean of the tracked metric, e.g. from a prior power check response."),
-    ] = None
-    metric_stddev: Annotated[
-        float | None,
-        Field(description="Standard deviation of the tracked metric. Only valid for MetricType.NUMERIC metrics."),
-    ] = None
-    available_nonnull_n: Annotated[
-        int | None,
-        Field(
-            description=(
-                "The number of participants who meet the filtering criteria and have a non-null value for this metric."
-            )
-        ),
-    ] = None
-    available_n: Annotated[
-        int | None,
-        Field(description="The number of participants who meet the filtering criteria."),
     ] = None
 
     @model_validator(mode="after")
