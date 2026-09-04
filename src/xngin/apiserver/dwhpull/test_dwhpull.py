@@ -1,9 +1,11 @@
+import asyncio
 import contextlib
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 
+from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwhpull import cli
 from xngin.apiserver.dwhpull import dwhpull as dwhpull_mod
 from xngin.apiserver.dwhpull.dwhpull import (
@@ -149,6 +151,56 @@ async def test_pull_one_experiment_continues_after_a_rejected_value(xngin_sessio
 
     # invalid=2 means the loop reached the second participant after rolling back the first.
     assert (report.ingested, report.invalid, report.pending) == (0, 2, 0)
+
+
+async def test_pull_one_experiment_leaves_resolved_draws_alone(xngin_session, testing_datasource):
+    """A draw another writer already resolved, autofail included, is not overwritten by a pull.
+
+    The pull holds FOR NO KEY UPDATE on its draws for the whole run precisely so autofail cannot
+    resolve one mid-pull. This covers the other side of that: whatever is already resolved stays.
+    """
+    experiment = await make_mab_dwh_experiment(xngin_session, testing_datasource.ds, target_field_name="is_onboarded")
+    await create_assignment_for_participant(xngin_session, experiment, "1", None, random_state=66)
+    await create_assignment_for_participant(xngin_session, experiment, "2", None, random_state=67)
+
+    # Stand in for autofail having already closed out participant 1 with its 0.0.
+    await xngin_session.execute(
+        update(tables.Draw)
+        .where(tables.Draw.experiment_id == experiment.id, tables.Draw.participant_id == "1")
+        .values(outcome=0.0, observed_at=datetime.now(UTC), autofailed_outcome=True)
+    )
+    await xngin_session.commit()
+
+    report = await pull_one_experiment(experiment.id)
+
+    # Only participant 2 was outstanding. Participant 1 keeps the autofailed 0.0, even though the
+    # warehouse says is_onboarded=false for them anyway.
+    assert (report.ingested, report.invalid, report.pending) == (1, 0, 0)
+    assert await read_outcomes(xngin_session, experiment.id) == {"1": 0.0, "2": 1.0}
+
+
+async def test_pull_all_experiments_abandons_an_experiment_that_exceeds_its_timeout(
+    xngin_session, testing_datasource, mocker
+):
+    """A warehouse that hangs must not hold the transaction open indefinitely.
+
+    Holding an application-database transaction across the warehouse read is only safe because
+    pull_all_experiments bounds each experiment. Uses a tiny budget against a stalled read, so the
+    test cancels immediately rather than waiting.
+    """
+    experiment = await make_mab_dwh_experiment(xngin_session, testing_datasource.ds, target_field_name="is_onboarded")
+    await create_assignment_for_participant(xngin_session, experiment, "2", None, random_state=67)
+
+    async def never_returns(self, table_name):
+        await asyncio.sleep(30)
+
+    mocker.patch.object(DwhSession, "inspect_table", never_returns)
+
+    # Reported as a failure. One warehouse does not stop the other experiments.
+    await pull_all_experiments(pull_timeout=0.05)
+
+    # The transaction rolled back, so the draw is untouched and the next run retries it.
+    assert await read_outcomes(xngin_session, experiment.id) == {"2": None}
 
 
 async def test_pull_one_experiment_applies_all_outcomes_or_none(xngin_session, testing_datasource, mocker):

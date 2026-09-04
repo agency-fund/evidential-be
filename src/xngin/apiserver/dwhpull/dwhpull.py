@@ -76,15 +76,16 @@ async def select_experiments_to_pull() -> list[str]:
 async def pull_one_experiment(experiment_id: str) -> PullReport:
     """Read newly landed outcomes for one MAB_ONLINE_DWH experiment and apply them.
 
-    Runs in three contained phases so that no application-database transaction is held open across the call to
-    the organization's warehouse:
-    1. Read what the warehouse query needs,
+    Runs as one transaction covering all three phases:
+    1. Read what the warehouse query needs, and lock the draws we intend to fill,
     2. Read the warehouse,
     3. Compute + apply the values.
 
-    The third phase is one transaction. Either every valid outcome lands or none does, so a failure
-    never leaves an experiment half pulled. Values the warehouse has not filled in yet, and values
-    that fail validation, stay NULL and are re-read on a later run.
+    Either every valid outcome lands or none does, so a failure never leaves an experiment half
+    pulled. Values the warehouse has not filled in yet, and values that fail validation, stay NULL
+    and are re-read on a later run.
+
+    The locks taken in phase 1 are held until the transaction ends.
     """
     experiment_query = (
         select(tables.Experiment)
@@ -97,9 +98,9 @@ async def pull_one_experiment(experiment_id: str) -> PullReport:
         )
     )
 
-    # 1. Read what the warehouse query needs: the datasource config, the target and unique-id
-    # columns, and the draws that still have no outcome.
-    async with database.async_session() as session:
+    async with database.async_session() as session, session.begin():
+        # 1. Read what the warehouse query needs: the datasource config, the target and unique-id
+        # columns, and the draws that still have no outcome.
         experiment = (await session.execute(experiment_query)).scalar_one()
         if ExperimentsType(experiment.experiment_type) != ExperimentsType.MAB_ONLINE_DWH:
             raise MismatchedExperimentTypeError(f"Cannot pull outcomes for a {experiment.experiment_type} experiment.")
@@ -114,6 +115,9 @@ async def pull_one_experiment(experiment_id: str) -> PullReport:
         unique_id_field_name = unique_id_field.field_name
         target_field_name = target_field.field_name
 
+        # FOR NO KEY UPDATE holds these draws for the rest of the transaction while still letting
+        # foreign keys reference them. Taking the lock here, before the warehouse read, is what
+        # keeps autofail off them for the whole pull.
         pending_ids = list(
             (
                 await session.execute(
@@ -123,61 +127,43 @@ async def pull_one_experiment(experiment_id: str) -> PullReport:
                         tables.Draw.outcome.is_(None),
                     )
                     .order_by(tables.Draw.created_at)
-                )
-            ).scalars()
-        )
-    if not pending_ids:
-        return PullReport()
-
-    # 2. Read the warehouse. The session above has closed, so no application-database transaction
-    # is held open across this call.
-    async with DwhSession(dsconfig.dwh) as dwh:
-        sa_table = await dwh.inspect_table(table_name)
-        # model_construct: get_participant_metrics only reads field_name; the power-analysis fields
-        # the validator demands (metric_pct_change/metric_target) don't apply here.
-        target_metric = DesignSpecMetricRequest.model_construct(field_name=target_field_name)
-        participant_outcomes = await asyncio.to_thread(
-            get_participant_metrics,
-            dwh.session,
-            sa_table,
-            [target_metric],
-            unique_id_field_name,
-            pending_ids,
-        )
-
-    # 3. Compute the value per participant, then apply them all in one transaction.
-    values_by_participant: dict[str, float | None] = {
-        po.participant_id: next(
-            (mv.metric_value for mv in po.metric_values if mv.metric_name == target_field_name),
-            None,
-        )
-        for po in participant_outcomes
-    }
-
-    async with database.async_session() as session, session.begin():
-        experiment = (await session.execute(experiment_query)).scalar_one()
-        # FOR NO KEY UPDATE leaves foreign keys referencing these draws
-        # readable, and it excludes a concurrent writer from filling one behind us.
-        locked = set(
-            (
-                await session.execute(
-                    select(tables.Draw.participant_id)
-                    .where(
-                        tables.Draw.experiment_id == experiment_id,
-                        tables.Draw.outcome.is_(None),
-                        tables.Draw.participant_id.in_(values_by_participant.keys()),
-                    )
                     .with_for_update(of=tables.Draw, key_share=True)
                 )
             ).scalars()
         )
+        if not pending_ids:
+            return PullReport()
+
+        # 2. Read the external DWH.
+        async with DwhSession(dsconfig.dwh) as dwh:
+            sa_table = await dwh.inspect_table(table_name)
+            # model_construct: get_participant_metrics only reads field_name; the power-analysis
+            # fields the validator demands (metric_pct_change/metric_target) don't apply here.
+            target_metric = DesignSpecMetricRequest.model_construct(field_name=target_field_name)
+            participant_outcomes = await asyncio.to_thread(
+                get_participant_metrics,
+                dwh.session,
+                sa_table,
+                [target_metric],
+                unique_id_field_name,
+                pending_ids,
+            )
+
+        # 3. Compute the value per participant, then apply them.
+        values_by_participant: dict[str, float | None] = {
+            po.participant_id: next(
+                (mv.metric_value for mv in po.metric_values if mv.metric_name == target_field_name),
+                None,
+            )
+            for po in participant_outcomes
+        }
 
         report = PullReport()
         for participant_id in pending_ids:
             value = values_by_participant.get(participant_id)
-            if value is None or participant_id not in locked:
-                # Not in the warehouse yet, the target column is still NULL, or another writer
-                # resolved the draw between phases. Re-read on a later run.
+            if value is None:
+                # Not in the warehouse yet, or the target column is still NULL. The draw keeps
+                # outcome=NULL and is re-read on a later run.
                 report.pending += 1
                 continue
             try:
@@ -197,7 +183,7 @@ async def pull_one_experiment(experiment_id: str) -> PullReport:
     return report
 
 
-async def pull_all_experiments(pull_timeout: int) -> None:
+async def pull_all_experiments(pull_timeout: float) -> None:
     """Pull outcomes for every experiment that needs them, one experiment at a time.
 
     A failure on one experiment is reported and does not stop the others.
