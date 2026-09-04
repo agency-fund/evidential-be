@@ -3,6 +3,9 @@
 MAB_ONLINE_DWH experiments have no outcomes pushed to the API. For those, this module finds draws
 that still have no outcome, reads the experiment's target column for those participants, and applies
 each value through the same per-outcome update the push API uses.
+
+Each experiment's outcomes are applied in a single transaction, so an experiment either pulls or it
+does not. A run that dies partway leaves the experiment untouched and the next run repeats it.
 """
 
 import asyncio
@@ -20,7 +23,6 @@ from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import DesignSpecMetricRequest
 from xngin.apiserver.routers.common_enums import ExperimentState, ExperimentsType
 from xngin.apiserver.routers.experiments.experiments_common import (
-    ExperimentsAssignmentError,
     MismatchedExperimentTypeError,
     update_bandit_arm_with_outcome_impl,
 )
@@ -74,11 +76,15 @@ async def select_experiments_to_pull() -> list[str]:
 async def pull_one_experiment(experiment_id: str) -> PullReport:
     """Read newly landed outcomes for one MAB_ONLINE_DWH experiment and apply them.
 
-    Opens its own database sessions so that each outcome commits independently of any transaction
-    held by the caller.
+    Runs in three contained phases so that no application-database transaction is held open across the call to
+    the organization's warehouse:
+    1. Read what the warehouse query needs,
+    2. Read the warehouse,
+    3. Compute + apply the values.
 
-    An interrupted run keeps the outcomes already committed; the next run picks up the remainder
-    because this selects only draws that still have no outcome.
+    The third phase is one transaction. Either every valid outcome lands or none does, so a failure
+    never leaves an experiment half pulled. Values the warehouse has not filled in yet, and values
+    that fail validation, stay NULL and are re-read on a later run.
     """
     experiment_query = (
         select(tables.Experiment)
@@ -91,6 +97,8 @@ async def pull_one_experiment(experiment_id: str) -> PullReport:
         )
     )
 
+    # 1. Read what the warehouse query needs: the datasource config, the target and unique-id
+    # columns, and the draws that still have no outcome.
     async with database.async_session() as session:
         experiment = (await session.execute(experiment_query)).scalar_one()
         if ExperimentsType(experiment.experiment_type) != ExperimentsType.MAB_ONLINE_DWH:
@@ -121,6 +129,8 @@ async def pull_one_experiment(experiment_id: str) -> PullReport:
     if not pending_ids:
         return PullReport()
 
+    # 2. Read the warehouse. The session above has closed, so no application-database transaction
+    # is held open across this call.
     async with DwhSession(dsconfig.dwh) as dwh:
         sa_table = await dwh.inspect_table(table_name)
         # model_construct: get_participant_metrics only reads field_name; the power-analysis fields
@@ -135,6 +145,7 @@ async def pull_one_experiment(experiment_id: str) -> PullReport:
             pending_ids,
         )
 
+    # 3. Compute the value per participant, then apply them all in one transaction.
     values_by_participant: dict[str, float | None] = {
         po.participant_id: next(
             (mv.metric_value for mv in po.metric_values if mv.metric_name == target_field_name),
@@ -143,13 +154,30 @@ async def pull_one_experiment(experiment_id: str) -> PullReport:
         for po in participant_outcomes
     }
 
-    async with database.async_session() as session:
-        report = PullReport()
+    async with database.async_session() as session, session.begin():
         experiment = (await session.execute(experiment_query)).scalar_one()
+        # FOR NO KEY UPDATE leaves foreign keys referencing these draws
+        # readable, and it excludes a concurrent writer from filling one behind us.
+        locked = set(
+            (
+                await session.execute(
+                    select(tables.Draw.participant_id)
+                    .where(
+                        tables.Draw.experiment_id == experiment_id,
+                        tables.Draw.outcome.is_(None),
+                        tables.Draw.participant_id.in_(values_by_participant.keys()),
+                    )
+                    .with_for_update(of=tables.Draw, key_share=True)
+                )
+            ).scalars()
+        )
+
+        report = PullReport()
         for participant_id in pending_ids:
             value = values_by_participant.get(participant_id)
-            if value is None:
-                # Not in the DWH yet, or the target column is still NULL: re-read on a later run.
+            if value is None or participant_id not in locked:
+                # Not in the warehouse yet, the target column is still NULL, or another writer
+                # resolved the draw between phases. Re-read on a later run.
                 report.pending += 1
                 continue
             try:
@@ -159,20 +187,13 @@ async def pull_one_experiment(experiment_id: str) -> PullReport:
                     participant_id=participant_id,
                     outcome=value,
                 )
-                # The update leaves the transaction open for its caller. Commit per outcome so an
-                # interrupted run keeps what it already applied.
-                await session.commit()
                 report.ingested += 1
-            except (ExperimentsAssignmentError, LateValidationError) as exc:
-                # Value failed the reward/target validation (or a concurrent writer already recorded
-                # an outcome). Rejected draws keep outcome=NULL, so a corrected DWH value is picked
-                # up on a later run.
-                await session.rollback()
+            except LateValidationError as exc:
+                # The reward and target guards reject the value before writing anything, so the
+                # transaction stays usable and one bad warehouse value does not block the rest of
+                # the experiment. The draw keeps outcome=NULL and a corrected value lands later.
                 logger.info(f"{experiment_id}: skipping outcome for participant '{participant_id}': {exc}")
                 report.invalid += 1
-                # rollback() expires every object in the session; reload so later iterations don't
-                # trigger sync lazy loads on expired attributes.
-                experiment = (await session.execute(experiment_query)).scalar_one()
     return report
 
 

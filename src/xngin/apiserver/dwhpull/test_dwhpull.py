@@ -5,6 +5,7 @@ import pytest
 from sqlalchemy import select
 
 from xngin.apiserver.dwhpull import cli
+from xngin.apiserver.dwhpull import dwhpull as dwhpull_mod
 from xngin.apiserver.dwhpull.dwhpull import (
     PULL_TIMEOUT_SECS,
     pull_all_experiments,
@@ -134,8 +135,7 @@ async def test_pull_one_experiment_invalid_value_skipped_and_left_null(xngin_ses
 
 
 async def test_pull_one_experiment_continues_after_a_rejected_value(xngin_session, testing_datasource):
-    """Rejecting a value rolls back, which expires the session's objects; later participants in the
-    same run must still be processed."""
+    """A rejected value must not stop the participants after it in the same run."""
     experiment = await make_mab_dwh_experiment(
         xngin_session,
         testing_datasource.ds,
@@ -149,6 +149,31 @@ async def test_pull_one_experiment_continues_after_a_rejected_value(xngin_sessio
 
     # invalid=2 means the loop reached the second participant after rolling back the first.
     assert (report.ingested, report.invalid, report.pending) == (0, 2, 0)
+
+
+async def test_pull_one_experiment_applies_all_outcomes_or_none(xngin_session, testing_datasource, mocker):
+    """A failure partway through leaves the experiment untouched, so a rerun repeats it cleanly."""
+    experiment = await make_mab_dwh_experiment(xngin_session, testing_datasource.ds, target_field_name="is_onboarded")
+    await create_assignment_for_participant(xngin_session, experiment, "1", None, random_state=66)
+    await create_assignment_for_participant(xngin_session, experiment, "2", None, random_state=67)
+
+    real_update = dwhpull_mod.update_bandit_arm_with_outcome_impl
+    seen = []
+
+    async def fail_on_the_second(**kwargs):
+        seen.append(kwargs["participant_id"])
+        if len(seen) == 2:
+            raise RuntimeError("warehouse pull interrupted")
+        return await real_update(**kwargs)
+
+    mocker.patch.object(dwhpull_mod, "update_bandit_arm_with_outcome_impl", side_effect=fail_on_the_second)
+
+    with pytest.raises(RuntimeError):
+        await pull_one_experiment(experiment.id)
+
+    # The first outcome applied in memory but never committed, so neither draw is resolved.
+    assert len(seen) == 2
+    assert await read_outcomes(xngin_session, experiment.id) == {"1": None, "2": None}
 
 
 async def test_pull_one_experiment_rejects_non_dwh_experiment(xngin_session, testing_datasource):
