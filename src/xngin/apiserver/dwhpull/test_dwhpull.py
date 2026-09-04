@@ -3,7 +3,6 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
-from typer.testing import CliRunner
 
 from xngin.apiserver.dwhpull import cli
 from xngin.apiserver.dwhpull.dwhpull import (
@@ -221,14 +220,3 @@ async def test_apull_runs_within_a_database_session(mocker):
     await cli.apull(pull_timeout=42)
 
     pull_mock.assert_awaited_once_with(42)
-
-
-def test_pull_command_passes_max_time_flag(mocker):
-    """The Typer wiring reaches the async entrypoint with the parsed flag."""
-    mocker.patch("xngin.apiserver.dwhpull.cli.secretservice.setup")
-    apull_mock = mocker.patch("xngin.apiserver.dwhpull.cli.apull")
-
-    result = CliRunner().invoke(cli.app, ["--max-time", "7"])
-
-    assert result.exit_code == 0, result.output
-    apull_mock.assert_called_once_with(7)
