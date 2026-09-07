@@ -1223,7 +1223,16 @@ type DesignSpec = Annotated[
 
 
 class PowerRequest(ApiBaseModel):
-    design_spec: AnyFrequentistDesignSpec
+    table_name: str
+    cluster_key: str | None = None
+    filters: list[Filter] = []
+    metrics: list[DesignSpecMetricRequest]
+    n_arms: int
+    arm_weights: list[float] | None = None
+    power: float = 0.8
+    alpha: float = 0.05
+    desired_n: int | None = None
+    desired_n_clusters: int | None = None
 
 
 class PowerResponse(ApiBaseModel):

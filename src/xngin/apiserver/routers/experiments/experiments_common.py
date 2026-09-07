@@ -237,6 +237,48 @@ def convert_table_to_fields_or_raise(table: Table, design_spec: AnyFrequentistDe
     return referenced_fields_and_types
 
 
+def validate_power_fields_or_raise(
+    table: Table,
+    *,
+    metrics: list[DesignSpecMetricRequest],
+    filters: list[Filter],
+    cluster_key: str | None = None,
+) -> dict[str, DataType]:
+    """Validate the columns referenced by a power request against a pre-inspected table.
+
+    Unlike convert_table_to_fields_or_raise this takes no design spec: a power check runs before an
+    experiment exists, so there is no primary_key or strata to validate.
+
+    Returns: Field name => datatype map.
+    Raises: LateValidationError if a referenced field is missing from the table, a metric field has
+    an unsupported data type, or a filter value is invalid for its field type.
+    """
+    referenced_fields = {
+        *[metric.field_name for metric in metrics],
+        *[filter_.field_name for filter_ in filters],
+    }
+    if cluster_key is not None:
+        referenced_fields.add(cluster_key)
+
+    referenced_fields_and_types = _resolve_referenced_field_types(table, referenced_fields)
+
+    bad_metric_types = [
+        m.field_name for m in metrics if not referenced_fields_and_types[m.field_name].is_supported_as_metric()
+    ]
+    if bad_metric_types:
+        raise LateValidationError(
+            f"Invalid metric field(s): ({', '.join(bad_metric_types)}). "
+            "Only boolean or numeric data types are supported as metrics."
+        )
+
+    for filter_ in filters:
+        field_type = referenced_fields_and_types[filter_.field_name]
+        for value in filter_.value:
+            validate_filter_value(filter_.field_name, value, field_type)
+
+    return referenced_fields_and_types
+
+
 async def create_experiment_impl(
     request: CreateExperimentRequest,
     datasource: tables.Datasource,
