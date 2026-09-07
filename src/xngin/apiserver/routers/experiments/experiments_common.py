@@ -244,15 +244,6 @@ def validate_power_fields_or_raise(
     filters: list[Filter],
     cluster_key: str | None = None,
 ) -> dict[str, DataType]:
-    """Validate the columns referenced by a power request against a pre-inspected table.
-
-    Unlike convert_table_to_fields_or_raise this takes no design spec: a power check runs before an
-    experiment exists, so there is no primary_key or strata to validate.
-
-    Returns: Field name => datatype map.
-    Raises: LateValidationError if a referenced field is missing from the table, a metric field has
-    an unsupported data type, or a filter value is invalid for its field type.
-    """
     referenced_fields = {
         *[metric.field_name for metric in metrics],
         *[filter_.field_name for filter_ in filters],
