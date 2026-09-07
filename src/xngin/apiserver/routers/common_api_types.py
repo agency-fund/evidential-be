@@ -990,8 +990,8 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
         bool,
         Field(
             description=(
-                "When true, the experiment will automatically log a failure for participants who "
-                "do not report an outcome within a specified time window."
+                "When true, Evidential records a failure for participants whose outcome does not "
+                "arrive (via either push or pull) within a specified time window."
             ),
         ),
     ] = False
@@ -1000,7 +1000,8 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
         Field(
             description=(
                 "The time window in hours after which a participant is considered to have failed if "
-                "no outcome is reported. Default is 24 hours. Required if enable_autofail is true."
+                "no outcome arrives (via either push or pull). Default is 24 hours. "
+                "Required if enable_autofail is true."
             ),
             ge=1,
         ),
@@ -1090,7 +1091,7 @@ class PreassignedFrequentistExperimentSpec(BaseFrequentistDesignSpec):
     """Describes a Preassigned A/B experiment.
 
     Preassigned experiments create participants from existing users and assign them to arms when the experiment is
-    created.
+    created. Outcomes use the pull integration: Evidential reads them from your data source when it takes a snapshot.
     """
 
     experiment_type: Literal[ExperimentsType.FREQ_PREASSIGNED] = ExperimentsType.FREQ_PREASSIGNED
@@ -1132,6 +1133,7 @@ class OnlineFrequentistExperimentSpec(BaseFrequentistDesignSpec):
     """Describes an Online A/B experiment.
 
     Online experiments assign participants to arms in response to API calls from your application, in real time.
+    Outcomes use the pull integration: Evidential reads them from your data source when it takes a snapshot.
     """
 
     experiment_type: Literal[ExperimentsType.FREQ_ONLINE] = ExperimentsType.FREQ_ONLINE
@@ -1141,7 +1143,7 @@ class MABExperimentSpec(BaseBanditExperimentSpec):
     """Describes a Multi-armed Bandit (MAB) experiment.
 
     Multi-armed Bandit experiments assign participants to arms in response to API calls from your application, in real
-    time.
+    time. Outcomes use the push integration: your application reports each one to the outcome endpoint.
     """
 
     experiment_type: Literal[ExperimentsType.MAB_ONLINE] = ExperimentsType.MAB_ONLINE
@@ -1152,9 +1154,9 @@ class MABDwhExperimentSpec(BaseBanditExperimentSpec):
     a column in a connected data warehouse table.
 
     The server resolves the target column's data type from the DWH at experiment-create time and
-    persists it on the experiment. Subsequent outcome reports are type-checked against that stored
-    type. The DWH is consulted at design time only; outcome values still arrive via the existing
-    push API."""
+    persists it on the experiment. Outcomes use the pull integration: Evidential reads the target
+    column from the DWH and type-checks each value against that stored type. The outcome endpoint
+    rejects this experiment type."""
 
     experiment_type: Literal[ExperimentsType.MAB_ONLINE_DWH] = ExperimentsType.MAB_ONLINE_DWH
 
@@ -1191,7 +1193,8 @@ class CMABExperimentSpec(BaseBanditExperimentSpec):
     """Describes a Contextual Multi-armed Bandit (CMAB) experiment.
 
     Contextual Multi-armed Bandit experiments assign participants to arms in response to API calls from your
-    application, in real time.
+    application, in real time. Outcomes use the push integration: your application reports each one to the outcome
+    endpoint.
     """
 
     experiment_type: Literal[ExperimentsType.CMAB_ONLINE] = ExperimentsType.CMAB_ONLINE
@@ -1330,8 +1333,8 @@ class Assignment(ApiBaseModel):
         bool | None,
         Field(
             description=(
-                "Whether the outcome was automatically failed by the system (True) or manually reported by "
-                "the user (False). Null if no outcome was recorded."
+                "Whether Evidential failed this outcome automatically (true) or a real outcome was "
+                "observed (false). Null if no outcome was recorded."
             )
         ),
     ] = None
