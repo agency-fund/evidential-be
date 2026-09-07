@@ -143,8 +143,8 @@ from xngin.apiserver.routers.common_enums import ExperimentState, PreloadMethod
 from xngin.apiserver.routers.experiments import experiments_common, experiments_common_csv
 from xngin.apiserver.routers.experiments.experiments_common import (
     AbandonExperimentResult,
-    convert_table_to_fields_or_raise,
     make_schema_from_experiment,
+    validate_power_fields_or_raise,
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
 from xngin.apiserver.routers.power_adapters import calculate_icc_and_cv_from_database
@@ -2249,7 +2249,6 @@ async def power_check(
     body: PowerRequest,
 ) -> PowerResponse:
     """Performs a power check for the specified datasource."""
-    design_spec = body.design_spec
     ds = await get_datasource_or_raise(session, user, datasource_id)
     if isinstance(ds.config, NoDwh):
         raise HTTPException(
@@ -2259,12 +2258,17 @@ async def power_check(
     dsconfig = ds.get_config()
 
     async with DwhSession(dsconfig.dwh) as dwh:
-        sa_table = await dwh.inspect_table(design_spec.table_name)
-        # Validate the fields used in the design spec are present in the table and that filter values are valid.
-        _ = convert_table_to_fields_or_raise(sa_table, design_spec)
+        sa_table = await dwh.inspect_table(body.table_name)
+        # Validate the fields used in the request are present in the table and that filter values are valid.
+        _ = validate_power_fields_or_raise(
+            sa_table,
+            metrics=body.metrics,
+            filters=body.filters,
+            cluster_key=body.cluster_key,
+        )
 
-        filters = design_spec.filters
-        cluster_key = design_spec.cluster_key if isinstance(design_spec, PreassignedFrequentistExperimentSpec) else None
+        filters = body.filters
+        cluster_key = body.cluster_key
         # Exclude rows without a valid cluster key.
         if cluster_key is not None:
             filters = [*filters, Filter(field_name=cluster_key, relation=Relation.EXCLUDES, value=[None])]
@@ -2273,13 +2277,13 @@ async def power_check(
             get_stats_on_metrics,
             dwh.session,
             sa_table,
-            design_spec.metrics,
+            body.metrics,
             filters,
         )
 
         # Augment with cluster-level stats if this is a cluster-randomized design.
         if cluster_key is not None:
-            request_metrics_by_name = {m.field_name: m for m in design_spec.metrics}
+            request_metrics_by_name = {m.field_name: m for m in body.metrics}
             for metric_stat in metric_stats:
                 req_metric = request_metrics_by_name[metric_stat.field_name]
                 # If the user provided ICC, avg_cluster_size, and cv, use them instead of deriving from the dwh.
@@ -2300,16 +2304,14 @@ async def power_check(
                     metric_stat.avg_cluster_size = cluster_stats["avg_cluster_size"]
                     metric_stat.cv = cluster_stats["cv"]
 
-    arm_weights = design_spec.get_validated_arm_weights()
-
     return PowerResponse(
         analyses=check_power(
             metrics=metric_stats,
-            n_arms=len(design_spec.arms),
-            power=design_spec.power,
-            alpha=design_spec.alpha,
-            arm_weights=arm_weights,
-            desired_n=design_spec.desired_n,
+            n_arms=body.n_arms,
+            power=body.power,
+            alpha=body.alpha,
+            arm_weights=body.arm_weights,
+            desired_n=body.desired_n,
         )
     )
 
