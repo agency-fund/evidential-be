@@ -568,6 +568,6 @@ async def get_experiment_sample_calls(
         session,
         ds,
         experiment_id,
-        preload=[tables.Experiment.experiment_fields, tables.Experiment.experiment_filters],
+        preload=[tables.Experiment.experiment_filters],
     )
     return make_sample_calls(experiment)

@@ -30,7 +30,6 @@ def unique_id_factory(prefix: str):
 
 
 arm_id_factory = unique_id_factory("arm")
-autofail_update_id_factory = unique_id_factory("af")
 datasource_id_factory = unique_id_factory("ds")
 event_id_factory = unique_id_factory("evt")
 experiment_id_factory = unique_id_factory("exp")
@@ -150,7 +149,7 @@ class TurnConnection(Base):
     encrypted_turn_api_token: Mapped[str] = mapped_column()
     turn_api_token_preview: Mapped[str] = mapped_column(String(4))
 
-    journeys_dict: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+    journeys_dict: Mapped[dict | None] = mapped_column(postgresql.JSONB(none_as_null=True))
 
     created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -247,7 +246,7 @@ class Task(Base):
     # Number of times this task has been retried.
     retry_count: Mapped[int] = mapped_column(server_default="0")
     # The task payload. This will be a JSON object with task-specific data.
-    payload: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+    payload: Mapped[dict | None] = mapped_column(postgresql.JSONB(none_as_null=True))
     # An optional informative message about the state of this task.
     message: Mapped[str | None] = mapped_column()
 
@@ -323,7 +322,7 @@ class Datasource(Base):
     config: Mapped[dict] = mapped_column(postgresql.JSONB)
 
     # List of table names available in this datasource
-    table_list: Mapped[list[str] | None] = mapped_column(postgresql.JSONB)
+    table_list: Mapped[list[str] | None] = mapped_column(postgresql.JSONB(none_as_null=True))
     # Timestamp of the last update to `inspected_tables`
     table_list_updated: Mapped[datetime | None] = mapped_column()
 
@@ -380,7 +379,7 @@ class DatasourceTablesInspected(Base):
     table_name: Mapped[str] = mapped_column(primary_key=True)
 
     # Serialized InspectDatasourceTablesResponse.
-    response: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+    response: Mapped[dict | None] = mapped_column(postgresql.JSONB(none_as_null=True))
     # Timestamp of the last update to `response`
     response_last_updated: Mapped[datetime | None] = mapped_column()
 
@@ -394,7 +393,7 @@ class ParticipantTypesInspected(Base):
     participant_type: Mapped[str] = mapped_column(primary_key=True)
 
     # Serialized InspectParticipantTypesResponse.
-    response: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+    response: Mapped[dict | None] = mapped_column(postgresql.JSONB(none_as_null=True))
     # Timestamp of the last update to `response`
     response_last_updated: Mapped[datetime | None] = mapped_column()
 
@@ -467,6 +466,8 @@ class Experiment(Base):
     n_trials: Mapped[int] = mapped_column(server_default="0")
     prior_type: Mapped[str | None] = mapped_column()
     reward_type: Mapped[str | None] = mapped_column()
+
+    # enable_autofail must match draws.enable_autofail.
     enable_autofail: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
     autofail_window: Mapped[int] = mapped_column(server_default="24")
     autofail_outcome_value: Mapped[float] = mapped_column(server_default="0.0")
@@ -474,10 +475,10 @@ class Experiment(Base):
     # Frequentist config params
     # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run
     # power analyses.
-    power_analyses: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+    power_analyses: Mapped[dict | None] = mapped_column(postgresql.JSONB(none_as_null=True))
     # JSON serialized form of a BalanceCheck. May be null if the experiment type doesn't support
     # balance checks.
-    balance_check: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+    balance_check: Mapped[dict | None] = mapped_column(postgresql.JSONB(none_as_null=True))
     power: Mapped[float | None] = mapped_column()
     alpha: Mapped[float | None] = mapped_column()
     fstat_thresh: Mapped[float | None] = mapped_column()
@@ -598,6 +599,9 @@ class Draw(Base):
     participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     arm_id: Mapped[str] = mapped_column(ForeignKey("arms.id", ondelete="CASCADE"))
     created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
+    # Denormalized enable_autofail column allows us to build a partial index containing only outcomes eligible for
+    # autofailing. This value must match experiment.enable_autofail.
+    enable_autofail: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
 
     # Observation data: these fields are set when an outcome is observed for this draw
     # after arm parameters are updated.
@@ -613,14 +617,18 @@ class Draw(Base):
 
     arm: Mapped[Arm] = relationship("Arm", back_populates="draws", lazy="joined")
     experiment: Mapped[Experiment] = relationship("Experiment", back_populates="draws", lazy="joined")
-    autofail_updates: Mapped[list[AutofailUpdate]] = relationship(back_populates="draw", viewonly=True)
-
     __table_args__ = (
         Index(
             "ix_draws_arm_id_created_at",
             arm_id,
             created_at.desc(),
             postgresql_where=sqlalchemy.text("outcome IS NOT NULL"),
+        ),
+        Index(
+            "ix_draws_pending_autofail",
+            experiment_id,
+            created_at,
+            postgresql_where=sqlalchemy.text("enable_autofail IS TRUE AND outcome IS NULL"),
         ),
         CheckConstraint(
             "(outcome IS NULL) = (autofailed_outcome IS NULL)",
@@ -762,36 +770,6 @@ class Snapshot(Base):
     # an informative error message).
     message: Mapped[str | None] = mapped_column()
     # JSON serialized form of an ExperimentAnalysisResponse. May be null if the snapshot is not yet a success.
-    data: Mapped[dict | None] = mapped_column(postgresql.JSONB)
+    data: Mapped[dict | None] = mapped_column(postgresql.JSONB(none_as_null=True))
 
     experiment: Mapped[Experiment] = relationship(back_populates="snapshots", viewonly=True)
-
-
-class AutofailUpdate(Base):
-    """Stores autofail updates for draws that have been autofailed."""
-
-    __tablename__ = "autofail_updates"
-
-    experiment_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
-    id: Mapped[str] = mapped_column(primary_key=True, default=autofail_update_id_factory, unique=True)
-    created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now()
-    )
-    status: Mapped[SnapshotStatus] = mapped_column(server_default="pending")
-    # An optional informative message about the state of this task (for example, if a snapshot fails, it might contain
-    # an informative error message).
-    message: Mapped[str | None] = mapped_column()
-    # JSON serialized form of an ExperimentAnalysisResponse. May be null if the snapshot is not yet a success.
-    data: Mapped[dict | None] = mapped_column(postgresql.JSONB)
-
-    draw: Mapped[Draw] = relationship(back_populates="autofail_updates", viewonly=True)
-
-    __table_args__ = (
-        ForeignKeyConstraint(
-            ["experiment_id", "participant_id"],
-            ["draws.experiment_id", "draws.participant_id"],
-            ondelete="CASCADE",
-        ),
-    )
