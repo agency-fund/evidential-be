@@ -168,6 +168,23 @@ def test_batched_matches_individual_queries(clustered_dwh_session, sa_table):
         assert batched[outcome_column]["cv"] == pytest.approx(individual["cv"])
 
 
+def test_outcome_shifts_do_not_change_results(clustered_dwh_session, sa_table):
+    """Shifting outcomes by a constant in SQL leaves ICC and cluster stats unchanged."""
+    kwargs = {
+        "session": clustered_dwh_session,
+        "sa_table": sa_table,
+        "cluster_column": "cluster_moderate",
+        "outcome_columns": ["income", "converted"],
+        "filters": [],
+    }
+    unshifted = calculate_cluster_stats_from_database(**kwargs)
+    shifted = calculate_cluster_stats_from_database(**kwargs, outcome_shifts={"income": 50000.0, "converted": 0.5})
+
+    for outcome_column, stats in unshifted.items():
+        for key, value in stats.items():
+            assert shifted[outcome_column][key] == pytest.approx(value), f"{outcome_column}.{key}"
+
+
 def test_null_outcomes_dropped_per_metric_but_counted_in_cluster_sizes(clustered_dwh_session, wide_dwh_sa_table):
     """Null outcome values are dropped from ICC but still counted in cluster sizes.
 
