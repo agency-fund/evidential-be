@@ -308,6 +308,12 @@ tasks:
       DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
     cmd: |
       uv run xngin-cli add-user {{.CLI_ARGS}}
+  start-dwh-pull:
+    desc: "Reads bandit outcomes from organizations' data warehouses."
+    interactive: true
+    env:
+      DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
+    cmd: uv run xngin-dwh-pull {{.CLI_ARGS}}
   start-snapshotter:
     desc: "Starts the snapshot collector."
     interactive: true

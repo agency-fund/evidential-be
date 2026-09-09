@@ -2,6 +2,8 @@
 
 import asyncio
 import os
+from collections.abc import Awaitable, Callable
+from contextlib import AbstractAsyncContextManager
 from datetime import timedelta
 from typing import Annotated
 
@@ -35,14 +37,17 @@ async def snapshot_acollect(snapshot_interval: int, snapshot_timeout: int, paral
                     _ = task.create_task(snapshotter.process_pending_snapshots(snapshot_timeout), name=f"sn{i}")
 
 
-async def autofail_acollect(autofail_timeout: int, parallelism: int):
-    """Collects snapshots and autofail updates (async wrapper)."""
-    async with database.setup():
-        await autofail.create_pending_autofail_updates()
-        async with asyncio.TaskGroup() as task:
-            for i in range(parallelism):
-                with logger.contextualize(task=i):
-                    _ = task.create_task(autofail.process_pending_autofail_updates(autofail_timeout), name=f"af{i}")
+async def autofail_acollect(
+    autofail_timeout: float,
+    autofail_batch_sleep: float,
+    autofail_batch_size: int,
+    *,
+    database_setup: Callable[[], AbstractAsyncContextManager[None]] = database.setup,
+    process_autofails: Callable[[float, float, int], Awaitable[None]] = autofail.process_autofails,
+) -> None:
+    """Process eligible autofail updates within a bounded runtime."""
+    async with database_setup():
+        await process_autofails(autofail_timeout, autofail_batch_sleep, autofail_batch_size)
 
 
 @app.command()
@@ -59,12 +64,27 @@ def collect(
     autofail_timeout: Annotated[
         int,
         typer.Option(
-            "--autofail-max-time",
+            "--autofail-timeout",
             min=1,
-            help="Maximum duration of a single autofail update (in seconds). "
-            "Autofail updates that take longer than this will be marked as failures.",
+            help="Maximum total autofail processing time (in seconds). The timeout is checked before each batch.",
         ),
-    ] = autofail.AUTOFAIL_TIMEOUT_SECS,
+    ] = autofail.DEFAULT_AUTOFAIL_TIMEOUT_SECS,
+    autofail_batch_sleep: Annotated[
+        float,
+        typer.Option(
+            "--autofail-batch-sleep",
+            min=0,
+            help="Delay between committed autofail batches (in seconds).",
+        ),
+    ] = autofail.DEFAULT_AUTOFAIL_BATCH_SLEEP_SECS,
+    autofail_batch_size: Annotated[
+        int,
+        typer.Option(
+            "--autofail-batch-size",
+            min=1,
+            help="Maximum number of autofail updates to commit in one transaction.",
+        ),
+    ] = autofail.DEFAULT_AUTOFAIL_BATCH_SIZE,
     snapshot_interval: Annotated[
         int, typer.Option("--interval", min=60, help="The target interval between snapshots (in seconds).")
     ] = timedelta(hours=6).seconds,
@@ -94,8 +114,8 @@ def collect(
     if cronjob_monitor_slug:
         with monitor(monitor_slug=cronjob_monitor_slug):
             asyncio.run(snapshot_acollect(snapshot_interval, snapshot_timeout, parallelism))
-            asyncio.run(autofail_acollect(autofail_timeout, parallelism))
+            asyncio.run(autofail_acollect(autofail_timeout, autofail_batch_sleep, autofail_batch_size))
     else:
         asyncio.run(snapshot_acollect(snapshot_interval, snapshot_timeout, parallelism))
-        asyncio.run(autofail_acollect(autofail_timeout, parallelism))
+        asyncio.run(autofail_acollect(autofail_timeout, autofail_batch_sleep, autofail_batch_size))
     logger.info("collect() finished successfully.")
