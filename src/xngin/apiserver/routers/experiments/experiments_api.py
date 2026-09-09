@@ -42,13 +42,7 @@ from xngin.apiserver.routers.common_api_types import (
     UpdateBanditArmOutcomeRequest,
 )
 from xngin.apiserver.routers.experiments import experiments_common_csv
-from xngin.apiserver.routers.experiments.dependencies import (
-    datasource_dependency,
-    experiment_and_datasource_dependency,
-    experiment_dependency,
-    experiment_response_dependency,
-    experiment_with_contexts_dependency,
-)
+from xngin.apiserver.routers.experiments import experiments_dependencies as edeps
 from xngin.apiserver.routers.experiments.experiments_common import (
     create_assignment_for_participant,
     get_existing_assignment_for_participant,
@@ -104,7 +98,7 @@ router = APIRouter(
 
 @router.get("/experiments", summary="List experiments on a data source.")
 async def list_experiments(
-    datasource: Annotated[Datasource, Depends(datasource_dependency)],
+    datasource: Annotated[Datasource, Depends(edeps.datasource)],
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> ListExperimentsResponse:
     return await list_organization_or_datasource_experiments_impl(
@@ -149,7 +143,7 @@ async def _stream_experiment_assignments_response(
     summary="Get an experiment's design.",
 )
 async def get_experiment(
-    experiment: Annotated[tables.Experiment, Depends(experiment_response_dependency)],
+    experiment: Annotated[tables.Experiment, Depends(edeps.experiment_for_full_response)],
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> GetExperimentResponse:
     return await get_experiment_impl(xngin_session, experiment)
@@ -161,7 +155,7 @@ async def get_experiment(
 )
 async def get_experiment_assignments(
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
+    experiment: Annotated[tables.Experiment, Depends(edeps.experiment)],
 ) -> GetExperimentAssignmentsResponse:
     assignments = get_experiment_assignments_impl(xngin_session, experiment)
     return cast(
@@ -192,7 +186,7 @@ async def get_experiment_assignments(
     response_class=CsvStreamingResponse,
 )
 async def get_experiment_assignments_as_csv(
-    experiment: Annotated[tables.Experiment, Depends(experiment_and_datasource_dependency)],
+    experiment: Annotated[tables.Experiment, Depends(edeps.experiment_with_datasource_and_fields)],
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> CsvStreamingResponse:
     return await experiments_common_csv.get_experiment_assignments_as_csv_impl(xngin_session, experiment)
@@ -212,7 +206,7 @@ async def get_experiment_assignments_as_csv(
     """,
 )
 async def get_assignment(
-    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
+    experiment: Annotated[tables.Experiment, Depends(edeps.experiment)],
     participant_id: str,
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
     response: Response,
@@ -274,7 +268,7 @@ async def get_assignment(
     If there are no filters on the experiment, use the get_assignment endpoint.""",
 )
 async def get_assignment_filtered(
-    experiment: Annotated[tables.Experiment, Depends(experiment_and_datasource_dependency)],
+    experiment: Annotated[tables.Experiment, Depends(edeps.experiment_with_datasource_and_fields)],
     participant_id: str,
     body: OnlineAssignmentWithFiltersRequest,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
@@ -321,7 +315,7 @@ async def get_assignment_filtered(
     """,
 )
 async def get_assignment_cmab(
-    experiment: Annotated[tables.Experiment, Depends(experiment_with_contexts_dependency)],
+    experiment: Annotated[tables.Experiment, Depends(edeps.experiment_with_contexts)],
     participant_id: str,
     body: CMABContextInputRequest,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
@@ -402,7 +396,7 @@ async def get_assignment_cmab(
 async def update_bandit_arm_with_participant_outcome(
     participant_id: str,
     body: Annotated[UpdateBanditArmOutcomeRequest, Body()],
-    experiment: Annotated[tables.Experiment, Depends(experiment_and_datasource_dependency)],
+    experiment: Annotated[tables.Experiment, Depends(edeps.experiment_with_datasource_and_fields)],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
 ) -> ArmBandit:
     if experiment.experiment_type == ExperimentsType.MAB_ONLINE_DWH.value:
