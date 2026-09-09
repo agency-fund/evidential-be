@@ -4338,6 +4338,97 @@ async def test_power_check_reuses_provided_cluster_stats_without_dwh(testing_dat
     assert reuse_analysis == first_analysis
 
 
+async def test_power_check_mde_curve(testing_datasource, aclient: AdminAPIClient):
+    """desired_ns produces an MDE-vs-sample-size curve, consistent with the single desired_n MDE."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test power curve",
+        description="desired_ns drives the MDE curve in power check.",
+        table_name="dwh",
+        primary_key="id",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="control", arm_description="Control group"),
+            Arm(arm_name="treatment", arm_description="Treatment group"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+        desired_n=500,
+        desired_ns=[2, 250, 500, 750, 1000],
+    )
+    analysis = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(design_spec=design_spec),
+    ).data.analyses[0]
+
+    assert analysis.mde_curve is not None
+    assert [p.desired_n for p in analysis.mde_curve] == [2, 250, 500, 750, 1000]
+    # n=2 is too small to solve: best-effort null, not a failed request.
+    assert analysis.mde_curve[0].pct_change is None
+    solvable = analysis.mde_curve[1:]
+    # MDE shrinks as the sample grows, and the curve agrees with the single-value MDE at n=500.
+    mdes = [p.pct_change for p in solvable if p.pct_change is not None]
+    assert len(mdes) == len(solvable)  # every remaining point solved
+    assert mdes == sorted(mdes, reverse=True)
+    assert analysis.mde_curve[2].pct_change == analysis.pct_change_with_desired_n
+
+    # The curve also works without the dwh when stats are echoed back (see the stats reuse tests).
+    reuse_spec = design_spec.model_copy(
+        update={
+            "table_name": "no_such_table",
+            "metrics": [echo_metric_request(analysis.metric_spec)],
+        }
+    )
+    reuse_analysis = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(design_spec=reuse_spec),
+    ).data.analyses[0]
+    assert reuse_analysis.mde_curve == analysis.mde_curve
+
+
+async def test_power_check_mde_curve_clusters(testing_datasource, aclient: AdminAPIClient):
+    """desired_ns_clusters produces a per-metric converted MDE curve for cluster designs."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test cluster power curve",
+        description="desired_ns_clusters drives the MDE curve in cluster power check.",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
+        arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
+        metrics=[
+            DesignSpecMetricRequest(
+                field_name="household_income",
+                metric_pct_change=0.1,
+                icc=0.015,
+                avg_cluster_size=10,
+                cv=0.1,
+            )
+        ],
+        strata=[],
+        filters=[],
+        cluster_key="age",
+        desired_n_clusters=40,
+        desired_ns_clusters=[20, 40, 80],
+    )
+    analysis = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(design_spec=design_spec),
+    ).data.analyses[0]
+
+    assert analysis.mde_curve is not None
+    assert [p.desired_n_clusters for p in analysis.mde_curve] == [20, 40, 80]
+    assert [p.desired_n for p in analysis.mde_curve] == [200, 400, 800]
+    mdes = [p.pct_change for p in analysis.mde_curve if p.pct_change is not None]
+    assert len(mdes) == len(analysis.mde_curve)  # every point solved
+    assert mdes == sorted(mdes, reverse=True)
+    # The curve point at 40 clusters agrees with the single desired_n_clusters MDE.
+    assert analysis.mde_curve[1].pct_change == analysis.pct_change_with_desired_n
+
+
 async def test_power_check_with_db_derived_icc_and_nulls_in_cluster_key(testing_datasource, aclient: AdminAPIClient):
     """DB-derived ICC excludes rows with a null cluster key, and available_n is consistent.
 

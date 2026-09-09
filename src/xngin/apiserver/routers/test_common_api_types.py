@@ -403,3 +403,26 @@ def test_design_spec_metric_request_to_design_spec_metric():
         available_nonnull_n=900,
         available_n=1000,
     )
+
+
+def test_desired_ns_clusters_requires_cluster_key():
+    invalid_spec = {
+        "experiment_type": "freq_preassigned",
+        "experiment_name": "test",
+        "description": "test",
+        "table_name": "dwh",
+        "primary_key": "id",
+        "start_date": "2024-01-01T00:00:00+00:00",
+        "end_date": "2024-12-31T00:00:00+00:00",
+        "arms": [
+            {"arm_name": "C", "arm_description": "C"},
+            {"arm_name": "T", "arm_description": "T"},
+        ],
+        "strata": [],
+        "metrics": [{"field_name": "metric1", "metric_pct_change": 0.1}],
+        "filters": [],
+        "desired_ns_clusters": [10, 20],
+    }
+
+    with pytest.raises(ValidationError, match="desired_ns_clusters can only be set when cluster_key is set"):
+        PreassignedFrequentistExperimentSpec.model_validate(invalid_spec)

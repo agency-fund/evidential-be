@@ -32,6 +32,7 @@ from xngin.apiserver.limits import (
     MAX_NUMBER_OF_CONTEXTS,
     MAX_NUMBER_OF_FIELDS,
     MAX_NUMBER_OF_FILTERS,
+    MAX_NUMBER_OF_POWER_CURVE_POINTS,
 )
 from xngin.apiserver.routers.common_enums import (
     ContextType,
@@ -639,6 +640,33 @@ class MetricPowerAnalysisMessage(ApiBaseModel):
     high_cluster_variation: bool = False
 
 
+class MdeCurvePoint(ApiBaseModel):
+    """One point of an MDE-vs-sample-size power curve."""
+
+    desired_n: Annotated[
+        int,
+        Field(
+            description=(
+                "Sample size in individual participants used for this point. For cluster-randomized "
+                "designs this is desired_n_clusters times the metric's avg_cluster_size."
+            )
+        ),
+    ]
+    desired_n_clusters: Annotated[
+        int | None,
+        Field(description="The requested number of clusters for this point. None for individual-randomized requests."),
+    ] = None
+    pct_change: Annotated[
+        float | None,
+        Field(
+            description=(
+                "The minimum detectable effect (MDE) at this sample size, as a percent change relative to "
+                "metric_baseline. None when the power calculation fails at this size (e.g. too small to solve)."
+            )
+        ),
+    ] = None
+
+
 class MetricPowerAnalysis(ApiBaseModel):
     """Describes analysis results of a single metric."""
 
@@ -686,6 +714,18 @@ class MetricPowerAnalysis(ApiBaseModel):
                 "confidence and power. Present only when design_spec.desired_n or design_spec.desired_n_clusters "
                 "is set (frequentist design specs). When desired_n_clusters is set, the desired sample size is "
                 "desired_n_clusters times this metric's avg_cluster_size."
+            )
+        ),
+    ] = None
+
+    mde_curve: Annotated[
+        list[MdeCurvePoint] | None,
+        Field(
+            description=(
+                "The MDE for each requested sample size, in the same order as design_spec.desired_ns "
+                "(or desired_ns_clusters, which takes precedence). Present only when one of those is set. "
+                "Each point is computed best-effort: a size where the calculation fails yields a null "
+                "pct_change instead of failing the request."
             )
         ),
     ] = None
@@ -955,6 +995,18 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         ),
     ] = None
 
+    desired_ns: Annotated[
+        list[Annotated[int, Field(ge=1)]] | None,
+        Field(
+            default=None,
+            max_length=MAX_NUMBER_OF_POWER_CURVE_POINTS,
+            description="Optional list of desired individual participant sample sizes. The power check returns "
+            "the minimum detectable effect for each size (MetricPowerAnalysis.mde_curve), letting clients plot "
+            "an MDE-vs-sample-size power curve from a single request. Superseded by desired_ns_clusters when "
+            "both are set. Ignored when creating an experiment.",
+        ),
+    ] = None
+
     # stat parameters
     power: Annotated[
         float,
@@ -1163,6 +1215,19 @@ class PreassignedFrequentistExperimentSpec(BaseFrequentistDesignSpec):
             ),
         ),
     ] = None
+    desired_ns_clusters: Annotated[
+        list[Annotated[int, Field(ge=1)]] | None,
+        Field(
+            default=None,
+            max_length=MAX_NUMBER_OF_POWER_CURVE_POINTS,
+            description=(
+                "Optional list of desired cluster counts. Only valid when cluster_key is set. The power check "
+                "returns the minimum detectable effect for each count (MetricPowerAnalysis.mde_curve), converted "
+                "to a per-metric sample size using each metric's avg_cluster_size; takes precedence over "
+                "desired_ns. Ignored when creating an experiment."
+            ),
+        ),
+    ] = None
 
     @model_validator(mode="after")
     def validate_cluster_randomization(self) -> Self:
@@ -1170,6 +1235,8 @@ class PreassignedFrequentistExperimentSpec(BaseFrequentistDesignSpec):
             raise ValueError("Cluster-randomized frequentist designs cannot also set strata.")
         if self.cluster_key is None and self.desired_n_clusters is not None:
             raise ValueError("desired_n_clusters can only be set when cluster_key is set.")
+        if self.cluster_key is None and self.desired_ns_clusters is not None:
+            raise ValueError("desired_ns_clusters can only be set when cluster_key is set.")
         return self
 
 

@@ -40,6 +40,9 @@ MAX_NUMBER_OF_FIELDS = 150
 # Maximum number of filters we allow to define an audience.
 MAX_NUMBER_OF_FILTERS = 20
 
+# Maximum number of desired sample sizes a power check may request MDEs for in one call.
+MAX_NUMBER_OF_POWER_CURVE_POINTS = 100
+
 # Maximum length of GCP service account info JSON.
 MAX_GCP_SERVICE_ACCOUNT_LEN = 8000
 

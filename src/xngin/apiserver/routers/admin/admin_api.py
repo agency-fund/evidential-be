@@ -2267,9 +2267,11 @@ async def power_check(
     filters = design_spec.filters
     cluster_key = None
     desired_n_clusters = None
+    desired_ns_clusters = None
     if isinstance(design_spec, PreassignedFrequentistExperimentSpec):
         cluster_key = design_spec.cluster_key
         desired_n_clusters = design_spec.desired_n_clusters
+        desired_ns_clusters = design_spec.desired_ns_clusters
     # Exclude rows without a valid cluster key.
     if cluster_key is not None:
         filters = [*filters, Filter(field_name=cluster_key, relation=Relation.EXCLUDES, value=[None])]
@@ -2347,6 +2349,8 @@ async def power_check(
             arm_weights=arm_weights,
             desired_n=design_spec.desired_n,
             desired_n_clusters=desired_n_clusters,
+            desired_ns=design_spec.desired_ns,
+            desired_ns_clusters=desired_ns_clusters,
         )
     )
 
