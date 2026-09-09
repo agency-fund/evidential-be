@@ -168,6 +168,18 @@ max-statements = 54
 "**/*_dependencies.py" = [
     "RUF029", # Unused async: FastAPI dependencies are allowed to be async to avoid threading.
 ]
+"**/routers/admin/admin_api.py" = [
+    "FAST003",  # Some path parameters in route path are consumed by dependencies. See test_handler_routes.
+]
+"**/routers/admin_integrations/admin_integrations_api.py" = [
+    "FAST003",  # Some path parameters in route path are consumed by dependencies. See test_handler_routes.
+]
+"**/routers/integrations/integrations_api.py" = [
+    "FAST003",  # Some path parameters in route path are consumed by dependencies. See test_handler_routes.
+]
+"**/routers/experiments/experiments_api.py" = [
+    "FAST003",  # Some path parameters in route path are consumed by dependencies. See test_handler_routes.
+]
 "**/exceptionhandlers.py" = [
     "RUF029", # Unused async: FastAPI exception handlers are allowed to be async to avoid threading.
 ]
@@ -183,15 +195,21 @@ max-statements = 54
 [tool.ruff.lint.flake8-import-conventions]
 # https://docs.astral.sh/ruff/settings/#lintflake8-import-conventions
 banned-from = [
+    "xngin.apiserver.routers.admin.admin_dependencies",
+    "xngin.apiserver.routers.admin.authz",
+    "xngin.apiserver.routers.experiments.experiments_dependencies",
+    "xngin.apiserver.routers.integrations.integrations_dependencies",
     "xngin.apiserver.sqla.tables",
-    "xngin.apiserver.routers.admin.authz"
 ]
 
 [tool.ruff.lint.flake8-import-conventions.extend-aliases]
 # https://docs.astral.sh/ruff/settings/#lint_flake8-import-conventions_extend-aliases
 "xngin.apiserver.routers.admin.admin_api_types" = "aapi"
-"xngin.apiserver.routers.common_api_types" = "capi"
+"xngin.apiserver.routers.admin.admin_dependencies" = "adeps"
 "xngin.apiserver.routers.admin_integrations.admin_integrations_api_types" = "aiapi"
+"xngin.apiserver.routers.common_api_types" = "capi"
+"xngin.apiserver.routers.experiments.experiments_dependencies" = "edeps"
+"xngin.apiserver.routers.integrations.integrations_dependencies" = "ideps"
 
 [tool.uv]
 required-version = ">=0.9.4"
