@@ -9,21 +9,18 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 import httpx2
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, status
+from fastapi import APIRouter, Depends, FastAPI, Header, status
 from loguru import logger
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver import constants
 from xngin.apiserver.dependencies import retrying_httpx_dependency, xngin_db_session
 from xngin.apiserver.routers.admin.admin_api import GENERIC_SUCCESS
-from xngin.apiserver.routers.admin_integrations.admin_integrations_api import (
-    get_turn_webhook_or_raise,
-    refresh_journeys_dict,
-)
+from xngin.apiserver.routers.admin_integrations.admin_integrations_api import refresh_journeys_dict
 from xngin.apiserver.routers.common_api_types import TurnConfigResponse
-from xngin.apiserver.routers.experiments.dependencies import experiment_dependency
+from xngin.apiserver.routers.experiments import experiments_dependencies as edeps
 from xngin.apiserver.routers.experiments.experiments_api import STANDARD_INTEGRATION_RESPONSES
+from xngin.apiserver.routers.integrations import integrations_dependencies as ideps
 from xngin.apiserver.sqla import tables
 from xngin.tq.task_payload_types import TURN_JOURNEYS_CHANGED_TASK_TYPE, TurnJourneysChangedTask
 
@@ -42,14 +39,6 @@ router = APIRouter(
 )
 
 
-def check_webhook_auth_token(auth_token: str | None, webhook: tables.Webhook | None) -> tables.Webhook:
-    if not auth_token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing webhook auth token.")
-    if not webhook or auth_token != webhook.auth_token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook auth token.")
-    return webhook
-
-
 @router.get(
     "/integrations/experiments/{experiment_id}/turn-app-config",
     summary="Get the Turn.io arm to journey mapping configuration for the experiment, if it exists.",
@@ -64,22 +53,10 @@ def check_webhook_auth_token(auth_token: str | None, webhook: tables.Webhook | N
     response_model=TurnConfigResponse,
 )
 async def get_turn_app_config(
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    experiment: Annotated[tables.Experiment, Depends(experiment_dependency)],
+    experiment: Annotated[tables.Experiment, Depends(edeps.experiment)],
+    turn_config: Annotated[tables.ExperimentTurnConfig, Depends(ideps.turn_config)],
 ) -> TurnConfigResponse:
     """Returns the current mapping from each arm ID of the experiment to a Turn.io Journey ID, if it exists."""
-
-    turn_config = (
-        await session.execute(
-            select(tables.ExperimentTurnConfig).where(tables.ExperimentTurnConfig.experiment_id == experiment.id)
-        )
-    ).scalar_one_or_none()
-
-    if not turn_config:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="No Turn.io mapping configured for this experiment."
-        )
-
     return TurnConfigResponse(
         experiment_id=experiment.id,
         experiment_name=experiment.name,
@@ -102,7 +79,7 @@ async def get_turn_app_config(
     },
 )
 async def receive_turn_journey_update_notification(
-    webhook_id: str,
+    turn_webhook: Annotated[tables.Webhook, Depends(ideps.turn_webhook)],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     auth_token: Annotated[str | None, Header(alias=constants.HEADER_WEBHOOK_TOKEN)] = None,
 ):
@@ -116,14 +93,13 @@ async def receive_turn_journey_update_notification(
     This is intentional: Turn.io's webhook calls timeout in ~5s, and large refreshes may take longer.
     See `make_turn_journeys_changed_handler` in `xngin/tq/handlers.py` for the worker side logic.
     """
-    turn_webhook = await get_turn_webhook_or_raise(session, webhook_id=webhook_id, allow_missing=False)
-    turn_webhook = check_webhook_auth_token(auth_token, turn_webhook)
-
     session.add(
         tables.Task(
             task_type=TURN_JOURNEYS_CHANGED_TASK_TYPE,
             payload=TurnJourneysChangedTask(
-                organization_id=turn_webhook.organization_id, webhook_id=webhook_id, webhook_auth_token=auth_token
+                organization_id=turn_webhook.organization_id,
+                webhook_id=turn_webhook.id,
+                webhook_auth_token=auth_token,
             ).model_dump(),
         )
     )
@@ -142,10 +118,9 @@ async def receive_turn_journey_update_notification(
     },
 )
 async def refetch_journeys_from_turn(
-    webhook_id: str,
+    turn_connection: Annotated[tables.TurnConnection, Depends(ideps.turn_connection)],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     httpx_client: Annotated[httpx2.AsyncClient, Depends(retrying_httpx_dependency)],
-    auth_token: Annotated[str | None, Header(alias=constants.HEADER_WEBHOOK_TOKEN)] = None,
 ):
     """
     Refreshes the cached Turn.io journeys for the organization owning this webhook.
@@ -160,20 +135,6 @@ async def refetch_journeys_from_turn(
        rotating the connection's token (see `set_organization_turn_connection` in
        `admin_integrations_api.py`).
     """
-    webhook = await get_turn_webhook_or_raise(session, webhook_id=webhook_id, allow_missing=False)
-    webhook = check_webhook_auth_token(auth_token, webhook)
-
-    turn_connection = (
-        await session.execute(
-            select(tables.TurnConnection).where(tables.TurnConnection.organization_id == webhook.organization_id)
-        )
-    ).scalar_one_or_none()
-
-    if not turn_connection:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="No Turn.io connection configured for this organization."
-        )
-
     journeys = await refresh_journeys_dict(turn_connection.get_turn_api_token(), httpx_client)
     turn_connection.journeys_dict = {journey.name: journey.uuid for journey in journeys}
     await session.commit()
