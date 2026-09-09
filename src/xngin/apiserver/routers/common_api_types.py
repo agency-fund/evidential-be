@@ -643,8 +643,10 @@ class MetricPowerAnalysis(ApiBaseModel):
         float | None,
         Field(
             description=(
-                "The minimum detectable effect (MDE) achievable for design_spec.desired_n at the chosen "
-                "confidence and power. Present only when design_spec.desired_n is set (frequentist design specs)."
+                "The minimum detectable effect (MDE) achievable for the desired sample size at the chosen "
+                "confidence and power. Present only when design_spec.desired_n or design_spec.desired_n_clusters "
+                "is set (frequentist design specs). When desired_n_clusters is set, the desired sample size is "
+                "desired_n_clusters times this metric's avg_cluster_size."
             )
         ),
     ] = None
@@ -907,7 +909,8 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
             description="Desired number of individual participants. "
             "Required when creating individual-randomized preassigned experiments. "
             "For cluster-randomized preassigned experiment creation, use desired_n_clusters to control sampling; "
-            "desired_n remains available for power calculations. "
+            "desired_n remains available for power calculations but is superseded by desired_n_clusters when both "
+            "are set. "
             "When set, the power check also returns the minimum detectable effect for this size, "
             "along with the minimum sample size.",
         ),
@@ -1114,7 +1117,10 @@ class PreassignedFrequentistExperimentSpec(BaseFrequentistDesignSpec):
             ge=1,
             description=(
                 "Desired number of clusters to sample when creating a cluster-randomized preassigned experiment. "
-                "Only valid when cluster_key is set. All eligible participants in each sampled cluster are included."
+                "Required and only valid when cluster_key is set. "
+                "All eligible participants in each sampled cluster are included. "
+                "In power checks, the minimum detectable effect is computed for this many clusters, converted to a "
+                "per-metric sample size using each metric's avg_cluster_size; takes precedence over desired_n."
             ),
         ),
     ] = None
@@ -1413,6 +1419,18 @@ class CreateExperimentRequest(ApiBaseModel):
         if len(v) != len(set(v)):
             raise ValueError("Webhook IDs must be unique")
         return v
+
+    @model_validator(mode="after")
+    def validate_preassigned_creation_sample_size(self) -> Self:
+        """Desired sample-size fields are required at experiment creation for preassigned experiments."""
+        design_spec = self.design_spec
+        if not isinstance(design_spec, PreassignedFrequentistExperimentSpec):
+            return self
+        if design_spec.cluster_key is not None and design_spec.desired_n_clusters is None:
+            raise ValueError("Cluster-randomized preassigned experiments must set desired_n_clusters.")
+        if design_spec.cluster_key is None and design_spec.desired_n is None:
+            raise ValueError("Individual-randomized preassigned experiments must set desired_n.")
+        return self
 
 
 class AssignSummary(ApiBaseModel):

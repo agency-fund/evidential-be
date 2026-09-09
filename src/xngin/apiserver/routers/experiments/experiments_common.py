@@ -4,7 +4,7 @@ import io
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import assert_never
+from typing import TypedDict, assert_never
 
 import numpy as np
 import pandas as pd
@@ -251,10 +251,6 @@ async def create_experiment_impl(
             cluster_key = preassigned_spec.cluster_key
             desired_n = preassigned_spec.desired_n
             desired_n_clusters = preassigned_spec.desired_n_clusters
-            if cluster_key is not None and desired_n_clusters is None:
-                raise LateValidationError("Cluster-randomized preassigned experiments must have a desired_n_clusters.")
-            if cluster_key is None and desired_n is None:
-                raise LateValidationError("Individual-randomized preassigned experiments must have a desired_n.")
 
             table_name = preassigned_spec.table_name
             primary_key = preassigned_spec.primary_key
@@ -277,7 +273,7 @@ async def create_experiment_impl(
             ds_config = datasource.get_config()
             async with DwhSession(ds_config.dwh) as dwh:
                 if cluster_key is not None:
-                    assert desired_n_clusters is not None  # covered by LateValidationError above
+                    assert desired_n_clusters is not None  # covered by CreateExperimentRequest validation
                     result = await dwh.get_clusters_of_participants(
                         table_name,
                         select_columns=select_columns,
@@ -286,7 +282,7 @@ async def create_experiment_impl(
                         cluster_key=cluster_key,
                     )
                 else:
-                    assert desired_n is not None  # covered by LateValidationError above
+                    assert desired_n is not None  # covered by CreateExperimentRequest validation
                     result = await dwh.get_participants(
                         table_name,
                         select_columns=select_columns,
@@ -895,6 +891,7 @@ async def create_assignment_for_participant(
                             participant_id=participant_id,
                             arm_id=chosen_arm.id,
                             context_vals=sorted_context_vals,
+                            enable_autofail=experiment.enable_autofail,
                         )
                         .returning(tables.Draw.created_at)
                     )
@@ -938,8 +935,10 @@ def make_sample_calls(experiment: tables.Experiment) -> SampleCalls | None:
     experiment types that have no meaningful example yet (currently CMAB, whose assignment needs a
     context vector).
 
-    Requires experiment.arms to be loaded (experiment.experiment_fields for MAB_ONLINE_DWH
-    experiments, and experiment.experiment_filters for FREQ_ONLINE experiments).
+    MAB_ONLINE_DWH gets no outcome example because the outcome API rejects that type.
+
+    Requires experiment.arms to be loaded (experiment.experiment_filters for FREQ_ONLINE
+    experiments).
     """
     experiment_type = ExperimentsType(experiment.experiment_type)
     if experiment_type.is_cmab():
@@ -980,17 +979,12 @@ def make_sample_calls(experiment: tables.Experiment) -> SampleCalls | None:
         ),
     ]
 
-    if is_bandit and experiment.reward_type is not None:
-        # Pick a type-correct example outcome: 0/1 for a Bernoulli reward or a boolean DWH target
-        # column, otherwise an illustrative number.
+    if is_bandit and experiment.reward_type is not None and experiment_type != ExperimentsType.MAB_ONLINE_DWH:
+        # Pick a type-correct example outcome: 0/1 for a Bernoulli reward, otherwise an illustrative
+        # number.
         outcome_example: float = 1.5
         if LikelihoodTypes(experiment.reward_type) == LikelihoodTypes.BERNOULLI:
             outcome_example = 1
-        elif experiment_type == ExperimentsType.MAB_ONLINE_DWH:
-            # MAB-DWH always has an is_target field (target_field_name is required at create time).
-            target_field = next(ef for ef in experiment.experiment_fields if ef.is_target)
-            if DataType(target_field.data_type).storage_class() is DataTypeStorageClass.BOOLEAN:
-                outcome_example = 1
         outcome_request = UpdateBanditArmOutcomeRequest(outcome=outcome_example)
         outcome_response = ArmBandit(arm_id=arm_id_example, arm_name=arm_name_example)
         calls.append(
@@ -1077,15 +1071,42 @@ async def _fetch_outcomes_and_context_for_arm(
     return outcomes, all_context_vals
 
 
+class PartialUpdateDrawBeta(TypedDict):
+    """Subset of fields on tables.Draw, used for type-safe partial updates."""
+
+    current_alpha: float | None
+    current_beta: float | None
+
+
+class PartialUpdateDrawNormal(TypedDict):
+    """Subset of fields on tables.Draw, used for type-safe partial updates."""
+
+    current_mu: list[float] | None
+    current_covariance: list[list[float]] | None
+
+
+class PartialUpdateArmBeta(TypedDict):
+    """Subset of fields on tables.Arm, used for type-safe partial updates."""
+
+    alpha: float | None
+    beta: float | None
+
+
+class PartialUpdateArmNormal(TypedDict):
+    """Subset of fields on tables.Arm, used for type-safe partial updates."""
+
+    mu: list[float] | None
+    covariance: list[list[float]] | None
+
+
 async def update_bandit_arm_with_outcome_impl(
     xngin_session: AsyncSession,
     experiment: tables.Experiment,
     participant_id: str,
     outcome: float,
     autofailed_outcome: bool = False,
-    commit_on_success: bool = True,
 ) -> tables.Arm:
-    """Update the Draw table with the outcome for a bandit experiment."""
+    """Update a bandit draw and arm without completing the caller's transaction."""
     # Not supported for frequentist experiments
     design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
 
@@ -1120,81 +1141,74 @@ async def update_bandit_arm_with_outcome_impl(
     if isinstance(design_spec, MABDwhExperimentSpec):
         _check_outcome_against_mab_dwh_target(experiment.experiment_fields, outcome)
 
-    try:
-        result = await xngin_session.execute(
-            update(tables.Draw)
-            .where(
-                tables.Draw.participant_id == participant_id,
-                tables.Draw.experiment_id == experiment.id,
-                tables.Draw.outcome.is_(None),  # guard against double-write at DB level
-            )
-            .values(observed_at=datetime.now(UTC), outcome=outcome, autofailed_outcome=autofailed_outcome)
-            .returning(tables.Draw.arm_id, tables.Draw.context_vals)
+    result = await xngin_session.execute(
+        update(tables.Draw)
+        .where(
+            tables.Draw.participant_id == participant_id,
+            tables.Draw.experiment_id == experiment.id,
+            tables.Draw.outcome.is_(None),  # guard against double-write at DB level
         )
-        draw_record = result.one_or_none()
-        if draw_record is None:
-            raise ExperimentsAssignmentError(
-                f"Participant '{participant_id}' already has a recorded outcome for this experiment.",
-            )
-
-        arm_to_update = next(arm for arm in experiment.arms if arm.id == draw_record.arm_id)
-
-        # Get all prior draws for this arm, sorted by creation date
-        outcomes, context_vals = await _fetch_outcomes_and_context_for_arm(
-            xngin_session,
-            experiment_id=experiment.id,
-            arm_id=draw_record.arm_id,
-            outcome=outcome,
-            context_vals=draw_record.context_vals,
-        )
-
-        updated_parameters = update_bandit_arm(
-            experiment=experiment,
-            arm_to_update=arm_to_update,
-            outcomes=outcomes,
-            context=context_vals,
-        )
-
-        # Update the draw record and arm with the new parameters
-        update_draw_params: dict[str, float | list[float] | list[list[float]]]
-        match updated_parameters:
-            case UpdateTypeBeta():
-                update_draw_params = {
-                    "current_alpha": updated_parameters.alpha,
-                    "current_beta": updated_parameters.beta,
-                }
-                arm_to_update.alpha = updated_parameters.alpha
-                arm_to_update.beta = updated_parameters.beta
-            case UpdateTypeNormal():
-                update_draw_params = {
-                    "current_mu": updated_parameters.mu,
-                    "current_covariance": updated_parameters.covariance,
-                }
-                arm_to_update.mu = updated_parameters.mu
-                arm_to_update.covariance = updated_parameters.covariance
-            case _:
-                raise ExperimentsAssignmentError(
-                    f"Unsupported prior update type: {type(updated_parameters)} for prior type {experiment.prior_type}"
-                )
-
-        await xngin_session.execute(
-            update(tables.Draw)
-            .where(
-                tables.Draw.participant_id == participant_id,
-                tables.Draw.experiment_id == experiment.id,
-                tables.Draw.arm_id == arm_to_update.id,
-            )
-            .values(**update_draw_params)
-        )
-        xngin_session.add(arm_to_update)
-        if commit_on_success:
-            await xngin_session.commit()
-
-    except IntegrityError as e:
-        await xngin_session.rollback()
+        .values(observed_at=datetime.now(UTC), outcome=outcome, autofailed_outcome=autofailed_outcome)
+        .returning(tables.Draw.arm_id, tables.Draw.context_vals)
+    )
+    draw_record = result.one_or_none()
+    if draw_record is None:
         raise ExperimentsAssignmentError(
-            f"Failed to update assignment for participant '{participant_id}' with outcome {outcome}: {e}"
-        ) from e
+            f"Participant '{participant_id}' already has a recorded outcome for this experiment.",
+        )
+
+    arm_to_update = next(arm for arm in experiment.arms if arm.id == draw_record.arm_id)
+
+    # Get all prior draws for this arm, sorted by creation date
+    outcomes, context_vals = await _fetch_outcomes_and_context_for_arm(
+        xngin_session,
+        experiment_id=experiment.id,
+        arm_id=draw_record.arm_id,
+        outcome=outcome,
+        context_vals=draw_record.context_vals,
+    )
+
+    updated_parameters = update_bandit_arm(
+        experiment=experiment,
+        arm_to_update=arm_to_update,
+        outcomes=outcomes,
+        context=context_vals,
+    )
+
+    # Update the draw record and arm with the new parameters
+    update_draw_params: PartialUpdateDrawBeta | PartialUpdateDrawNormal
+    update_arm_params: PartialUpdateArmBeta | PartialUpdateArmNormal
+    match updated_parameters:
+        case UpdateTypeBeta():
+            update_draw_params = PartialUpdateDrawBeta(
+                current_alpha=updated_parameters.alpha, current_beta=updated_parameters.beta
+            )
+            update_arm_params = PartialUpdateArmBeta(alpha=updated_parameters.alpha, beta=updated_parameters.beta)
+        case UpdateTypeNormal():
+            update_draw_params = PartialUpdateDrawNormal(
+                current_mu=updated_parameters.mu, current_covariance=updated_parameters.covariance
+            )
+            update_arm_params = PartialUpdateArmNormal(
+                mu=updated_parameters.mu, covariance=updated_parameters.covariance
+            )
+
+    await xngin_session.execute(
+        update(tables.Draw)
+        .where(
+            tables.Draw.participant_id == participant_id,
+            tables.Draw.experiment_id == experiment.id,
+            tables.Draw.arm_id == arm_to_update.id,
+        )
+        .values(**update_draw_params)
+    )
+    await xngin_session.execute(
+        update(tables.Arm)
+        .where(
+            tables.Arm.id == arm_to_update.id,
+            tables.Arm.experiment_id == experiment.id,
+        )
+        .values(**update_arm_params)
+    )
 
     return arm_to_update
 

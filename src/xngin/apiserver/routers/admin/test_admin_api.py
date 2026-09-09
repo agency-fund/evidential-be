@@ -93,7 +93,10 @@ from xngin.apiserver.routers.experiments.test_experiments_common import (
 )
 from xngin.apiserver.settings import Dsn
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
-from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
+from xngin.apiserver.testing.experiments_api_client import (
+    ExperimentsAPIClient,
+    ExperimentsAPIClientNotDefaultStatusError,
+)
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 from xngin.apiserver.testing.wide_dwh_def import WIDE_DWH_PARTICIPANT_DEF
 
@@ -2572,13 +2575,14 @@ def test_cmab_experiments_analyze(testing_bandit_experiment, aclient: AdminAPICl
         assert analysis.post_pred_stdev is not None
 
 
-async def test_create_and_update_outcome_mab_dwh_happy_path(
+async def test_create_and_assign_mab_dwh_rejects_pushed_outcome(
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
 ):
-    """End-to-end happy path for a MAB-DWH experiment through the public APIs: create it via the
-    admin client, assign a participant, push an outcome, and read the outcome back."""
+    """End-to-end path for a MAB-DWH experiment through the public APIs: create it via the admin
+    client and assign a participant. Outcomes arrive from the organization's data warehouse via
+    xngin-dwh-pull, so the push endpoint rejects them and the draw stays unresolved."""
     experiment = await make_bandit_online_experiment(
         aclient,
         testing_datasource.datasource_id,
@@ -2599,14 +2603,16 @@ async def test_create_and_update_outcome_mab_dwh_happy_path(
     assert assignment is not None
     assert assignment.outcome is None
 
-    # Push an outcome. The default target column ("is_onboarded") is boolean, so the outcome must be 0 or 1.
-    eclient.update_bandit_arm_with_participant_outcome(
-        api_key=testing_datasource.key,
-        body=UpdateBanditArmOutcomeRequest(outcome=1.0),
-        experiment_id=experiment_id,
-        participant_id="p1",
-    )
+    with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
+        eclient.update_bandit_arm_with_participant_outcome(
+            api_key=testing_datasource.key,
+            body=UpdateBanditArmOutcomeRequest(outcome=1.0),
+            experiment_id=experiment_id,
+            participant_id="p1",
+        )
+    assert exc.value.result.status == HTTPStatus.UNPROCESSABLE_CONTENT, exc.value.result.data
 
+    # The rejected push leaves the draw untouched, so a later pull can still fill it.
     updated = eclient.get_assignment(
         api_key=testing_datasource.key,
         experiment_id=experiment_id,
@@ -2614,8 +2620,8 @@ async def test_create_and_update_outcome_mab_dwh_happy_path(
         create_if_none=False,
     ).data.assignment
     assert updated is not None
-    assert updated.outcome == 1.0
-    assert updated.observed_at is not None
+    assert updated.outcome is None
+    assert updated.observed_at is None
 
 
 async def test_mab_experiments_analyze_ignores_unobserved_draws_with_single_outcome(
@@ -4134,6 +4140,59 @@ async def test_power_check_with_manual_icc_and_nulls_in_cluster_key(testing_data
     assert analysis.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
 
 
+async def test_power_check_with_desired_n_clusters(testing_datasource, aclient: AdminAPIClient):
+    """desired_n_clusters populates pct_change_with_desired_n, equivalent to desired_n = clusters * avg_cluster_size."""
+
+    def make_design_spec(*, desired_n: int | None = None, desired_n_clusters: int | None = None):
+        return PreassignedFrequentistExperimentSpec(
+            experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+            experiment_name="test cluster power desired_n_clusters",
+            description="Verify desired_n_clusters drives the MDE calculation in power check.",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime.now(UTC) + timedelta(days=1),
+            table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
+            primary_key="id",
+            arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
+            metrics=[
+                DesignSpecMetricRequest(
+                    field_name="household_income",
+                    metric_pct_change=0.1,
+                    icc=0.015,
+                    avg_cluster_size=10,
+                    cv=0.1,
+                )
+            ],
+            strata=[],
+            filters=[],
+            cluster_key="age",
+            desired_n=desired_n,
+            desired_n_clusters=desired_n_clusters,
+        )
+
+    clusters_result = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(design_spec=make_design_spec(desired_n_clusters=40)),
+    )
+    clusters_analysis = clusters_result.data.analyses[0]
+    assert clusters_analysis.pct_change_with_desired_n is not None
+
+    # 40 clusters of avg_cluster_size 10 should be equivalent to desired_n=400.
+    individuals_result = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(design_spec=make_design_spec(desired_n=400)),
+    )
+    individuals_analysis = individuals_result.data.analyses[0]
+    assert clusters_analysis.pct_change_with_desired_n == individuals_analysis.pct_change_with_desired_n
+
+    # When both are set, desired_n_clusters takes precedence.
+    both_result = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(design_spec=make_design_spec(desired_n=900, desired_n_clusters=40)),
+    )
+    both_analysis = both_result.data.analyses[0]
+    assert both_analysis.pct_change_with_desired_n == clusters_analysis.pct_change_with_desired_n
+
+
 async def test_power_check_with_db_derived_icc_and_nulls_in_cluster_key(testing_datasource, aclient: AdminAPIClient):
     """DB-derived ICC excludes rows with a null cluster key, and available_n is consistent.
 
@@ -4527,3 +4586,21 @@ async def test_create_freq_preassigned_experiment_cluster_key_has_nulls(
         assert arm_id is not None
         assert arm_size.cluster_count is not None
         assert arm_size.cluster_count == len(clusters_by_arm[arm_id])
+
+
+async def test_create_mab_dwh_bool_target_with_normal_reward_returns_422(testing_datasource, aclient: AdminAPIClient):
+    """The API rejects an incompatible Normal reward for a boolean MAB-DWH target."""
+    request = make_create_online_bandit_experiment_request(
+        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
+        prior_type=PriorTypes.NORMAL,
+        reward_type=LikelihoodTypes.NORMAL,
+        target_field_name="is_onboarded",
+    )
+    result = aclient.create_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        body=request,
+        random_state=42,
+        raise_if_not_default_status=False,
+    )
+    assert result.status == HTTPStatus.UNPROCESSABLE_CONTENT
+    assert "only compatible with reward_type 'binary'" in str(result.data)

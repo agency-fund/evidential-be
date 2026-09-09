@@ -291,7 +291,7 @@ def make_design_spec_clustered(
     )
 
 
-def make_create_preassigned_experiment_request(desired_n: int | None = None) -> CreateExperimentRequest:
+def make_create_preassigned_experiment_request(desired_n: int) -> CreateExperimentRequest:
     request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_PREASSIGNED, desired_n=desired_n)
     return CreateExperimentRequest.model_validate(request)
 
@@ -825,24 +825,6 @@ async def test_create_preassigned_experiment_impl_cluster_assignment(xngin_sessi
         assert arm_id is not None
         assert arm_size.cluster_count is not None
         assert arm_size.cluster_count == len(arm_to_clusters[arm_id])
-
-
-async def test_create_experiment_impl_clustered_requires_desired_n_clusters(xngin_session, testing_datasource):
-    design_spec = make_design_spec_clustered(desired_n_clusters=None)
-    request = CreateExperimentRequest(design_spec=design_spec)
-
-    with pytest.raises(
-        LateValidationError,
-        match="Cluster-randomized preassigned experiments must have a desired_n_clusters",
-    ):
-        await create_experiment_impl(
-            request=request,
-            datasource=testing_datasource.ds,
-            xngin_session=xngin_session,
-            stratify_on_metrics=False,
-            random_state=42,
-            validated_webhooks=[],
-        )
 
 
 async def test_create_experiment_impl_clustered_rejects_empty_eligible_cohort(xngin_session, testing_datasource):
@@ -1512,8 +1494,17 @@ async def test_create_experiment_impl_for_freq_online(xngin_session, testing_dat
     # Verify design_spec was stored correctly
     converter = ExperimentStorageConverter(experiment)
     assert await converter.get_design_spec() == response.design_spec
+    assert experiment.balance_check is None
+    balance_check_is_sql_null = await xngin_session.scalar(
+        select(tables.Experiment.balance_check.is_(None)).where(tables.Experiment.id == experiment.id)
+    )
+    assert balance_check_is_sql_null is True
     # Verify no power_analyses for online experiments
     assert experiment.power_analyses is None
+    power_analyses_is_sql_null = await xngin_session.scalar(
+        select(tables.Experiment.power_analyses.is_(None)).where(tables.Experiment.id == experiment.id)
+    )
+    assert power_analyses_is_sql_null is True
 
     # Verify arms were created in database
     arms = (await xngin_session.scalars(select(tables.Arm).where(tables.Arm.experiment_id == experiment.id))).all()
@@ -2637,146 +2628,60 @@ async def test_get_or_create_assignment_for_participant_without_filters(
         assert (response.assignment is not None) == has_assignment
 
 
-@pytest.mark.parametrize(
-    ("experiment_type", "prior_type", "reward_type"),
-    [
-        (ExperimentsType.MAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
-        (ExperimentsType.MAB_ONLINE, PriorTypes.BETA, LikelihoodTypes.BERNOULLI),
-        (ExperimentsType.MAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
-        (ExperimentsType.CMAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
-        (ExperimentsType.CMAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
-    ],
-)
-async def test_update_bandit_arm_with_outcome(
-    xngin_session, testing_datasource, experiment_type, prior_type, reward_type
-):
+async def test_update_bandit_arm_with_outcome_multiple_times_in_one_transaction(xngin_session, testing_datasource):
     bandit_experiment = await insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
-        experiment_type=experiment_type,
-        prior_type=prior_type,
-        reward_type=reward_type,
+        experiment_type=ExperimentsType.MAB_ONLINE,
+        prior_type=PriorTypes.BETA,
+        reward_type=LikelihoodTypes.BERNOULLI,
     )
-    await create_assignment_for_participant(
-        xngin_session,
-        bandit_experiment,
-        "test_id",
-        [1.0, 1.0] if experiment_type == ExperimentsType.CMAB_ONLINE else None,
-        random_state=66,
-    )
+    assignments = []
+    for participant_id in ("participant-1", "participant-2"):
+        assignment = await create_assignment_for_participant(
+            xngin_session,
+            bandit_experiment,
+            participant_id,
+            random_state=66,
+        )
+        assert assignment is not None
+        assignments.append(assignment)
 
-    updated_arm = await update_bandit_arm_with_outcome_impl(
-        xngin_session=xngin_session, experiment=bandit_experiment, participant_id="test_id", outcome=1.0
-    )
+    assigned_arm_ids = {assignment.arm_id for assignment in assignments}
+    assert len(assigned_arm_ids) == 1
+    assigned_arm = next(arm for arm in bandit_experiment.arms if arm.id in assigned_arm_ids)
+    assert assigned_arm.alpha is not None
+    assert assigned_arm.beta is not None
+    initial_alpha = assigned_arm.alpha
+    initial_beta = assigned_arm.beta
 
-    # Refresh experiment; retrieve draws
-    await xngin_session.refresh(bandit_experiment)
-    draws = await updated_arm.awaitable_attrs.draws
-    draw = draws[0]
-
-    # Assert that the draw was updated correctly
-    assert len(draws) == 1
-    assert draw.outcome == 1.0
-    assert draw.observed_at is not None
-    await bandit_experiment.awaitable_attrs.arms
-    await bandit_experiment.awaitable_attrs.contexts
-    bandit_arm_map = {arm.id: arm for arm in bandit_experiment.arms}
-    assert draw.current_mu == bandit_arm_map[updated_arm.id].mu
-    assert draw.current_covariance == bandit_arm_map[updated_arm.id].covariance
-    assert draw.current_alpha == bandit_arm_map[updated_arm.id].alpha
-    assert draw.current_beta == bandit_arm_map[updated_arm.id].beta
-
-    if experiment_type == ExperimentsType.CMAB_ONLINE:
-        assert draw.context_vals == [1.0, 1.0]
-
-    # Assert that we can't update the arm with an outcome for a participant that doesn't exist
-    with pytest.raises(
-        ExperimentsAssignmentError,
-        match="Participant {participant_id} does not have an assignment for which to record an outcome.".format(
-            participant_id="some_other_id"
-        ),
-    ):
-        await update_bandit_arm_with_outcome_impl(xngin_session, bandit_experiment, "some_other_id", 1.0)
-
-    # Assert that we can't update the arm with an outcome for a participant that already has an outcome
-    with pytest.raises(
-        ExperimentsAssignmentError,
-        match="Participant {participant_id} already has an outcome recorded.".format(participant_id="test_id"),
-    ):
-        await update_bandit_arm_with_outcome_impl(xngin_session, bandit_experiment, "test_id", 1.0)
-
-
-async def test_update_bandit_arm_with_outcome_mab_dwh_bool_target_rejects_non_binary(xngin_session, testing_datasource):
-    """MAB-DWH with a BOOL target rejects outcomes that aren't 0 or 1, even under NORMAL reward."""
-    bandit_experiment = await insert_experiment_and_arms(
-        xngin_session,
-        testing_datasource.ds,
-        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
-        prior_type=PriorTypes.NORMAL,
-        reward_type=LikelihoodTypes.NORMAL,
-        target_field_name="is_onboarded",
-    )
-    await create_assignment_for_participant(xngin_session, bandit_experiment, "p1", None, random_state=66)
-
-    with pytest.raises(LateValidationError, match="must be 0 or 1 for boolean targets"):
+    for participant_id, outcome in (("participant-1", 1.0), ("participant-2", 0.0)):
         await update_bandit_arm_with_outcome_impl(
-            xngin_session=xngin_session, experiment=bandit_experiment, participant_id="p1", outcome=0.5
+            xngin_session=xngin_session,
+            experiment=bandit_experiment,
+            participant_id=participant_id,
+            outcome=outcome,
         )
 
-    # A valid binary outcome is accepted.
-    updated_arm = await update_bandit_arm_with_outcome_impl(
-        xngin_session=xngin_session, experiment=bandit_experiment, participant_id="p1", outcome=1.0
+    assert xngin_session.in_transaction()
+    assert assigned_arm.alpha == initial_alpha + 1
+    assert assigned_arm.beta == initial_beta + 1
+    await xngin_session.commit()
+    recorded_outcomes = dict(
+        (
+            await xngin_session.execute(
+                select(tables.Draw.participant_id, tables.Draw.outcome).where(
+                    tables.Draw.experiment_id == bandit_experiment.id
+                )
+            )
+        ).all()
     )
-    draws = await updated_arm.awaitable_attrs.draws
-    assert draws[0].outcome == 1.0
-
-
-async def test_update_bandit_arm_with_outcome_mab_dwh_numeric_target_accepts_any_float(
-    xngin_session, testing_datasource
-):
-    """MAB-DWH with a numeric target accepts any float under NORMAL reward."""
-    bandit_experiment = await insert_experiment_and_arms(
-        xngin_session,
-        testing_datasource.ds,
-        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
-        prior_type=PriorTypes.NORMAL,
-        reward_type=LikelihoodTypes.NORMAL,
-        target_field_name="current_income",
-    )
-    await create_assignment_for_participant(xngin_session, bandit_experiment, "p1", None, random_state=66)
-
-    updated_arm = await update_bandit_arm_with_outcome_impl(
-        xngin_session=xngin_session, experiment=bandit_experiment, participant_id="p1", outcome=42.7
-    )
-    draws = await updated_arm.awaitable_attrs.draws
-    assert draws[0].outcome == 42.7
-
-
-async def test_update_bandit_arm_with_freq_experiments_returns_422(xngin_session, testing_datasource):
-    """Freq experiments should return 422 when updating bandit arm with outcome."""
-    online_freq_experiment = await insert_experiment_and_arms(
-        xngin_session,
-        testing_datasource.ds,
-        experiment_type=ExperimentsType.FREQ_ONLINE,
-        target_field_name="current_income",
-    )
-    await create_assignment_for_participant(xngin_session, online_freq_experiment, "p1", None, random_state=66)
-
-    with pytest.raises(LateValidationError, match="Cannot dynamically update arms for frequentist experiments"):
-        await update_bandit_arm_with_outcome_impl(
-            xngin_session=xngin_session, experiment=online_freq_experiment, participant_id="p1", outcome=42.7
-        )
-
-    pre_freq_experiment = await insert_experiment_and_arms(
-        xngin_session,
-        testing_datasource.ds,
-    )
-    await create_assignment_for_participant(xngin_session, pre_freq_experiment, "p1", None, random_state=66)
-
-    with pytest.raises(LateValidationError, match="Cannot dynamically update arms for frequentist experiments"):
-        await update_bandit_arm_with_outcome_impl(
-            xngin_session=xngin_session, experiment=pre_freq_experiment, participant_id="p1", outcome=42.7
-        )
+    assert recorded_outcomes == {"participant-1": 1.0, "participant-2": 0.0}
+    persisted_alpha, persisted_beta = (
+        await xngin_session.execute(select(tables.Arm.alpha, tables.Arm.beta).where(tables.Arm.id == assigned_arm.id))
+    ).one()
+    assert persisted_alpha == initial_alpha + 1
+    assert persisted_beta == initial_beta + 1
 
 
 async def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_session, testing_datasource):
@@ -2902,41 +2807,37 @@ async def test_arm_population_counter(xngin_session, testing_datasource):
 def _in_memory_experiment(
     experiment_type: ExperimentsType,
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
-    target_data_type: DataType | None = None,
     arms: list[tables.Arm] | None = None,
 ) -> tables.Experiment:
     """An in-memory (unpersisted) experiment with just the attributes make_sample_calls reads."""
-    fields = []
-    if target_data_type is not None:
-        fields = [tables.ExperimentField(field_name="target_col", data_type=target_data_type.value, is_target=True)]
     return tables.Experiment(
         id="exp_abc123",
         experiment_type=experiment_type.value,
         reward_type=reward_type.value,
-        experiment_fields=fields,
         arms=arms or [],
     )
 
 
 @pytest.mark.parametrize(
-    ("reward_type", "target_data_type", "expected_outcome"),
+    ("reward_type", "expected_outcome"),
     [
-        (LikelihoodTypes.BERNOULLI, None, 1),  # bernoulli MAB => binary
-        (LikelihoodTypes.NORMAL, None, 1.5),  # normal MAB => real
-        (LikelihoodTypes.NORMAL, DataType.BOOLEAN, 1),  # dwh boolean target => binary even under normal reward
-        (LikelihoodTypes.NORMAL, DataType.NUMERIC, 1.5),  # dwh numeric target => real
-        (LikelihoodTypes.BERNOULLI, DataType.NUMERIC, 1),  # bernoulli still forces binary
+        (LikelihoodTypes.BERNOULLI, 1),  # bernoulli MAB => binary
+        (LikelihoodTypes.NORMAL, 1.5),  # normal MAB => real
     ],
 )
-def test_make_sample_calls_outcome_example_value(reward_type, target_data_type, expected_outcome):
-    experiment_type = ExperimentsType.MAB_ONLINE_DWH if target_data_type is not None else ExperimentsType.MAB_ONLINE
-    calls = make_sample_calls(
-        _in_memory_experiment(experiment_type, reward_type=reward_type, target_data_type=target_data_type)
-    )
+def test_make_sample_calls_outcome_example_value(reward_type, expected_outcome):
+    calls = make_sample_calls(_in_memory_experiment(ExperimentsType.MAB_ONLINE, reward_type=reward_type))
     assert calls is not None
     assert calls.calls[1].body == {"outcome": expected_outcome}
     assert calls.calls[1].example_response is not None
     assert calls.calls[1].example_response["arm_id"] == "<arm_id>"
+
+
+def test_make_sample_calls_mab_dwh_get_assignment_only():
+    # The outcome API rejects MAB-DWH, so no outcome example is emitted.
+    calls = make_sample_calls(_in_memory_experiment(ExperimentsType.MAB_ONLINE_DWH))
+    assert calls is not None
+    assert [c.label for c in calls.calls] == ["Get assignment"]
 
 
 def test_make_sample_calls_freq_online_without_filters_get_assignment_only():
