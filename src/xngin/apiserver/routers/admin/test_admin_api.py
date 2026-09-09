@@ -4140,6 +4140,59 @@ async def test_power_check_with_manual_icc_and_nulls_in_cluster_key(testing_data
     assert analysis.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
 
 
+async def test_power_check_with_desired_n_clusters(testing_datasource, aclient: AdminAPIClient):
+    """desired_n_clusters populates pct_change_with_desired_n, equivalent to desired_n = clusters * avg_cluster_size."""
+
+    def make_design_spec(*, desired_n: int | None = None, desired_n_clusters: int | None = None):
+        return PreassignedFrequentistExperimentSpec(
+            experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+            experiment_name="test cluster power desired_n_clusters",
+            description="Verify desired_n_clusters drives the MDE calculation in power check.",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime.now(UTC) + timedelta(days=1),
+            table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
+            primary_key="id",
+            arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
+            metrics=[
+                DesignSpecMetricRequest(
+                    field_name="household_income",
+                    metric_pct_change=0.1,
+                    icc=0.015,
+                    avg_cluster_size=10,
+                    cv=0.1,
+                )
+            ],
+            strata=[],
+            filters=[],
+            cluster_key="age",
+            desired_n=desired_n,
+            desired_n_clusters=desired_n_clusters,
+        )
+
+    clusters_result = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(design_spec=make_design_spec(desired_n_clusters=40)),
+    )
+    clusters_analysis = clusters_result.data.analyses[0]
+    assert clusters_analysis.pct_change_with_desired_n is not None
+
+    # 40 clusters of avg_cluster_size 10 should be equivalent to desired_n=400.
+    individuals_result = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(design_spec=make_design_spec(desired_n=400)),
+    )
+    individuals_analysis = individuals_result.data.analyses[0]
+    assert clusters_analysis.pct_change_with_desired_n == individuals_analysis.pct_change_with_desired_n
+
+    # When both are set, desired_n_clusters takes precedence.
+    both_result = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(design_spec=make_design_spec(desired_n=900, desired_n_clusters=40)),
+    )
+    both_analysis = both_result.data.analyses[0]
+    assert both_analysis.pct_change_with_desired_n == clusters_analysis.pct_change_with_desired_n
+
+
 async def test_power_check_with_db_derived_icc_and_nulls_in_cluster_key(testing_datasource, aclient: AdminAPIClient):
     """DB-derived ICC excludes rows with a null cluster key, and available_n is consistent.
 
