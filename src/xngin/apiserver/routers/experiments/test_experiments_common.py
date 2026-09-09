@@ -1494,8 +1494,17 @@ async def test_create_experiment_impl_for_freq_online(xngin_session, testing_dat
     # Verify design_spec was stored correctly
     converter = ExperimentStorageConverter(experiment)
     assert await converter.get_design_spec() == response.design_spec
+    assert experiment.balance_check is None
+    balance_check_is_sql_null = await xngin_session.scalar(
+        select(tables.Experiment.balance_check.is_(None)).where(tables.Experiment.id == experiment.id)
+    )
+    assert balance_check_is_sql_null is True
     # Verify no power_analyses for online experiments
     assert experiment.power_analyses is None
+    power_analyses_is_sql_null = await xngin_session.scalar(
+        select(tables.Experiment.power_analyses.is_(None)).where(tables.Experiment.id == experiment.id)
+    )
+    assert power_analyses_is_sql_null is True
 
     # Verify arms were created in database
     arms = (await xngin_session.scalars(select(tables.Arm).where(tables.Arm.experiment_id == experiment.id))).all()
@@ -2798,41 +2807,37 @@ async def test_arm_population_counter(xngin_session, testing_datasource):
 def _in_memory_experiment(
     experiment_type: ExperimentsType,
     reward_type: LikelihoodTypes = LikelihoodTypes.NORMAL,
-    target_data_type: DataType | None = None,
     arms: list[tables.Arm] | None = None,
 ) -> tables.Experiment:
     """An in-memory (unpersisted) experiment with just the attributes make_sample_calls reads."""
-    fields = []
-    if target_data_type is not None:
-        fields = [tables.ExperimentField(field_name="target_col", data_type=target_data_type.value, is_target=True)]
     return tables.Experiment(
         id="exp_abc123",
         experiment_type=experiment_type.value,
         reward_type=reward_type.value,
-        experiment_fields=fields,
         arms=arms or [],
     )
 
 
 @pytest.mark.parametrize(
-    ("reward_type", "target_data_type", "expected_outcome"),
+    ("reward_type", "expected_outcome"),
     [
-        (LikelihoodTypes.BERNOULLI, None, 1),  # bernoulli MAB => binary
-        (LikelihoodTypes.NORMAL, None, 1.5),  # normal MAB => real
-        (LikelihoodTypes.NORMAL, DataType.BOOLEAN, 1),  # dwh boolean target => binary even under normal reward
-        (LikelihoodTypes.NORMAL, DataType.NUMERIC, 1.5),  # dwh numeric target => real
-        (LikelihoodTypes.BERNOULLI, DataType.NUMERIC, 1),  # bernoulli still forces binary
+        (LikelihoodTypes.BERNOULLI, 1),  # bernoulli MAB => binary
+        (LikelihoodTypes.NORMAL, 1.5),  # normal MAB => real
     ],
 )
-def test_make_sample_calls_outcome_example_value(reward_type, target_data_type, expected_outcome):
-    experiment_type = ExperimentsType.MAB_ONLINE_DWH if target_data_type is not None else ExperimentsType.MAB_ONLINE
-    calls = make_sample_calls(
-        _in_memory_experiment(experiment_type, reward_type=reward_type, target_data_type=target_data_type)
-    )
+def test_make_sample_calls_outcome_example_value(reward_type, expected_outcome):
+    calls = make_sample_calls(_in_memory_experiment(ExperimentsType.MAB_ONLINE, reward_type=reward_type))
     assert calls is not None
     assert calls.calls[1].body == {"outcome": expected_outcome}
     assert calls.calls[1].example_response is not None
     assert calls.calls[1].example_response["arm_id"] == "<arm_id>"
+
+
+def test_make_sample_calls_mab_dwh_get_assignment_only():
+    # The outcome API rejects MAB-DWH, so no outcome example is emitted.
+    calls = make_sample_calls(_in_memory_experiment(ExperimentsType.MAB_ONLINE_DWH))
+    assert calls is not None
+    assert [c.label for c in calls.calls] == ["Get assignment"]
 
 
 def test_make_sample_calls_freq_online_without_filters_get_assignment_only():

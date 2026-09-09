@@ -330,6 +330,7 @@ async def test_make_first_snapshot_is_noop_when_missing_or_not_pending(
         experiment_id=experiment_id,
         status="failed",
         message="already failed",
+        data=None,
     )
     xngin_session.add(completed_snapshot)
     await xngin_session.commit()

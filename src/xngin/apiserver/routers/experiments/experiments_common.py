@@ -935,8 +935,10 @@ def make_sample_calls(experiment: tables.Experiment) -> SampleCalls | None:
     experiment types that have no meaningful example yet (currently CMAB, whose assignment needs a
     context vector).
 
-    Requires experiment.arms to be loaded (experiment.experiment_fields for MAB_ONLINE_DWH
-    experiments, and experiment.experiment_filters for FREQ_ONLINE experiments).
+    MAB_ONLINE_DWH gets no outcome example because the outcome API rejects that type.
+
+    Requires experiment.arms to be loaded (experiment.experiment_filters for FREQ_ONLINE
+    experiments).
     """
     experiment_type = ExperimentsType(experiment.experiment_type)
     if experiment_type.is_cmab():
@@ -977,17 +979,12 @@ def make_sample_calls(experiment: tables.Experiment) -> SampleCalls | None:
         ),
     ]
 
-    if is_bandit and experiment.reward_type is not None:
-        # Pick a type-correct example outcome: 0/1 for a Bernoulli reward or a boolean DWH target
-        # column, otherwise an illustrative number.
+    if is_bandit and experiment.reward_type is not None and experiment_type != ExperimentsType.MAB_ONLINE_DWH:
+        # Pick a type-correct example outcome: 0/1 for a Bernoulli reward, otherwise an illustrative
+        # number.
         outcome_example: float = 1.5
         if LikelihoodTypes(experiment.reward_type) == LikelihoodTypes.BERNOULLI:
             outcome_example = 1
-        elif experiment_type == ExperimentsType.MAB_ONLINE_DWH:
-            # MAB-DWH always has an is_target field (target_field_name is required at create time).
-            target_field = next(ef for ef in experiment.experiment_fields if ef.is_target)
-            if DataType(target_field.data_type).storage_class() is DataTypeStorageClass.BOOLEAN:
-                outcome_example = 1
         outcome_request = UpdateBanditArmOutcomeRequest(outcome=outcome_example)
         outcome_response = ArmBandit(arm_id=arm_id_example, arm_name=arm_name_example)
         calls.append(

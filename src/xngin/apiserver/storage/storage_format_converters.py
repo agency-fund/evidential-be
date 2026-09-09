@@ -511,10 +511,7 @@ class ExperimentStorageConverter:
                 arm_weights = design_spec.get_validated_arm_weights()
                 if arm_weights:
                     param1, param2 = await asyncio.to_thread(
-                        convert_arm_weights_to_prior_params,
-                        arm_weights=arm_weights,
-                        prior_type=design_spec.prior_type,
-                        num_contexts=context_len,
+                        convert_arm_weights_to_prior_params, arm_weights=arm_weights, prior_type=design_spec.prior_type
                     )
                     match design_spec.prior_type:
                         case capi.PriorTypes.BETA:
