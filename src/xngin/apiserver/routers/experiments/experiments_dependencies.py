@@ -1,23 +1,39 @@
+"""FastAPI dependencies that resolve integrator API parameters to the resources they name.
+
+The counterpart to admin_dependencies for the routes integrators call, and read the same way at the call
+site: `edeps.experiment` resolves the resource its route names and rejects a caller who may not have it.
+What differs is the principal. These callers present a datasource API key rather than a session, and the
+datasource itself is named by a header rather than by the path.
+
+A `_with_x` suffix names an added relationship that any route may want; a `_for_x` suffix names the
+particular set one route needs. Per-request caching is keyed on the dependency object, so two instances of
+_Experiment are two separate lookups.
+"""
+
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Path
 from fastapi.security.api_key import APIKeyHeader
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import QueryableAttribute, joinedload, selectinload
+from sqlalchemy.orm import QueryableAttribute, joinedload
 from starlette import status
 
 from xngin.apiserver import apikeys, constants
 from xngin.apiserver.apikeys import hash_key_or_raise, require_valid_api_key
 from xngin.apiserver.dependencies import CannotFindDatasourceError, xngin_db_session
-from xngin.apiserver.routers.common_enums import PreloadMethod
+from xngin.apiserver.routers.preloads import (
+    EXPERIMENT_FIELDS_WITH_FILTERS,
+    PreloadChain,
+    build_preload_options,
+)
 from xngin.apiserver.settings import (
     Datasource,
 )
 from xngin.apiserver.sqla import tables
 
 
-class DatasourceApiKeyHeader(APIKeyHeader):
+class _DatasourceApiKeyHeader(APIKeyHeader):
     """Defines the request header for the API key in the OpenAPI spec and requires it to exist on a request.
 
     This does not validate the key; it only checks that it is present.
@@ -40,7 +56,7 @@ class DatasourceApiKeyHeader(APIKeyHeader):
         return api_key
 
 
-async def datasource_dependency(
+async def datasource(
     datasource_id: Annotated[
         str,
         Header(
@@ -52,7 +68,7 @@ async def datasource_dependency(
     xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
     api_key: Annotated[
         str,
-        Depends(DatasourceApiKeyHeader()),
+        Depends(_DatasourceApiKeyHeader()),
     ],
 ):
     """Returns the configuration for the current request, as determined by the Datasource-ID HTTP request header."""
@@ -67,16 +83,15 @@ async def datasource_dependency(
     raise CannotFindDatasourceError("Datasource not found.")
 
 
-class ExperimentDependency:
+class _Experiment:
     """
     Parameterizable db Experiment dependency (instances are callable) for endpoints that require API keys.
 
     When constructing the dependency, you can provide a list of experiment attributes to preload to
     avoid N+1 queries.
 
-    You can alternatively provide a list of list-of-tuples, where each tuple contains a
-    PreloadMethod and a QueryableAttribute. We treat each list-of-tuples as pre-loading a nested
-    relationship using the desired preloading method for each level.
+    You can alternatively provide a list of preload chains, each of which walks through one
+    relationship to reach another, using the preloading method named for each level.
 
     See __call__ for additional injected parameters when called as a dependency.
     """
@@ -84,7 +99,7 @@ class ExperimentDependency:
     def __init__(
         self,
         preload: list[QueryableAttribute] | None = None,
-        nested_preload: list[list[tuple[PreloadMethod, QueryableAttribute]]] | None = None,
+        nested_preload: list[PreloadChain] | None = None,
     ) -> None:
         self.preload = preload
         self.nested_preload = nested_preload
@@ -94,7 +109,7 @@ class ExperimentDependency:
         experiment_id: Annotated[str, Path(..., description="The ID of the experiment to fetch.")],
         api_key: Annotated[
             str,
-            Depends(DatasourceApiKeyHeader()),
+            Depends(_DatasourceApiKeyHeader()),
         ],
         xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
     ) -> tables.Experiment:
@@ -124,21 +139,7 @@ class ExperimentDependency:
                 tables.ApiKey.key == key_hash,
             )
         )
-        options = []
-        if self.preload:
-            options.extend([selectinload(f) for f in self.preload])
-        if self.nested_preload:
-            for nested in self.nested_preload:
-                nested_load = None
-                for method, attr in nested:
-                    match method:
-                        case PreloadMethod.SELECTINLOAD:
-                            nested_load = selectinload(attr) if nested_load is None else nested_load.selectinload(attr)
-                        case PreloadMethod.JOINLOAD:
-                            nested_load = joinedload(attr) if nested_load is None else nested_load.joinedload(attr)
-                if nested_load is not None:
-                    options.append(nested_load)
-
+        options = build_preload_options(self.preload, self.nested_preload)
         if options:
             query = query.options(*options)
         experiment = (await xngin_session.scalars(query)).unique().one_or_none()
@@ -152,36 +153,22 @@ class ExperimentDependency:
         return experiment
 
 
-# Default dependency for experiments that only need arms joined in.
-experiment_dependency = ExperimentDependency()
+experiment = _Experiment()
 
-# Use this when you need an experiment with info on the fields it uses.
 # TODO: remove the datasource dependency as part of the participant type cleanup.
-experiment_and_datasource_dependency = ExperimentDependency(
+experiment_with_datasource_and_fields = _Experiment(
     preload=[
         tables.Experiment.datasource,
     ],
-    nested_preload=[
-        [
-            (PreloadMethod.SELECTINLOAD, tables.Experiment.experiment_fields),
-            (PreloadMethod.JOINLOAD, tables.ExperimentField.experiment_filters),
-        ],
-    ],
+    nested_preload=[EXPERIMENT_FIELDS_WITH_FILTERS],
 )
 
-# Use this version when you also want contexts for assignment responses.
-experiment_with_contexts_dependency = ExperimentDependency(preload=[tables.Experiment.contexts])
+experiment_with_contexts = _Experiment(preload=[tables.Experiment.contexts])
 
-# Use this version when a full GetExperimentResponse is needed.
-experiment_response_dependency = ExperimentDependency(
+experiment_for_full_response = _Experiment(
     preload=[
         tables.Experiment.webhooks,
         tables.Experiment.contexts,
     ],
-    nested_preload=[
-        [
-            (PreloadMethod.SELECTINLOAD, tables.Experiment.experiment_fields),
-            (PreloadMethod.JOINLOAD, tables.ExperimentField.experiment_filters),
-        ],
-    ],
+    nested_preload=[EXPERIMENT_FIELDS_WITH_FILTERS],
 )
