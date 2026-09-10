@@ -147,7 +147,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     make_schema_from_experiment,
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
-from xngin.apiserver.routers.power_adapters import calculate_icc_and_cv_from_database
+from xngin.apiserver.routers.power_adapters import calculate_cluster_stats_from_database
 from xngin.apiserver.settings import (
     NoDwh,
     ParticipantsDef,
@@ -2284,6 +2284,24 @@ async def power_check(
         # Augment with cluster-level stats if this is a cluster-randomized design.
         if cluster_key is not None:
             request_metrics_by_name = {m.field_name: m for m in design_spec.metrics}
+            # Derive stats from the dwh only for metrics without user-provided ICC, in one query.
+            db_derived_metrics = [
+                metric_stat.field_name
+                for metric_stat in metric_stats
+                if request_metrics_by_name[metric_stat.field_name].icc is None
+            ]
+            db_cluster_stats = (
+                await asyncio.to_thread(
+                    calculate_cluster_stats_from_database,
+                    dwh.session,
+                    sa_table,
+                    cluster_key,
+                    db_derived_metrics,
+                    filters,
+                )
+                if db_derived_metrics
+                else {}
+            )
             for metric_stat in metric_stats:
                 req_metric = request_metrics_by_name[metric_stat.field_name]
                 # If the user provided ICC, avg_cluster_size, and cv, use them instead of deriving from the dwh.
@@ -2292,14 +2310,7 @@ async def power_check(
                     metric_stat.avg_cluster_size = req_metric.avg_cluster_size
                     metric_stat.cv = req_metric.cv
                 else:
-                    cluster_stats = await asyncio.to_thread(
-                        calculate_icc_and_cv_from_database,
-                        dwh.session,
-                        sa_table,
-                        cluster_key,
-                        metric_stat.field_name,
-                        filters,
-                    )
+                    cluster_stats = db_cluster_stats[metric_stat.field_name]
                     metric_stat.icc = cluster_stats["icc"]
                     metric_stat.avg_cluster_size = cluster_stats["avg_cluster_size"]
                     metric_stat.cv = cluster_stats["cv"]

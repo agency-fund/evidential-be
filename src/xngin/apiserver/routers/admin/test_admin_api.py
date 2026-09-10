@@ -4197,10 +4197,10 @@ async def test_power_check_with_db_derived_icc_and_nulls_in_cluster_key(testing_
     """DB-derived ICC excludes rows with a null cluster key, and available_n is consistent.
 
     Uses wide_dwh with cluster_key="age", which has 28 null rows in a 1000-row table.
-    This exercises the calculate_icc_and_cv_from_database path (no manual ICC supplied).
+    This exercises the calculate_cluster_stats_from_database path (no manual ICC supplied).
 
     The invariant being tested: both available_n (from get_stats_on_metrics) and the
-    cluster size stats (from get_cluster_size_stats) should operate on the same 972
+    cluster size stats (from calculate_cluster_stats_from_database) should operate on the same 972
     non-null-age rows, so that the ICC and available_n passed to the power formula are
     consistent.
     """
