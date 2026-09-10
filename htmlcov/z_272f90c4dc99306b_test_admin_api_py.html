@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_272f90c4dc99306b_test_admin_extra_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-09 17:11 +0000
+            created at 2026-09-10 16:48 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -4279,10 +4279,10 @@
     <p class="pln"><span class="n"><a id="t4197" href="#t4197">4197</a></span><span class="t">    <span class="str">&quot;&quot;&quot;DB-derived ICC excludes rows with a null cluster key, and available_n is consistent.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t4198" href="#t4198">4198</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t4199" href="#t4199">4199</a></span><span class="t"><span class="str">    Uses wide_dwh with cluster_key=&quot;age&quot;, which has 28 null rows in a 1000-row table.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t4200" href="#t4200">4200</a></span><span class="t"><span class="str">    This exercises the calculate_icc_and_cv_from_database path (no manual ICC supplied).</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t4200" href="#t4200">4200</a></span><span class="t"><span class="str">    This exercises the calculate_cluster_stats_from_database path (no manual ICC supplied).</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t4201" href="#t4201">4201</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t4202" href="#t4202">4202</a></span><span class="t"><span class="str">    The invariant being tested: both available_n (from get_stats_on_metrics) and the</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t4203" href="#t4203">4203</a></span><span class="t"><span class="str">    cluster size stats (from get_cluster_size_stats) should operate on the same 972</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t4203" href="#t4203">4203</a></span><span class="t"><span class="str">    cluster size stats (from calculate_cluster_stats_from_database) should operate on the same 972</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t4204" href="#t4204">4204</a></span><span class="t"><span class="str">    non-null-age rows, so that the ICC and available_n passed to the power formula are</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t4205" href="#t4205">4205</a></span><span class="t"><span class="str">    consistent.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t4206" href="#t4206">4206</a></span><span class="t"><span class="str">    &quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
@@ -4695,7 +4695,7 @@
             <a class="nav" href="z_272f90c4dc99306b_test_admin_extra_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-09 17:11 +0000
+            created at 2026-09-10 16:48 +0000
         </p>
     </div>
 </footer>
