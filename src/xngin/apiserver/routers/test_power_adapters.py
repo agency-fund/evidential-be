@@ -1,5 +1,7 @@
 """Test our shim between DWH queries and cluster ICC/power stats."""
 
+from collections.abc import Mapping, Sequence
+
 import pandas as pd
 import pytest
 from sqlalchemy import MetaData, Table, create_engine
@@ -7,10 +9,24 @@ from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags
 from xngin.apiserver.conftest import get_test_uri_info
+from xngin.apiserver.dwh.queries import get_cluster_sufficient_stats
 from xngin.apiserver.routers.common_api_types import Filter
 from xngin.apiserver.routers.common_enums import Relation
-from xngin.apiserver.routers.power_adapters import calculate_cluster_stats_from_database
+from xngin.apiserver.routers.power_adapters import calculate_cluster_stats
 from xngin.stats.stats_errors import StatsPowerError
+
+
+def calculate_cluster_stats_from_database(
+    session: Session,
+    sa_table: Table,
+    cluster_column: str,
+    outcome_columns: Sequence[str],
+    filters: list[Filter],
+    outcome_shifts: Mapping[str, float] | None = None,
+) -> dict[str, dict[str, float]]:
+    """Compose the query and the pure computation, as power_check does."""
+    rows = get_cluster_sufficient_stats(session, sa_table, cluster_column, outcome_columns, filters, outcome_shifts)
+    return calculate_cluster_stats(rows, cluster_column, outcome_columns)
 
 
 @pytest.fixture(name="clustered_dwh_session", scope="module")
@@ -166,6 +182,23 @@ def test_batched_matches_individual_queries(clustered_dwh_session, sa_table):
         assert batched[outcome_column]["icc"] == pytest.approx(individual["icc"])
         assert batched[outcome_column]["avg_cluster_size"] == pytest.approx(individual["avg_cluster_size"])
         assert batched[outcome_column]["cv"] == pytest.approx(individual["cv"])
+
+
+def test_outcome_shifts_do_not_change_results(clustered_dwh_session, sa_table):
+    """Shifting outcomes by a constant in SQL leaves ICC and cluster stats unchanged."""
+    kwargs = {
+        "session": clustered_dwh_session,
+        "sa_table": sa_table,
+        "cluster_column": "cluster_moderate",
+        "outcome_columns": ["income", "converted"],
+        "filters": [],
+    }
+    unshifted = calculate_cluster_stats_from_database(**kwargs)
+    shifted = calculate_cluster_stats_from_database(**kwargs, outcome_shifts={"income": 50000.0, "converted": 0.5})
+
+    for outcome_column, stats in unshifted.items():
+        for key, value in stats.items():
+            assert shifted[outcome_column][key] == pytest.approx(value), f"{outcome_column}.{key}"
 
 
 def test_null_outcomes_dropped_per_metric_but_counted_in_cluster_sizes(clustered_dwh_session, wide_dwh_sa_table):
