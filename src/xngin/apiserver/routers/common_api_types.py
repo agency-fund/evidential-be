@@ -32,6 +32,7 @@ from xngin.apiserver.limits import (
     MAX_NUMBER_OF_CONTEXTS,
     MAX_NUMBER_OF_FIELDS,
     MAX_NUMBER_OF_FILTERS,
+    MAX_NUMBER_OF_POWER_CURVE_POINTS,
 )
 from xngin.apiserver.routers.common_enums import (
     ContextType,
@@ -94,18 +95,8 @@ class DesignSpecMetricBase(ApiBaseModel):
         Field(description="Coefficient of variation in cluster sizes (0 = equal sizes)."),
     ] = None
 
-    @model_validator(mode="after")
-    def cluster_fields_check(self) -> Self:
-        """Enforce that cluster fields are either all set or all unset."""
-        cluster_fields = (self.icc, self.avg_cluster_size, self.cv)
-        if any(f is not None for f in cluster_fields) and any(f is None for f in cluster_fields):
-            raise ValueError("icc, avg_cluster_size, and cv must all be set together or all be None")
-        return self
-
-
-class DesignSpecMetric(DesignSpecMetricBase):
-    """Defines a metric to measure in an experiment with its baseline stats."""
-
+    # Baseline stats. On responses (DesignSpecMetric) the server fills these in from the dwh; on
+    # requests (DesignSpecMetricRequest) they may be supplied to reuse stats from a prior response.
     metric_type: Annotated[MetricType | None, Field(description="Inferred from the data warehouse column type.")] = None
     metric_baseline: Annotated[float | None, Field(description="Mean of the tracked metric.")] = None
     metric_stddev: Annotated[
@@ -138,6 +129,18 @@ class DesignSpecMetric(DesignSpecMetricBase):
     ] = None
 
     @model_validator(mode="after")
+    def cluster_fields_check(self) -> Self:
+        """Enforce that cluster fields are either all set or all unset."""
+        cluster_fields = (self.icc, self.avg_cluster_size, self.cv)
+        if any(f is not None for f in cluster_fields) and any(f is None for f in cluster_fields):
+            raise ValueError("icc, avg_cluster_size, and cv must all be set together or all be None")
+        return self
+
+
+class DesignSpecMetric(DesignSpecMetricBase):
+    """Defines a metric to measure in an experiment with its baseline stats."""
+
+    @model_validator(mode="after")
     def stddev_check(self):
         """Enforce that metric_stddev is empty for non-NUMERICs. The frontend handles numerics without a
         stddev (the all-null case)."""
@@ -147,10 +150,12 @@ class DesignSpecMetric(DesignSpecMetricBase):
 
 
 class DesignSpecMetricRequest(DesignSpecMetricBase):
-    """Defines a request to look up baseline stats for a metric to measure in an experiment."""
+    """Defines a request to look up baseline stats for a metric to measure in an experiment.
 
-    # TODO: consider supporting {metric_baseline, metric_stddev, available_n} as inputs when the metric may not exist or
-    # be usable yet in the dwh, so that it it can be used as a general power/sizing calculator.
+    Baseline stats may optionally be supplied (e.g. echoed back from a prior power check's
+    `MetricPowerAnalysis.metric_spec`), in which case the server reuses them instead of
+    re-querying the data warehouse.
+    """
 
     # Override the descriptions from above:
     metric_pct_change: Annotated[
@@ -175,6 +180,41 @@ class DesignSpecMetricRequest(DesignSpecMetricBase):
         if self.metric_pct_change is None and self.metric_target is None:
             raise ValueError("Must set one of metric_pct_change or metric_target")
         return self
+
+    @model_validator(mode="after")
+    def check_baseline_stats(self) -> Self:
+        """Enforce that baseline stats are either all set or all unset, so that a power calculation
+        never mixes supplied stats with dwh-derived ones for the same metric."""
+        stats_fields = (self.metric_type, self.metric_baseline, self.available_nonnull_n, self.available_n)
+        if any(f is not None for f in stats_fields) and any(f is None for f in stats_fields):
+            raise ValueError(
+                "metric_type, metric_baseline, available_nonnull_n, and available_n must all be set "
+                "together or all be None"
+            )
+        if self.metric_stddev is not None and self.metric_type is not MetricType.NUMERIC:
+            raise ValueError("metric_stddev may only be set for NUMERIC metrics")
+        return self
+
+    @property
+    def has_baseline_stats(self) -> bool:
+        """True when this request carries the baseline stats needed to skip the dwh stats query."""
+        return self.metric_baseline is not None
+
+    def to_design_spec_metric(self) -> DesignSpecMetric:
+        """Converts a request carrying baseline stats into the equivalent dwh-derived metric."""
+        return DesignSpecMetric(
+            field_name=self.field_name,
+            metric_pct_change=self.metric_pct_change,
+            metric_target=self.metric_target,
+            icc=self.icc,
+            avg_cluster_size=self.avg_cluster_size,
+            cv=self.cv,
+            metric_type=self.metric_type,
+            metric_baseline=self.metric_baseline,
+            metric_stddev=self.metric_stddev,
+            available_nonnull_n=self.available_nonnull_n,
+            available_n=self.available_n,
+        )
 
 
 class ParticipantProperty(ApiBaseModel):
@@ -600,6 +640,33 @@ class MetricPowerAnalysisMessage(ApiBaseModel):
     high_cluster_variation: bool = False
 
 
+class MdeCurvePoint(ApiBaseModel):
+    """One point of an MDE-vs-sample-size power curve."""
+
+    desired_n: Annotated[
+        int,
+        Field(
+            description=(
+                "Sample size in individual participants used for this point. For cluster-randomized "
+                "designs this is desired_n_clusters times the metric's avg_cluster_size."
+            )
+        ),
+    ]
+    desired_n_clusters: Annotated[
+        int | None,
+        Field(description="The requested number of clusters for this point. None for individual-randomized requests."),
+    ] = None
+    pct_change: Annotated[
+        float | None,
+        Field(
+            description=(
+                "The minimum detectable effect (MDE) at this sample size, as a percent change relative to "
+                "metric_baseline. None when the power calculation fails at this size (e.g. too small to solve)."
+            )
+        ),
+    ] = None
+
+
 class MetricPowerAnalysis(ApiBaseModel):
     """Describes analysis results of a single metric."""
 
@@ -647,6 +714,18 @@ class MetricPowerAnalysis(ApiBaseModel):
                 "confidence and power. Present only when design_spec.desired_n or design_spec.desired_n_clusters "
                 "is set (frequentist design specs). When desired_n_clusters is set, the desired sample size is "
                 "desired_n_clusters times this metric's avg_cluster_size."
+            )
+        ),
+    ] = None
+
+    mde_curve: Annotated[
+        list[MdeCurvePoint] | None,
+        Field(
+            description=(
+                "The MDE for each requested sample size, in the same order as design_spec.desired_ns "
+                "(or desired_ns_clusters, which takes precedence). Present only when one of those is set. "
+                "Each point is computed best-effort: a size where the calculation fails yields a null "
+                "pct_change instead of failing the request."
             )
         ),
     ] = None
@@ -916,6 +995,18 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         ),
     ] = None
 
+    desired_ns: Annotated[
+        list[Annotated[int, Field(ge=1)]] | None,
+        Field(
+            default=None,
+            max_length=MAX_NUMBER_OF_POWER_CURVE_POINTS,
+            description="Optional list of desired individual participant sample sizes. The power check returns "
+            "the minimum detectable effect for each size (MetricPowerAnalysis.mde_curve), letting clients plot "
+            "an MDE-vs-sample-size power curve from a single request. Superseded by desired_ns_clusters when "
+            "both are set. Ignored when creating an experiment.",
+        ),
+    ] = None
+
     # stat parameters
     power: Annotated[
         float,
@@ -1124,6 +1215,19 @@ class PreassignedFrequentistExperimentSpec(BaseFrequentistDesignSpec):
             ),
         ),
     ] = None
+    desired_ns_clusters: Annotated[
+        list[Annotated[int, Field(ge=1)]] | None,
+        Field(
+            default=None,
+            max_length=MAX_NUMBER_OF_POWER_CURVE_POINTS,
+            description=(
+                "Optional list of desired cluster counts. Only valid when cluster_key is set. The power check "
+                "returns the minimum detectable effect for each count (MetricPowerAnalysis.mde_curve), converted "
+                "to a per-metric sample size using each metric's avg_cluster_size; takes precedence over "
+                "desired_ns. Ignored when creating an experiment."
+            ),
+        ),
+    ] = None
 
     @model_validator(mode="after")
     def validate_cluster_randomization(self) -> Self:
@@ -1131,6 +1235,8 @@ class PreassignedFrequentistExperimentSpec(BaseFrequentistDesignSpec):
             raise ValueError("Cluster-randomized frequentist designs cannot also set strata.")
         if self.cluster_key is None and self.desired_n_clusters is not None:
             raise ValueError("desired_n_clusters can only be set when cluster_key is set.")
+        if self.cluster_key is None and self.desired_ns_clusters is not None:
+            raise ValueError("desired_ns_clusters can only be set when cluster_key is set.")
         return self
 
 
