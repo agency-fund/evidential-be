@@ -2290,6 +2290,13 @@ async def power_check(
                 for metric_stat in metric_stats
                 if request_metrics_by_name[metric_stat.field_name].icc is None
             ]
+            # Shifting each metric by its mean keeps the sums of squares in the
+            # sufficient-statistics query numerically stable.
+            outcome_shifts = {
+                metric_stat.field_name: metric_stat.metric_baseline
+                for metric_stat in metric_stats
+                if metric_stat.field_name in db_derived_metrics and metric_stat.metric_baseline is not None
+            }
             db_cluster_stats = (
                 await asyncio.to_thread(
                     calculate_cluster_stats_from_database,
@@ -2298,6 +2305,7 @@ async def power_check(
                     cluster_key,
                     db_derived_metrics,
                     filters,
+                    outcome_shifts,
                 )
                 if db_derived_metrics
                 else {}
