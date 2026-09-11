@@ -1,10 +1,9 @@
 """snapshotter collects snapshots."""
 
-import asyncio
 import os
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import AbstractAsyncContextManager
+from contextlib import AbstractContextManager
 from datetime import timedelta
 from typing import Annotated
 
@@ -26,9 +25,9 @@ sentry.setup()
 app = typer.Typer(help="Collects snapshots and autofail updates as needed.")
 
 
-async def snapshot_acollect(snapshot_interval: int, snapshot_timeout: int, parallelism: int):
+def snapshot_collect(snapshot_interval: int, snapshot_timeout: int, parallelism: int):
     """Collects snapshots within the application database lifespan."""
-    async with database.setup():
+    with database.setup():
         snapshotter.create_pending_snapshots(snapshot_interval)
         with ThreadPoolExecutor(max_workers=parallelism, thread_name_prefix="snapshot") as executor:
             futures = [
@@ -38,16 +37,16 @@ async def snapshot_acollect(snapshot_interval: int, snapshot_timeout: int, paral
                 future.result()
 
 
-async def autofail_acollect(
+def autofail_collect(
     autofail_timeout: float,
     autofail_batch_sleep: float,
     autofail_batch_size: int,
     *,
-    database_setup: Callable[[], AbstractAsyncContextManager[None]] = database.setup,
+    database_setup: Callable[[], AbstractContextManager[None]] = database.setup,
     process_autofails: Callable[[float, float, int], None] = autofail.process_autofails,
 ) -> None:
     """Process eligible autofail updates within a bounded runtime."""
-    async with database_setup():
+    with database_setup():
         process_autofails(autofail_timeout, autofail_batch_sleep, autofail_batch_size)
 
 
@@ -114,9 +113,9 @@ def collect(
     cronjob_monitor_slug = os.environ.get(ENV_CRONJOB_MONITOR_SLUG, "")
     if cronjob_monitor_slug:
         with monitor(monitor_slug=cronjob_monitor_slug):
-            asyncio.run(snapshot_acollect(snapshot_interval, snapshot_timeout, parallelism))
-            asyncio.run(autofail_acollect(autofail_timeout, autofail_batch_sleep, autofail_batch_size))
+            snapshot_collect(snapshot_interval, snapshot_timeout, parallelism)
+            autofail_collect(autofail_timeout, autofail_batch_sleep, autofail_batch_size)
     else:
-        asyncio.run(snapshot_acollect(snapshot_interval, snapshot_timeout, parallelism))
-        asyncio.run(autofail_acollect(autofail_timeout, autofail_batch_sleep, autofail_batch_size))
+        snapshot_collect(snapshot_interval, snapshot_timeout, parallelism)
+        autofail_collect(autofail_timeout, autofail_batch_sleep, autofail_batch_size)
     logger.info("collect() finished successfully.")

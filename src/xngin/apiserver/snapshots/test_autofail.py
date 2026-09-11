@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from contextlib import asynccontextmanager
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
@@ -643,18 +643,18 @@ async def test_autofail_deadline_is_checked_before_the_next_batch(
     assert sum(draw.outcome is not None for draw in draws) == 1
 
 
-async def test_autofail_acollect_forwards_timing_options():
+def test_autofail_collect_forwards_timing_options():
     calls: list[tuple[str, float, float, int] | tuple[str]] = []
 
-    @asynccontextmanager
-    async def fake_database_setup():
+    @contextmanager
+    def fake_database_setup():
         calls.append(("setup",))
         yield
 
     def fake_process_autofails(autofail_timeout: float, batch_sleep: float, batch_size: int) -> None:
         calls.append(("process", autofail_timeout, batch_sleep, batch_size))
 
-    await cli.autofail_acollect(
+    cli.autofail_collect(
         autofail_timeout=42,
         autofail_batch_sleep=1.5,
         autofail_batch_size=123,
