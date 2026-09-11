@@ -1,11 +1,11 @@
 import contextlib
-import time
+import threading
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import select, update
 
-from xngin.apiserver.dwh.dwh_session import SyncDwhSession
+from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwhpull import cli
 from xngin.apiserver.dwhpull import dwhpull as dwhpull_mod
 from xngin.apiserver.dwhpull.dwhpull import (
@@ -14,6 +14,7 @@ from xngin.apiserver.dwhpull.dwhpull import (
     pull_one_experiment,
     select_experiments_to_pull,
 )
+from xngin.apiserver.exceptions_common import DwhTimeoutError
 from xngin.apiserver.routers.common_api_types import ExperimentsType, LikelihoodTypes, PriorTypes
 from xngin.apiserver.routers.common_enums import ExperimentState
 from xngin.apiserver.routers.experiments.experiments_common import (
@@ -184,24 +185,53 @@ async def test_pull_all_experiments_abandons_an_experiment_that_exceeds_its_time
 ):
     """A warehouse that hangs must not hold the transaction open indefinitely.
 
-    Holding an application-database transaction across the warehouse read is only safe because
-    pull_all_experiments bounds each experiment. Uses a tiny budget against a stalled read, so the
-    pull is abandoned immediately rather than waiting. The stalled read still holds its row locks
-    until its worker finishes, so it sleeps only long enough to outlast the budget.
+    Stalls the read below SyncDwhSession so the real deadline plumbing runs, rather than replacing
+    the method that enforces it.
     """
     experiment = await make_mab_dwh_experiment(xngin_session, testing_datasource.ds, target_field_name="is_onboarded")
     create_assignment_for_participant(xngin_session, experiment, "2", None, random_state=67)
+    release = threading.Event()
 
-    def never_returns(self, table_name):
-        time.sleep(1)
+    def stall(*_args, **_kwargs):
+        release.wait()
 
-    mocker.patch.object(SyncDwhSession, "inspect_table", never_returns)
-
-    # Reported as a failure. One warehouse does not stop the other experiments.
-    pull_all_experiments(pull_timeout=0.05)
+    mocker.patch.object(DwhSession, "_inspect_table_blocking", stall)
+    try:
+        # Reported as a failure. One warehouse does not stop the other experiments.
+        pull_all_experiments(pull_timeout=0.05)
+    finally:
+        release.set()
 
     # The transaction rolled back, so the draw is untouched and the next run retries it.
     assert await read_outcomes(xngin_session, experiment.id) == {"2": None}
+
+
+async def test_a_timed_out_pull_releases_its_draw_locks(xngin_session, testing_datasource, mocker):
+    """The deadline raises on the thread holding the transaction, so the locks come off with it.
+
+    Previously the timeout fired in pull_all_experiments while the pull itself carried on in an
+    abandoned thread, keeping FOR NO KEY UPDATE on the draws -- and its transaction -- for however
+    long the warehouse took. A retry could not proceed until then.
+    """
+    experiment = await make_mab_dwh_experiment(xngin_session, testing_datasource.ds, target_field_name="is_onboarded")
+    create_assignment_for_participant(xngin_session, experiment, "2", None, random_state=67)
+    release = threading.Event()
+
+    def stall(*_args, **_kwargs):
+        release.wait()
+
+    stalled = mocker.patch.object(DwhSession, "_inspect_table_blocking", stall)
+    try:
+        with pytest.raises(DwhTimeoutError):
+            pull_one_experiment(experiment.id, dwh_timeout=0.05)
+    finally:
+        release.set()
+    mocker.stop(stalled)
+
+    # The locks are already gone, so an immediate retry pulls rather than blocking on them.
+    report = pull_one_experiment(experiment.id)
+    assert (report.ingested, report.invalid, report.pending) == (1, 0, 0)
+    assert await read_outcomes(xngin_session, experiment.id) == {"2": 1.0}
 
 
 async def test_pull_one_experiment_applies_all_outcomes_or_none(xngin_session, testing_datasource, mocker):
