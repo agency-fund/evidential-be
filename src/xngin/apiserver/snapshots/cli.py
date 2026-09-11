@@ -12,14 +12,12 @@ from loguru import logger
 from sentry_sdk.crons import monitor
 
 from xngin.apiserver import customlogging, database
+from xngin.apiserver.flags import NPROC
 from xngin.apiserver.snapshots import autofail, snapshotter
 from xngin.ops import sentry
 from xngin.xsecrets import secretservice
 
 ENV_CRONJOB_MONITOR_SLUG = "CRONJOB_MONITOR_SLUG"
-
-# Use os.process_cpu_count() whenever we can move to python 3.13
-NPROC = max(4, len(os.sched_getaffinity(0)) // 4) if hasattr(os, "sched_getaffinity") else os.cpu_count() or 4
 
 customlogging.setup()
 sentry.setup()
