@@ -3,7 +3,7 @@ This module defines the public API for clients to integrate with experiments.
 (See admin_api.py for Evidential UI-facing endpoints.)
 """
 
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import Generator, Iterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import Annotated, Any, cast
@@ -20,13 +20,11 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 from loguru import logger
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from xngin.apiserver import constants
 from xngin.apiserver.dependencies import (
     random_seed_dependency,
-    xngin_db_session,
     xngin_sync_db_session,
 )
 from xngin.apiserver.exceptions_common import LateValidationError
@@ -106,9 +104,9 @@ def list_experiments(
     )
 
 
-async def _stream_experiment_assignments_response(
-    experiment: tables.Experiment, assignments: AsyncGenerator[AssignmentTypedDict]
-) -> AsyncIterator[bytes]:
+def _stream_experiment_assignments_response(
+    experiment: tables.Experiment, assignments: Generator[AssignmentTypedDict]
+) -> Iterator[bytes]:
     """Efficiently streams Assignments to the client."""
     balance_check = ExperimentStorageConverter(experiment).get_balance_check()
     yield (
@@ -123,7 +121,7 @@ async def _stream_experiment_assignments_response(
     buffered = 0
     needs_comma = False
     batch: list[bytes] = []
-    async for assignment in assignments:
+    for assignment in assignments:
         if needs_comma:
             batch.append(b",")
         batch.append(orjson.dumps(assignment))
@@ -153,8 +151,8 @@ def get_experiment(
     "/experiments/{experiment_id}/assignments",
     summary="List an experiment's assignments.",
 )
-async def get_experiment_assignments(
-    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
+def get_experiment_assignments(
+    xngin_session: Annotated[Session, Depends(xngin_sync_db_session)],
     experiment: Annotated[tables.Experiment, Depends(edeps.experiment)],
 ) -> GetExperimentAssignmentsResponse:
     assignments = get_experiment_assignments_impl(xngin_session, experiment)
