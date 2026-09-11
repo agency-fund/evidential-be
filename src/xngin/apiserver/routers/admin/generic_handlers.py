@@ -1,20 +1,19 @@
-import inspect
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 
 import sqlalchemy
 from fastapi import HTTPException, Response
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 from starlette import status
 
 GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-async def handle_delete[T](
-    session: AsyncSession,
+def handle_delete[T](
+    session: Session,
     allow_missing: bool,
     is_authorized: sqlalchemy.Select,
-    get_resource_or_none: sqlalchemy.Select | Callable[[AsyncSession], Awaitable[T]],
-    deleter: Callable[[AsyncSession, T], Awaitable[None]] | Callable[[AsyncSession, T], None] | None = None,
+    get_resource_or_none: sqlalchemy.Select | Callable[[Session], T | None],
+    deleter: Callable[[Session, T], None] | None = None,
 ):
     """Generic delete request handler.
 
@@ -36,25 +35,22 @@ async def handle_delete[T](
         will be passed the return value of get_resource_or_none.
     :return:
     """
-    allowed = (await session.execute(is_authorized)).scalar_one_or_none() is not None
+    allowed = session.execute(is_authorized).scalar_one_or_none() is not None
     if not allowed:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You are not authorized for this resource.",
         )
     if isinstance(get_resource_or_none, sqlalchemy.Select):
-        resource = (await session.execute(get_resource_or_none)).scalar_one_or_none()
+        resource = session.execute(get_resource_or_none).scalar_one_or_none()
     else:
-        resource = await get_resource_or_none(session)
+        resource = get_resource_or_none(session)
     if resource is None:
         if allow_missing:
             return GENERIC_SUCCESS
         raise HTTPException(404)
     if deleter:
-        # If the deleter does not perform I/O, it does not need to be awaited.
-        result = deleter(session, resource)
-        if inspect.isawaitable(result):
-            await result
+        deleter(session, resource)
     else:
-        await session.delete(resource)
+        session.delete(resource)
     return GENERIC_SUCCESS
