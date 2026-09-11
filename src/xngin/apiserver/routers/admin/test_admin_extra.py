@@ -79,7 +79,7 @@ _PERSISTED_WEBHOOK_TOKEN = "sample-token"
     ],
     ids=lambda d: type(d),
 )
-async def test_datasources_hide_credentials(
+def test_datasources_hide_credentials(
     dsn: PostgresDsn | RedshiftDsn | BqDsn,
     xngin_session: Session,
     aclient: AdminAPIClient,
@@ -159,7 +159,7 @@ async def test_datasources_hide_credentials(
             raise TypeError("unexpected dwh type")
 
 
-async def _insert_webhook_sent_event(
+def _insert_webhook_sent_event(
     xngin_session: Session,
     organization_id: str,
     *,
@@ -183,14 +183,14 @@ async def _insert_webhook_sent_event(
 @pytest.mark.parametrize(
     "webhook_token_header", [constants.HEADER_WEBHOOK_TOKEN, constants.HEADER_WEBHOOK_TOKEN.lower()]
 )
-async def test_list_organization_events_redacts_webhook_token(
+def test_list_organization_events_redacts_webhook_token(
     xngin_session: Session,
     aclient: AdminAPIClient,
     webhook_token_header: str,
 ):
     """The webhook.sent event details surfaced by the API mask the webhook token header."""
     org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="resend-redact")).data.id
-    event_id, _ = await _insert_webhook_sent_event(xngin_session, org_id, webhook_token_header=webhook_token_header)
+    event_id, _ = _insert_webhook_sent_event(xngin_session, org_id, webhook_token_header=webhook_token_header)
 
     events = aclient.list_organization_events(organization_id=org_id).data.items
     event = next(ev for ev in events if ev.id == event_id)
@@ -199,12 +199,12 @@ async def test_list_organization_events_redacts_webhook_token(
     assert event.status_icon == "failure"
 
 
-async def test_resend_organization_event_enqueues_task(
+def test_resend_organization_event_enqueues_task(
     xngin_session: Session,
     aclient: AdminAPIClient,
 ):
     org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="resend-happy")).data.id
-    event_id, expected_payload = await _insert_webhook_sent_event(xngin_session, org_id)
+    event_id, expected_payload = _insert_webhook_sent_event(xngin_session, org_id)
 
     aclient.resend_organization_event(organization_id=org_id, event_id=event_id)
 
@@ -215,7 +215,7 @@ async def test_resend_organization_event_enqueues_task(
     assert tasks[0].payload["headers"][constants.HEADER_WEBHOOK_TOKEN] == _PERSISTED_WEBHOOK_TOKEN
 
 
-async def test_first_user_default_experiment_templates_created(xngin_session: Session, aclient_unpriv: AdminAPIClient):
+def test_first_user_default_experiment_templates_created(xngin_session: Session, aclient_unpriv: AdminAPIClient):
     delete_seeded_users(xngin_session)
 
     organization = aclient_unpriv.list_organizations().data.items[0]
