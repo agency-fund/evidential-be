@@ -20,7 +20,7 @@ def _create_organization(aclient: AdminAPIClient, name: str) -> str:
     return aclient.create_organizations(body=CreateOrganizationRequest(name=name)).data.id
 
 
-async def test_webhook_outbound_handler_records_dns_failure_event(
+def test_webhook_outbound_handler_records_dns_failure_event(
     aclient: AdminAPIClient,
     xngin_session: Session,
     tq_dsn: str,
@@ -38,7 +38,7 @@ async def test_webhook_outbound_handler_records_dns_failure_event(
                 "organization_id": org_id,
             },
         )
-        dead_task = await wait_for_task_status(task.id, "dead")
+        dead_task = wait_for_task_status(task.id, "dead")
 
     assert dead_task.message == "DNS issue with host: Detected sentinel value of invalid IP used for testing purposes."
 
@@ -52,7 +52,7 @@ async def test_webhook_outbound_handler_records_dns_failure_event(
     assert "Failed to resolve hostname" in event.details["response"]
 
 
-async def test_webhook_outbound_handler_records_success_event(
+def test_webhook_outbound_handler_records_success_event(
     aclient: AdminAPIClient,
     xngin_session: Session,
     tq_dsn: str,
@@ -71,7 +71,7 @@ async def test_webhook_outbound_handler_records_success_event(
                 "organization_id": org_id,
             },
         )
-        success_task = await wait_for_task_status(task.id, "success")
+        success_task = wait_for_task_status(task.id, "success")
 
     assert success_task.message is None
 
@@ -85,7 +85,7 @@ async def test_webhook_outbound_handler_records_success_event(
     assert event.details["response"] == "200"
 
 
-async def test_webhook_outbound_handler_preserves_url_credentials(
+def test_webhook_outbound_handler_preserves_url_credentials(
     aclient: AdminAPIClient,
     xngin_session: Session,
     tq_dsn: str,
@@ -112,7 +112,7 @@ async def test_webhook_outbound_handler_preserves_url_credentials(
                 "organization_id": org_id,
             },
         )
-        success_task = await wait_for_task_status(task.id, "success")
+        success_task = wait_for_task_status(task.id, "success")
 
     assert success_task.message is None
     assert len(captured_requests) == 1
@@ -126,7 +126,7 @@ async def test_webhook_outbound_handler_preserves_url_credentials(
     assert request.headers["authorization"] == "Basic aW5mcmE6cGFzc3dvcmQ="
 
 
-async def test_turn_journeys_changed_handler_updates_journeys_and_records_success_event(
+def test_turn_journeys_changed_handler_updates_journeys_and_records_success_event(
     aclient: AdminAPIClient,
     iaclient: AdminIntegrationsAPIClient,
     xngin_session: Session,
@@ -163,7 +163,7 @@ async def test_turn_journeys_changed_handler_updates_journeys_and_records_succes
             task_type=TURN_JOURNEYS_CHANGED_TASK_TYPE,
             payload={"organization_id": org_id, "webhook_id": response.id, "webhook_auth_token": response.auth_token},
         )
-        success_task = await wait_for_task_status(task.id, "success")
+        success_task = wait_for_task_status(task.id, "success")
 
     assert success_task.message is None
 
@@ -175,7 +175,7 @@ async def test_turn_journeys_changed_handler_updates_journeys_and_records_succes
     assert event.details["success"] is True
 
 
-async def test_turn_journeys_changed_handler_records_failure_event_when_turn_api_fails(
+def test_turn_journeys_changed_handler_records_failure_event_when_turn_api_fails(
     aclient: AdminAPIClient,
     iaclient: AdminIntegrationsAPIClient,
     xngin_session: Session,
@@ -208,7 +208,7 @@ async def test_turn_journeys_changed_handler_records_failure_event_when_turn_api
             task_type=TURN_JOURNEYS_CHANGED_TASK_TYPE,
             payload={"organization_id": org_id, "webhook_id": response.id, "webhook_auth_token": response.auth_token},
         )
-        dead_task = await wait_for_task_status(task.id, "dead")
+        dead_task = wait_for_task_status(task.id, "dead")
 
     assert dead_task.message is not None
 
