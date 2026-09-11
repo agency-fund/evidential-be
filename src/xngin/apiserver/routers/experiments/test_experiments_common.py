@@ -736,8 +736,8 @@ async def test_create_preassigned_experiment_impl_cluster_assignment(xngin_sessi
     assert design_spec.desired_n is not None
     assert design_spec.cluster_key is not None
 
-    async with DwhSession(testing_datasource.ds.get_config().dwh) as dwh:
-        participant_result = await dwh.get_participants(
+    with DwhSession.open(testing_datasource.ds.get_config().dwh) as dwh:
+        participant_result = dwh.get_participants(
             design_spec.table_name,
             select_columns={design_spec.primary_key, design_spec.cluster_key, "test_score"},
             filters=design_spec.filters,
@@ -912,8 +912,8 @@ async def _create_clustered_preassigned_experiment(
     select_columns = {design_spec.primary_key, metric_name}
     if cluster_key is not None:
         select_columns.add(cluster_key)
-    async with DwhSession(testing_datasource.ds.get_config().dwh) as dwh:
-        participant_result = await dwh.get_participants(
+    with DwhSession.open(testing_datasource.ds.get_config().dwh) as dwh:
+        participant_result = dwh.get_participants(
             design_spec.table_name,
             select_columns=select_columns,
             filters=design_spec.filters,

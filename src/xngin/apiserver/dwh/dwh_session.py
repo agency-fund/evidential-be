@@ -1,6 +1,5 @@
-"""Async context manager for data warehouse connections."""
+"""Context manager for data warehouse connections."""
 
-import asyncio
 from collections.abc import Callable, Iterator
 from concurrent.futures import Future
 from contextlib import contextmanager
@@ -79,88 +78,130 @@ class CannotFindTableError(Exception):
 
 
 class DwhSession:
-    """Async context manager for data warehouse database connections.
+    """Deadline-bounded context manager for customer data warehouse connections.
 
-    This class defines most of the interactions we have with customer data warehouses. The underlying connections to
-    the DWH are using blocking SQLAlchemy drivers, and this class wraps them in threads and adapts them to async so that
-    we can call them without blocking the request thread.
+    This class defines most of the interactions we have with customer data warehouses. Their drivers
+    are blocking and not all of them have async equivalents, so every interaction runs on one helper
+    thread this object owns, and all of them share one deadline that starts when the block is
+    entered:
 
-    Do not share a DwhSession between concurrent async tasks. It must only be used in one task at a time otherwise
-    we will be violating SQLAlchemy's rules about how to use Sessions.
+        with DwhSession.open(dwh_config, timeout=30) as dwh:
+            sa_table = dwh.inspect_table("participants")
+            outcomes = dwh.run(get_participant_metrics, sa_table, metrics, "uid", ids)
 
-    If you want to run queries against the dwh that are not implemented in this method, wrap them in asyncio.to_thread
-    to avoid blocking the request thread. E.g.:
+    Each DwhSession manages a single thread, and runs all the DWH queries on that thread. This allows
+    us to detect that the DWH interactions are not responding within a timeout, and raise an exception when
+    the timeout is reached.
 
-        def my_custom_dwh_method(session: Session):
-           # r = session.execute(...)
-           return r
+    A DWH that stops responding raises DwhTimeoutError rather than hanging the caller. The
+    query itself cannot be cancelled: it keeps running on the helper thread until it finishes.
 
-        with DwhSession(dwh_session) as dwh:
-            results = await asyncio.to_thread(
-                my_custom_dwh_method,
-                dwh.session,
+    SQLAlchemy's threading model requires that we access each Session from only one thread, so we open
+    the connection and close the DWH Session on that thread. Do not pass SQLALchemy objects such as Session or
+    ORM instances that are from the application database because that will violate SQLAlchemy's thread safety
+    commitments.
+
+    Each warehouse interaction is implemented as a pair: a private _x_blocking() running the query itself, and a
+    public x() that dispatches it onto the helper thread.
     """
 
-    def __init__(self, dwh_config: Dwh):
-        """Initialize with data warehouse configuration.
+    # Set by _connect_blocking, which open() runs before handing the object to anyone.
+    _engine: Engine
+    _session: Session
+
+    @classmethod
+    @contextmanager
+    def open(cls, dwh_config: Dwh, *, timeout: float | None = None) -> Iterator[Self]:
+        """Connect to a warehouse for the duration of the block.
 
         Args:
             dwh_config: The data warehouse configuration (Dsn or BqDsn)
+            timeout: seconds this block may spend interacting with the warehouse, in total.
+                Defaults to flags.DWH_TIMEOUT_SECS, read here rather than bound as a default so
+                that the deployment-wide budget stays adjustable.
         """
-        self.dwh_config = dwh_config
-        self._engine: Engine | None = None
-        self._session: Session | None = None
+        seconds = flags.DWH_TIMEOUT_SECS if timeout is None else timeout
+        with timeout_thread(seconds=seconds, name="dwh") as deadline:
+            dwh = cls(dwh_config, deadline, seconds)
+            try:
+                # Bounds connecting too: _create_engine resolves DNS synchronously. Keeping it
+                # inside the try ensures that a timed-out connection is closed once it finishes.
+                dwh._on_worker("connecting", dwh._connect_blocking)
+                yield dwh
+            finally:
+                dwh._close()
 
-    def _enter_blocking(self):
+    def __init__(self, dwh_config: Dwh, deadline: ThreadTimeout, timeout_secs: float):
+        """Not for direct use; open() owns the helper thread and the connection this needs."""
+        self._dwh_config = dwh_config
+        self._timeout = deadline
+        self._timeout_secs = timeout_secs
+
+    def _connect_blocking(self) -> None:
         self._engine = self._create_engine()
         self._session = Session(self._engine)
 
-    async def __aenter__(self) -> Self:
-        """Enter the context manager and create database connections."""
-        await asyncio.to_thread(self._enter_blocking)
-        return self
+    def _close_blocking(self) -> None:
+        session = getattr(self, "_session", None)
+        try:
+            if session is not None:
+                session.close()
+        finally:
+            engine = getattr(self, "_engine", None)
+            if engine is not None:
+                engine.dispose()
 
-    def _exit_blocking(self):
-        if self._session:
-            self._session.close()
-        if self._engine:
-            self._engine.dispose()
+    @staticmethod
+    def _log_close_failure(future: Future[None]) -> None:
+        try:
+            future.result()
+        except Exception:
+            logger.exception("Failed to close the data warehouse connection; abandoning it.")
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Exit the context manager and clean up database connections."""
-        await asyncio.to_thread(self._exit_blocking)
+    def _close(self) -> None:
+        """Queue closing the warehouse connection without waiting for it.
 
-    @property
-    def session(self) -> Session:
-        """Get the synchronous SQLAlchemy session.
-
-        The returned Session is synchronous. When the returned session is used on the API server, take care to wrap it
-        in a thread so that it doesn't block FastAPI's request thread.
+        After a timeout the helper is still inside the call we gave up on, so the close is queued
+        behind it rather than run here. Clean exits use the same path so warehouse teardown never
+        holds up the caller. Failures are logged by the completion callback, but otherwise ignored,
+        because there is nothing we can do about them here anyway.
         """
-        if self._session is None:
-            raise RuntimeError("DwhSession not entered - use 'async with DwhSession(...) as dwh:'")
-        return self._session
+        self._timeout.submit(self._close_blocking).add_done_callback(self._log_close_failure)
 
-    def _safe_engine(self) -> Engine:
-        """Get the type-checked synchronous SQLAlchemy engine."""
-        if self._engine is None:
-            raise RuntimeError("DwhSession not entered - use 'async with DwhSession(...) as dwh:'")
-        return self._engine
+    def _on_worker[T, **P](self, label: str, fn: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs) -> T:
+        """Run one warehouse interaction on the helper thread, under this block's deadline."""
+        try:
+            return self._timeout.run(fn, *args, **kwargs)
+        except TimeoutError as exc:
+            raise DwhTimeoutError(f"The data warehouse did not finish {label} within {self._timeout_secs:g}s.") from exc
+
+    def run[T, **P](self, fn: Callable[Concatenate[Session, P], T], /, *args: P.args, **kwargs: P.kwargs) -> T:
+        """Call fn(warehouse_session, *args, **kwargs) under this block's deadline.
+
+        For queries that live outside this class because they are substantial enough to deserve
+        their own modules. fn runs on the helper thread and must touch nothing but the Session it is
+        handed: an application-database Session, or an ORM object belonging to the caller, would end
+        up in use from two threads at once.
+
+        The Session is never returned to callers, only passed to fn, so that no one can hold it
+        past the deadline or use it off the helper thread.
+        """
+        return self._on_worker(getattr(fn, "__name__", "a query"), fn, self._session, *args, **kwargs)
 
     def _inspect_table_blocking(self, table_name: str, *, use_sa_autoload: bool | None = None) -> sqlalchemy.Table:
         if use_sa_autoload is None:
-            use_sa_autoload = self.dwh_config.supports_sa_autoload()
+            use_sa_autoload = self._dwh_config.supports_sa_autoload()
         metadata = sqlalchemy.MetaData()
         try:
             if use_sa_autoload:
-                return sqlalchemy.Table(table_name, metadata, autoload_with=self._safe_engine(), quote=False)
+                return sqlalchemy.Table(table_name, metadata, autoload_with=self._engine, quote=False)
             # This method of introspection should only be used if the db dialect doesn't support Sqlalchemy2 reflection.
-            return self._inspect_table_from_cursor_blocking(self._safe_engine(), table_name)
+            return self._inspect_table_from_cursor_blocking(self._engine, table_name)
         except sqlalchemy.exc.ProgrammingError:
             logger.exception("Failed to create a Table! use_sa_autoload: {}", use_sa_autoload)
             raise
         except NoSuchTableError as nste:
-            metadata.reflect(self._safe_engine())
+            metadata.reflect(self._engine)
             existing_tables = metadata.tables.keys()
             raise CannotFindTableError(table_name, existing_tables) from nste
 
@@ -226,7 +267,7 @@ class DwhSession:
             existing_tables = metadata.tables.keys()
             raise CannotFindTableError(table_name, existing_tables) from nste
 
-    async def inspect_table(self, table_name: str, use_sa_autoload: bool | None = None) -> sqlalchemy.Table:
+    def inspect_table(self, table_name: str, use_sa_autoload: bool | None = None) -> sqlalchemy.Table:
         """Inspect table structure using a variety of backend-specific workarounds.
 
         The only fields guaranteed to be set on the the returned Table.columns field are
@@ -239,7 +280,8 @@ class DwhSession:
         Returns:
             SQLAlchemy Table object
         """
-        return await asyncio.to_thread(
+        return self._on_worker(
+            "inspecting a table",
             self._inspect_table_blocking,
             table_name,
             use_sa_autoload=use_sa_autoload,
@@ -252,7 +294,7 @@ class DwhSession:
         db_schema = generate_field_descriptors(sa_table, unique_id_field)
         return InspectTableWithDescriptorsResult(sa_table=sa_table, db_schema=db_schema)
 
-    async def inspect_table_with_descriptors(
+    def inspect_table_with_descriptors(
         self, table_name: str, unique_id_field: str, use_sa_autoload: bool | None = None
     ) -> InspectTableWithDescriptorsResult:
         """Convenience method combining table inspection and field descriptor generation.
@@ -265,7 +307,8 @@ class DwhSession:
         Returns:
             InspectTableWithDescriptorsResult containing both the SQLAlchemy Table and field descriptors
         """
-        return await asyncio.to_thread(
+        return self._on_worker(
+            "inspecting a table",
             self._inspect_table_with_descriptors_blocking,
             table_name,
             unique_id_field,
@@ -287,7 +330,7 @@ class DwhSession:
         """
         sa_table = self._inspect_table_blocking(table_name, use_sa_autoload=use_sa_autoload)
         sqla_filters = query_constructors.create_query_filters(sa_table, filters)
-        participants = self.session.execute(compose_query(sa_table, sqla_filters)).all()
+        participants = self._session.execute(compose_query(sa_table, sqla_filters)).all()
         return GetParticipantsResult(sa_table=sa_table, participants=list(participants))
 
     def _get_participants_blocking(
@@ -327,7 +370,7 @@ class DwhSession:
             use_sa_autoload,
         )
 
-    async def get_participants(
+    def get_participants(
         self,
         table_name: str,
         *,
@@ -350,7 +393,8 @@ class DwhSession:
         Returns:
             GetParticipantsResult containing both the SQLAlchemy table and participant query results
         """
-        return await asyncio.to_thread(
+        return self._on_worker(
+            "reading participants",
             self._get_participants_blocking,
             table_name,
             select_columns,
@@ -359,7 +403,7 @@ class DwhSession:
             use_sa_autoload,
         )
 
-    async def get_clusters_of_participants(
+    def get_clusters_of_participants(
         self,
         table_name: str,
         *,
@@ -387,7 +431,8 @@ class DwhSession:
         Returns:
             GetParticipantsResult containing both the SQLAlchemy table and participant query results
         """
-        return await asyncio.to_thread(
+        return self._on_worker(
+            "sampling clusters",
             self._get_clusters_blocking,
             table_name,
             select_columns,
@@ -400,16 +445,16 @@ class DwhSession:
     def _list_tables_blocking(self) -> list[str]:
         try:
             # Hack for redshift's lack of reflection support.
-            if isinstance(self.dwh_config, Dsn) and self.dwh_config.is_redshift():
+            if isinstance(self._dwh_config, Dsn) and self._dwh_config.is_redshift():
                 query = text(
                     "SELECT table_name FROM information_schema.tables "
                     "WHERE table_schema = ANY(current_schemas(false)) "
                     "AND table_type IN ('BASE TABLE', 'VIEW') "
                     "ORDER BY table_name"
                 )
-                result = self.session.execute(query)
+                result = self._session.execute(query)
                 return list(result.scalars().all())
-            inspected = sqlalchemy.inspect(self._safe_engine())
+            inspected = sqlalchemy.inspect(self._engine)
 
             if not isinstance(inspected, Inspector):
                 raise TypeError(f"Unexpected type of inspector: {type(inspected)}")
@@ -423,7 +468,7 @@ class DwhSession:
             # Google returns a 404 when authentication succeeds but when the specified datasource does not exist.
             raise DwhDatabaseDoesNotExistError(str(exc)) from exc
 
-    async def list_tables(self) -> list[str]:
+    def list_tables(self) -> list[str]:
         """Get a list of table names from the data warehouse.
 
         Returns:
@@ -432,12 +477,12 @@ class DwhSession:
         Raises:
             DwhDatabaseDoesNotExistError: When the target database/dataset does not exist
         """
-        return await asyncio.to_thread(self._list_tables_blocking)
+        return self._on_worker("listing tables", self._list_tables_blocking)
 
     def _connectivity_check_blocking(self) -> None:
         """Runs a minimal query to validate database connectivity and credentials."""
         try:
-            self.session.execute(text("SELECT 1"))
+            self._session.execute(text("SELECT 1"))
         except OperationalError as exc:
             if _is_postgres_database_not_found_error(exc):
                 raise DwhDatabaseDoesNotExistError(str(exc)) from exc
@@ -445,13 +490,13 @@ class DwhSession:
         except google.api_core.exceptions.NotFound as exc:
             raise DwhDatabaseDoesNotExistError(str(exc)) from exc
 
-    async def connectivity_check(self) -> None:
+    def connectivity_check(self) -> None:
         """Validate that the configured warehouse is reachable and credentials are valid."""
-        await asyncio.to_thread(self._connectivity_check_blocking)
+        self._on_worker("a connectivity check", self._connectivity_check_blocking)
 
     def _create_engine(self) -> Engine:
         """Create a SQLAlchemy Engine for the customer database."""
-        url = self.dwh_config.to_sqlalchemy_url()
+        url = self._dwh_config.to_sqlalchemy_url()
         if url.host is None:
             # This should never happen, but check just in case.
             raise DwhDatabaseDoesNotExistError(f"No host found in URL: {url}")
@@ -484,8 +529,8 @@ class DwhSession:
     def _extra_engine_setup(self, engine: Engine):
         """Do any extra configuration if needed before a connection is made."""
         # Handle search_path for PostgreSQL & Redshift
-        if isinstance(self.dwh_config, Dsn) and self.dwh_config.search_path:
-            search_path_sql_arg = self.dwh_config.search_path
+        if isinstance(self._dwh_config, Dsn) and self._dwh_config.search_path:
+            search_path_sql_arg = self._dwh_config.search_path
 
             @event.listens_for(engine, "connect", insert=True)
             def set_search_path(dbapi_connection: DBAPIConnection, _connection_record):
@@ -504,163 +549,3 @@ class DwhSession:
                     dbapi_connection.autocommit = existing_autocommit
 
         dwh_utils.extra_engine_setup(engine)
-
-
-class SyncDwhSession:
-    """Deadline-bounded synchronous interface to a customer data warehouse.
-
-    This compatibility class lets synchronous callers migrate while the old async DwhSession still
-    serves the remaining call sites. Every warehouse interaction in a block runs on one helper
-    thread and shares one deadline.
-    """
-
-    @classmethod
-    @contextmanager
-    def open(cls, dwh_config: Dwh, *, timeout: float | None = None) -> Iterator[Self]:
-        """Connect to a warehouse for the duration of the block."""
-        seconds = flags.DWH_TIMEOUT_SECS if timeout is None else timeout
-        with timeout_thread(seconds=seconds, name="dwh") as deadline:
-            dwh = cls(dwh_config, deadline, seconds)
-            try:
-                # Keep connecting inside the try so a timeout still queues cleanup behind it.
-                dwh._on_worker("connecting", dwh._connect_blocking)
-                yield dwh
-            finally:
-                dwh._close()
-
-    def __init__(self, dwh_config: Dwh, deadline: ThreadTimeout, timeout_secs: float):
-        self._dwh = DwhSession(dwh_config)
-        self._timeout = deadline
-        self._timeout_secs = timeout_secs
-
-    def _connect_blocking(self) -> None:
-        self._dwh._enter_blocking()
-
-    def _close_blocking(self) -> None:
-        self._dwh._exit_blocking()
-
-    @staticmethod
-    def _log_close_failure(future: Future[None]) -> None:
-        try:
-            future.result()
-        except Exception:
-            logger.exception("Failed to close the data warehouse connection; abandoning it.")
-
-    def _close(self) -> None:
-        """Queue teardown without waiting, keeping the warehouse Session on its helper thread."""
-        self._timeout.submit(self._close_blocking).add_done_callback(self._log_close_failure)
-
-    def _on_worker[T, **P](self, label: str, fn: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs) -> T:
-        try:
-            return self._timeout.run(fn, *args, **kwargs)
-        except TimeoutError as exc:
-            raise DwhTimeoutError(f"The data warehouse did not finish {label} within {self._timeout_secs:g}s.") from exc
-
-    def run[T, **P](self, fn: Callable[Concatenate[Session, P], T], /, *args: P.args, **kwargs: P.kwargs) -> T:
-        """Call fn(warehouse_session, *args, **kwargs) under this block's deadline."""
-        return self._on_worker(getattr(fn, "__name__", "a query"), fn, self._dwh.session, *args, **kwargs)
-
-    def _inspect_table_blocking(self, table_name: str, *, use_sa_autoload: bool | None = None) -> sqlalchemy.Table:
-        return self._dwh._inspect_table_blocking(table_name, use_sa_autoload=use_sa_autoload)
-
-    def inspect_table(self, table_name: str, use_sa_autoload: bool | None = None) -> sqlalchemy.Table:
-        """Inspect table structure using a variety of backend-specific workarounds."""
-        return self._on_worker(
-            "inspecting a table", self._inspect_table_blocking, table_name, use_sa_autoload=use_sa_autoload
-        )
-
-    def _inspect_table_with_descriptors_blocking(
-        self, table_name: str, unique_id_field: str, use_sa_autoload: bool | None = None
-    ) -> InspectTableWithDescriptorsResult:
-        return self._dwh._inspect_table_with_descriptors_blocking(table_name, unique_id_field, use_sa_autoload)
-
-    def inspect_table_with_descriptors(
-        self, table_name: str, unique_id_field: str, use_sa_autoload: bool | None = None
-    ) -> InspectTableWithDescriptorsResult:
-        """Inspect a table and generate descriptors."""
-        return self._on_worker(
-            "inspecting a table",
-            self._inspect_table_with_descriptors_blocking,
-            table_name,
-            unique_id_field,
-            use_sa_autoload,
-        )
-
-    def _get_participants_blocking(
-        self,
-        table_name: str,
-        select_columns: set[str],
-        filters: list[Filter],
-        n: int,
-        use_sa_autoload: bool | None = None,
-    ) -> GetParticipantsResult:
-        return self._dwh._get_participants_blocking(table_name, select_columns, filters, n, use_sa_autoload)
-
-    def get_participants(
-        self,
-        table_name: str,
-        *,
-        select_columns: set[str],
-        filters: list[Filter],
-        n: int,
-        use_sa_autoload: bool | None = None,
-    ) -> GetParticipantsResult:
-        """Get participants under this block's deadline."""
-        return self._on_worker(
-            "reading participants",
-            self._get_participants_blocking,
-            table_name,
-            select_columns,
-            filters,
-            n,
-            use_sa_autoload,
-        )
-
-    def _get_clusters_blocking(
-        self,
-        table_name: str,
-        select_columns: set[str],
-        filters: list[Filter],
-        desired_n_clusters: int,
-        cluster_key: str,
-        use_sa_autoload: bool | None = None,
-    ) -> GetParticipantsResult:
-        return self._dwh._get_clusters_blocking(
-            table_name, select_columns, filters, desired_n_clusters, cluster_key, use_sa_autoload
-        )
-
-    def get_clusters_of_participants(
-        self,
-        table_name: str,
-        *,
-        select_columns: set[str],
-        filters: list[Filter],
-        desired_n_clusters: int,
-        cluster_key: str,
-        use_sa_autoload: bool | None = None,
-    ) -> GetParticipantsResult:
-        """Get sampled clusters under this block's deadline."""
-        return self._on_worker(
-            "sampling clusters",
-            self._get_clusters_blocking,
-            table_name,
-            select_columns,
-            filters,
-            desired_n_clusters,
-            cluster_key,
-            use_sa_autoload,
-        )
-
-    def _list_tables_blocking(self) -> list[str]:
-        return self._dwh._list_tables_blocking()
-
-    def list_tables(self) -> list[str]:
-        """Get table names under this block's deadline."""
-        return self._on_worker("listing tables", self._list_tables_blocking)
-
-    def _connectivity_check_blocking(self) -> None:
-        self._dwh._connectivity_check_blocking()
-
-    def connectivity_check(self) -> None:
-        """Validate connectivity under this block's deadline."""
-        self._on_worker("a connectivity check", self._connectivity_check_blocking)

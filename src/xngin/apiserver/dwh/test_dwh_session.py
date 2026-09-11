@@ -4,7 +4,7 @@ import time
 import pytest
 from sqlalchemy import text
 
-from xngin.apiserver.dwh.dwh_session import SyncDwhSession
+from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.exceptions_common import DwhTimeoutError
 
 
@@ -14,13 +14,13 @@ def fixture_dwh_config(testing_datasource):
 
 
 def test_run_hands_fn_the_warehouse_session(dwh_config):
-    with SyncDwhSession.open(dwh_config) as dwh:
+    with DwhSession.open(dwh_config) as dwh:
         assert dwh.run(lambda session: session.execute(text("SELECT 1")).scalar_one()) == 1
 
 
 def test_all_warehouse_calls_run_on_one_helper_thread(dwh_config):
     """The block reuses one warehouse Session, which is only safe if every call shares one thread."""
-    with SyncDwhSession.open(dwh_config) as dwh:
+    with DwhSession.open(dwh_config) as dwh:
         idents = {dwh.run(lambda _session: threading.get_ident()) for _ in range(3)}
     assert len(idents) == 1
     assert idents != {threading.get_ident()}
@@ -32,11 +32,11 @@ def test_the_deadline_covers_the_whole_block(dwh_config, mocker):
     def stall(*_args, **_kwargs):
         release.wait()
 
-    mocker.patch.object(SyncDwhSession, "_inspect_table_blocking", stall)
+    mocker.patch.object(DwhSession, "_inspect_table_blocking", stall)
     try:
         with (
             pytest.raises(DwhTimeoutError, match=r"did not finish inspecting a table within 0\.05s"),
-            SyncDwhSession.open(dwh_config, timeout=0.05) as dwh,
+            DwhSession.open(dwh_config, timeout=0.05) as dwh,
         ):
             dwh.inspect_table("dwh")
     finally:
@@ -48,7 +48,7 @@ def test_a_timed_out_block_does_not_close_the_session_on_the_callers_thread(dwh_
     release = threading.Event()
     closed_on = threading.Event()
     closed_by: list[int] = []
-    real_exit = SyncDwhSession._close_blocking
+    real_exit = DwhSession._close_blocking
 
     def record_exit(self):
         closed_by.append(threading.get_ident())
@@ -58,11 +58,12 @@ def test_a_timed_out_block_does_not_close_the_session_on_the_callers_thread(dwh_
     def stall(*_args, **_kwargs):
         release.wait()
 
-    mocker.patch.object(SyncDwhSession, "_inspect_table_blocking", stall)
-    mocker.patch.object(SyncDwhSession, "_close_blocking", record_exit)
+    mocker.patch.object(DwhSession, "_inspect_table_blocking", stall)
+    mocker.patch.object(DwhSession, "_close_blocking", record_exit)
     try:
-        with pytest.raises(DwhTimeoutError), SyncDwhSession.open(dwh_config, timeout=0.05) as dwh:
+        with pytest.raises(DwhTimeoutError), DwhSession.open(dwh_config, timeout=0.05) as dwh:
             dwh.inspect_table("dwh")
+        # The block has exited, but the close is queued behind the call we gave up on.
         assert not closed_on.is_set()
     finally:
         release.set()
@@ -74,7 +75,7 @@ def test_a_clean_block_does_not_wait_for_the_warehouse_session_to_close(dwh_conf
     release = threading.Event()
     close_started = threading.Event()
     closed = threading.Event()
-    real_exit = SyncDwhSession._close_blocking
+    real_exit = DwhSession._close_blocking
 
     def record_exit(self):
         close_started.set()
@@ -82,10 +83,10 @@ def test_a_clean_block_does_not_wait_for_the_warehouse_session_to_close(dwh_conf
         real_exit(self)
         closed.set()
 
-    mocker.patch.object(SyncDwhSession, "_close_blocking", record_exit)
+    mocker.patch.object(DwhSession, "_close_blocking", record_exit)
     started_at = time.monotonic()
     try:
-        with SyncDwhSession.open(dwh_config) as dwh:
+        with DwhSession.open(dwh_config) as dwh:
             dwh.inspect_table("dwh")
         assert time.monotonic() - started_at < 1.0
         assert close_started.wait(timeout=10)
@@ -99,8 +100,8 @@ def test_connecting_is_bounded(dwh_config, mocker):
     """_create_engine resolves DNS synchronously, so entering has to be under the deadline too."""
     release = threading.Event()
     closed = threading.Event()
-    real_connect = SyncDwhSession._connect_blocking
-    real_close = SyncDwhSession._close_blocking
+    real_connect = DwhSession._connect_blocking
+    real_close = DwhSession._close_blocking
 
     def stall(self):
         release.wait()
@@ -110,12 +111,12 @@ def test_connecting_is_bounded(dwh_config, mocker):
         real_close(self)
         closed.set()
 
-    mocker.patch.object(SyncDwhSession, "_connect_blocking", stall)
-    mocker.patch.object(SyncDwhSession, "_close_blocking", record_close)
+    mocker.patch.object(DwhSession, "_connect_blocking", stall)
+    mocker.patch.object(DwhSession, "_close_blocking", record_close)
     try:
         with (
             pytest.raises(DwhTimeoutError, match=r"did not finish connecting within 0\.05s"),
-            SyncDwhSession.open(dwh_config, timeout=0.05),
+            DwhSession.open(dwh_config, timeout=0.05),
         ):
             pass
         assert not closed.is_set()
@@ -131,12 +132,12 @@ def test_a_later_block_works_after_one_times_out(dwh_config, mocker):
     def stall(*_args, **_kwargs):
         release.wait()
 
-    patched = mocker.patch.object(SyncDwhSession, "_inspect_table_blocking", stall)
+    patched = mocker.patch.object(DwhSession, "_inspect_table_blocking", stall)
     try:
-        with pytest.raises(DwhTimeoutError), SyncDwhSession.open(dwh_config, timeout=0.05) as dwh:
+        with pytest.raises(DwhTimeoutError), DwhSession.open(dwh_config, timeout=0.05) as dwh:
             dwh.inspect_table("dwh")
     finally:
         release.set()
     mocker.stop(patched)
-    with SyncDwhSession.open(dwh_config) as dwh:
+    with DwhSession.open(dwh_config) as dwh:
         assert dwh.inspect_table("dwh") is not None
