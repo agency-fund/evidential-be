@@ -27,9 +27,10 @@ from loguru import logger
 from pydantic import ValidationError
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from xngin.apiserver import constants
-from xngin.apiserver.dependencies import retrying_httpx_dependency, xngin_db_session
+from xngin.apiserver.dependencies import retrying_httpx_dependency, xngin_db_session, xngin_sync_db_session
 from xngin.apiserver.routers.admin import admin_common, authz
 from xngin.apiserver.routers.admin import admin_dependencies as adeps
 from xngin.apiserver.routers.admin.admin_api import (
@@ -335,9 +336,9 @@ async def regenerate_turn_webhook_token(
     "/integrations/turn-connection/{organization_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def delete_turn_connection_from_organization(
+def delete_turn_connection_from_organization(
     organization_id: str,
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
     allow_missing: Annotated[
         bool,
@@ -346,11 +347,11 @@ async def delete_turn_connection_from_organization(
 ):
     """Removes an organization's Turn.io connection."""
 
-    async def _delete_turn_connection_and_mapping(session: AsyncSession, turn_connection: tables.TurnConnection):
-        await session.delete(turn_connection)
+    def _delete_turn_connection_and_mapping(session: Session, turn_connection: tables.TurnConnection):
+        session.delete(turn_connection)
         # Cascade delete all Turn journey mappings for experiments under this organization,
         # since they become invalid without a Turn connection.
-        await session.execute(
+        session.execute(
             delete(tables.ExperimentTurnConfig).where(
                 tables.ExperimentTurnConfig.experiment_id.in_(
                     select(tables.Experiment.id)
@@ -361,14 +362,14 @@ async def delete_turn_connection_from_organization(
         )
         # Cascade delete the Turn journeys changed webhook for this organization,
         # since it becomes invalid without a Turn connection.
-        await session.execute(
+        session.execute(
             delete(tables.Webhook).where(
                 tables.Webhook.organization_id == organization_id, tables.Webhook.type == "turn.journeys_changed"
             )
         )
 
     resource_query = select(tables.TurnConnection).where(tables.TurnConnection.organization_id == organization_id)
-    response = await handle_delete(
+    response = handle_delete(
         session,
         allow_missing,
         authz.is_user_authorized_on_organization(user, organization_id),
@@ -376,7 +377,7 @@ async def delete_turn_connection_from_organization(
         deleter=_delete_turn_connection_and_mapping,
     )
 
-    await session.commit()
+    session.commit()
     return response
 
 
@@ -503,9 +504,9 @@ async def get_turn_arm_journey_mapping(
     "/integrations/turn-journey-mapping/datasources/{datasource_id}/experiments/{experiment_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def delete_turn_arm_journey_mapping(
-    experiment: Annotated[tables.Experiment, Depends(adeps.experiment)],
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+def delete_turn_arm_journey_mapping(
+    experiment: Annotated[tables.Experiment, Depends(adeps.experiment_sync)],
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
     allow_missing: Annotated[
         bool,
@@ -519,13 +520,13 @@ async def delete_turn_arm_journey_mapping(
 
     # Resolving the experiment already proved access to its datasource; this repeats the check the way
     # the other delete handlers do, rather than passing a clause that is always true.
-    response = await handle_delete(
+    response = handle_delete(
         session,
         allow_missing,
         authz.is_user_authorized_on_datasource(user, experiment.datasource_id),
         turn_config_query,
     )
-    await session.commit()
+    session.commit()
     return response
 
 

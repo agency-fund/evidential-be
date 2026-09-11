@@ -18,6 +18,12 @@ async def xngin_db_session():
         yield session
 
 
+def xngin_sync_db_session():
+    """Returns a synchronous database connection to the xngin app database."""
+    with database.sync_session() as session:
+        yield session
+
+
 async def retrying_httpx_dependency():
     """Returns a new httpx2 client that will retry on connection errors"""
     transport = httpx2.AsyncHTTPTransport(retries=2)

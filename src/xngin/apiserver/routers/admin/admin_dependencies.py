@@ -21,9 +21,9 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, Path, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import QueryableAttribute, selectinload
+from sqlalchemy.orm import QueryableAttribute, Session, selectinload
 
-from xngin.apiserver.dependencies import xngin_db_session
+from xngin.apiserver.dependencies import xngin_db_session, xngin_sync_db_session
 from xngin.apiserver.routers.auth.auth_dependencies import require_user_from_token
 from xngin.apiserver.routers.preloads import (
     EXPERIMENT_FIELDS_WITH_FILTERS,
@@ -200,6 +200,63 @@ datasource_with_organization = _Datasource(preload=[tables.Datasource.organizati
 datasource_with_api_keys = _Datasource(preload=[tables.Datasource.api_keys, tables.Datasource.organization])
 
 
+class _DatasourceSync:
+    """Synchronously resolves the datasource a route names.
+
+    Requires {datasource_id} in the route path.
+    """
+
+    def __init__(self, *, preload: list[QueryableAttribute] | None = None) -> None:
+        self.preload = preload
+
+    def __call__(
+        self,
+        datasource_id: Annotated[str, Path()],
+        session: Annotated[Session, Depends(xngin_sync_db_session)],
+        user: Annotated[tables.User, Depends(require_user_from_token)],
+    ) -> tables.Datasource:
+        stmt = (
+            select(tables.Datasource)
+            .join(tables.Organization)
+            .join(tables.UserOrganization)
+            .where(
+                tables.UserOrganization.user_id == user.id,
+                tables.Datasource.id == datasource_id,
+            )
+        )
+        if self.preload:
+            stmt = stmt.options(*(selectinload(field) for field in self.preload))
+        ds = session.execute(stmt).scalar_one_or_none()
+        if ds is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Datasource not found.")
+        return ds
+
+
+datasource_sync = _DatasourceSync()
+datasource_with_api_keys_sync = _DatasourceSync(preload=[tables.Datasource.api_keys, tables.Datasource.organization])
+
+
+def experiment_sync(
+    experiment_id: Annotated[str, Path()],
+    ds: Annotated[tables.Datasource, Depends(datasource_sync)],
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
+) -> tables.Experiment:
+    """Synchronously resolves the experiment a route names.
+
+    Requires {datasource_id} and {experiment_id} in the route path.
+    """
+    stmt = (
+        select(tables.Experiment)
+        .options(selectinload(tables.Experiment.arms))
+        .where(tables.Experiment.datasource_id == ds.id)
+        .where(tables.Experiment.id == experiment_id)
+    )
+    exp = session.execute(stmt).scalar_one_or_none()
+    if exp is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found.")
+    return exp
+
+
 async def _org_datasource(
     organization_id: Annotated[str, Path()],
     datasource_id: Annotated[str, Path()],
@@ -335,3 +392,72 @@ async def snapshot(
     if snap is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Snapshot not found")
     return snap
+
+
+def privileged_target_user_sync(
+    user_id: Annotated[str, Path(description="The ID of the user to act on.")],
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
+    _caller: Annotated[tables.User, Depends(privileged_caller)],
+) -> tables.User:
+    """Synchronously resolves the target user for a privileged caller."""
+    target = session.get(tables.User, user_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    return target
+
+
+class _OrganizationSync:
+    def __init__(self, *, preload: list[QueryableAttribute] | None = None) -> None:
+        self.preload = preload
+
+    def __call__(
+        self,
+        organization_id: Annotated[str, Path()],
+        session: Annotated[Session, Depends(xngin_sync_db_session)],
+        user: Annotated[tables.User, Depends(require_user_from_token)],
+    ) -> tables.Organization:
+        stmt = select(tables.Organization).where(tables.Organization.id == organization_id)
+        if not user.is_privileged:
+            stmt = stmt.join(tables.UserOrganization).where(tables.UserOrganization.user_id == user.id)
+        if self.preload:
+            stmt = stmt.options(*(selectinload(field) for field in self.preload))
+        organization = session.execute(stmt).scalar_one_or_none()
+        if organization is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found.")
+        return organization
+
+
+organization_sync = _OrganizationSync()
+organization_with_members_sync = _OrganizationSync(preload=[tables.Organization.users])
+
+
+def webhook_sync(
+    webhook_id: Annotated[str, Path()],
+    organization: Annotated[tables.Organization, Depends(organization_sync)],
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
+) -> tables.Webhook:
+    webhook = session.scalar(
+        select(tables.Webhook).where(
+            tables.Webhook.id == webhook_id,
+            tables.Webhook.organization_id == organization.id,
+        )
+    )
+    if webhook is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Webhook not found")
+    return webhook
+
+
+def event_sync(
+    event_id: Annotated[str, Path()],
+    organization: Annotated[tables.Organization, Depends(organization_sync)],
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
+) -> tables.Event:
+    event = session.scalar(
+        select(tables.Event).where(
+            tables.Event.id == event_id,
+            tables.Event.organization_id == organization.id,
+        )
+    )
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found.")
+    return event
