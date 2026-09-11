@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator
 from fastapi.responses import StreamingResponse
 from psycopg import sql
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import AssignmentTypedDict, StrataTypedDict
@@ -144,7 +145,7 @@ def _build_bandit_experiment_assignments_select_query(
 
 
 def get_experiment_assignments_as_csv_impl(
-    xngin_session: AsyncSession,
+    xngin_session: Session,
     experiment: tables.Experiment,
 ) -> CsvStreamingResponse:
     strata_names = _get_assignment_csv_strata_names_from_experiment(experiment)

@@ -69,7 +69,7 @@ from xngin.apiserver.routers.common_enums import (
 )
 from xngin.apiserver.routers.experiments.property_filters import passes_filters, validate_filter_value
 from xngin.apiserver.settings import DatasourceConfig
-from xngin.apiserver.sql.queries import select_as_csv_sync
+from xngin.apiserver.sql.queries import select_as_csv
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
@@ -1408,7 +1408,7 @@ def read_assignments_efficiently(
     select_query = t"SELECT {joined_column_names:q} FROM arm_assignments WHERE experiment_id = {experiment_id}"  # type: ignore
     dfs = [
         pd.read_csv(io.BytesIO(chunk), names=column_names, dtype=str)
-        for chunk in select_as_csv_sync(
+        for chunk in select_as_csv(
             xngin_session, select_query, buffer_size_bytes=CSV_PARSE_CHUNK_SIZE_BYTES, newline_framed=True
         )
     ]

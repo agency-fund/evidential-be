@@ -24,12 +24,11 @@ from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy import delete, func, literal, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, selectinload
 
 from xngin.apiserver import constants
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
-from xngin.apiserver.dependencies import xngin_db_session, xngin_sync_db_session
+from xngin.apiserver.dependencies import xngin_sync_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.inspections import create_inspect_table_response_from_table
@@ -1498,9 +1497,9 @@ def get_experiment_for_ui(
     ),
     response_class=CsvStreamingResponse,
 )
-async def get_experiment_assignments_as_csv_for_ui(
+def get_experiment_assignments_as_csv_for_ui(
     experiment: Annotated[tables.Experiment, Depends(adeps.experiment_for_csv_export)],
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
 ) -> CsvStreamingResponse:
     # TODO: update for bandits
     return experiments_common_csv.get_experiment_assignments_as_csv_impl(session, experiment)

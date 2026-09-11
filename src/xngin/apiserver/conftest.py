@@ -283,13 +283,6 @@ async def fixture_xngin_db_session(fixture_initialize_xngin_db_schema):
                 sess.close()
 
 
-@pytest.fixture(name="xngin_async_session")
-async def fixture_xngin_async_db_session(xngin_session):
-    """Yields an AsyncSession for the few code paths that are still asynchronous (e.g. CSV streaming)."""
-    async with database.async_session() as session:
-        yield session
-
-
 def delete_seeded_users(xngin_session: Session):
     """Deletes users created by the xngin_session fixture."""
     xngin_session.execute(delete(tables.User))
