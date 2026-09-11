@@ -1,5 +1,5 @@
 import math
-import time
+import threading
 import warnings
 from datetime import UTC, datetime, timedelta
 from typing import assert_never
@@ -7,6 +7,7 @@ from typing import assert_never
 import pytest
 from sqlalchemy import select
 
+from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.routers.admin.admin_api_types import SnapshotStatus
 from xngin.apiserver.routers.common_api_types import (
     Arm,
@@ -361,7 +362,7 @@ async def test_handle_one_snapshot_safely_marks_failed_on_exception(
 
     # Force the snapshot to fail.
     mocker.patch(
-        "xngin.apiserver.snapshots.snapshotter._query_dwh_for_snapshot_data",
+        "xngin.apiserver.snapshots.snapshotter._compute_snapshot_data",
         side_effect=RuntimeError("boom"),
     )
     aclient.create_snapshot(
@@ -385,13 +386,101 @@ async def test_handle_one_snapshot_safely_marks_failed_on_timeout(
     aclient: AdminAPIClient,
     mocker,
 ):
+    """A warehouse that stalls must leave a committed "failed" snapshot.
+
+    Stalls the real warehouse read rather than mocking the analysis out, so the deadline is enforced
+    where it now lives -- inside SyncDwhSession -- and the caller's session has to survive it well
+    enough to commit the failure.
+    """
     experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="handle snapshot timeout test")
+    release = threading.Event()
 
-    def slow_query(*args, **kwargs):
-        time.sleep(0.01)
+    def stall(*_args, **_kwargs):
+        release.wait()
 
-    mocker.patch("xngin.apiserver.snapshots.snapshotter._query_dwh_for_snapshot_data", side_effect=slow_query)
-    mocker.patch("xngin.apiserver.snapshots.snapshotter.SNAPSHOT_TIMEOUT_SECS", 0)
+    mocker.patch.object(DwhSession, "_inspect_table_blocking", stall)
+    mocker.patch("xngin.apiserver.snapshots.snapshotter.SNAPSHOT_TIMEOUT_SECS", 0.05)
+    try:
+        aclient.create_snapshot(
+            organization_id=testing_datasource.organization_id,
+            datasource_id=testing_datasource.datasource_id,
+            experiment_id=experiment_id,
+        )
+    finally:
+        release.set()
+
+    snapshots = aclient.list_snapshots(
+        organization_id=testing_datasource.organization_id,
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=experiment_id,
+    ).data.items
+    assert [snapshot.status for snapshot in snapshots] == [SnapshotStatus.FAILED]
+    assert snapshots[0].data is None
+    assert snapshots[0].details is not None
+    assert "DwhTimeoutError" in snapshots[0].details["message"]
+
+
+async def test_a_warehouse_timeout_leaves_the_snapshotters_session_usable(
+    xngin_session,
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+    mocker,
+):
+    """The regression test: a timeout must not cost us the "failed" write or the rest of the run.
+
+    The snapshotter used to hand its own session to a thread it then abandoned, so the commit that
+    records the failure raced the abandoned read. When that surfaced it came from the session's
+    __exit__, past the handler's except clause: the write was lost, the snapshot stayed pending, and
+    the exception killed the worker before it reached the next snapshot.
+
+    The second experiment is a bandit so that it needs no warehouse read of its own, and can
+    therefore finish well inside the small budget that the first one has to exceed.
+    """
+    stalled_experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="timeout isolation")
+    healthy_experiment_id = await create_bandit_snapshot_experiment(
+        aclient, eclient, testing_datasource, experiment_type=ExperimentsType.MAB_ONLINE
+    )
+    create_pending_snapshots(0)
+
+    # Only the frequentist snapshot reads a warehouse, so this stalls that one and nothing else.
+    release = threading.Event()
+
+    def stall(*_args, **_kwargs):
+        release.wait()
+
+    mocker.patch.object(DwhSession, "_inspect_table_blocking", stall)
+    try:
+        process_pending_snapshots(0.05, max_jitter_secs=0)
+    finally:
+        release.set()
+
+    def status_of(experiment_id: str) -> SnapshotStatus:
+        snapshots = aclient.list_snapshots(
+            organization_id=testing_datasource.organization_id,
+            datasource_id=testing_datasource.datasource_id,
+            experiment_id=experiment_id,
+        ).data.items
+        assert len(snapshots) == 1
+        return snapshots[0].status
+
+    # The failure was committed, and the loop went on to finish the other snapshot.
+    assert status_of(stalled_experiment_id) == SnapshotStatus.FAILED
+    assert status_of(healthy_experiment_id) == SnapshotStatus.SUCCESS
+
+
+async def test_bandit_snapshots_do_not_open_a_warehouse_connection(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+    mocker,
+):
+    """Bandit analysis reads only the application database, which is why it gets no deadline."""
+    experiment_id = await create_bandit_snapshot_experiment(
+        aclient, eclient, testing_datasource, experiment_type=ExperimentsType.MAB_ONLINE
+    )
+    mocker.patch.object(DwhSession, "_enter_blocking", side_effect=AssertionError("connected to a warehouse"))
+
     aclient.create_snapshot(
         organization_id=testing_datasource.organization_id,
         datasource_id=testing_datasource.datasource_id,
@@ -403,10 +492,7 @@ async def test_handle_one_snapshot_safely_marks_failed_on_timeout(
         datasource_id=testing_datasource.datasource_id,
         experiment_id=experiment_id,
     ).data.items
-    assert [snapshot.status for snapshot in snapshots] == [SnapshotStatus.FAILED]
-    assert snapshots[0].data is None
-    assert snapshots[0].details is not None
-    assert "TimeoutError" in snapshots[0].details["message"]
+    assert [snapshot.status for snapshot in snapshots] == [SnapshotStatus.SUCCESS]
 
 
 async def test_create_pending_snapshots_inserts_for_new_stale_and_failed_experiments(

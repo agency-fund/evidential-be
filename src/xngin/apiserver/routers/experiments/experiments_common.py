@@ -1281,6 +1281,8 @@ def analyze_experiment_freq_impl(
     experiment: tables.Experiment,
     baseline_arm_id: str,
     metrics: list[DesignSpecMetricRequest],
+    *,
+    dwh_timeout: float | None = None,
 ) -> FreqExperimentAnalysisResponse:
     """Analyze a frequentist experiment. Assumes arms and arm_assignments are preloaded."""
 
@@ -1295,7 +1297,7 @@ def analyze_experiment_freq_impl(
     if assignments_df.empty:
         raise StatsAnalysisError("No participants found for experiment.")
 
-    with SyncDwhSession.open(dsconfig.dwh) as dwh:
+    with SyncDwhSession.open(dsconfig.dwh, timeout=dwh_timeout) as dwh:
         sa_table = dwh.inspect_table(experiment.datasource_table)
 
         # Mark the start of the analysis as when we begin pulling outcomes.

@@ -58,8 +58,8 @@ def collect(
         typer.Option(
             "--max-time",
             min=1,
-            help="Maximum duration of a single snapshot (in seconds). "
-            "Snapshots that take longer than this will be marked as failures.",
+            help="Maximum time to wait for a snapshot's data warehouse read (in seconds). "
+            "Snapshots whose warehouse read takes longer are marked as failures.",
         ),
     ] = snapshotter.SNAPSHOT_TIMEOUT_SECS,
     autofail_timeout: Annotated[

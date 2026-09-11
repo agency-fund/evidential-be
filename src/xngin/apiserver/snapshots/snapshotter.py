@@ -1,6 +1,5 @@
 import random
 import time
-from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import sentry_sdk
@@ -15,8 +14,8 @@ from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 
-# The amount of time the API server will wait for a snapshot to complete when invoked in response to user request.
-# The snapshotter cron job can specify a different timeout via command line flags.
+# How long the API server waits for a snapshot's data warehouse read when a snapshot is requested by a user.
+# The snapshotter cron job can specify a different budget via command line flags.
 SNAPSHOT_TIMEOUT_SECS = 90
 
 
@@ -99,13 +98,13 @@ def make_first_snapshot(experiment_id: str, snapshot_id: str) -> None:
         _handle_one_snapshot_safely(session, snapshot, SNAPSHOT_TIMEOUT_SECS)
 
 
-def process_pending_snapshots(snapshot_timeout: int, *, max_jitter_secs: float = 2) -> None:
+def process_pending_snapshots(snapshot_timeout: float, *, max_jitter_secs: float = 2) -> None:
     """Processes pending snapshots, one at a time, until there are no more available.
 
-    Interactions with the client data warehouse will be considered timed-out after snapshot_timeout seconds. These
-    timeouts will raise an exception and update the snapshot with status="failed". The timeout is not guaranteed
-    to be respected because some interactions with client DWH are blocking and those timeout behaviors have not yet
-    been aligned.
+    snapshot_timeout bounds how long a snapshot may spend reading a customer data warehouse; a snapshot that
+    exceeds it is marked status="failed". It does not bound the snapshot as a whole: reading assignments,
+    computing the analysis, and writing the result are application-database and CPU work, which we deliberately
+    leave unbounded.
     """
     one_pending_snapshot = (
         select(tables.Snapshot)
@@ -133,18 +132,14 @@ def process_pending_snapshots(snapshot_timeout: int, *, max_jitter_secs: float =
             _handle_one_snapshot_safely(session, snapshot, snapshot_timeout)
 
 
-def _handle_one_snapshot_safely(session: Session, snapshot: tables.Snapshot, snapshot_timeout: int) -> None:
+def _handle_one_snapshot_safely(session: Session, snapshot: tables.Snapshot, snapshot_timeout: float) -> None:
     sentry_sdk.metrics.count("snapshots.started", 1, attributes={"experiment_id": snapshot.experiment_id})
     experiment = snapshot.experiment
     datasource = experiment.datasource
     with logger.contextualize(experiment_id=experiment.id):
         logger.info(f"{experiment.id}.{snapshot.id}: processing")
-        # The snapshot runs on a worker thread so that a data warehouse that never answers cannot hold the
-        # run open past snapshot_timeout. A timed-out worker is abandoned rather than joined.
-        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="snapshot")
         try:
-            future = executor.submit(_query_dwh_for_snapshot_data, session, datasource, experiment)
-            result = future.result(timeout=snapshot_timeout)
+            result = _compute_snapshot_data(session, datasource, experiment, snapshot_timeout)
             snapshot.data = result.model_dump(mode="json")
             snapshot.status = "success"
         except Exception as exc:
@@ -152,18 +147,25 @@ def _handle_one_snapshot_safely(session: Session, snapshot: tables.Snapshot, sna
             logger.opt(exception=exc).info(f"{experiment.id}.{snapshot.id}: exception")
             snapshot.status = "failed"
             snapshot.message = f"{type(exc).__name__}: {exc}"
-        finally:
-            executor.shutdown(wait=False)
         sentry_sdk.metrics.count("snapshots.finished", 1, attributes={"experiment_id": snapshot.experiment_id})
         logger.info(f"{experiment.id}.{snapshot.id}: done")
 
 
-def _query_dwh_for_snapshot_data(
-    session: Session, datasource: tables.Datasource, experiment: tables.Experiment
+def _compute_snapshot_data(
+    session: Session, datasource: tables.Datasource, experiment: tables.Experiment, dwh_timeout: float
 ) -> ExperimentAnalysisResponse:
-    """Collect a snapshot from a customer DWH and returns the snapshot data."""
+    """Analyze one experiment for its snapshot.
+
+    Runs on the caller's thread and uses the caller's session throughout: nothing here may be moved
+    onto a helper thread, because a call the caller gave up on would keep using a Session the caller
+    has since committed and closed. The only work that crosses a thread boundary is the warehouse
+    read inside SyncDwhSession, which is handed nothing but plain values.
+    """
     experiment_type = ExperimentsType(experiment.experiment_type)
     if experiment_type.is_bandit():
+        # Bandit analysis reads only the application database, so dwh_timeout has no warehouse
+        # interaction here to bound. That covers MAB_ONLINE_DWH too: its warehouse read happens in
+        # the separate dwh-pull job.
         context_vals = None
 
         # TODO: If the experiment is a CMAB, we need to pass in context values.
@@ -188,13 +190,13 @@ def _query_dwh_for_snapshot_data(
     if experiment_type.is_freq():
         # Look for the arm in position 1. If not found, use the first arm.
         baseline_arm = next((arm for arm in experiment.arms if arm.position == 1), experiment.arms[0])
-        assert baseline_arm.id is not None
         return experiments_common.analyze_experiment_freq_impl(
             xngin_session=session,
             dsconfig=datasource.get_config(),
             experiment=experiment,
             baseline_arm_id=baseline_arm.id,
             metrics=ExperimentStorageConverter(experiment).get_design_spec_metrics(),
+            dwh_timeout=dwh_timeout,
         )
     raise ValueError(f"Unsupported experiment type: {experiment_type}")
 
