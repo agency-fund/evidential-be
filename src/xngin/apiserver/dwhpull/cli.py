@@ -1,6 +1,5 @@
 """dwh-pull reads bandit outcomes from organizations' data warehouses."""
 
-import asyncio
 import os
 from typing import Annotated
 
@@ -21,9 +20,9 @@ sentry.setup()
 app = typer.Typer(help="Reads bandit outcomes from organizations' data warehouses.")
 
 
-async def apull(pull_timeout: int):
+def run_pulls(pull_timeout: int):
     """Pull outcomes within the application database lifespan."""
-    async with database.setup():
+    with database.setup():
         dwhpull.pull_all_experiments(pull_timeout)
 
 
@@ -54,7 +53,7 @@ def pull(
     cronjob_monitor_slug = os.environ.get(ENV_CRONJOB_MONITOR_SLUG, "")
     if cronjob_monitor_slug:
         with monitor(monitor_slug=cronjob_monitor_slug):
-            asyncio.run(apull(pull_timeout))
+            run_pulls(pull_timeout)
     else:
-        asyncio.run(apull(pull_timeout))
+        run_pulls(pull_timeout)
     logger.info("pull() finished successfully.")

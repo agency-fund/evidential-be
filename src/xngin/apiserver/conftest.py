@@ -245,16 +245,16 @@ def fixture_integrations_api_client(xngin_session):
 
 
 @pytest.fixture(scope="session")
-async def fixture_initialize_xngin_db_schema():
+def fixture_initialize_xngin_db_schema():
     """Create the application schema once for the test session."""
-    async with database.setup():
+    with database.setup():
         create_database_if_not_exists_pg(database.get_sqlalchemy_database_url())
-        async with database.get_async_engine().begin() as conn:
-            await conn.run_sync(tables.Base.metadata.create_all)
+        with database.get_sync_engine().begin() as conn:
+            tables.Base.metadata.create_all(conn)
 
 
 @pytest.fixture(name="xngin_session")
-async def fixture_xngin_db_session(fixture_initialize_xngin_db_schema):
+def fixture_xngin_db_session(fixture_initialize_xngin_db_schema):
     """Yields a SQLAlchemy session suitable for direct interaction with the database.
 
     This will delete all rows from the application tables at the beginning of every test. The users table will be seeded
@@ -265,7 +265,7 @@ async def fixture_xngin_db_session(fixture_initialize_xngin_db_schema):
     Where possible, prefer using the API methods to test functionality rather than touching the database
     directly.
     """
-    async with database.setup():
+    with database.setup():
         with database.get_sync_engine().begin() as conn:
             for table in reversed(tables.Base.metadata.sorted_tables):
                 conn.execute(sqlalchemy.delete(table))

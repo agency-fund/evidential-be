@@ -317,14 +317,14 @@ async def test_pull_all_experiments_covers_every_due_experiment(xngin_session, t
     assert await read_outcomes(xngin_session, second.id) == {"2": 1.0}
 
 
-async def test_apull_runs_within_a_database_session(mocker):
-    @contextlib.asynccontextmanager
-    async def noop_setup():
+def test_apull_runs_within_a_database_session(mocker):
+    @contextlib.contextmanager
+    def noop_setup():
         yield
 
     mocker.patch("xngin.apiserver.dwhpull.cli.database.setup", noop_setup)
     pull_mock = mocker.patch("xngin.apiserver.dwhpull.cli.dwhpull.pull_all_experiments")
 
-    await cli.apull(pull_timeout=42)
+    cli.run_pulls(pull_timeout=42)
 
     pull_mock.assert_called_once_with(42)
