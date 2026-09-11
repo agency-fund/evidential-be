@@ -34,8 +34,8 @@ def pull(
         typer.Option(
             "--max-time",
             min=1,
-            help="Maximum duration of one experiment's pull (in seconds). An experiment that takes "
-            "longer than this is abandoned for this run and reported as a failure.",
+            help="Maximum time to wait for one experiment's data warehouse read (in seconds). An "
+            "experiment whose read takes longer is abandoned for this run and reported as a failure.",
         ),
     ] = dwhpull.PULL_TIMEOUT_SECS,
 ):
