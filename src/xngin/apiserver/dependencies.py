@@ -12,12 +12,6 @@ def random_seed_dependency():
     return
 
 
-async def xngin_db_session():
-    """Returns a database connection to the xngin app database (not customer data warehouse)."""
-    async with database.async_session() as session:
-        yield session
-
-
 def xngin_sync_db_session():
     """Returns a synchronous database connection to the xngin app database."""
     with database.sync_session() as session:

@@ -14,7 +14,7 @@ from sqlalchemy import Table, insert
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.routers.common_api_types import BalanceCheck, StrataTypedDict
-from xngin.apiserver.sql.queries import with_sync_driver_connection
+from xngin.apiserver.sql.queries import with_driver_connection
 from xngin.apiserver.sqla import tables
 from xngin.ops import performance
 from xngin.stats.assignment import AssignmentResult, assign_treatment_and_check_balance
@@ -169,7 +169,7 @@ def _bulk_insert(
         copy_types = ["text", "text", "text", "text", "jsonb"]
 
     with (
-        with_sync_driver_connection(xngin_session) as driver_conn,
+        with_driver_connection(xngin_session) as driver_conn,
         driver_conn.cursor() as cursor,
         cursor.copy(copy_sql) as copy,
     ):

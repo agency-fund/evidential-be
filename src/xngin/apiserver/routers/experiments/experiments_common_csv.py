@@ -1,9 +1,8 @@
 # mypy: disable-error-code="misc"
-from collections.abc import AsyncGenerator
+from collections.abc import Generator
 
 from fastapi.responses import StreamingResponse
 from psycopg import sql
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.exceptions_common import LateValidationError
@@ -167,9 +166,9 @@ def get_experiment_assignments_as_csv_impl(
     )
 
 
-async def get_experiment_assignments_impl(
-    xngin_session: AsyncSession, experiment: tables.Experiment
-) -> AsyncGenerator[AssignmentTypedDict]:
+def get_experiment_assignments_impl(
+    xngin_session: Session, experiment: tables.Experiment
+) -> Generator[AssignmentTypedDict]:
     match experiment.experiment_type:
         case ExperimentsType.FREQ_ONLINE.value | ExperimentsType.FREQ_PREASSIGNED.value:
             strata_names = _get_assignment_csv_strata_names_from_experiment(experiment)
@@ -182,7 +181,7 @@ async def get_experiment_assignments_impl(
                 with_microseconds=True,
             )
             if cluster_key_name is None:
-                async for assignment in stream(xngin_session, select_query, JSON_STREAM_FETCH_SIZE_ROWS):
+                for assignment in stream(xngin_session, select_query, JSON_STREAM_FETCH_SIZE_ROWS):
                     participant_id, arm_id, arm_name, created_at, *strata_values = assignment
                     strata: list[StrataTypedDict] = [
                         {"field_name": strata_names[i], "strata_value": strata_values[i]}
@@ -199,7 +198,7 @@ async def get_experiment_assignments_impl(
                         "context_values": None,
                     }
             else:
-                async for assignment in stream(xngin_session, select_query, JSON_STREAM_FETCH_SIZE_ROWS):
+                for assignment in stream(xngin_session, select_query, JSON_STREAM_FETCH_SIZE_ROWS):
                     participant_id, cluster_key, arm_id, arm_name, created_at, *strata_values = assignment
                     strata = [
                         {"field_name": strata_names[i], "strata_value": strata_values[i]}
@@ -226,7 +225,7 @@ async def get_experiment_assignments_impl(
                 include_observed_at=True,
                 include_context_vals=True,
             )
-            async for assignment in stream(xngin_session, select_query, JSON_STREAM_FETCH_SIZE_ROWS):
+            for assignment in stream(xngin_session, select_query, JSON_STREAM_FETCH_SIZE_ROWS):
                 participant_id, arm_id, arm_name, created_at, outcome, observed_at, context_values = assignment
                 yield {
                     "participant_id": participant_id,

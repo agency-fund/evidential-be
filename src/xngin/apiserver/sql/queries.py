@@ -1,5 +1,5 @@
-from collections.abc import AsyncGenerator, AsyncIterator, Iterator
-from contextlib import asynccontextmanager, contextmanager
+from collections.abc import Generator, Iterator
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -10,23 +10,12 @@ from xngin.ops import performance
 if TYPE_CHECKING:
     from string.templatelib import Template
 
-    from psycopg import AsyncConnection, Connection
-    from sqlalchemy.ext.asyncio import AsyncSession
+    from psycopg import Connection
     from sqlalchemy.orm import Session
 
 
-@asynccontextmanager
-async def with_driver_connection(session: AsyncSession) -> AsyncIterator[AsyncConnection]:
-    async_conn = await session.connection()
-    raw_conn = await async_conn.get_raw_connection()
-    driver_conn = raw_conn.driver_connection
-    if driver_conn is None:
-        raise RuntimeError("failed getting driver connection")
-    yield driver_conn
-
-
 @contextmanager
-def with_sync_driver_connection(session: Session) -> Iterator[Connection]:
+def with_driver_connection(session: Session) -> Iterator[Connection]:
     driver_conn = session.connection().connection.driver_connection
     if driver_conn is None:
         raise RuntimeError("failed getting driver connection")
@@ -58,7 +47,7 @@ def select_as_csv(
     header_sql = t", HEADER TRUE" if include_header else t""  # type: ignore[misc]
     copy_query = t"COPY ({select_sql:q}) TO STDOUT WITH (FORMAT CSV{header_sql:q})"  # type: ignore[misc]
     yield_count = 0
-    with performance.timing() as timings, with_sync_driver_connection(session) as driver_conn:
+    with performance.timing() as timings, with_driver_connection(session) as driver_conn:
         buffer = bytearray()
         with driver_conn.cursor() as cursor, cursor.copy(copy_query) as copy:
             # Each chunk is approximately one row; e.g. reading two ID fields might be ~60 bytes.
@@ -82,8 +71,7 @@ def select_as_csv(
     logger.info("select_as_csv streamed {} chunks in {}s", yield_count, timings.elapsed)
 
 
-async def stream(session: AsyncSession, select_query: Template, size: int) -> AsyncGenerator[TupleRow]:
+def stream(session: Session, select_query: Template, size: int) -> Generator[TupleRow]:
     """Streams the results of a query, asking libpq to buffer up to size rows at a time."""
-    async with with_driver_connection(session) as driver_conn, driver_conn.cursor() as cursor:
-        async for row in cursor.stream(select_query, size=size):
-            yield row
+    with with_driver_connection(session) as driver_conn, driver_conn.cursor() as cursor:
+        yield from cursor.stream(select_query, size=size)
