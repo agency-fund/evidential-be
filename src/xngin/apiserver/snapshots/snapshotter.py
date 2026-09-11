@@ -159,7 +159,7 @@ def _compute_snapshot_data(
     Runs on the caller's thread and uses the caller's session throughout: nothing here may be moved
     onto a helper thread, because a call the caller gave up on would keep using a Session the caller
     has since committed and closed. The only work that crosses a thread boundary is the warehouse
-    read inside SyncDwhSession, which is handed nothing but plain values.
+    read inside DwhSession, which is handed nothing but plain values.
     """
     experiment_type = ExperimentsType(experiment.experiment_type)
     if experiment_type.is_bandit():

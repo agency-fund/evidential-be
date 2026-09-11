@@ -249,8 +249,8 @@ async def test_initial_user_setup_matches_testing_dwh(xngin_session: Session):
     # Validate that we added the testing dwh datasource.
     ds = find_ds_with_name(datasources, TESTING_DWH_DATASOURCE_NAME)
     ds_config = ds.get_config()
-    async with DwhSession(ds_config.dwh) as dwh:
-        sa_table = await dwh.inspect_table(TESTING_DWH_TABLE_NAME)
+    with DwhSession.open(ds_config.dwh) as dwh:
+        sa_table = dwh.inspect_table(TESTING_DWH_TABLE_NAME)
     assert "id" in sa_table.columns
 
     _ = find_ds_with_name(datasources, ALT_TESTING_DWH_DATASOURCE_NAME)

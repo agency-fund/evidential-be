@@ -389,7 +389,7 @@ async def test_handle_one_snapshot_safely_marks_failed_on_timeout(
     """A warehouse that stalls must leave a committed "failed" snapshot.
 
     Stalls the real warehouse read rather than mocking the analysis out, so the deadline is enforced
-    where it now lives -- inside SyncDwhSession -- and the caller's session has to survive it well
+    where it now lives -- inside DwhSession -- and the caller's session has to survive it well
     enough to commit the failure.
     """
     experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="handle snapshot timeout test")
@@ -479,7 +479,7 @@ async def test_bandit_snapshots_do_not_open_a_warehouse_connection(
     experiment_id = await create_bandit_snapshot_experiment(
         aclient, eclient, testing_datasource, experiment_type=ExperimentsType.MAB_ONLINE
     )
-    mocker.patch.object(DwhSession, "_enter_blocking", side_effect=AssertionError("connected to a warehouse"))
+    mocker.patch.object(DwhSession, "_connect_blocking", side_effect=AssertionError("connected to a warehouse"))
 
     aclient.create_snapshot(
         organization_id=testing_datasource.organization_id,

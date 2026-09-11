@@ -185,7 +185,7 @@ async def test_pull_all_experiments_abandons_an_experiment_that_exceeds_its_time
 ):
     """A warehouse that hangs must not hold the transaction open indefinitely.
 
-    Stalls the read below SyncDwhSession so the real deadline plumbing runs, rather than replacing
+    Stalls the read below DwhSession so the real deadline plumbing runs, rather than replacing
     the method that enforces it.
     """
     experiment = await make_mab_dwh_experiment(xngin_session, testing_datasource.ds, target_field_name="is_onboarded")

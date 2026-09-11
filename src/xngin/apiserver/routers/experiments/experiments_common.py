@@ -16,7 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from xngin.apiserver import constants, flags
-from xngin.apiserver.dwh.dwh_session import SyncDwhSession
+from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.dwh.participant_metrics_queries import get_participant_metrics
 from xngin.apiserver.exceptions_common import LateValidationError
@@ -144,7 +144,7 @@ def fetch_fields_or_raise(
     Raises: LateValidationError if any fields used in the request are not found, invalid for a
     certain use, or if filter values are invalid for the field type.
     """
-    with SyncDwhSession.open(datasource.get_config().dwh) as dwh:
+    with DwhSession.open(datasource.get_config().dwh) as dwh:
         sa_table = dwh.inspect_table(design_spec.table_name)
         return convert_table_to_fields_or_raise(sa_table, design_spec)
 
@@ -159,7 +159,7 @@ def fetch_mab_dwh_fields_or_raise(
     Returns: Field name => datatype map (covering primary_key and target_field_name only).
     Raises: LateValidationError if either column is missing from the table.
     """
-    with SyncDwhSession.open(datasource.get_config().dwh) as dwh:
+    with DwhSession.open(datasource.get_config().dwh) as dwh:
         sa_table = dwh.inspect_table(design_spec.table_name)
 
     referenced_fields_and_types = _resolve_referenced_field_types(
@@ -269,7 +269,7 @@ def create_experiment_impl(
                 ]
 
             ds_config = datasource.get_config()
-            with SyncDwhSession.open(ds_config.dwh) as dwh:
+            with DwhSession.open(ds_config.dwh) as dwh:
                 if cluster_key is not None:
                     assert desired_n_clusters is not None  # covered by CreateExperimentRequest validation
                     result = dwh.get_clusters_of_participants(
@@ -1297,7 +1297,7 @@ def analyze_experiment_freq_impl(
     if assignments_df.empty:
         raise StatsAnalysisError("No participants found for experiment.")
 
-    with SyncDwhSession.open(dsconfig.dwh, timeout=dwh_timeout) as dwh:
+    with DwhSession.open(dsconfig.dwh, timeout=dwh_timeout) as dwh:
         sa_table = dwh.inspect_table(experiment.datasource_table)
 
         # Mark the start of the analysis as when we begin pulling outcomes.

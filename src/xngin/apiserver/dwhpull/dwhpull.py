@@ -17,7 +17,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import selectinload
 
 from xngin.apiserver import database
-from xngin.apiserver.dwh.dwh_session import SyncDwhSession
+from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.participant_metrics_queries import get_participant_metrics
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.flags import NPROC
@@ -139,7 +139,7 @@ def pull_one_experiment(experiment_id: str, *, dwh_timeout: float = PULL_TIMEOUT
 
         # 2. Read the external DWH, under a deadline so a wedged warehouse cannot hold the locks
         # taken above indefinitely.
-        with SyncDwhSession.open(dsconfig.dwh, timeout=dwh_timeout) as dwh:
+        with DwhSession.open(dsconfig.dwh, timeout=dwh_timeout) as dwh:
             sa_table = dwh.inspect_table(table_name)
             # model_construct: get_participant_metrics only reads field_name; the power-analysis
             # fields the validator demands (metric_pct_change/metric_target) don't apply here.

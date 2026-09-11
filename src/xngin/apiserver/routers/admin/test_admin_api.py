@@ -3,6 +3,7 @@ import csv
 import io
 import json
 import math
+import threading
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -19,6 +20,7 @@ from pydantic import HttpUrl
 from xngin.apiserver import flags
 from xngin.apiserver.conftest import convert_dwh_to_create_api_dsn, expect_status_code
 from xngin.apiserver.dns import safe_resolve
+from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.routers.admin.admin_api_converters import CREDENTIALS_UNAVAILABLE_MESSAGE
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddExperimentCreatedWebhookRequest,
@@ -1482,6 +1484,40 @@ def test_power_check_when_sample_size_sufficient_and_desired_n_fails(testing_dat
 
     with expect_status_code(422, detail_contains="Chosen sample size must be positive"):
         aclient.power_check(datasource_id=testing_datasource.datasource_id, body=PowerRequest(design_spec=design_spec))
+
+
+async def test_power_check_answers_504_when_the_warehouse_stalls(testing_datasource, aclient: AdminAPIClient, mocker):
+    """The handler has always declared this 504; until DwhSession owned a deadline it could not produce it."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="power check timeout",
+        description="power check timeout",
+        table_name="dwh",
+        primary_key="id",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="control", arm_description="Control group"),
+            Arm(arm_name="treatment", arm_description="Treatment group"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+    )
+    release = threading.Event()
+
+    def stall(*_args, **_kwargs):
+        release.wait()
+
+    mocker.patch.object(DwhSession, "_inspect_table_blocking", stall)
+    mocker.patch("xngin.apiserver.flags.DWH_TIMEOUT_SECS", 0.05)
+    try:
+        with expect_status_code(504, message_contains="did not finish inspecting a table"):
+            aclient.power_check(
+                datasource_id=testing_datasource.datasource_id, body=PowerRequest(design_spec=design_spec)
+            )
+    finally:
+        release.set()
 
 
 async def test_power_check_validations(testing_datasource, aclient: AdminAPIClient):

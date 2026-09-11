@@ -1,7 +1,5 @@
 """Tests for queries.py."""
 
-import asyncio
-
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DataError
@@ -180,16 +178,18 @@ def _pg_dsn(search_path: str) -> Dsn:
         "public, myschema",
     ],
 )
-async def test_search_path_is_set_on_session(search_path):
+def test_search_path_is_set_on_session(search_path):
     """Verify that DwhSession sets search_path for every new PostgreSQL connection."""
-    async with DwhSession(_pg_dsn(search_path)) as dwh:
-        result = await asyncio.to_thread(dwh.session.execute, text("SELECT current_setting('search_path')"))
-    assert result.scalar() == search_path
+    with DwhSession.open(_pg_dsn(search_path)) as dwh:
+        result = dwh.run(lambda session: session.execute(text("SELECT current_setting('search_path')")).scalar())
+    assert result == search_path
 
 
-async def test_search_path_injection_attempt_is_rejected():
+def test_search_path_injection_attempt_is_rejected():
     """Check that a malicious search_path string is safely passed as a value, not interpreted as SQL."""
     # Postgres rejects the value as invalid search_path list syntax, rather than interpolating.
-    with pytest.raises(DataError, match="invalid value for parameter"):
-        async with DwhSession(_pg_dsn('public"; DROP TABLE users; --')) as dwh:
-            await asyncio.to_thread(dwh.session.execute, text("SELECT 1"))
+    with (
+        pytest.raises(DataError, match="invalid value for parameter"),
+        DwhSession.open(_pg_dsn('public"; DROP TABLE users; --')) as dwh,
+    ):
+        dwh.run(lambda session: session.execute(text("SELECT 1")))

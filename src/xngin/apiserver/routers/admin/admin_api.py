@@ -31,7 +31,7 @@ from xngin.apiserver import constants
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_db_session, xngin_sync_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
-from xngin.apiserver.dwh.dwh_session import SyncDwhSession
+from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.inspections import create_inspect_table_response_from_table
 from xngin.apiserver.dwh.queries import get_stats_on_metrics
 from xngin.apiserver.exceptionhandlers import XHTTPValidationError
@@ -1096,7 +1096,7 @@ def create_datasource(
 
     config = RemoteDatabaseConfig(type="remote", dwh=api_dsn_to_settings_dwh(body.dsn))
     if connectivity_check and config.dwh.driver != "none":
-        with SyncDwhSession.open(config.dwh) as dwh:
+        with DwhSession.open(config.dwh) as dwh:
             dwh.connectivity_check()
 
     datasource = admin_common.create_datasource_impl(session, org, body.name, config)
@@ -1162,8 +1162,7 @@ def inspect_datasource(
 
     with clear_db_table_cache_on_error(session, datasource):
         config = datasource.get_config()
-
-        with SyncDwhSession.open(config.dwh) as dwh:
+        with DwhSession.open(config.dwh) as dwh:
             tablenames = dwh.list_tables()
         datasource.set_table_list(tablenames)
         session.commit()
@@ -1208,7 +1207,7 @@ def inspect_table_in_datasource(
     invalidate_inspect_table_cache(session, datasource_id)
     session.commit()
 
-    with SyncDwhSession.open(config.dwh) as dwh:
+    with DwhSession.open(config.dwh) as dwh:
         # CannotFindTableError will be handled by exceptionhandlers.py.
         table = dwh.inspect_table(table_name)
     response = create_inspect_table_response_from_table(table)
@@ -1638,7 +1637,7 @@ def power_check(
         )
     dsconfig = datasource.get_config()
 
-    with SyncDwhSession.open(dsconfig.dwh) as dwh:
+    with DwhSession.open(dsconfig.dwh) as dwh:
         sa_table = dwh.inspect_table(design_spec.table_name)
         # Validate the fields used in the design spec are present in the table and that filter values are valid.
         _ = convert_table_to_fields_or_raise(sa_table, design_spec)
