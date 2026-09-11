@@ -34,7 +34,7 @@ from xngin.tq.task_payload_types import TURN_JOURNEYS_CHANGED_TASK_TYPE
 
 
 @pytest.fixture(name="testing_design_spec")
-async def fixture_testing_design_spec() -> MABExperimentSpec:
+def fixture_testing_design_spec() -> MABExperimentSpec:
     """Create a preassigned experiment directly in our app db on the datasource with proper user permissions."""
 
     return MABExperimentSpec(
@@ -105,7 +105,7 @@ def fixture_turn_config_response(
     )
 
 
-async def test_get_turn_app_config_returns_mapping(
+def test_get_turn_app_config_returns_mapping(
     testing_datasource: DatasourceMetadata,
     iclient: IntegrationsAPIClient,
     turn_config_response: TurnConfigResponse,
@@ -119,7 +119,7 @@ async def test_get_turn_app_config_returns_mapping(
     assert turn_config.arm_journey_map == turn_config_response.arm_journey_map
 
 
-async def test_get_turn_app_config_404_when_no_mapping(
+def test_get_turn_app_config_404_when_no_mapping(
     testing_datasource: DatasourceMetadata,
     turn_config_response: TurnConfigResponse,
     iaclient: AdminIntegrationsAPIClient,
@@ -134,7 +134,7 @@ async def test_get_turn_app_config_404_when_no_mapping(
 
 
 @pytest.fixture(name="inbound_turn_webhook")
-async def fixture_inbound_turn_webhook(
+def fixture_inbound_turn_webhook(
     aclient: AdminAPIClient,
     testing_datasource: DatasourceMetadata,
 ):
@@ -148,7 +148,7 @@ async def fixture_inbound_turn_webhook(
     return webhook.id, webhook.auth_token
 
 
-async def test_turn_webhook_enqueues_task(
+def test_turn_webhook_enqueues_task(
     iclient: IntegrationsAPIClient,
     xngin_session: Session,
     testing_datasource: DatasourceMetadata,
@@ -173,7 +173,7 @@ async def test_turn_webhook_enqueues_task(
     }
 
 
-async def test_turn_webhook_404_for_unknown_id(
+def test_turn_webhook_404_for_unknown_id(
     iclient: IntegrationsAPIClient,
 ):
     """An unrecognised webhook_id returns 404."""
@@ -181,7 +181,7 @@ async def test_turn_webhook_404_for_unknown_id(
         iclient.receive_turn_journey_update_notification(webhook_id="wh_doesnotexist", auth_token="any-token")
 
 
-async def test_turn_webhook_401_for_wrong_token(
+def test_turn_webhook_401_for_wrong_token(
     iclient: IntegrationsAPIClient,
     inbound_turn_webhook: tuple[str, str | None],
 ):
@@ -191,7 +191,7 @@ async def test_turn_webhook_401_for_wrong_token(
         iclient.receive_turn_journey_update_notification(webhook_id=webhook_id, auth_token="wrong-token")
 
 
-async def test_turn_webhook_401_for_missing_token(
+def test_turn_webhook_401_for_missing_token(
     iclient: IntegrationsAPIClient,
     inbound_turn_webhook: tuple[str, str | None],
 ):
@@ -201,7 +201,7 @@ async def test_turn_webhook_401_for_missing_token(
         iclient.receive_turn_journey_update_notification(webhook_id=webhook_id)
 
 
-async def test_refetch_journeys_from_turn(
+def test_refetch_journeys_from_turn(
     testing_datasource,
     iaclient: AdminIntegrationsAPIClient,
     iclient: IntegrationsAPIClient,
@@ -255,7 +255,7 @@ async def test_refetch_journeys_from_turn(
     }
 
 
-async def test_refetch_journeys_404_when_the_organization_has_no_turn_connection(
+def test_refetch_journeys_404_when_the_organization_has_no_turn_connection(
     testing_datasource,
     xngin_session: Session,
     iaclient: AdminIntegrationsAPIClient,

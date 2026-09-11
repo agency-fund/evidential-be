@@ -21,7 +21,7 @@ LEGACY_CONFIG_WITH_PARTICIPANTS = {
 }
 
 
-async def test_datasource_set_table_list(xngin_session, testing_datasource):
+def test_datasource_set_table_list(xngin_session, testing_datasource):
     datasource = testing_datasource.ds
 
     datasource.set_table_list([])
@@ -45,7 +45,7 @@ async def test_datasource_set_table_list(xngin_session, testing_datasource):
     ) is True
 
 
-async def test_get_config_tolerates_legacy_participants_key(xngin_session, testing_datasource):
+def test_get_config_tolerates_legacy_participants_key(xngin_session, testing_datasource):
     """Datasources not yet reached by migration 20260901184333 must still load.
 
     get_config() runs on every authenticated request via edeps.datasource, so rejecting the
@@ -63,7 +63,7 @@ async def test_get_config_tolerates_legacy_participants_key(xngin_session, testi
     assert not hasattr(config, "participants")
 
 
-async def test_set_config_drops_legacy_participants_key(xngin_session, testing_datasource):
+def test_set_config_drops_legacy_participants_key(xngin_session, testing_datasource):
     """Rewriting a legacy config self-heals it, so the migration is not the only way to clean a row."""
     datasource = testing_datasource.ds
     datasource.config = LEGACY_CONFIG_WITH_PARTICIPANTS

@@ -50,7 +50,7 @@ def normalize_bandit_analysis(response: BanditExperimentAnalysisResponse) -> Ban
     return response.model_copy(update={"created_at": datetime(2000, 1, 1, tzinfo=UTC)})
 
 
-async def make_experiment(
+def make_experiment(
     xngin_session,
     datasource: tables.Datasource,
     design_spec: DesignSpec,
@@ -99,7 +99,7 @@ async def make_experiment(
     return experiment
 
 
-async def get_latest_snapshot_analysis(xngin_session, experiment_id):
+def get_latest_snapshot_analysis(xngin_session, experiment_id):
     """Helper to fetch the latest snapshot analysis payload for an experiment."""
     snapshot = (
         xngin_session.execute(
@@ -208,7 +208,7 @@ def get_sorted_cmab_contexts(
     return sorted(config.design_spec.contexts, key=lambda c: c.context_id or "")
 
 
-async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_datasource):
+def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_datasource):
     datasource = testing_datasource.ds
 
     # Create a preassigned frequentist experiment design spec
@@ -229,7 +229,7 @@ async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_da
         filters=[],
     )
 
-    experiment = await make_experiment(xngin_session, datasource, design_spec)
+    experiment = make_experiment(xngin_session, datasource, design_spec)
     # Arms' intial position should reflect design spec ordering
     arm1 = experiment.arms[0]
     assert arm1.position == 1
@@ -250,7 +250,7 @@ async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_da
     with warnings.catch_warnings():
         warnings.filterwarnings(action="ignore", message=r"(divide by zero|invalid value).*", category=RuntimeWarning)
         make_first_snapshot(experiment.id, snapshot_id)
-    analysis = await get_latest_snapshot_analysis(xngin_session, experiment.id)
+    analysis = get_latest_snapshot_analysis(xngin_session, experiment.id)
     # Verify analysis payload is in the order of experiment.arms above.
     assert isinstance(analysis, FreqExperimentAnalysisResponse)
     assert len(analysis.metric_analyses) == 1
@@ -278,7 +278,7 @@ async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_da
     with warnings.catch_warnings():
         warnings.filterwarnings(action="ignore", message=r"(divide by zero|invalid value).*", category=RuntimeWarning)
         make_first_snapshot(experiment.id, snapshot_id)
-    analysis = await get_latest_snapshot_analysis(xngin_session, experiment.id)
+    analysis = get_latest_snapshot_analysis(xngin_session, experiment.id)
 
     assert isinstance(analysis, FreqExperimentAnalysisResponse)
     assert len(analysis.metric_analyses) == 1
@@ -308,7 +308,7 @@ async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_da
     with warnings.catch_warnings():
         warnings.filterwarnings(action="ignore", message=r"(divide by zero|invalid value).*", category=RuntimeWarning)
         make_first_snapshot(experiment.id, snapshot_id)
-    analysis = await get_latest_snapshot_analysis(xngin_session, experiment.id)
+    analysis = get_latest_snapshot_analysis(xngin_session, experiment.id)
 
     assert isinstance(analysis, FreqExperimentAnalysisResponse)
     assert len(analysis.metric_analyses) == 1
@@ -321,7 +321,7 @@ async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_da
     assert non_baseline_arm.arm_id == experiment.arms[1].id
 
 
-async def test_make_first_snapshot_is_noop_when_missing_or_not_pending(
+def test_make_first_snapshot_is_noop_when_missing_or_not_pending(
     xngin_session,
     testing_datasource,
     aclient: AdminAPIClient,
@@ -355,9 +355,7 @@ async def test_make_first_snapshot_is_noop_when_missing_or_not_pending(
     assert snapshots_after[0].details == {"message": "already failed"}
 
 
-async def test_handle_one_snapshot_safely_marks_failed_on_exception(
-    testing_datasource, aclient: AdminAPIClient, mocker
-):
+def test_handle_one_snapshot_safely_marks_failed_on_exception(testing_datasource, aclient: AdminAPIClient, mocker):
     experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="handle snapshot failure test")
 
     # Force the snapshot to fail.
@@ -381,7 +379,7 @@ async def test_handle_one_snapshot_safely_marks_failed_on_exception(
     assert snapshots[0].details == {"message": "RuntimeError: boom"}
 
 
-async def test_handle_one_snapshot_safely_marks_failed_on_timeout(
+def test_handle_one_snapshot_safely_marks_failed_on_timeout(
     testing_datasource,
     aclient: AdminAPIClient,
     mocker,
@@ -420,7 +418,7 @@ async def test_handle_one_snapshot_safely_marks_failed_on_timeout(
     assert "DwhTimeoutError" in snapshots[0].details["message"]
 
 
-async def test_a_warehouse_timeout_leaves_the_snapshotters_session_usable(
+def test_a_warehouse_timeout_leaves_the_snapshotters_session_usable(
     xngin_session,
     testing_datasource,
     aclient: AdminAPIClient,
@@ -438,7 +436,7 @@ async def test_a_warehouse_timeout_leaves_the_snapshotters_session_usable(
     therefore finish well inside the small budget that the first one has to exceed.
     """
     stalled_experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="timeout isolation")
-    healthy_experiment_id = await create_bandit_snapshot_experiment(
+    healthy_experiment_id = create_bandit_snapshot_experiment(
         aclient, eclient, testing_datasource, experiment_type=ExperimentsType.MAB_ONLINE
     )
     create_pending_snapshots(0)
@@ -469,14 +467,14 @@ async def test_a_warehouse_timeout_leaves_the_snapshotters_session_usable(
     assert status_of(healthy_experiment_id) == SnapshotStatus.SUCCESS
 
 
-async def test_bandit_snapshots_do_not_open_a_warehouse_connection(
+def test_bandit_snapshots_do_not_open_a_warehouse_connection(
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
     mocker,
 ):
     """Bandit analysis reads only the application database, which is why it gets no deadline."""
-    experiment_id = await create_bandit_snapshot_experiment(
+    experiment_id = create_bandit_snapshot_experiment(
         aclient, eclient, testing_datasource, experiment_type=ExperimentsType.MAB_ONLINE
     )
     mocker.patch.object(DwhSession, "_connect_blocking", side_effect=AssertionError("connected to a warehouse"))
@@ -495,7 +493,7 @@ async def test_bandit_snapshots_do_not_open_a_warehouse_connection(
     assert [snapshot.status for snapshot in snapshots] == [SnapshotStatus.SUCCESS]
 
 
-async def test_create_pending_snapshots_inserts_for_new_stale_and_failed_experiments(
+def test_create_pending_snapshots_inserts_for_new_stale_and_failed_experiments(
     xngin_session,
     testing_datasource,
     aclient: AdminAPIClient,
@@ -559,7 +557,7 @@ async def test_create_pending_snapshots_inserts_for_new_stale_and_failed_experim
 
 
 @pytest.mark.parametrize("state", [ExperimentState.ASSIGNED, ExperimentState.ABANDONED])
-async def test_create_pending_snapshots_skips_experiments_that_are_not_committed(
+def test_create_pending_snapshots_skips_experiments_that_are_not_committed(
     testing_datasource,
     aclient: AdminAPIClient,
     state: ExperimentState,
@@ -583,7 +581,7 @@ async def test_create_pending_snapshots_skips_experiments_that_are_not_committed
     )
 
 
-async def test_process_pending_snapshots_processes_until_empty(
+def test_process_pending_snapshots_processes_until_empty(
     xngin_session,
     testing_datasource,
     aclient: AdminAPIClient,
@@ -623,7 +621,7 @@ async def test_process_pending_snapshots_processes_until_empty(
         assert isinstance(analysis, FreqExperimentAnalysisResponse)
 
 
-async def create_bandit_snapshot_experiment(
+def create_bandit_snapshot_experiment(
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
     testing_datasource,
@@ -735,14 +733,14 @@ async def create_bandit_snapshot_experiment(
 
 
 @pytest.mark.parametrize("experiment_type", [ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE])
-async def test_create_snapshot_bandit_succeeds(
+def test_create_snapshot_bandit_succeeds(
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
     experiment_type: ExperimentsType,
 ):
     """Ensures snapshots work end-to-end for bandits."""
-    experiment_id = await create_bandit_snapshot_experiment(
+    experiment_id = create_bandit_snapshot_experiment(
         aclient,
         eclient,
         testing_datasource,
@@ -767,12 +765,12 @@ async def test_create_snapshot_bandit_succeeds(
     assert data.n_outcomes == 2
 
 
-async def test_create_snapshot_cmab_matches_admin_analysis_at_mean_contexts(
+def test_create_snapshot_cmab_matches_admin_analysis_at_mean_contexts(
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
 ):
-    experiment_id = await create_bandit_snapshot_experiment(
+    experiment_id = create_bandit_snapshot_experiment(
         aclient,
         eclient,
         testing_datasource,
@@ -855,12 +853,12 @@ async def test_create_snapshot_cmab_matches_admin_analysis_at_mean_contexts(
     assert normalize_bandit_analysis(snapshot_analysis) == normalize_bandit_analysis(admin_analysis)
 
 
-async def test_create_snapshot_cmab_with_zero_draws_matches_zero_context_admin_analysis(
+def test_create_snapshot_cmab_with_zero_draws_matches_zero_context_admin_analysis(
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
 ):
-    experiment_id = await create_bandit_snapshot_experiment(
+    experiment_id = create_bandit_snapshot_experiment(
         aclient,
         eclient,
         testing_datasource,

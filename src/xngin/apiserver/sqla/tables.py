@@ -10,7 +10,6 @@ from pydantic import TypeAdapter
 from sqlalchemy import Boolean, CheckConstraint, Float, ForeignKey, ForeignKeyConstraint, Index, Numeric, String
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import ARRAY
-from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
@@ -45,7 +44,7 @@ context_id_factory = unique_id_factory("ctx")
 type SnapshotStatus = Literal["pending", "success", "failed"]
 
 
-class Base(AsyncAttrs, DeclarativeBase):
+class Base(DeclarativeBase):
     # See https://docs.sqlalchemy.org/en/20/orm/declarative_tables.html#customizing-the-type-map
     # Type borrowed from sqlalchemy.orm.decl_api.
     type_annotation_map: ClassVar[dict[Any, TypeEngine[Any]]] = {

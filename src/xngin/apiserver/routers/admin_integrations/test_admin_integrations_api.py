@@ -56,7 +56,7 @@ class FakeClient:
 
 
 @pytest.fixture(name="testing_design_spec")
-async def fixture_testing_design_spec() -> MABExperimentSpec:
+def fixture_testing_design_spec() -> MABExperimentSpec:
     """Create a preassigned experiment directly in our app db on the datasource with proper user permissions."""
 
     return MABExperimentSpec(
@@ -74,7 +74,7 @@ async def fixture_testing_design_spec() -> MABExperimentSpec:
     )
 
 
-async def test_turn_connection_lifecycle(
+def test_turn_connection_lifecycle(
     monkeypatch: pytest.MonkeyPatch, aclient: AdminAPIClient, iaclient: AdminIntegrationsAPIClient
 ):
     """Test creating, rotating, previewing, and deleting an organization's Turn.io connection."""
@@ -158,7 +158,7 @@ async def test_turn_connection_lifecycle(
     iaclient.delete_turn_connection_from_organization(organization_id=org_id, allow_missing=True)
 
 
-async def test_turn_connection_encrypted_at_rest(
+def test_turn_connection_encrypted_at_rest(
     monkeypatch: pytest.MonkeyPatch,
     xngin_session: Session,
     aclient: AdminAPIClient,
@@ -186,7 +186,7 @@ async def test_turn_connection_encrypted_at_rest(
     assert row.get_turn_api_token() == token
 
 
-async def test_turn_journeys_api_error_handling(
+def test_turn_journeys_api_error_handling(
     monkeypatch: pytest.MonkeyPatch, aclient: AdminAPIClient, iaclient: AdminIntegrationsAPIClient
 ):
     """GET /turn-connection/journeys must handle errors from the Turn API gracefully."""
@@ -233,7 +233,7 @@ async def test_turn_journeys_api_error_handling(
         iaclient.get_organization_turn_connection(organization_id=org_id)
 
 
-async def test_turn_journey_mapping_lifecycle(
+def test_turn_journey_mapping_lifecycle(
     testing_datasource,
     testing_design_spec: MABExperimentSpec,
     aclient: AdminAPIClient,
@@ -332,7 +332,7 @@ async def test_turn_journey_mapping_lifecycle(
     iaclient.delete_turn_arm_journey_mapping(datasource_id=ds_id, experiment_id=experiment_id, allow_missing=True)
 
 
-async def test_turn_journey_mapping_rejects_mismatched_arm_ids(
+def test_turn_journey_mapping_rejects_mismatched_arm_ids(
     testing_datasource,
     testing_design_spec: MABExperimentSpec,
     aclient: AdminAPIClient,
@@ -388,7 +388,7 @@ async def test_turn_journey_mapping_rejects_mismatched_arm_ids(
     assert extra_id in match.http_response().text
 
 
-async def test_regenerate_turn_webhook_token(
+def test_regenerate_turn_webhook_token(
     monkeypatch: pytest.MonkeyPatch, aclient: AdminAPIClient, iaclient: AdminIntegrationsAPIClient
 ):
     """Regenerating the webhook token rotates the auth_token without changing the Turn connection."""
@@ -420,7 +420,7 @@ async def test_regenerate_turn_webhook_token(
     assert result.auth_token != initial_token
 
 
-async def test_resetting_same_token_preserves_arm_journey_mapping(
+def test_resetting_same_token_preserves_arm_journey_mapping(
     testing_datasource,
     testing_design_spec: MABExperimentSpec,
     aclient: AdminAPIClient,
@@ -470,11 +470,11 @@ async def test_resetting_same_token_preserves_arm_journey_mapping(
     assert got.arm_to_journeys == mapping
 
 
-async def test_get_experiment_sample_calls_for_mab(
+def test_get_experiment_sample_calls_for_mab(
     testing_datasource, aclient: AdminAPIClient, iaclient: AdminIntegrationsAPIClient
 ):
     """A MAB experiment's sample calls carry example calls with a type-correct outcome."""
-    experiment = await make_bandit_online_experiment(
+    experiment = make_bandit_online_experiment(
         aclient,
         testing_datasource.datasource_id,
         prior_type=PriorTypes.NORMAL,
@@ -493,11 +493,11 @@ async def test_get_experiment_sample_calls_for_mab(
     assert outcome_call.body == {"outcome": 1.5}  # NORMAL reward => real-valued example
 
 
-async def test_get_experiment_sample_calls_none_for_cmab(
+def test_get_experiment_sample_calls_none_for_cmab(
     testing_datasource, aclient: AdminAPIClient, iaclient: AdminIntegrationsAPIClient
 ):
     """CMAB assignment needs a context vector, so there are no sample calls yet (deferred)."""
-    experiment = await make_bandit_online_experiment(
+    experiment = make_bandit_online_experiment(
         aclient,
         testing_datasource.datasource_id,
         experiment_type=ExperimentsType.CMAB_ONLINE,
@@ -511,7 +511,7 @@ async def test_get_experiment_sample_calls_none_for_cmab(
     assert sample_calls is None
 
 
-async def test_get_experiment_sample_calls_preassigned_frequentist_get_assignment_only(
+def test_get_experiment_sample_calls_preassigned_frequentist_get_assignment_only(
     testing_datasource, aclient: AdminAPIClient, iaclient: AdminIntegrationsAPIClient
 ):
     """A preassigned frequentist experiment gets only the get-assignment example: report-outcome is
@@ -547,7 +547,7 @@ async def test_get_experiment_sample_calls_preassigned_frequentist_get_assignmen
     assert all("outcome" not in c.path for c in sample_calls.calls)
 
 
-async def test_get_experiment_sample_calls_freq_online_with_filters(
+def test_get_experiment_sample_calls_freq_online_with_filters(
     testing_datasource, aclient: AdminAPIClient, iaclient: AdminIntegrationsAPIClient
 ):
     """A freq_online experiment with filters also gets an assign_with_filters example, so integrators
@@ -590,7 +590,7 @@ async def test_get_experiment_sample_calls_freq_online_with_filters(
     assert get_call.path.endswith("?create_if_none=false")
 
 
-async def test_journey_mapping_reports_payload_errors_when_the_path_resolves(
+def test_journey_mapping_reports_payload_errors_when_the_path_resolves(
     testing_datasource,
     testing_design_spec: MABExperimentSpec,
     aclient: AdminAPIClient,

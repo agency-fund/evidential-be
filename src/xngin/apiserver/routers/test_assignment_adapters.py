@@ -253,14 +253,14 @@ def test_assign_treatments_with_balance_clustered():
     assert treatments_by_cluster[1] == {1}
 
 
-async def test_bulk_insert_arm_assignments_basic(
+def test_bulk_insert_arm_assignments_basic(
     xngin_session: Session,
     testing_datasource: DatasourceMetadata,
     sample_rows,
 ):
     """Test bulk inserts of arm assignments."""
     # First create an experiment and arms in db
-    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
+    experiment = insert_experiment_and_arms(xngin_session, testing_datasource.ds)
     arm_ids = [arm.id for arm in experiment.arms]
     unique_id_field = experiment.unique_id_field()
     assert unique_id_field is not None
@@ -311,13 +311,13 @@ async def test_bulk_insert_arm_assignments_basic(
         assert assignment.strata[0]["strata_value"] in {"M", "F"}
 
 
-async def test_bulk_insert_arm_assignments_stores_cluster_key(
+def test_bulk_insert_arm_assignments_stores_cluster_key(
     xngin_session: Session,
     testing_datasource: DatasourceMetadata,
     sample_rows,
 ):
     """Cluster keys are copied from the source assignment rows when configured."""
-    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
+    experiment = insert_experiment_and_arms(xngin_session, testing_datasource.ds)
     arm_ids = [arm.id for arm in experiment.arms]
     unique_id_field = experiment.unique_id_field()
     assert unique_id_field is not None
@@ -362,7 +362,7 @@ async def test_bulk_insert_arm_assignments_stores_cluster_key(
 MAX_SAFE_INTEGER = (1 << 53) - 1  # 9007199254740991
 
 
-async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
+def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
     xngin_session: Session,
     testing_datasource: DatasourceMetadata,
     sample_table,
@@ -371,12 +371,12 @@ async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
 ):
     """Test assignment with large integer participant IDs (underlying type as Decimal and int64)."""
     # First create an experiment and arms in db
-    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
+    experiment = insert_experiment_and_arms(xngin_session, testing_datasource.ds)
     arm_ids = [arm.id for arm in experiment.arms]
     unique_id_field = experiment.unique_id_field()
     assert unique_id_field is not None
 
-    async def _assign_test(data):
+    def _assign_test(data):
         rows = [Row(**row) for row in data.to_dict("records")]
         assignment_result = assign_treatments_with_balance(
             sa_table=sample_table,
@@ -410,7 +410,7 @@ async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
     # Test: handle Decimals including those bigger than signed int64s
     # (e.g. from psycopg2 with redshift numerics).
     sample_data["id"] = orig_ids.apply(lambda x: Decimal(MAX_SAFE_INTEGER + x))
-    assignments = await _assign_test(sample_data)
+    assignments = _assign_test(sample_data)
     # Verify large integer IDs were properly stored as strings
     assert len(assignments) == len(sample_data)
     for assignment in assignments:
@@ -429,7 +429,7 @@ async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
 
     # Test: handle very big negatives as well
     sample_data["id"] = orig_ids.apply(lambda x: Decimal(-MAX_SAFE_INTEGER - x))
-    assignments = await _assign_test(sample_data)
+    assignments = _assign_test(sample_data)
     # Verify large integer IDs were properly stored as strings
     assert len(assignments) == len(sample_data)
     for assignment in assignments:
@@ -453,7 +453,7 @@ async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
     # If cast to float64, this next value would be rounded to nonexistent 103241243500726320 and raise a
     # ValueError in our response construction.
     sample_data.loc[2, "id"] = 103241243500726324
-    assignments = await _assign_test(sample_data)
+    assignments = _assign_test(sample_data)
     # These raise StopIteration if they don't exist
     next(a for a in assignments if a.participant_id == "9007199254740993")
     next(a for a in assignments if a.participant_id == "103241243500726324")
@@ -461,12 +461,10 @@ async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
     assert ids == set(sample_data["id"].astype(str))
 
 
-async def test_bulk_insert_renders_decimal_and_bool_strata_correctly(
-    xngin_session: Session, testing_datasource, sample_rows
-):
+def test_bulk_insert_renders_decimal_and_bool_strata_correctly(xngin_session: Session, testing_datasource, sample_rows):
     """Test that the adapter correctly renders decimal and bool strata as strings."""
     # First create an experiment and arms in db
-    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
+    experiment = insert_experiment_and_arms(xngin_session, testing_datasource.ds)
     arm_ids = [arm.id for arm in experiment.arms]
     unique_id_field = experiment.unique_id_field()
     assert unique_id_field is not None
@@ -502,10 +500,10 @@ async def test_bulk_insert_renders_decimal_and_bool_strata_correctly(
         assert p.strata[1]["strata_value"] in {"True", "False"}, p.strata
 
 
-async def test_bulk_insert_with_no_stratification(xngin_session: Session, testing_datasource, sample_rows):
+def test_bulk_insert_with_no_stratification(xngin_session: Session, testing_datasource, sample_rows):
     """Test assignment with no stratification columns."""
     # First create an experiment and arms in db
-    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
+    experiment = insert_experiment_and_arms(xngin_session, testing_datasource.ds)
     arm_ids = [arm.id for arm in experiment.arms]
     unique_id_field = experiment.unique_id_field()
     assert unique_id_field is not None
@@ -541,10 +539,10 @@ async def test_bulk_insert_with_no_stratification(xngin_session: Session, testin
     assert arm_counts[arm_ids[0]] == len(assignments) // 2
 
 
-async def test_bulk_insert_with_no_valid_strata(xngin_session: Session, testing_datasource, sample_rows):
+def test_bulk_insert_with_no_valid_strata(xngin_session: Session, testing_datasource, sample_rows):
     """Test assignment when a strata column has only a single value."""
     # First create an experiment and arms in db
-    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
+    experiment = insert_experiment_and_arms(xngin_session, testing_datasource.ds)
     arm_ids = [arm.id for arm in experiment.arms]
     unique_id_field = experiment.unique_id_field()
     assert unique_id_field is not None
@@ -577,11 +575,11 @@ async def test_bulk_insert_with_no_valid_strata(xngin_session: Session, testing_
 
 
 @pytest.mark.parametrize("missing_value", [None, np.nan, pd.NA, Decimal("NaN"), float("NaN")])
-async def test_bulk_insert_renders_missing_strata_values_as_na(
+def test_bulk_insert_renders_missing_strata_values_as_na(
     xngin_session: Session, testing_datasource, sample_rows, missing_value
 ):
     """Test that missing strata values are rendered as "NA" regardless of sentinel."""
-    experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
+    experiment = insert_experiment_and_arms(xngin_session, testing_datasource.ds)
     arm_ids = [arm.id for arm in experiment.arms]
     unique_id_field = experiment.unique_id_field()
     assert unique_id_field is not None

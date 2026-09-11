@@ -48,9 +48,7 @@ def _iterations(n_draws: int) -> int:
     return 5 if n_draws <= 10_000 else 3
 
 
-async def _create_bandit_experiment(
-    aclient: AdminAPIClient, testing_datasource, experiment_type: ExperimentsType
-) -> str:
+def _create_bandit_experiment(aclient: AdminAPIClient, testing_datasource, experiment_type: ExperimentsType) -> str:
     match experiment_type:
         case ExperimentsType.MAB_ONLINE:
             design_spec: MABExperimentSpec | CMABExperimentSpec = MABExperimentSpec(
@@ -95,7 +93,7 @@ async def _create_bandit_experiment(
     return experiment_id
 
 
-async def _warmup_via_api(
+def _warmup_via_api(
     eclient: ExperimentsAPIClient,
     testing_datasource,
     experiment_id: str,
@@ -135,7 +133,7 @@ async def _warmup_via_api(
         )
 
 
-async def _bulk_insert_draws(xngin_session, experiment_id: str, arm_ids: list[str], n_draws: int, *, is_cmab: bool):
+def _bulk_insert_draws(xngin_session, experiment_id: str, arm_ids: list[str], n_draws: int, *, is_cmab: bool):
     """Server-side bulk insert of n_draws rows via INSERT ... SELECT generate_series.
 
     Outcome alternates null/non-null so the stddev path filters roughly half the rows.
@@ -169,20 +167,20 @@ def _summary_line(name: str, timings: list[float]) -> str:
     )
 
 
-async def _arm_ids(xngin_session, experiment_id: str) -> list[str]:
+def _arm_ids(xngin_session, experiment_id: str) -> list[str]:
     return list(
         (xngin_session.execute(select(tables.Arm.id).where(tables.Arm.experiment_id == experiment_id))).scalars()
     )
 
 
-async def _context_inputs(xngin_session, experiment_id: str) -> list[ContextInput]:
+def _context_inputs(xngin_session, experiment_id: str) -> list[ContextInput]:
     contexts = list(
         (xngin_session.execute(select(tables.Context).where(tables.Context.experiment_id == experiment_id))).scalars()
     )
     return [ContextInput(context_id=c.id, context_value=1.0) for c in sorted(contexts, key=lambda c: c.id)]
 
 
-async def _setup_experiment_with_draws(
+def _setup_experiment_with_draws(
     xngin_session,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
@@ -191,13 +189,13 @@ async def _setup_experiment_with_draws(
     n_draws: int,
     label: str,
 ) -> tuple[str, list[ContextInput] | None]:
-    experiment_id = await _create_bandit_experiment(aclient, testing_datasource, experiment_type)
-    arm_ids = await _arm_ids(xngin_session, experiment_id)
+    experiment_id = _create_bandit_experiment(aclient, testing_datasource, experiment_type)
+    arm_ids = _arm_ids(xngin_session, experiment_id)
     is_cmab = experiment_type == ExperimentsType.CMAB_ONLINE
-    context_inputs = await _context_inputs(xngin_session, experiment_id) if is_cmab else None
+    context_inputs = _context_inputs(xngin_session, experiment_id) if is_cmab else None
 
     t_setup = time.perf_counter()
-    await _warmup_via_api(
+    _warmup_via_api(
         eclient,
         testing_datasource,
         experiment_id,
@@ -208,7 +206,7 @@ async def _setup_experiment_with_draws(
     t_warmup_done = time.perf_counter()
     remaining = n_draws - N_WARMUP
     if remaining > 0:
-        await _bulk_insert_draws(xngin_session, experiment_id, arm_ids, remaining, is_cmab=is_cmab)
+        _bulk_insert_draws(xngin_session, experiment_id, arm_ids, remaining, is_cmab=is_cmab)
     print(
         f"\nSETUP {label} {experiment_type.value} n={n_draws}: "
         f"warmup={t_warmup_done - t_setup:.2f}s "
@@ -219,7 +217,7 @@ async def _setup_experiment_with_draws(
 
 @pytest.mark.parametrize("n_draws", DRAW_COUNTS)
 @pytest.mark.parametrize("experiment_type", EXPERIMENT_TYPES)
-async def test_analyze_endpoint_perf(
+def test_analyze_endpoint_perf(
     xngin_session,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
@@ -227,7 +225,7 @@ async def test_analyze_endpoint_perf(
     experiment_type: ExperimentsType,
     n_draws: int,
 ):
-    experiment_id, context_inputs = await _setup_experiment_with_draws(
+    experiment_id, context_inputs = _setup_experiment_with_draws(
         xngin_session, aclient, eclient, testing_datasource, experiment_type, n_draws, "analyze"
     )
     is_cmab = experiment_type == ExperimentsType.CMAB_ONLINE
@@ -255,7 +253,7 @@ async def test_analyze_endpoint_perf(
 
 @pytest.mark.parametrize("n_draws", DRAW_COUNTS)
 @pytest.mark.parametrize("experiment_type", EXPERIMENT_TYPES)
-async def test_snapshot_path_perf(
+def test_snapshot_path_perf(
     xngin_session,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
@@ -263,7 +261,7 @@ async def test_snapshot_path_perf(
     experiment_type: ExperimentsType,
     n_draws: int,
 ):
-    experiment_id, _ = await _setup_experiment_with_draws(
+    experiment_id, _ = _setup_experiment_with_draws(
         xngin_session, aclient, eclient, testing_datasource, experiment_type, n_draws, "snapshot"
     )
 

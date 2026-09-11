@@ -61,20 +61,20 @@ def temporary_unset_env_var(name: str):
             os.environ[name] = previous
 
 
-async def test_require_valid_session_token_missing_prefix():
+def test_require_valid_session_token_missing_prefix():
     cryp = SessionTokenCryptor()
     with pytest.raises(HTTPException, match="token invalid") as exc:
         require_valid_session_token(HTTPAuthorizationCredentials(scheme="Bearer", credentials="abc"), cryp)
     assert exc.value.status_code == 401
 
 
-async def test_require_valid_session_token_misconfigured():
+def test_require_valid_session_token_misconfigured():
     cryp = SessionTokenCryptor()
     with pytest.raises(TokenCryptorMisconfiguredError):
         require_valid_session_token(HTTPAuthorizationCredentials(scheme="Bearer", credentials="xa_abc"), cryp)
 
 
-async def test_require_valid_session_token():
+def test_require_valid_session_token():
     with temporary_env_var(flags.ENV_SESSION_TOKEN_KEYSET, NaclProviderKeyset.create().serialize_base64()):
         cryp = SessionTokenCryptor()
         expected = Principal(email="test@example.com", hd="", iat=0, iss="", sub="")
@@ -90,7 +90,7 @@ async def test_require_valid_session_token():
 
 
 @pytest.mark.parametrize("variant", ["x", ".", " ", "==", "  ", "===", ";", "\n"])
-async def test_require_valid_session_token_invalid(variant):
+def test_require_valid_session_token_invalid(variant):
     with temporary_env_var(flags.ENV_SESSION_TOKEN_KEYSET, NaclProviderKeyset.create().serialize_base64()):
         cryp = SessionTokenCryptor()
         expected = Principal(email="test@example.com", hd="", iat=0, iss="", sub="")
@@ -143,7 +143,7 @@ def test_token_cryptor_reads_configured_local_keyset_file(tmp_path):
         assert cryptor.decrypt(token) == b"payload"
 
 
-async def test_user_from_token_invite(xngin_session: Session):
+def test_user_from_token_invite(xngin_session: Session):
     """
     Tests that invited users are updated with the IDP details on their first login, and
     that they are then bound to that IDP afterwards.
@@ -178,7 +178,7 @@ async def test_user_from_token_invite(xngin_session: Session):
     assert exc.value.status_code == 401
 
 
-async def test_user_from_token_when_users_exist(xngin_session: Session):
+def test_user_from_token_when_users_exist(xngin_session: Session):
     unpriv = require_user_from_token(xngin_session, TESTING_TOKENS[UNPRIVILEGED_TOKEN_FOR_TESTING])
     assert not unpriv.is_privileged
     priv = require_user_from_token(xngin_session, TESTING_TOKENS[PRIVILEGED_TOKEN_FOR_TESTING])
@@ -192,7 +192,7 @@ async def test_user_from_token_when_users_exist(xngin_session: Session):
     assert exc.value.status_code == 401
 
 
-async def test_user_from_token_initial_setup(xngin_session: Session):
+def test_user_from_token_initial_setup(xngin_session: Session):
     # emulate first time developer experience by deleting the seeded users
     delete_seeded_users(xngin_session)
 
@@ -211,7 +211,7 @@ async def test_user_from_token_initial_setup(xngin_session: Session):
     assert exc.value.status_code == 401
 
 
-async def test_user_from_token_expired(xngin_session: Session):
+def test_user_from_token_expired(xngin_session: Session):
     # emulate first time developer experience by deleting the seeded users
     delete_seeded_users(xngin_session)
 
@@ -230,7 +230,7 @@ async def test_user_from_token_expired(xngin_session: Session):
     assert exc.value.status_code == 401
 
 
-async def test_initial_user_setup_matches_testing_dwh(xngin_session: Session):
+def test_initial_user_setup_matches_testing_dwh(xngin_session: Session):
     delete_seeded_users(xngin_session)
 
     first_user = require_user_from_token(
@@ -243,7 +243,7 @@ async def test_initial_user_setup_matches_testing_dwh(xngin_session: Session):
     assert len(first_user.organizations) == 1
     organization = first_user.organizations[0]
     assert organization.name == DEFAULT_ORGANIZATION_NAME
-    datasources: list[tables.Datasource] = await organization.awaitable_attrs.datasources
+    datasources: list[tables.Datasource] = organization.datasources
     assert len(datasources) == 3, [d.name for d in datasources]
 
     # Validate that we added the testing dwh datasource.
