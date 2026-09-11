@@ -2073,7 +2073,7 @@ async def collect_streaming_response_body(response) -> bytes:
     return b"".join([chunk async for chunk in response.body_iterator])
 
 
-async def test_get_experiment_assignments_as_csv_impl(xngin_session, xngin_async_session, testing_datasource):
+async def test_get_experiment_assignments_as_csv_impl(xngin_session, testing_datasource):
     experiment, _ = await make_insertable_experiment(
         testing_datasource.ds,
         design_spec=PreassignedFrequentistExperimentSpec(
@@ -2093,7 +2093,7 @@ async def test_get_experiment_assignments_as_csv_impl(xngin_session, xngin_async
     xngin_session.refresh(experiment, ["arms"])
 
     arm_name_to_id = {a.name: a.id for a in experiment.arms}
-    response = get_experiment_assignments_as_csv_impl(xngin_async_session, experiment)
+    response = get_experiment_assignments_as_csv_impl(xngin_session, experiment)
     csv_bytes = await collect_streaming_response_body(response)
     assert b"\r" not in csv_bytes
     assert csv_bytes.count(b"\n") == 3
@@ -2106,7 +2106,7 @@ async def test_get_experiment_assignments_as_csv_impl(xngin_session, xngin_async
 
 
 async def test_get_experiment_assignments_as_csv_impl_emits_null_for_missing_metadata_strata(
-    xngin_session, xngin_async_session, testing_datasource
+    xngin_session, testing_datasource
 ):
     experiment, _ = await make_insertable_experiment(
         testing_datasource.ds,
@@ -2127,7 +2127,7 @@ async def test_get_experiment_assignments_as_csv_impl_emits_null_for_missing_met
     experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds, experiment=experiment)
 
     arm_name_to_id = {a.name: a.id for a in experiment.arms}
-    response = get_experiment_assignments_as_csv_impl(xngin_async_session, experiment)
+    response = get_experiment_assignments_as_csv_impl(xngin_session, experiment)
     csv_bytes = await collect_streaming_response_body(response)
     assert b"\r" not in csv_bytes
     assert csv_bytes.count(b"\n") == 3
@@ -2140,12 +2140,12 @@ async def test_get_experiment_assignments_as_csv_impl_emits_null_for_missing_met
 
 
 async def test_get_experiment_assignments_as_csv_impl_includes_header_for_empty_export(
-    xngin_session, xngin_async_session, testing_datasource
+    xngin_session, testing_datasource
 ):
     experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
     xngin_session.refresh(experiment, ["arms"])
 
-    response = get_experiment_assignments_as_csv_impl(xngin_async_session, experiment)
+    response = get_experiment_assignments_as_csv_impl(xngin_session, experiment)
     csv_bytes = await collect_streaming_response_body(response)
     assert b"\r" not in csv_bytes
     assert csv_bytes.count(b"\n") == 1
@@ -2154,7 +2154,7 @@ async def test_get_experiment_assignments_as_csv_impl_includes_header_for_empty_
 
 
 async def test_get_experiment_assignments_as_csv_impl_uses_sorted_strata_header_order(
-    xngin_session, xngin_async_session, testing_datasource
+    xngin_session, testing_datasource
 ):
     experiment, _ = await make_insertable_experiment(
         testing_datasource.ds,
@@ -2173,14 +2173,14 @@ async def test_get_experiment_assignments_as_csv_impl_uses_sorted_strata_header_
     )
     experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds, experiment=experiment)
 
-    response = get_experiment_assignments_as_csv_impl(xngin_async_session, experiment)
+    response = get_experiment_assignments_as_csv_impl(xngin_session, experiment)
     csv_bytes = await collect_streaming_response_body(response)
     rows = csv_bytes.decode().splitlines()
     assert rows[0] == "participant_id,arm_id,arm_name,created_at,current_income,gender"
 
 
 async def test_get_experiment_assignments_as_csv_impl_omits_strata_columns_when_none_defined(
-    xngin_session, xngin_async_session, testing_datasource
+    xngin_session, testing_datasource
 ):
     experiment, _ = await make_insertable_experiment(
         testing_datasource.ds,
@@ -2200,7 +2200,7 @@ async def test_get_experiment_assignments_as_csv_impl_omits_strata_columns_when_
     experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds, experiment=experiment)
     arm_name_to_id = {a.name: a.id for a in experiment.arms}
 
-    response = get_experiment_assignments_as_csv_impl(xngin_async_session, experiment)
+    response = get_experiment_assignments_as_csv_impl(xngin_session, experiment)
     csv_bytes = await collect_streaming_response_body(response)
     assert b"\r" not in csv_bytes
     assert csv_bytes.count(b"\n") == 3
@@ -2213,7 +2213,7 @@ async def test_get_experiment_assignments_as_csv_impl_omits_strata_columns_when_
 
 
 async def test_get_experiment_assignments_as_csv_impl_omits_context_vals_for_mab_experiment(
-    xngin_session, xngin_async_session, testing_datasource
+    xngin_session, testing_datasource
 ):
     experiment, _ = await make_insertable_experiment(
         testing_datasource.ds,
@@ -2233,7 +2233,7 @@ async def test_get_experiment_assignments_as_csv_impl_omits_context_vals_for_mab
     experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds, experiment=experiment)
     arm_name_to_id = {a.name: a.id for a in experiment.arms}
 
-    response = get_experiment_assignments_as_csv_impl(xngin_async_session, experiment)
+    response = get_experiment_assignments_as_csv_impl(xngin_session, experiment)
     csv_bytes = await collect_streaming_response_body(response)
     rows = csv_bytes.decode().splitlines()
     assert rows[0] == "participant_id,arm_id,arm_name,created_at,outcome"
@@ -2244,7 +2244,7 @@ async def test_get_experiment_assignments_as_csv_impl_omits_context_vals_for_mab
 
 
 async def test_get_experiment_assignments_as_csv_impl_includes_context_vals_for_cmab_experiment(
-    xngin_session, xngin_async_session, testing_datasource
+    xngin_session, testing_datasource
 ):
     experiment, _ = await make_insertable_experiment(
         testing_datasource.ds,
@@ -2268,7 +2268,7 @@ async def test_get_experiment_assignments_as_csv_impl_includes_context_vals_for_
     experiment = await make_experiment_with_assignments(xngin_session, testing_datasource.ds, experiment=experiment)
     arm_name_to_id = {a.name: a.id for a in experiment.arms}
 
-    response = get_experiment_assignments_as_csv_impl(xngin_async_session, experiment)
+    response = get_experiment_assignments_as_csv_impl(xngin_session, experiment)
     csv_bytes = await collect_streaming_response_body(response)
     rows = csv_bytes.decode().splitlines()
     assert rows[0] == "participant_id,arm_id,arm_name,created_at,outcome,context_vals"

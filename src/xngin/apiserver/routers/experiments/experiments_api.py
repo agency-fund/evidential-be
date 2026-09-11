@@ -185,9 +185,9 @@ async def get_experiment_assignments(
     """,
     response_class=CsvStreamingResponse,
 )
-async def get_experiment_assignments_as_csv(
+def get_experiment_assignments_as_csv(
     experiment: Annotated[tables.Experiment, Depends(edeps.experiment_with_datasource_and_fields)],
-    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    xngin_session: Annotated[Session, Depends(xngin_sync_db_session)],
 ) -> CsvStreamingResponse:
     return experiments_common_csv.get_experiment_assignments_as_csv_impl(xngin_session, experiment)
 
