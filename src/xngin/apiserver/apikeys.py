@@ -3,7 +3,7 @@ import secrets
 import string
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from xngin.apiserver import constants
 from xngin.apiserver.sqla import tables
@@ -79,7 +79,7 @@ def make_key() -> tuple[str, str]:
     return id_, key
 
 
-async def require_valid_api_key(session: AsyncSession, api_key: str | None, datasource_id: str):
+def require_valid_api_key(session: Session, api_key: str | None, datasource_id: str) -> None:
     """Queries the database for a matching API key with privileges on the config referenced by config_id."""
     key_hash = hash_key_or_raise(api_key)
     stmt = (
@@ -88,7 +88,7 @@ async def require_valid_api_key(session: AsyncSession, api_key: str | None, data
         .where(tables.ApiKey.datasource_id == datasource_id)
         .where(tables.ApiKey.key == key_hash)
     )
-    result = await session.execute(stmt)
+    result = session.execute(stmt)
     row = result.scalar_one_or_none()
 
     if not row:

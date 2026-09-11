@@ -1,4 +1,3 @@
-import asyncio
 import enum
 import io
 from collections.abc import Sequence
@@ -14,11 +13,10 @@ from psycopg import sql
 from sqlalchemy import Integer, Select, Table, func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import Session, selectinload
 
 from xngin.apiserver import constants, flags
-from xngin.apiserver.dwh.dwh_session import DwhSession
+from xngin.apiserver.dwh.dwh_session import SyncDwhSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
 from xngin.apiserver.dwh.participant_metrics_queries import get_participant_metrics
 from xngin.apiserver.exceptions_common import LateValidationError
@@ -71,7 +69,7 @@ from xngin.apiserver.routers.common_enums import (
 )
 from xngin.apiserver.routers.experiments.property_filters import passes_filters, validate_filter_value
 from xngin.apiserver.settings import DatasourceConfig
-from xngin.apiserver.sql.queries import select_as_csv
+from xngin.apiserver.sql.queries import select_as_csv_sync
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
@@ -136,7 +134,7 @@ def make_schema_from_experiment(experiment: tables.Experiment) -> ParticipantsSc
     )
 
 
-async def fetch_fields_or_raise(
+def fetch_fields_or_raise(
     datasource: tables.Datasource,
     design_spec: AnyFrequentistDesignSpec,
 ) -> dict[str, DataType]:
@@ -146,12 +144,12 @@ async def fetch_fields_or_raise(
     Raises: LateValidationError if any fields used in the request are not found, invalid for a
     certain use, or if filter values are invalid for the field type.
     """
-    async with DwhSession(datasource.get_config().dwh) as dwh:
-        sa_table = await dwh.inspect_table(design_spec.table_name)
+    with SyncDwhSession.open(datasource.get_config().dwh) as dwh:
+        sa_table = dwh.inspect_table(design_spec.table_name)
         return convert_table_to_fields_or_raise(sa_table, design_spec)
 
 
-async def fetch_mab_dwh_fields_or_raise(
+def fetch_mab_dwh_fields_or_raise(
     datasource: tables.Datasource,
     design_spec: MABDwhExperimentSpec,
 ) -> dict[str, DataType]:
@@ -161,8 +159,8 @@ async def fetch_mab_dwh_fields_or_raise(
     Returns: Field name => datatype map (covering primary_key and target_field_name only).
     Raises: LateValidationError if either column is missing from the table.
     """
-    async with DwhSession(datasource.get_config().dwh) as dwh:
-        sa_table = await dwh.inspect_table(design_spec.table_name)
+    with SyncDwhSession.open(datasource.get_config().dwh) as dwh:
+        sa_table = dwh.inspect_table(design_spec.table_name)
 
     referenced_fields_and_types = _resolve_referenced_field_types(
         sa_table, {design_spec.primary_key, design_spec.target_field_name}
@@ -237,10 +235,10 @@ def convert_table_to_fields_or_raise(table: Table, design_spec: AnyFrequentistDe
     return referenced_fields_and_types
 
 
-async def create_experiment_impl(
+def create_experiment_impl(
     request: CreateExperimentRequest,
     datasource: tables.Datasource,
-    xngin_session: AsyncSession,
+    xngin_session: Session,
     stratify_on_metrics: bool,
     random_state: int | None,
     validated_webhooks: list[tables.Webhook],
@@ -254,7 +252,7 @@ async def create_experiment_impl(
 
             table_name = preassigned_spec.table_name
             primary_key = preassigned_spec.primary_key
-            field_type_map = await fetch_fields_or_raise(datasource, preassigned_spec)
+            field_type_map = fetch_fields_or_raise(datasource, preassigned_spec)
 
             # Get participants and their schema info from the client dwh.
             # Only fetch the columns we might need for stratified random assignment.
@@ -271,10 +269,10 @@ async def create_experiment_impl(
                 ]
 
             ds_config = datasource.get_config()
-            async with DwhSession(ds_config.dwh) as dwh:
+            with SyncDwhSession.open(ds_config.dwh) as dwh:
                 if cluster_key is not None:
                     assert desired_n_clusters is not None  # covered by CreateExperimentRequest validation
-                    result = await dwh.get_clusters_of_participants(
+                    result = dwh.get_clusters_of_participants(
                         table_name,
                         select_columns=select_columns,
                         filters=eligibility_filters,
@@ -283,7 +281,7 @@ async def create_experiment_impl(
                     )
                 else:
                     assert desired_n is not None  # covered by CreateExperimentRequest validation
-                    result = await dwh.get_participants(
+                    result = dwh.get_participants(
                         table_name,
                         select_columns=select_columns,
                         filters=eligibility_filters,
@@ -294,7 +292,7 @@ async def create_experiment_impl(
             if not participants:
                 raise LateValidationError("Preassigned experiments must have eligible participants data")
 
-            return await create_preassigned_experiment_impl(
+            return create_preassigned_experiment_impl(
                 request=request,
                 datasource_id=datasource.id,
                 organization_id=datasource.organization_id,
@@ -309,9 +307,9 @@ async def create_experiment_impl(
 
         case OnlineFrequentistExperimentSpec():
             online_spec = request.design_spec
-            field_type_map = await fetch_fields_or_raise(datasource, online_spec)
+            field_type_map = fetch_fields_or_raise(datasource, online_spec)
 
-            return await create_freq_online_experiment_impl(
+            return create_freq_online_experiment_impl(
                 request=request,
                 datasource_id=datasource.id,
                 organization_id=datasource.organization_id,
@@ -321,8 +319,8 @@ async def create_experiment_impl(
             )
 
         case MABDwhExperimentSpec():
-            field_type_map = await fetch_mab_dwh_fields_or_raise(datasource, request.design_spec)
-            return await create_bandit_online_experiment_impl(
+            field_type_map = fetch_mab_dwh_fields_or_raise(datasource, request.design_spec)
+            return create_bandit_online_experiment_impl(
                 xngin_session=xngin_session,
                 organization_id=datasource.organization_id,
                 validated_webhooks=validated_webhooks,
@@ -332,7 +330,7 @@ async def create_experiment_impl(
             )
 
         case MABExperimentSpec() | CMABExperimentSpec():
-            return await create_bandit_online_experiment_impl(
+            return create_bandit_online_experiment_impl(
                 xngin_session=xngin_session,
                 organization_id=datasource.organization_id,
                 validated_webhooks=validated_webhooks,
@@ -347,7 +345,7 @@ async def create_experiment_impl(
             )
 
 
-async def create_preassigned_experiment_impl(
+def create_preassigned_experiment_impl(
     request: CreateExperimentRequest,
     *,
     datasource_id: str,
@@ -355,7 +353,7 @@ async def create_preassigned_experiment_impl(
     dwh_sa_table: Table,
     dwh_participants: Sequence[RowProtocol],
     random_state: int | None,
-    xngin_session: AsyncSession,
+    xngin_session: Session,
     stratify_on_metrics: bool,
     validated_webhooks: list[tables.Webhook],
     field_type_map: dict[str, DataType],
@@ -396,7 +394,7 @@ async def create_preassigned_experiment_impl(
     )
     balance_check = make_balance_check(assignment_result.balance_result, design_spec.fstat_thresh)
 
-    experiment_converter = await ExperimentStorageConverter.init_from_components(
+    experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
         design_spec=design_spec,
@@ -413,9 +411,9 @@ async def create_preassigned_experiment_impl(
         experiment.webhooks.append(webhook)
     xngin_session.add(experiment)
 
-    await xngin_session.flush()  # Flush to get ids
+    xngin_session.flush()  # Flush to get ids
 
-    await bulk_insert_arm_assignments(
+    bulk_insert_arm_assignments(
         xngin_session=xngin_session,
         experiment_id=experiment.id,
         arm_ids=[arm.id for arm in experiment.arms],
@@ -427,15 +425,15 @@ async def create_preassigned_experiment_impl(
 
     assign_summary = convert_assignment_results_to_assign_summary(experiment.arms, assignment_result, balance_check)
     webhook_ids = [webhook.id for webhook in validated_webhooks]
-    return await experiment_converter.get_create_experiment_response(assign_summary, webhook_ids)
+    return experiment_converter.get_create_experiment_response(assign_summary, webhook_ids)
 
 
-async def create_freq_online_experiment_impl(
+def create_freq_online_experiment_impl(
     request: CreateExperimentRequest,
     *,
     datasource_id: str,
     organization_id: str,
-    xngin_session: AsyncSession,
+    xngin_session: Session,
     validated_webhooks: list[tables.Webhook],
     field_type_map: dict[str, DataType],
 ) -> CreateExperimentResponse:
@@ -444,7 +442,7 @@ async def create_freq_online_experiment_impl(
     if not isinstance(design_spec, OnlineFrequentistExperimentSpec):
         raise MismatchedExperimentTypeError(f"Can't create freq online exp of type: {design_spec.experiment_type}")
 
-    experiment_converter = await ExperimentStorageConverter.init_from_components(
+    experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
         design_spec=design_spec,
@@ -456,7 +454,7 @@ async def create_freq_online_experiment_impl(
         experiment.webhooks.append(webhook)
     xngin_session.add(experiment)
 
-    await xngin_session.flush()
+    xngin_session.flush()
 
     # Online experiments start with no assignments.
     empty_assign_summary = AssignSummary(
@@ -465,11 +463,11 @@ async def create_freq_online_experiment_impl(
         arm_sizes=[ArmSize(arm=Arm(arm_id=arm.id, arm_name=arm.name), size=0) for arm in experiment.arms],
     )
     webhook_ids = [webhook.id for webhook in validated_webhooks]
-    return await experiment_converter.get_create_experiment_response(empty_assign_summary, webhook_ids)
+    return experiment_converter.get_create_experiment_response(empty_assign_summary, webhook_ids)
 
 
-async def create_bandit_online_experiment_impl(
-    xngin_session: AsyncSession,
+def create_bandit_online_experiment_impl(
+    xngin_session: Session,
     organization_id: str,
     validated_webhooks: list[tables.Webhook],
     request: CreateExperimentRequest,
@@ -498,7 +496,7 @@ async def create_bandit_online_experiment_impl(
         case _:
             raise MismatchedExperimentTypeError(f"can't create bandit exp of type: {design_spec.experiment_type}")
 
-    experiment_converter = await ExperimentStorageConverter.init_from_components(
+    experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource_id,
         organization_id=organization_id,
         design_spec=design_spec,
@@ -510,7 +508,7 @@ async def create_bandit_online_experiment_impl(
         experiment.webhooks.append(webhook)
     xngin_session.add(experiment)
 
-    await xngin_session.flush()
+    xngin_session.flush()
 
     # Online experiments start with no assignments.
     empty_assign_summary = AssignSummary(
@@ -519,10 +517,10 @@ async def create_bandit_online_experiment_impl(
         arm_sizes=[ArmSize(arm=Arm(arm_id=arm.id, arm_name=arm.name), size=0) for arm in experiment.arms],
     )
     webhook_ids = [webhook.id for webhook in validated_webhooks]
-    return await experiment_converter.get_create_experiment_response(empty_assign_summary, webhook_ids)
+    return experiment_converter.get_create_experiment_response(empty_assign_summary, webhook_ids)
 
 
-async def commit_experiment_impl(xngin_session: AsyncSession, experiment: tables.Experiment) -> CommitExperimentResult:
+def commit_experiment_impl(xngin_session: Session, experiment: tables.Experiment) -> CommitExperimentResult:
     if experiment.state == ExperimentState.COMMITTED:
         return CommitExperimentResult.COMMITTED
     if experiment.state != ExperimentState.ASSIGNED:
@@ -531,8 +529,8 @@ async def commit_experiment_impl(xngin_session: AsyncSession, experiment: tables
     experiment.state = ExperimentState.COMMITTED
 
     experiment_id = experiment.id
-    datasource = await experiment.awaitable_attrs.datasource
-    webhooks = await experiment.awaitable_attrs.webhooks
+    datasource = experiment.datasource
+    webhooks = experiment.webhooks
 
     event = tables.Event(
         organization_id=datasource.organization_id,
@@ -574,12 +572,12 @@ def abandon_experiment_impl(experiment: tables.Experiment):
     return AbandonExperimentResult.ABANDONED
 
 
-async def get_experiment_impl(
-    xngin_session: AsyncSession,
+def get_experiment_impl(
+    xngin_session: Session,
     experiment: tables.Experiment,
 ) -> GetExperimentResponse:
     converter = ExperimentStorageConverter(experiment)
-    assign_summary = await get_assign_summary(
+    assign_summary = get_assign_summary(
         xngin_session,
         experiment_id=experiment.id,
         experiment_type=ExperimentsType(experiment.experiment_type),
@@ -587,11 +585,11 @@ async def get_experiment_impl(
         include_cluster_counts=experiment.cluster_key_field() is not None,
     )
     webhook_ids = [webhook.id for webhook in experiment.webhooks]
-    return await converter.get_experiment_response(assign_summary, webhook_ids)
+    return converter.get_experiment_response(assign_summary, webhook_ids)
 
 
-async def list_organization_or_datasource_experiments_impl(
-    xngin_session: AsyncSession,
+def list_organization_or_datasource_experiments_impl(
+    xngin_session: Session,
     *,
     organization_id: str | None = None,
     datasource_id: str | None = None,
@@ -628,12 +626,12 @@ async def list_organization_or_datasource_experiments_impl(
         ])
     ).order_by(tables.Experiment.created_at.desc())
 
-    experiments = await xngin_session.scalars(stmt)
+    experiments = xngin_session.scalars(stmt)
     items = []
     for e in experiments:
         converter = ExperimentStorageConverter(e)
         balance_check = converter.get_balance_check()
-        assign_summary = await get_assign_summary(
+        assign_summary = get_assign_summary(
             xngin_session=xngin_session,
             experiment_id=e.id,
             experiment_type=ExperimentsType(e.experiment_type),
@@ -641,12 +639,12 @@ async def list_organization_or_datasource_experiments_impl(
             include_cluster_counts=e.cluster_key_field() is not None,
         )
         webhook_ids = [webhook.id for webhook in e.webhooks]
-        items.append(await converter.get_experiment_config(assign_summary, webhook_ids))
+        items.append(converter.get_experiment_config(assign_summary, webhook_ids))
     return ListExperimentsResponse(items=items)
 
 
-async def get_existing_assignment_for_participant(
-    xngin_session: AsyncSession,
+def get_existing_assignment_for_participant(
+    xngin_session: Session,
     experiment_id: str,
     participant_id: str,
     experiment_type: str,
@@ -715,7 +713,7 @@ async def get_existing_assignment_for_participant(
         case _:
             raise ExperimentsAssignmentError(f"Invalid experiment type {experiment_type}")
 
-    res = await xngin_session.execute(stmt)
+    res = xngin_session.execute(stmt)
     existing_assignment = res.one_or_none()
     # If the participant already has an assignment for this experiment, return it.
     if existing_assignment:
@@ -746,8 +744,8 @@ def _participant_passes_filters(experiment: tables.Experiment, participant_props
     return passes_filters(props_map, field_map, experiment_converter.get_design_spec_filters())
 
 
-async def get_or_create_assignment_for_participant(
-    xngin_session: AsyncSession,
+def get_or_create_assignment_for_participant(
+    xngin_session: Session,
     experiment: tables.Experiment,
     participant_id: str,
     create_if_none: bool,
@@ -762,7 +760,7 @@ async def get_or_create_assignment_for_participant(
     Set create_if_none=False to only get an assignment if it already exists; do not create a new one.
     """
 
-    assignment = await get_existing_assignment_for_participant(
+    assignment = get_existing_assignment_for_participant(
         xngin_session=xngin_session,
         experiment_id=experiment.id,
         participant_id=participant_id,
@@ -777,7 +775,7 @@ async def get_or_create_assignment_for_participant(
             )
 
         if not properties or _participant_passes_filters(experiment, properties):
-            assignment = await create_assignment_for_participant(
+            assignment = create_assignment_for_participant(
                 xngin_session=xngin_session,
                 experiment=experiment,
                 participant_id=participant_id,
@@ -812,8 +810,8 @@ def choose_online_arm(
     return sorted_arms[index]
 
 
-async def create_assignment_for_participant(
-    xngin_session: AsyncSession,
+def create_assignment_for_participant(
+    xngin_session: Session,
     experiment: tables.Experiment,
     participant_id: str,
     sorted_context_vals: list[float] | None = None,
@@ -839,7 +837,7 @@ async def create_assignment_for_participant(
     if experiment.end_date < datetime.now(UTC):
         experiment.stopped_assignments_at = datetime.now(UTC)
         experiment.stopped_assignments_reason = StopAssignmentReason.END_DATE
-        await xngin_session.commit()
+        xngin_session.commit()
         return None
 
     try:
@@ -856,7 +854,7 @@ async def create_assignment_for_participant(
                 # with simple random assignment or weighted random assignment if arm_weights are specified.
                 chosen_arm = choose_online_arm(experiment=experiment, random_state=random_state)
                 result = (
-                    await xngin_session.execute(
+                    xngin_session.execute(
                         insert(tables.ArmAssignment)
                         .values(
                             experiment_id=experiment.id,
@@ -884,7 +882,7 @@ async def create_assignment_for_participant(
                     random_state=random_state,
                 )
                 result = (
-                    await xngin_session.execute(
+                    xngin_session.execute(
                         insert(tables.Draw)
                         .values(
                             experiment_id=experiment.id,
@@ -910,10 +908,10 @@ async def create_assignment_for_participant(
                 set_={"population": tables.ArmStats.population + 1},
             )
         )
-        await xngin_session.execute(stmt)
-        await xngin_session.commit()
+        xngin_session.execute(stmt)
+        xngin_session.commit()
     except IntegrityError as e:
-        await xngin_session.rollback()
+        xngin_session.rollback()
         raise ExperimentsAssignmentError(f"Failed to assign participant '{participant_id}': {e}") from e
 
     return Assignment(
@@ -1035,8 +1033,8 @@ def _check_outcome_against_mab_dwh_target(
         )
 
 
-async def _fetch_outcomes_and_context_for_arm(
-    xngin_session: AsyncSession,
+def _fetch_outcomes_and_context_for_arm(
+    xngin_session: Session,
     experiment_id: str,
     arm_id: str,
     outcome: float,
@@ -1062,7 +1060,7 @@ async def _fetch_outcomes_and_context_for_arm(
     agg_cols = [func.array_agg(subq.c.outcome)]
     if has_context:
         agg_cols.append(func.array_agg(subq.c.context_vals))
-    agg_result = await xngin_session.execute(select(*agg_cols).select_from(subq))
+    agg_result = xngin_session.execute(select(*agg_cols).select_from(subq))
     agg_row = agg_result.one()
 
     all_prior_outcomes = agg_row[0]
@@ -1099,8 +1097,8 @@ class PartialUpdateArmNormal(TypedDict):
     covariance: list[list[float]] | None
 
 
-async def update_bandit_arm_with_outcome_impl(
-    xngin_session: AsyncSession,
+def update_bandit_arm_with_outcome_impl(
+    xngin_session: Session,
     experiment: tables.Experiment,
     participant_id: str,
     outcome: float,
@@ -1108,7 +1106,7 @@ async def update_bandit_arm_with_outcome_impl(
 ) -> tables.Arm:
     """Update a bandit draw and arm without completing the caller's transaction."""
     # Not supported for frequentist experiments
-    design_spec = await ExperimentStorageConverter(experiment).get_design_spec()
+    design_spec = ExperimentStorageConverter(experiment).get_design_spec()
 
     match design_spec:
         case MABExperimentSpec() | MABDwhExperimentSpec() | CMABExperimentSpec():
@@ -1119,7 +1117,7 @@ async def update_bandit_arm_with_outcome_impl(
             assert_never(design_spec)
 
     # Look up the participant's assignment if it exists
-    assignment = await get_existing_assignment_for_participant(
+    assignment = get_existing_assignment_for_participant(
         xngin_session, experiment.id, participant_id, experiment.experiment_type
     )
     if not assignment:
@@ -1141,7 +1139,7 @@ async def update_bandit_arm_with_outcome_impl(
     if isinstance(design_spec, MABDwhExperimentSpec):
         _check_outcome_against_mab_dwh_target(experiment.experiment_fields, outcome)
 
-    result = await xngin_session.execute(
+    result = xngin_session.execute(
         update(tables.Draw)
         .where(
             tables.Draw.participant_id == participant_id,
@@ -1160,7 +1158,7 @@ async def update_bandit_arm_with_outcome_impl(
     arm_to_update = next(arm for arm in experiment.arms if arm.id == draw_record.arm_id)
 
     # Get all prior draws for this arm, sorted by creation date
-    outcomes, context_vals = await _fetch_outcomes_and_context_for_arm(
+    outcomes, context_vals = _fetch_outcomes_and_context_for_arm(
         xngin_session,
         experiment_id=experiment.id,
         arm_id=draw_record.arm_id,
@@ -1192,7 +1190,7 @@ async def update_bandit_arm_with_outcome_impl(
                 mu=updated_parameters.mu, covariance=updated_parameters.covariance
             )
 
-    await xngin_session.execute(
+    xngin_session.execute(
         update(tables.Draw)
         .where(
             tables.Draw.participant_id == participant_id,
@@ -1201,7 +1199,7 @@ async def update_bandit_arm_with_outcome_impl(
         )
         .values(**update_draw_params)
     )
-    await xngin_session.execute(
+    xngin_session.execute(
         update(tables.Arm)
         .where(
             tables.Arm.id == arm_to_update.id,
@@ -1237,8 +1235,8 @@ def convert_assignment_results_to_assign_summary(
     )
 
 
-async def get_assign_summary(
-    xngin_session: AsyncSession,
+def get_assign_summary(
+    xngin_session: Session,
     *,
     experiment_id: str,
     experiment_type: ExperimentsType,
@@ -1246,7 +1244,7 @@ async def get_assign_summary(
     include_cluster_counts: bool = False,
 ) -> AssignSummary:
     """Constructs an AssignSummary from the experiment's arms and arm_assignments."""
-    result = await xngin_session.execute(
+    result = xngin_session.execute(
         select(
             tables.Arm.id,
             tables.Arm.name,
@@ -1277,8 +1275,8 @@ async def get_assign_summary(
     )
 
 
-async def analyze_experiment_freq_impl(
-    xngin_session: AsyncSession,
+def analyze_experiment_freq_impl(
+    xngin_session: Session,
     dsconfig: DatasourceConfig,
     experiment: tables.Experiment,
     baseline_arm_id: str,
@@ -1291,20 +1289,19 @@ async def analyze_experiment_freq_impl(
         raise StatsAnalysisError("Experiment must have a datasource table and unique ID field to analyze.")
 
     include_cluster = experiment.cluster_key_field() is not None
-    participant_ids, assignments_df = await read_assignments_efficiently(
+    participant_ids, assignments_df = read_assignments_efficiently(
         xngin_session, experiment.id, include_cluster_key=include_cluster
     )
     if assignments_df.empty:
         raise StatsAnalysisError("No participants found for experiment.")
 
-    async with DwhSession(dsconfig.dwh) as dwh:
-        sa_table = await dwh.inspect_table(experiment.datasource_table)
+    with SyncDwhSession.open(dsconfig.dwh) as dwh:
+        sa_table = dwh.inspect_table(experiment.datasource_table)
 
         # Mark the start of the analysis as when we begin pulling outcomes.
         created_at = datetime.now(UTC)
-        participant_outcomes = await asyncio.to_thread(
+        participant_outcomes = dwh.run(
             get_participant_metrics,
-            dwh.session,
             sa_table,
             metrics,
             unique_id_field.field_name,
@@ -1388,8 +1385,8 @@ async def analyze_experiment_freq_impl(
     )
 
 
-async def read_assignments_efficiently(
-    xngin_session: AsyncSession,
+def read_assignments_efficiently(
+    xngin_session: Session,
     experiment_id: str,
     *,
     include_cluster_key: bool = False,
@@ -1409,7 +1406,7 @@ async def read_assignments_efficiently(
     select_query = t"SELECT {joined_column_names:q} FROM arm_assignments WHERE experiment_id = {experiment_id}"  # type: ignore
     dfs = [
         pd.read_csv(io.BytesIO(chunk), names=column_names, dtype=str)
-        async for chunk in select_as_csv(
+        for chunk in select_as_csv_sync(
             xngin_session, select_query, buffer_size_bytes=CSV_PARSE_CHUNK_SIZE_BYTES, newline_framed=True
         )
     ]
@@ -1429,13 +1426,13 @@ class DrawsOutcomeAggregates:
     outcome_std_dev: float
 
 
-async def analyze_experiment_bandit_impl(
-    xngin_session: AsyncSession,
+def analyze_experiment_bandit_impl(
+    xngin_session: Session,
     experiment: tables.Experiment,
     context_vals: list[float] | None = None,
 ) -> BanditExperimentAnalysisResponse:
     """Analyze a bandit experiment. Assumes arms are preloaded."""
-    aggregates = await _draws_outcome_aggregates(xngin_session, experiment.id)
+    aggregates = _draws_outcome_aggregates(xngin_session, experiment.id)
     arm_analyses = analyze_bandit_experiment(
         experiment=experiment,
         outcome_std_dev=aggregates.outcome_std_dev,
@@ -1451,28 +1448,24 @@ async def analyze_experiment_bandit_impl(
     )
 
 
-async def _draws_outcome_aggregates(xngin_session: AsyncSession, experiment_id: str) -> DrawsOutcomeAggregates:
+def _draws_outcome_aggregates(xngin_session: Session, experiment_id: str) -> DrawsOutcomeAggregates:
     """Count of non-null outcomes and population std dev of those outcomes.
 
     Returns a 0.0 standard deviation when fewer than two non-null outcomes exist.
     """
-    n_outcomes, std_dev = (
-        await xngin_session.execute(
-            select(
-                func.count(tables.Draw.outcome),
-                func.coalesce(func.stddev_pop(tables.Draw.outcome), 0.0),
-            ).where(
-                tables.Draw.experiment_id == experiment_id,
-                tables.Draw.outcome.is_not(None),
-            )
+    n_outcomes, std_dev = xngin_session.execute(
+        select(
+            func.count(tables.Draw.outcome),
+            func.coalesce(func.stddev_pop(tables.Draw.outcome), 0.0),
+        ).where(
+            tables.Draw.experiment_id == experiment_id,
+            tables.Draw.outcome.is_not(None),
         )
     ).one()
-    fraction_autofailed_outcomes = (
-        await xngin_session.execute(
-            select(func.coalesce(func.avg(tables.Draw.autofailed_outcome.cast(Integer)), 0.0)).where(
-                tables.Draw.experiment_id == experiment_id,
-                tables.Draw.outcome.is_not(None),
-            )
+    fraction_autofailed_outcomes = xngin_session.execute(
+        select(func.coalesce(func.avg(tables.Draw.autofailed_outcome.cast(Integer)), 0.0)).where(
+            tables.Draw.experiment_id == experiment_id,
+            tables.Draw.outcome.is_not(None),
         )
     ).scalar_one()
     return DrawsOutcomeAggregates(

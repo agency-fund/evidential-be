@@ -22,9 +22,9 @@ app = typer.Typer(help="Reads bandit outcomes from organizations' data warehouse
 
 
 async def apull(pull_timeout: int):
-    """Pulls outcomes (async wrapper)."""
+    """Pull outcomes within the application database lifespan."""
     async with database.setup():
-        await dwhpull.pull_all_experiments(pull_timeout)
+        dwhpull.pull_all_experiments(pull_timeout)
 
 
 @app.command()

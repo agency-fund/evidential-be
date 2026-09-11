@@ -7,7 +7,7 @@ import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from xngin.apiserver import database
 from xngin.apiserver.sqla import tables
@@ -73,8 +73,8 @@ async def wait_for_task_status(
     )
 
 
-async def insert_task(
-    xngin_session: AsyncSession,
+def insert_task(
+    xngin_session: Session,
     *,
     task_type: str,
     payload: dict | None = None,
@@ -82,6 +82,6 @@ async def insert_task(
     """Inserts a task using SQLAlchemy."""
     task = tables.Task(task_type=task_type, payload=payload)
     xngin_session.add(task)
-    await xngin_session.commit()
-    await xngin_session.refresh(task)
+    xngin_session.commit()
+    xngin_session.refresh(task)
     return task

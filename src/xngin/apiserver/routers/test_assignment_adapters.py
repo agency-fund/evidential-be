@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from sqlalchemy import DECIMAL, Boolean, Column, Float, Integer, MetaData, String, Table, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from xngin.apiserver.conftest import DatasourceMetadata, RowProtocolMixin
 from xngin.apiserver.routers.admin.admin_api_types import DeleteExperimentDataRequest
@@ -254,7 +254,7 @@ def test_assign_treatments_with_balance_clustered():
 
 
 async def test_bulk_insert_arm_assignments_basic(
-    xngin_session: AsyncSession,
+    xngin_session: Session,
     testing_datasource: DatasourceMetadata,
     sample_rows,
 ):
@@ -274,7 +274,7 @@ async def test_bulk_insert_arm_assignments_basic(
         arm_pop=np.bincount([0, 1] * (len(sample_rows) // 2), minlength=len(arm_ids)),
     )
 
-    await bulk_insert_arm_assignments(
+    bulk_insert_arm_assignments(
         xngin_session=xngin_session,
         experiment_id=experiment.id,
         arm_ids=arm_ids,
@@ -285,13 +285,13 @@ async def test_bulk_insert_arm_assignments_basic(
 
     # Verify arm_stats populations were upserted
     for i, arm_id in enumerate(arm_ids):
-        arm_stat = await xngin_session.get(tables.ArmStats, arm_id)
+        arm_stat = xngin_session.get(tables.ArmStats, arm_id)
         assert arm_stat is not None
         assert arm_stat.population == int(fake_assignment_results.arm_pop[i])
         assert arm_stat.cluster_count is None
 
     # Get assignments for verification
-    result = await xngin_session.scalars(select(tables.ArmAssignment))
+    result = xngin_session.scalars(select(tables.ArmAssignment))
     assignments = result.all()
 
     # Verify all participants are assigned
@@ -312,7 +312,7 @@ async def test_bulk_insert_arm_assignments_basic(
 
 
 async def test_bulk_insert_arm_assignments_stores_cluster_key(
-    xngin_session: AsyncSession,
+    xngin_session: Session,
     testing_datasource: DatasourceMetadata,
     sample_rows,
 ):
@@ -336,7 +336,7 @@ async def test_bulk_insert_arm_assignments_stores_cluster_key(
         arm_cluster_pop=arm_cluster_pop,
     )
 
-    await bulk_insert_arm_assignments(
+    bulk_insert_arm_assignments(
         xngin_session=xngin_session,
         experiment_id=experiment.id,
         arm_ids=arm_ids,
@@ -347,12 +347,12 @@ async def test_bulk_insert_arm_assignments_stores_cluster_key(
     )
 
     for i, arm_id in enumerate(arm_ids):
-        arm_stat = await xngin_session.get(tables.ArmStats, arm_id)
+        arm_stat = xngin_session.get(tables.ArmStats, arm_id)
         assert arm_stat is not None
         assert arm_stat.cluster_count == int(arm_cluster_pop[i])
         assert arm_stat.population == int(fake_assignment_results.arm_pop[i])
 
-    assignments = (await xngin_session.scalars(select(tables.ArmAssignment))).all()
+    assignments = (xngin_session.scalars(select(tables.ArmAssignment))).all()
     clusters_by_participant = {str(row.id): row.region for row in sample_rows}
     assert {assignment.cluster_key for assignment in assignments} <= set(clusters_by_participant.values())
     for assignment in assignments:
@@ -363,7 +363,7 @@ MAX_SAFE_INTEGER = (1 << 53) - 1  # 9007199254740991
 
 
 async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
-    xngin_session: AsyncSession,
+    xngin_session: Session,
     testing_datasource: DatasourceMetadata,
     sample_table,
     sample_data,
@@ -388,7 +388,7 @@ async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
         )
 
         # Bulk insert assignments
-        await bulk_insert_arm_assignments(
+        bulk_insert_arm_assignments(
             xngin_session=xngin_session,
             experiment_id=experiment.id,
             arm_ids=arm_ids,
@@ -398,7 +398,7 @@ async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
         )
 
         # Get assignments for verification
-        result = await xngin_session.scalars(
+        result = xngin_session.scalars(
             select(tables.ArmAssignment)
             .where(tables.ArmAssignment.experiment_id == experiment.id)
             .order_by(tables.ArmAssignment.participant_id)
@@ -420,7 +420,7 @@ async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
         # Assert that the inserted id was derived from the original id
         assert orig_id in orig_ids, f"id {orig_id} not found"
 
-    await xngin_session.commit()
+    xngin_session.commit()
     aclient.delete_experiment_data(
         datasource_id=testing_datasource.datasource_id,
         experiment_id=experiment.id,
@@ -439,7 +439,7 @@ async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
         # Assert that the inserted id was derived from the original id
         assert orig_id in orig_ids, f"id {orig_id} not found"
 
-    await xngin_session.commit()
+    xngin_session.commit()
     aclient.delete_experiment_data(
         datasource_id=testing_datasource.datasource_id,
         experiment_id=experiment.id,
@@ -462,7 +462,7 @@ async def test_assign_and_bulk_insert_with_large_integers_as_participant_ids(
 
 
 async def test_bulk_insert_renders_decimal_and_bool_strata_correctly(
-    xngin_session: AsyncSession, testing_datasource, sample_rows
+    xngin_session: Session, testing_datasource, sample_rows
 ):
     """Test that the adapter correctly renders decimal and bool strata as strings."""
     # First create an experiment and arms in db
@@ -479,7 +479,7 @@ async def test_bulk_insert_renders_decimal_and_bool_strata_correctly(
         arm_pop=np.bincount([0, 1] * (len(sample_rows) // 2), minlength=len(arm_ids)),
     )
 
-    await bulk_insert_arm_assignments(
+    bulk_insert_arm_assignments(
         xngin_session=xngin_session,
         experiment_id=experiment.id,
         arm_ids=arm_ids,
@@ -489,7 +489,7 @@ async def test_bulk_insert_renders_decimal_and_bool_strata_correctly(
     )
 
     # Get assignments for verification
-    result = await xngin_session.scalars(select(tables.ArmAssignment))
+    result = xngin_session.scalars(select(tables.ArmAssignment))
     assignments = result.all()
 
     assert len(assignments) == len(sample_rows)
@@ -502,7 +502,7 @@ async def test_bulk_insert_renders_decimal_and_bool_strata_correctly(
         assert p.strata[1]["strata_value"] in {"True", "False"}, p.strata
 
 
-async def test_bulk_insert_with_no_stratification(xngin_session: AsyncSession, testing_datasource, sample_rows):
+async def test_bulk_insert_with_no_stratification(xngin_session: Session, testing_datasource, sample_rows):
     """Test assignment with no stratification columns."""
     # First create an experiment and arms in db
     experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
@@ -518,7 +518,7 @@ async def test_bulk_insert_with_no_stratification(xngin_session: AsyncSession, t
         arm_pop=np.bincount([0, 1] * (len(sample_rows) // 2), minlength=len(arm_ids)),
     )
 
-    await bulk_insert_arm_assignments(
+    bulk_insert_arm_assignments(
         xngin_session=xngin_session,
         experiment_id=experiment.id,
         arm_ids=arm_ids,
@@ -528,7 +528,7 @@ async def test_bulk_insert_with_no_stratification(xngin_session: AsyncSession, t
     )
 
     # Get assignments for verification
-    result = await xngin_session.scalars(select(tables.ArmAssignment))
+    result = xngin_session.scalars(select(tables.ArmAssignment))
     assignments = result.all()
 
     arm_counts: defaultdict[str, int] = defaultdict(int)
@@ -541,7 +541,7 @@ async def test_bulk_insert_with_no_stratification(xngin_session: AsyncSession, t
     assert arm_counts[arm_ids[0]] == len(assignments) // 2
 
 
-async def test_bulk_insert_with_no_valid_strata(xngin_session: AsyncSession, testing_datasource, sample_rows):
+async def test_bulk_insert_with_no_valid_strata(xngin_session: Session, testing_datasource, sample_rows):
     """Test assignment when a strata column has only a single value."""
     # First create an experiment and arms in db
     experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
@@ -558,7 +558,7 @@ async def test_bulk_insert_with_no_valid_strata(xngin_session: AsyncSession, tes
         arm_pop=np.bincount([0, 1] * (len(sample_rows) // 2), minlength=len(arm_ids)),
     )
 
-    await bulk_insert_arm_assignments(
+    bulk_insert_arm_assignments(
         xngin_session=xngin_session,
         experiment_id=experiment.id,
         arm_ids=arm_ids,
@@ -568,7 +568,7 @@ async def test_bulk_insert_with_no_valid_strata(xngin_session: AsyncSession, tes
     )
 
     # Get assignments for verification
-    result = await xngin_session.scalars(select(tables.ArmAssignment))
+    result = xngin_session.scalars(select(tables.ArmAssignment))
     assignments = result.all()
 
     # Here we still output the requested strata column, even though it's all the same value
@@ -578,7 +578,7 @@ async def test_bulk_insert_with_no_valid_strata(xngin_session: AsyncSession, tes
 
 @pytest.mark.parametrize("missing_value", [None, np.nan, pd.NA, Decimal("NaN"), float("NaN")])
 async def test_bulk_insert_renders_missing_strata_values_as_na(
-    xngin_session: AsyncSession, testing_datasource, sample_rows, missing_value
+    xngin_session: Session, testing_datasource, sample_rows, missing_value
 ):
     """Test that missing strata values are rendered as "NA" regardless of sentinel."""
     experiment = await insert_experiment_and_arms(xngin_session, testing_datasource.ds)
@@ -595,7 +595,7 @@ async def test_bulk_insert_renders_missing_strata_values_as_na(
         arm_pop=np.bincount([0, 1] * (len(rows) // 2), minlength=len(arm_ids)),
     )
 
-    await bulk_insert_arm_assignments(
+    bulk_insert_arm_assignments(
         xngin_session=xngin_session,
         experiment_id=experiment.id,
         arm_ids=arm_ids,
@@ -604,6 +604,6 @@ async def test_bulk_insert_renders_missing_strata_values_as_na(
         assignments=fake_assignment_results,
     )
 
-    assignments = (await xngin_session.scalars(select(tables.ArmAssignment))).all()
+    assignments = (xngin_session.scalars(select(tables.ArmAssignment))).all()
     expected_strata = [Strata(field_name="nullable_value", strata_value="NA").model_dump()]
     assert all(assignment.strata == expected_strata for assignment in assignments)

@@ -1,5 +1,5 @@
-from collections.abc import AsyncGenerator, AsyncIterator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncGenerator, AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -10,8 +10,9 @@ from xngin.ops import performance
 if TYPE_CHECKING:
     from string.templatelib import Template
 
-    from psycopg import AsyncConnection
+    from psycopg import AsyncConnection, Connection
     from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlalchemy.orm import Session
 
 
 @asynccontextmanager
@@ -19,6 +20,14 @@ async def with_driver_connection(session: AsyncSession) -> AsyncIterator[AsyncCo
     async_conn = await session.connection()
     raw_conn = await async_conn.get_raw_connection()
     driver_conn = raw_conn.driver_connection
+    if driver_conn is None:
+        raise RuntimeError("failed getting driver connection")
+    yield driver_conn
+
+
+@contextmanager
+def with_sync_driver_connection(session: Session) -> Iterator[Connection]:
+    driver_conn = session.connection().connection.driver_connection
     if driver_conn is None:
         raise RuntimeError("failed getting driver connection")
     yield driver_conn
@@ -72,6 +81,43 @@ async def select_as_csv(
                 yield_count += 1
                 yield bytes(buffer)
     logger.info("select_as_csv streamed {} chunks in {}s", yield_count, timings.elapsed)
+
+
+def select_as_csv_sync(
+    session: Session,
+    select_sql: Template,
+    buffer_size_bytes: int,
+    newline_framed: bool = False,
+    include_header: bool = False,
+) -> Iterator[bytes]:
+    """Synchronous counterpart of select_as_csv(); see there for the arguments and semantics.
+
+    Kept separate because select_as_csv() serves the streaming CSV responses, which remain async.
+    """
+    header_sql = t", HEADER TRUE" if include_header else t""  # type: ignore[misc]
+    copy_query = t"COPY ({select_sql:q}) TO STDOUT WITH (FORMAT CSV{header_sql:q})"  # type: ignore[misc]
+    yield_count = 0
+    with performance.timing() as timings, with_sync_driver_connection(session) as driver_conn:
+        buffer = bytearray()
+        with driver_conn.cursor() as cursor, cursor.copy(copy_query) as copy:
+            for chunk in copy:
+                buffer.extend(chunk)
+                if len(buffer) < buffer_size_bytes:
+                    continue
+                if newline_framed:
+                    last_newline = buffer.rfind(b"\n")
+                    if last_newline >= 0:
+                        yield_count += 1
+                        yield bytes(buffer[: last_newline + 1])
+                        del buffer[: last_newline + 1]
+                else:
+                    yield_count += 1
+                    yield bytes(buffer)
+                    buffer.clear()
+        if buffer:
+            yield_count += 1
+            yield bytes(buffer)
+    logger.info("select_as_csv_sync streamed {} chunks in {}s", yield_count, timings.elapsed)
 
 
 async def stream(session: AsyncSession, select_query: Template, size: int) -> AsyncGenerator[TupleRow]:

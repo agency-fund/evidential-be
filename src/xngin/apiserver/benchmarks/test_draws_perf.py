@@ -157,8 +157,8 @@ async def _bulk_insert_draws(xngin_session, experiment_id: str, arm_ids: list[st
             {context_expr}
         FROM generate_series(1, :n) AS gs
     """)
-    await xngin_session.execute(sql, {"eid": experiment_id, "arm0": arm0, "arm1": arm1, "n": n_draws})
-    await xngin_session.commit()
+    xngin_session.execute(sql, {"eid": experiment_id, "arm0": arm0, "arm1": arm1, "n": n_draws})
+    xngin_session.commit()
 
 
 def _summary_line(name: str, timings: list[float]) -> str:
@@ -171,15 +171,13 @@ def _summary_line(name: str, timings: list[float]) -> str:
 
 async def _arm_ids(xngin_session, experiment_id: str) -> list[str]:
     return list(
-        (await xngin_session.execute(select(tables.Arm.id).where(tables.Arm.experiment_id == experiment_id))).scalars()
+        (xngin_session.execute(select(tables.Arm.id).where(tables.Arm.experiment_id == experiment_id))).scalars()
     )
 
 
 async def _context_inputs(xngin_session, experiment_id: str) -> list[ContextInput]:
     contexts = list(
-        (
-            await xngin_session.execute(select(tables.Context).where(tables.Context.experiment_id == experiment_id))
-        ).scalars()
+        (xngin_session.execute(select(tables.Context).where(tables.Context.experiment_id == experiment_id))).scalars()
     )
     return [ContextInput(context_id=c.id, context_value=1.0) for c in sorted(contexts, key=lambda c: c.id)]
 
@@ -273,14 +271,14 @@ async def test_snapshot_path_perf(
     for _ in range(_iterations(n_draws)):
         snap = tables.Snapshot(experiment_id=experiment_id)
         xngin_session.add(snap)
-        await xngin_session.commit()
+        xngin_session.commit()
         snapshot_id = snap.id
 
         t0 = time.perf_counter()
-        await make_first_snapshot(experiment_id, snapshot_id)
+        make_first_snapshot(experiment_id, snapshot_id)
         timings.append(time.perf_counter() - t0)
 
-        await xngin_session.refresh(snap)
+        xngin_session.refresh(snap)
         assert snap.status == "success", snap.message
 
     print(_summary_line(f"snapshot_path[{experiment_type.value},{n_draws}]", timings))

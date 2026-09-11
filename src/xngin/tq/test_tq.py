@@ -4,7 +4,7 @@ from datetime import timedelta
 
 import psycopg
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from xngin.tq import task_queue as task_queue_module
 from xngin.tq.task_queue import Task, TaskQueue
@@ -13,7 +13,7 @@ from xngin.tq.tq_test_support import insert_task, tq_runner, wait_for_task_statu
 pytest_plugins = ("xngin.apiserver.conftest",)
 
 
-async def test_task_queue_processes_pending_task_successfully(xngin_session: AsyncSession, tq_dsn: str):
+async def test_task_queue_processes_pending_task_successfully(xngin_session: Session, tq_dsn: str):
     task_queue = TaskQueue(dsn=tq_dsn, max_retries=1, poll_interval_secs=1)
     handled_task_ids: queue.SimpleQueue[str] = queue.SimpleQueue()
 
@@ -22,7 +22,7 @@ async def test_task_queue_processes_pending_task_successfully(xngin_session: Asy
 
     task_queue.register_handler("test.success", handler)
     with tq_runner(task_queue):
-        task = await insert_task(
+        task = insert_task(
             xngin_session,
             task_type="test.success",
             payload={"value": "ok"},
@@ -37,12 +37,12 @@ async def test_task_queue_processes_pending_task_successfully(xngin_session: Asy
 
 
 async def test_task_queue_marks_unhandled_task_dead_when_max_retries_zero(
-    xngin_session: AsyncSession,
+    xngin_session: Session,
     tq_dsn: str,
 ):
     task_queue = TaskQueue(dsn=tq_dsn, max_retries=0, poll_interval_secs=1)
     with tq_runner(task_queue):
-        task = await insert_task(
+        task = insert_task(
             xngin_session,
             task_type="test.unhandled",
             payload={"value": "missing-handler"},
@@ -55,7 +55,7 @@ async def test_task_queue_marks_unhandled_task_dead_when_max_retries_zero(
 
 
 async def test_task_queue_requeues_failed_task_with_backoff(
-    xngin_session: AsyncSession,
+    xngin_session: Session,
     tq_dsn: str,
 ):
     task_queue = TaskQueue(dsn=tq_dsn, max_retries=1, poll_interval_secs=1)
@@ -67,7 +67,7 @@ async def test_task_queue_requeues_failed_task_with_backoff(
 
     task_queue.register_handler("test.retry", handler)
     with tq_runner(task_queue):
-        task = await insert_task(
+        task = insert_task(
             xngin_session,
             task_type="test.retry",
             payload={"value": "retry"},

@@ -18,9 +18,7 @@ from sqlalchemy import delete, make_url
 from sqlalchemy.dialects.postgresql import psycopg
 from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.engine.url import URL
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-)
+from sqlalchemy.orm import Session
 from sqlalchemy_bigquery import dialect as bigquery_dialect
 from starlette.testclient import TestClient
 
@@ -268,28 +266,35 @@ async def fixture_xngin_db_session(fixture_initialize_xngin_db_schema):
     directly.
     """
     async with database.setup():
-        async with database.get_async_engine().begin() as conn:
+        with database.get_sync_engine().begin() as conn:
             for table in reversed(tables.Base.metadata.sorted_tables):
-                await conn.execute(sqlalchemy.delete(table))
-        async with database.async_session() as session:
+                conn.execute(sqlalchemy.delete(table))
+        with database.sync_session() as session:
             session.add_all([
                 tables.User(email=PRIVILEGED_EMAIL, is_privileged=True),
                 tables.User(email=UNPRIVILEGED_EMAIL, is_privileged=False),
                 tables.User(email=UNPRIVILEGED_EMAIL_2, is_privileged=False),
             ])
-            await session.commit()
-        async with database.async_session() as sess:
+            session.commit()
+        with database.sync_session() as sess:
             try:
                 yield sess
             finally:
-                await sess.close()
+                sess.close()
 
 
-async def delete_seeded_users(xngin_session: AsyncSession):
+@pytest.fixture(name="xngin_async_session")
+async def fixture_xngin_async_db_session(xngin_session):
+    """Yields an AsyncSession for the few code paths that are still asynchronous (e.g. CSV streaming)."""
+    async with database.async_session() as session:
+        yield session
+
+
+def delete_seeded_users(xngin_session: Session):
     """Deletes users created by the xngin_session fixture."""
-    await xngin_session.execute(delete(tables.User))
-    await xngin_session.commit()
-    await xngin_session.reset()
+    xngin_session.execute(delete(tables.User))
+    xngin_session.commit()
+    xngin_session.reset()
 
 
 @pytest.fixture(name="use_deterministic_random")
@@ -327,11 +332,9 @@ class DatasourceMetadata:
 
 
 @pytest.fixture(name="testing_datasource")
-async def fixture_testing_datasource(
-    xngin_session: AsyncSession, aclient: admin_api_client.AdminAPIClient
-) -> DatasourceMetadata:
+def fixture_testing_datasource(xngin_session: Session, aclient: admin_api_client.AdminAPIClient) -> DatasourceMetadata:
     """Creates a datasource fixture using the Admin API."""
-    return await _make_datasource_metadata(
+    return _make_datasource_metadata(
         xngin_session,
         aclient=aclient,
         org_name="testing datasource",
@@ -339,20 +342,20 @@ async def fixture_testing_datasource(
 
 
 @pytest.fixture(name="testing_datasource_other")
-async def fixture_testing_datasource_other(
-    xngin_session: AsyncSession,
+def fixture_testing_datasource_other(
+    xngin_session: Session,
     aclient: admin_api_client.AdminAPIClient,
 ) -> DatasourceMetadata:
     """Creates a second datasource fixture using the Admin API."""
-    return await _make_datasource_metadata(
+    return _make_datasource_metadata(
         xngin_session,
         aclient=aclient,
         org_name="testing datasource other",
     )
 
 
-async def _make_datasource_metadata(
-    xngin_session: AsyncSession, *, aclient: admin_api_client.AdminAPIClient, org_name: str
+def _make_datasource_metadata(
+    xngin_session: Session, *, aclient: admin_api_client.AdminAPIClient, org_name: str
 ) -> DatasourceMetadata:
     """Generates a new Organization, Datasource, and API key for testing.
 
@@ -375,8 +378,8 @@ async def _make_datasource_metadata(
     api_org = aclient.get_organization(organization_id=org_id).data
     api_ds = aclient.get_datasource(datasource_id=datasource_id).data
 
-    org = await xngin_session.get_one(tables.Organization, org_id)
-    datasource = await xngin_session.get_one(tables.Datasource, datasource_id)
+    org = xngin_session.get_one(tables.Organization, org_id)
+    datasource = xngin_session.get_one(tables.Datasource, datasource_id)
 
     return DatasourceMetadata(
         ds=datasource,

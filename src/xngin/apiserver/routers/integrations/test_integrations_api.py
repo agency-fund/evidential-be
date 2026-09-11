@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 import httpx2
 import pytest
 from sqlalchemy import delete, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from xngin.apiserver.conftest import DatasourceMetadata, expect_status_code
 from xngin.apiserver.routers.admin.admin_api_types import AddTurnJourneysChangedWebhookRequest
@@ -13,7 +13,7 @@ from xngin.apiserver.routers.admin_integrations.admin_integrations_api_types imp
     SetTurnArmJourneyMappingRequest,
 )
 from xngin.apiserver.routers.admin_integrations.test_admin_integrations_api import (
-    FakeAsyncClient,
+    FakeClient,
 )
 from xngin.apiserver.routers.common_api_types import (
     ArmBandit,
@@ -73,16 +73,16 @@ def fixture_turn_config_response(
         arm_ids[1]: f"journey-{arm_ids[1]}-uuid",
     }
 
-    monkeypatch.setattr(FakeAsyncClient, "call_log", 0)
+    monkeypatch.setattr(FakeClient, "call_log", 0)
     monkeypatch.setattr(
-        FakeAsyncClient,
+        FakeClient,
         "stacks",
         [
             {"name": "Journey 0", "uuid": f"journey-{arm_ids[0]}-uuid"},
             {"name": "Journey 1", "uuid": f"journey-{arm_ids[1]}-uuid"},
         ],
     )
-    monkeypatch.setattr(httpx2, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(httpx2, "Client", FakeClient)
 
     iaclient.set_organization_turn_connection(
         organization_id=testing_datasource.organization_id,
@@ -150,7 +150,7 @@ async def fixture_inbound_turn_webhook(
 
 async def test_turn_webhook_enqueues_task(
     iclient: IntegrationsAPIClient,
-    xngin_session: AsyncSession,
+    xngin_session: Session,
     testing_datasource: DatasourceMetadata,
     inbound_turn_webhook: tuple[str, str | None],
 ):
@@ -160,11 +160,7 @@ async def test_turn_webhook_enqueues_task(
     iclient.receive_turn_journey_update_notification(webhook_id=webhook_id, auth_token=auth_token)
 
     tasks = (
-        (
-            await xngin_session.execute(
-                select(tables.Task).where(tables.Task.task_type == TURN_JOURNEYS_CHANGED_TASK_TYPE)
-            )
-        )
+        (xngin_session.execute(select(tables.Task).where(tables.Task.task_type == TURN_JOURNEYS_CHANGED_TASK_TYPE)))
         .scalars()
         .all()
     )
@@ -217,13 +213,13 @@ async def test_refetch_journeys_from_turn(
     triggers the expected behavior of refreshing the journeys dictionary.
     """
     org_id = testing_datasource.organization_id
-    monkeypatch.setattr(FakeAsyncClient, "call_log", 0)
+    monkeypatch.setattr(FakeClient, "call_log", 0)
     monkeypatch.setattr(
-        FakeAsyncClient,
+        FakeClient,
         "stacks",
         [{"name": "journey-0", "uuid": "journey-0-uuid"}, {"name": "journey-1", "uuid": "journey-1-uuid"}],
     )
-    monkeypatch.setattr(httpx2, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(httpx2, "Client", FakeClient)
 
     # Call the refresh-journeys endpoint without a Turn connection configured for the organization.
     with expect_status_code(404, text="Turn.io webhook not found"):
@@ -244,9 +240,9 @@ async def test_refetch_journeys_from_turn(
         "journey-1": "journey-1-uuid",
     }
 
-    # Update the journeys in the FakeAsyncClient to simulate a change in Turn.io.
+    # Update the journeys in the FakeClient to simulate a change in Turn.io.
     monkeypatch.setattr(
-        FakeAsyncClient,
+        FakeClient,
         "stacks",
         [{"name": "journey-2", "uuid": "journey-2-uuid"}, {"name": "journey-3", "uuid": "journey-3-uuid"}],
     )
@@ -261,21 +257,21 @@ async def test_refetch_journeys_from_turn(
 
 async def test_refetch_journeys_404_when_the_organization_has_no_turn_connection(
     testing_datasource,
-    xngin_session: AsyncSession,
+    xngin_session: Session,
     iaclient: AdminIntegrationsAPIClient,
     iclient: IntegrationsAPIClient,
     monkeypatch: pytest.MonkeyPatch,
 ):
     """The webhook resolves and its token is accepted, but the connection it refreshes is gone."""
-    monkeypatch.setattr(httpx2, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(httpx2, "Client", FakeClient)
     org_id = testing_datasource.organization_id
     response = iaclient.set_organization_turn_connection(
         organization_id=org_id,
         body=SetConnectionToTurnRequest(turn_api_token="a" * 335),
     ).data
 
-    await xngin_session.execute(delete(tables.TurnConnection).where(tables.TurnConnection.organization_id == org_id))
-    await xngin_session.commit()
+    xngin_session.execute(delete(tables.TurnConnection).where(tables.TurnConnection.organization_id == org_id))
+    xngin_session.commit()
 
     with expect_status_code(404, text="No Turn.io connection configured for this organization."):
         iclient.refetch_journeys_from_turn(webhook_id=response.id, auth_token=response.auth_token)

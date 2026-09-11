@@ -2,7 +2,8 @@
 
 import asyncio
 import os
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import AbstractAsyncContextManager
 from datetime import timedelta
 from typing import Annotated
@@ -26,13 +27,15 @@ app = typer.Typer(help="Collects snapshots and autofail updates as needed.")
 
 
 async def snapshot_acollect(snapshot_interval: int, snapshot_timeout: int, parallelism: int):
-    """Collects snapshots and autofail updates (async wrapper)."""
+    """Collects snapshots within the application database lifespan."""
     async with database.setup():
-        await snapshotter.create_pending_snapshots(snapshot_interval)
-        async with asyncio.TaskGroup() as task:
-            for i in range(parallelism):
-                with logger.contextualize(task=i):
-                    _ = task.create_task(snapshotter.process_pending_snapshots(snapshot_timeout), name=f"sn{i}")
+        snapshotter.create_pending_snapshots(snapshot_interval)
+        with ThreadPoolExecutor(max_workers=parallelism, thread_name_prefix="snapshot") as executor:
+            futures = [
+                executor.submit(snapshotter.process_pending_snapshots, snapshot_timeout) for _ in range(parallelism)
+            ]
+            for future in futures:
+                future.result()
 
 
 async def autofail_acollect(
@@ -41,11 +44,11 @@ async def autofail_acollect(
     autofail_batch_size: int,
     *,
     database_setup: Callable[[], AbstractAsyncContextManager[None]] = database.setup,
-    process_autofails: Callable[[float, float, int], Awaitable[None]] = autofail.process_autofails,
+    process_autofails: Callable[[float, float, int], None] = autofail.process_autofails,
 ) -> None:
     """Process eligible autofail updates within a bounded runtime."""
     async with database_setup():
-        await process_autofails(autofail_timeout, autofail_batch_sleep, autofail_batch_size)
+        process_autofails(autofail_timeout, autofail_batch_sleep, autofail_batch_size)
 
 
 @app.command()
