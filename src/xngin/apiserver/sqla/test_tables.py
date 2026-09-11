@@ -25,21 +25,21 @@ async def test_datasource_set_table_list(xngin_session, testing_datasource):
     datasource = testing_datasource.ds
 
     datasource.set_table_list([])
-    await xngin_session.flush()
+    xngin_session.flush()
     assert datasource.table_list == []
     assert datasource.table_list_updated is not None
     assert (
-        await xngin_session.scalar(
+        xngin_session.scalar(
             select(tables.Datasource.table_list.is_(None)).where(tables.Datasource.id == datasource.id)
         )
     ) is False
 
     datasource.set_table_list(None)
-    await xngin_session.flush()
+    xngin_session.flush()
     assert datasource.table_list is None
     assert datasource.table_list_updated is None
     assert (
-        await xngin_session.scalar(
+        xngin_session.scalar(
             select(tables.Datasource.table_list.is_(None)).where(tables.Datasource.id == datasource.id)
         )
     ) is True
@@ -54,7 +54,7 @@ async def test_get_config_tolerates_legacy_participants_key(xngin_session, testi
     """
     datasource = testing_datasource.ds
     datasource.config = LEGACY_CONFIG_WITH_PARTICIPANTS
-    await xngin_session.flush()
+    xngin_session.flush()
 
     config = datasource.get_config()
 
@@ -67,14 +67,14 @@ async def test_set_config_drops_legacy_participants_key(xngin_session, testing_d
     """Rewriting a legacy config self-heals it, so the migration is not the only way to clean a row."""
     datasource = testing_datasource.ds
     datasource.config = LEGACY_CONFIG_WITH_PARTICIPANTS
-    await xngin_session.flush()
+    xngin_session.flush()
 
     datasource.set_config(datasource.get_config())
-    await xngin_session.flush()
+    xngin_session.flush()
 
     assert "participants" not in datasource.config
     assert (
-        await xngin_session.scalar(select(tables.Datasource.config).where(tables.Datasource.id == datasource.id))
+        xngin_session.scalar(select(tables.Datasource.config).where(tables.Datasource.id == datasource.id))
     ).keys() == {"type", "dwh"}
 
 

@@ -12,10 +12,10 @@ the checks stay in one place rather than in each handler's opening lines.
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Path, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from xngin.apiserver import constants
-from xngin.apiserver.dependencies import xngin_db_session
+from xngin.apiserver.dependencies import xngin_sync_db_session
 from xngin.apiserver.routers.admin_integrations.admin_integrations_api import get_turn_webhook_or_raise
 from xngin.apiserver.routers.experiments import experiments_dependencies as edeps
 from xngin.apiserver.sqla import tables
@@ -30,9 +30,9 @@ def _authenticated(auth_token: str | None, wh: tables.Webhook | None) -> tables.
     return wh
 
 
-async def turn_webhook(
+def turn_webhook(
     webhook_id: Annotated[str, Path()],
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
     auth_token: Annotated[str | None, Header(alias=constants.HEADER_WEBHOOK_TOKEN)] = None,
 ) -> tables.Webhook:
     """Resolves the Turn.io webhook a route names, for a caller presenting its token.
@@ -43,19 +43,19 @@ async def turn_webhook(
     caller whether a webhook id is in use. That is how these routes have always answered, and Turn.io relies
     on the 404 to distinguish a retired webhook from a rejected token.
     """
-    wh = await get_turn_webhook_or_raise(session, webhook_id=webhook_id, allow_missing=False)
+    wh = get_turn_webhook_or_raise(session, webhook_id=webhook_id, allow_missing=False)
     return _authenticated(auth_token, wh)
 
 
-async def turn_connection(
+def turn_connection(
     wh: Annotated[tables.Webhook, Depends(turn_webhook)],
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
 ) -> tables.TurnConnection:
     """Resolves the Turn.io connection owning the webhook a route names.
 
     Requires {webhook_id} in the route path and the webhook's token in the Webhook-Token header.
     """
-    conn = await session.get(tables.TurnConnection, wh.organization_id)
+    conn = session.get(tables.TurnConnection, wh.organization_id)
     if conn is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="No Turn.io connection configured for this organization."
@@ -63,15 +63,15 @@ async def turn_connection(
     return conn
 
 
-async def turn_config(
+def turn_config(
     exp: Annotated[tables.Experiment, Depends(edeps.experiment)],
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
 ) -> tables.ExperimentTurnConfig:
     """Resolves the Turn.io journey mapping of the experiment a route names.
 
     Requires {experiment_id} in the route path and an API key authorized on its datasource.
     """
-    cfg = await session.get(tables.ExperimentTurnConfig, exp.id)
+    cfg = session.get(tables.ExperimentTurnConfig, exp.id)
     if cfg is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="No Turn.io mapping configured for this experiment."

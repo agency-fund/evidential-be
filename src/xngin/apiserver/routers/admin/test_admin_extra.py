@@ -4,7 +4,7 @@ import json
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from xngin.apiserver import constants, settings
 from xngin.apiserver.conftest import delete_seeded_users
@@ -81,7 +81,7 @@ _PERSISTED_WEBHOOK_TOKEN = "sample-token"
 )
 async def test_datasources_hide_credentials(
     dsn: PostgresDsn | RedshiftDsn | BqDsn,
-    xngin_session: AsyncSession,
+    xngin_session: Session,
     aclient: AdminAPIClient,
 ):
     org_id = aclient.create_organizations(
@@ -101,7 +101,7 @@ async def test_datasources_hide_credentials(
         case BqDsn():
             assert isinstance(datasource_response.dsn.credentials, Hidden)
 
-    before_revision = (await xngin_session.get_one(tables.Datasource, datasource_id)).get_config()
+    before_revision = (xngin_session.get_one(tables.Datasource, datasource_id)).get_config()
     match dsn:
         case PostgresDsn() | RedshiftDsn():
             revised_pg: PostgresDsn | RedshiftDsn = dsn.model_copy(deep=True)
@@ -115,7 +115,7 @@ async def test_datasources_hide_credentials(
             update_request = UpdateDatasourceRequest(dsn=revised_bq)
     aclient.update_datasource(datasource_id=datasource_id, body=update_request)
 
-    after_revision = (await xngin_session.get_one(tables.Datasource, datasource_id)).get_config()
+    after_revision = (xngin_session.get_one(tables.Datasource, datasource_id)).get_config()
     match after_revision.dwh, before_revision.dwh:
         case settings.Dsn() as after, settings.Dsn() as before:
             assert after.host == before.host
@@ -142,7 +142,7 @@ async def test_datasources_hide_credentials(
             update_request = UpdateDatasourceRequest(dsn=revised_bq)
     aclient.update_datasource(datasource_id=datasource_id, body=update_request)
 
-    after_second_revision = (await xngin_session.get_one(tables.Datasource, datasource_id)).get_config()
+    after_second_revision = (xngin_session.get_one(tables.Datasource, datasource_id)).get_config()
     match after_second_revision.dwh, after_revision.dwh:
         case settings.Dsn() as second, settings.Dsn() as first:
             assert second.dbname == "newdatabase"
@@ -160,7 +160,7 @@ async def test_datasources_hide_credentials(
 
 
 async def _insert_webhook_sent_event(
-    xngin_session: AsyncSession,
+    xngin_session: Session,
     organization_id: str,
     *,
     webhook_token_header: str = constants.HEADER_WEBHOOK_TOKEN,
@@ -176,7 +176,7 @@ async def _insert_webhook_sent_event(
         WebhookSentEvent(request=outbound, success=False, response="boom")
     )
     xngin_session.add(event)
-    await xngin_session.commit()
+    xngin_session.commit()
     return event.id, outbound.model_dump()
 
 
@@ -184,7 +184,7 @@ async def _insert_webhook_sent_event(
     "webhook_token_header", [constants.HEADER_WEBHOOK_TOKEN, constants.HEADER_WEBHOOK_TOKEN.lower()]
 )
 async def test_list_organization_events_redacts_webhook_token(
-    xngin_session: AsyncSession,
+    xngin_session: Session,
     aclient: AdminAPIClient,
     webhook_token_header: str,
 ):
@@ -200,7 +200,7 @@ async def test_list_organization_events_redacts_webhook_token(
 
 
 async def test_resend_organization_event_enqueues_task(
-    xngin_session: AsyncSession,
+    xngin_session: Session,
     aclient: AdminAPIClient,
 ):
     org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="resend-happy")).data.id
@@ -208,19 +208,15 @@ async def test_resend_organization_event_enqueues_task(
 
     aclient.resend_organization_event(organization_id=org_id, event_id=event_id)
 
-    tasks = list(
-        await xngin_session.scalars(select(tables.Task).where(tables.Task.task_type == WEBHOOK_OUTBOUND_TASK_TYPE))
-    )
+    tasks = list(xngin_session.scalars(select(tables.Task).where(tables.Task.task_type == WEBHOOK_OUTBOUND_TASK_TYPE)))
     assert len(tasks) == 1
     assert tasks[0].status == "pending"
     assert tasks[0].payload == expected_payload
     assert tasks[0].payload["headers"][constants.HEADER_WEBHOOK_TOKEN] == _PERSISTED_WEBHOOK_TOKEN
 
 
-async def test_first_user_default_experiment_templates_created(
-    xngin_session: AsyncSession, aclient_unpriv: AdminAPIClient
-):
-    await delete_seeded_users(xngin_session)
+async def test_first_user_default_experiment_templates_created(xngin_session: Session, aclient_unpriv: AdminAPIClient):
+    delete_seeded_users(xngin_session)
 
     organization = aclient_unpriv.list_organizations().data.items[0]
     experiments = aclient_unpriv.list_organization_experiments(organization_id=organization.id).data.items

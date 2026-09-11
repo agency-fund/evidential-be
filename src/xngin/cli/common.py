@@ -9,7 +9,6 @@ import sqlalchemy
 import typer
 from rich.console import Console
 from sqlalchemy import create_engine
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from xngin.apiserver.dwh import dwh_utils
 
@@ -71,12 +70,4 @@ def cli_engine(url: sqlalchemy.URL | str, *, connect_args: dict | None = None, e
         url, connect_args=cli_connect_args(url) | (connect_args or {}), logging_name=SA_LOGGER_NAME_FOR_CLI, echo=echo
     )
     dwh_utils.extra_engine_setup(engine)
-    return engine
-
-
-def cli_async_engine(url: sqlalchemy.URL | str) -> AsyncEngine:
-    """Creates an Engine comparable to what cli_engine would create, but async."""
-    url = sqlalchemy.make_url(url)
-    engine = create_async_engine(url, connect_args=cli_connect_args(url), logging_name=SA_LOGGER_NAME_FOR_CLI)
-    dwh_utils.extra_engine_setup(engine.sync_engine)
     return engine

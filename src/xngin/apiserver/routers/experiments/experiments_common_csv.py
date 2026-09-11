@@ -19,16 +19,16 @@ class CsvStreamingResponse(StreamingResponse):
     media_type = "text/csv"
 
 
-async def _get_assignment_csv_strata_names_from_experiment(experiment: tables.Experiment) -> list[str]:
+def _get_assignment_csv_strata_names_from_experiment(experiment: tables.Experiment) -> list[str]:
     if experiment.experiment_type not in {ExperimentsType.FREQ_ONLINE.value, ExperimentsType.FREQ_PREASSIGNED.value}:
         return []
-    return sorted([ef.field_name for ef in await experiment.awaitable_attrs.experiment_fields if ef.is_strata])
+    return sorted([ef.field_name for ef in experiment.experiment_fields if ef.is_strata])
 
 
-async def _get_assignment_cluster_key_name_from_experiment(experiment: tables.Experiment) -> str | None:
+def _get_assignment_cluster_key_name_from_experiment(experiment: tables.Experiment) -> str | None:
     if experiment.experiment_type not in {ExperimentsType.FREQ_ONLINE.value, ExperimentsType.FREQ_PREASSIGNED.value}:
         return None
-    return next((ef.field_name for ef in await experiment.awaitable_attrs.experiment_fields if ef.is_cluster_key), None)
+    return next((ef.field_name for ef in experiment.experiment_fields if ef.is_cluster_key), None)
 
 
 def _build_freq_experiment_assignments_select_query(
@@ -143,12 +143,12 @@ def _build_bandit_experiment_assignments_select_query(
     """
 
 
-async def get_experiment_assignments_as_csv_impl(
+def get_experiment_assignments_as_csv_impl(
     xngin_session: AsyncSession,
     experiment: tables.Experiment,
 ) -> CsvStreamingResponse:
-    strata_names = await _get_assignment_csv_strata_names_from_experiment(experiment)
-    cluster_key_name = await _get_assignment_cluster_key_name_from_experiment(experiment)
+    strata_names = _get_assignment_csv_strata_names_from_experiment(experiment)
+    cluster_key_name = _get_assignment_cluster_key_name_from_experiment(experiment)
     if experiment.experiment_type in {ExperimentsType.FREQ_ONLINE.value, ExperimentsType.FREQ_PREASSIGNED.value}:
         select_query = _build_freq_experiment_assignments_select_query(
             experiment.id, experiment.experiment_type, strata_names, cluster_key_name
@@ -171,8 +171,8 @@ async def get_experiment_assignments_impl(
 ) -> AsyncGenerator[AssignmentTypedDict]:
     match experiment.experiment_type:
         case ExperimentsType.FREQ_ONLINE.value | ExperimentsType.FREQ_PREASSIGNED.value:
-            strata_names = await _get_assignment_csv_strata_names_from_experiment(experiment)
-            cluster_key_name = await _get_assignment_cluster_key_name_from_experiment(experiment)
+            strata_names = _get_assignment_csv_strata_names_from_experiment(experiment)
+            cluster_key_name = _get_assignment_cluster_key_name_from_experiment(experiment)
             select_query = _build_freq_experiment_assignments_select_query(
                 experiment.id,
                 experiment.experiment_type,

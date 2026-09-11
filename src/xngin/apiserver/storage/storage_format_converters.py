@@ -6,7 +6,6 @@ types. Our SQLA tables ideally shouldn't depend on xngin/apiserver/*; but for th
 JSONB type columns for multi-value/complex types, use the converters to get/set them properly.
 """
 
-import asyncio
 import operator
 from datetime import datetime
 from typing import Any, Self, assert_never
@@ -245,7 +244,7 @@ class ExperimentStorageConverter:
         """Return a map of all the field names used in the experiment to their respective data types."""
         return {ef.field_name: DataType(ef.data_type) for ef in self.experiment.experiment_fields}
 
-    async def get_design_spec(self) -> capi.DesignSpec:
+    def get_design_spec(self) -> capi.DesignSpec:
         """Converts stored experiment metadata to a DesignSpec object."""
         base_experiment_dict = {
             "experiment_type": self.experiment.experiment_type,
@@ -255,13 +254,10 @@ class ExperimentStorageConverter:
             "start_date": self.experiment.start_date,
             "end_date": self.experiment.end_date,
         }
-        await self.experiment.awaitable_attrs.arms
-
         if self.experiment.experiment_type in {
             ExperimentsType.FREQ_ONLINE.value,
             ExperimentsType.FREQ_PREASSIGNED.value,
         }:
-            await self.experiment.awaitable_attrs.experiment_fields
             primary_key_field = self.experiment.unique_id_field()
             if self.experiment.datasource_table is None or primary_key_field is None:
                 raise ValueError(
@@ -305,7 +301,6 @@ class ExperimentStorageConverter:
                 raise ValueError(f"Bandit experiment {self.experiment.id} must have prior_type and reward_type set.")
             contexts = None
             if self.experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value:
-                await self.experiment.awaitable_attrs.contexts
                 contexts = [
                     capi.Context(
                         context_id=context.id,
@@ -318,7 +313,6 @@ class ExperimentStorageConverter:
 
             mab_dwh_fields: dict[str, Any] = {}
             if self.experiment.experiment_type == ExperimentsType.MAB_ONLINE_DWH.value:
-                await self.experiment.awaitable_attrs.experiment_fields
                 primary_key_field = self.experiment.unique_id_field()
                 target_field = next(f for f in self.experiment.experiment_fields if f.is_target)
                 if self.experiment.datasource_table is None or primary_key_field is None:
@@ -373,7 +367,7 @@ class ExperimentStorageConverter:
             return None
         return capi.PowerResponse.model_validate(self.experiment.power_analyses)
 
-    async def get_experiment_config(
+    def get_experiment_config(
         self,
         assign_summary: capi.AssignSummary,
         webhook_ids: list[str] | None = None,
@@ -382,12 +376,12 @@ class ExperimentStorageConverter:
 
         Expects assign_summary since that typically requires a db lookup."""
         return capi.GetExperimentResponse(
-            experiment_id=(await self.experiment.awaitable_attrs.id),
+            experiment_id=self.experiment.id,
             datasource_id=self.experiment.datasource_id,
             state=ExperimentState(self.experiment.state),
             stopped_assignments_at=self.experiment.stopped_assignments_at,
             stopped_assignments_reason=StopAssignmentReason.from_str(self.experiment.stopped_assignments_reason),
-            design_spec=await self.get_design_spec(),
+            design_spec=self.get_design_spec(),
             power_analyses=self.get_power_response(),
             assign_summary=assign_summary,
             webhooks=webhook_ids or [],
@@ -395,7 +389,7 @@ class ExperimentStorageConverter:
             impact=self.experiment.impact,
         )
 
-    async def get_experiment_response(
+    def get_experiment_response(
         self,
         assign_summary: capi.AssignSummary,
         webhook_ids: list[str] | None = None,
@@ -403,21 +397,21 @@ class ExperimentStorageConverter:
         # Although GetExperimentResponse is a subclass of ExperimentConfig, we revalidate the
         # response in case we ever change the API.
         return capi.GetExperimentResponse.model_validate(
-            (await self.get_experiment_config(assign_summary, webhook_ids)).model_dump()
+            self.get_experiment_config(assign_summary, webhook_ids).model_dump()
         )
 
-    async def get_create_experiment_response(
+    def get_create_experiment_response(
         self,
         assign_summary: capi.AssignSummary,
         webhook_ids: list[str] | None = None,
     ) -> capi.CreateExperimentResponse:
         # Revalidate the response in case we ever change the API.
         return capi.CreateExperimentResponse.model_validate(
-            (await self.get_experiment_config(assign_summary, webhook_ids)).model_dump()
+            self.get_experiment_config(assign_summary, webhook_ids).model_dump()
         )
 
     @classmethod
-    async def init_from_components(
+    def init_from_components(
         cls,
         datasource_id: str,
         organization_id: str,
@@ -510,8 +504,8 @@ class ExperimentStorageConverter:
 
                 arm_weights = design_spec.get_validated_arm_weights()
                 if arm_weights:
-                    param1, param2 = await asyncio.to_thread(
-                        convert_arm_weights_to_prior_params, arm_weights=arm_weights, prior_type=design_spec.prior_type
+                    param1, param2 = convert_arm_weights_to_prior_params(
+                        arm_weights=arm_weights, prior_type=design_spec.prior_type
                     )
                     match design_spec.prior_type:
                         case capi.PriorTypes.BETA:

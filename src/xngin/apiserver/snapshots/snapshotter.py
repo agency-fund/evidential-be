@@ -1,12 +1,12 @@
-import asyncio
 import random
-from typing import TYPE_CHECKING
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import sentry_sdk
 from loguru import logger
 from sqlalchemy import func, insert, or_, select, text
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import Session, selectinload
 
 from xngin.apiserver import database
 from xngin.apiserver.routers.common_api_types import ExperimentAnalysisResponse
@@ -15,15 +15,12 @@ from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 
-if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
-
 # The amount of time the API server will wait for a snapshot to complete when invoked in response to user request.
 # The snapshotter cron job can specify a different timeout via command line flags.
 SNAPSHOT_TIMEOUT_SECS = 90
 
 
-async def create_pending_snapshots(snapshot_interval: int):
+def create_pending_snapshots(snapshot_interval: int) -> None:
     """
     Identify experiments that are due for fresh snapshots, or whose most recent snapshot failed, and insert snapshots
     with status=pending for them.
@@ -32,7 +29,7 @@ async def create_pending_snapshots(snapshot_interval: int):
     """
     freshness_threshold = text(f"interval '{snapshot_interval} seconds'")
 
-    async with database.async_session() as session, session.begin():
+    with database.sync_session() as session, session.begin():
         # All active experiments will be snapshot by this method. We also include experiments
         # that start tomorrow, or ended yesterday, to collect +/- 1 day on both sides of the experiment.
         buffer = text("interval '1 day'")
@@ -66,18 +63,18 @@ async def create_pending_snapshots(snapshot_interval: int):
         )
 
         # Create a new snapshot with status=pending for each experiment that needs one.
-        for experiment_id in (await session.execute(candidate_experiments)).scalars():
-            await session.execute(insert(tables.Snapshot).values(experiment_id=experiment_id))
+        for experiment_id in session.scalars(candidate_experiments):
+            session.execute(insert(tables.Snapshot).values(experiment_id=experiment_id))
 
 
-async def make_first_snapshot(experiment_id: str, snapshot_id: str):
+def make_first_snapshot(experiment_id: str, snapshot_id: str) -> None:
     """Process a specific snapshot with status=pending.
 
     This method is intended to be invoked immediately after a snapshot is created in response to user request.
     """
-    async with database.async_session() as session, session.begin():
+    with database.sync_session() as session, session.begin():
         snapshot = (
-            await session.execute(
+            session.execute(
                 select(tables.Snapshot)
                 .where(
                     tables.Snapshot.experiment_id == experiment_id,
@@ -99,10 +96,10 @@ async def make_first_snapshot(experiment_id: str, snapshot_id: str):
         if snapshot is None:
             logger.info(f"{experiment_id}.{snapshot_id} is missing or is already being processed.")
             return
-        await _handle_one_snapshot_safely(session, snapshot, SNAPSHOT_TIMEOUT_SECS)
+        _handle_one_snapshot_safely(session, snapshot, SNAPSHOT_TIMEOUT_SECS)
 
 
-async def process_pending_snapshots(snapshot_timeout: int, *, max_jitter_secs: float = 2):
+def process_pending_snapshots(snapshot_timeout: int, *, max_jitter_secs: float = 2) -> None:
     """Processes pending snapshots, one at a time, until there are no more available.
 
     Interactions with the client data warehouse will be considered timed-out after snapshot_timeout seconds. These
@@ -127,37 +124,42 @@ async def process_pending_snapshots(snapshot_timeout: int, *, max_jitter_secs: f
     )
 
     while True:
-        await asyncio.sleep(random.uniform(0, max_jitter_secs))  # jitter  # noqa: S311
-        async with database.async_session() as session, session.begin():
-            snapshot = (await session.execute(one_pending_snapshot)).scalar_one_or_none()
+        time.sleep(random.uniform(0, max_jitter_secs))  # jitter  # noqa: S311
+        with database.sync_session() as session, session.begin():
+            snapshot = session.execute(one_pending_snapshot).scalar_one_or_none()
             if snapshot is None:
                 logger.info("No pending snapshots available.")
                 return
-            _ = await _handle_one_snapshot_safely(session, snapshot, snapshot_timeout)
+            _handle_one_snapshot_safely(session, snapshot, snapshot_timeout)
 
 
-async def _handle_one_snapshot_safely(session: AsyncSession, snapshot: tables.Snapshot, snapshot_timeout: int):
+def _handle_one_snapshot_safely(session: Session, snapshot: tables.Snapshot, snapshot_timeout: int) -> None:
     sentry_sdk.metrics.count("snapshots.started", 1, attributes={"experiment_id": snapshot.experiment_id})
-    experiment = await snapshot.awaitable_attrs.experiment
-    datasource = await experiment.awaitable_attrs.datasource
+    experiment = snapshot.experiment
+    datasource = experiment.datasource
     with logger.contextualize(experiment_id=experiment.id):
         logger.info(f"{experiment.id}.{snapshot.id}: processing")
+        # The snapshot runs on a worker thread so that a data warehouse that never answers cannot hold the
+        # run open past snapshot_timeout. A timed-out worker is abandoned rather than joined.
+        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="snapshot")
         try:
-            async with asyncio.timeout(snapshot_timeout):
-                result = await _query_dwh_for_snapshot_data(session, datasource, experiment)
-                snapshot.data = result.model_dump(mode="json")
-                snapshot.status = "success"
+            future = executor.submit(_query_dwh_for_snapshot_data, session, datasource, experiment)
+            result = future.result(timeout=snapshot_timeout)
+            snapshot.data = result.model_dump(mode="json")
+            snapshot.status = "success"
         except Exception as exc:
             sentry_sdk.metrics.count("snapshots.failed", 1, attributes={"experiment_id": snapshot.experiment_id})
             logger.opt(exception=exc).info(f"{experiment.id}.{snapshot.id}: exception")
             snapshot.status = "failed"
             snapshot.message = f"{type(exc).__name__}: {exc}"
+        finally:
+            executor.shutdown(wait=False)
         sentry_sdk.metrics.count("snapshots.finished", 1, attributes={"experiment_id": snapshot.experiment_id})
         logger.info(f"{experiment.id}.{snapshot.id}: done")
 
 
-async def _query_dwh_for_snapshot_data(
-    session: AsyncSession, datasource: tables.Datasource, experiment: tables.Experiment
+def _query_dwh_for_snapshot_data(
+    session: Session, datasource: tables.Datasource, experiment: tables.Experiment
 ) -> ExperimentAnalysisResponse:
     """Collect a snapshot from a customer DWH and returns the snapshot data."""
     experiment_type = ExperimentsType(experiment.experiment_type)
@@ -169,17 +171,17 @@ async def _query_dwh_for_snapshot_data(
         # the mean context values. Captured in issue 140
         # (https://github.com/agency-fund/evidential-sprint/issues/140)
         if experiment_type.is_cmab():
-            contexts = await experiment.awaitable_attrs.contexts
+            contexts = experiment.contexts
             sorted_contexts = sorted(contexts, key=lambda c: c.id)
             # draw.context_vals were already sorted corresponding to the sorted_contexts
             # ordering when the assignment was made.
-            mean_context_vals = await _mean_context_vals_from_draws(session, experiment.id, len(contexts))
+            mean_context_vals = _mean_context_vals_from_draws(session, experiment.id, len(contexts))
             context_vals = [
                 abs(float(np.ceil(m - 0.5))) if context.value_type == ContextType.BINARY else m
                 for m, context in zip(mean_context_vals, sorted_contexts, strict=True)
             ]
 
-        return await experiments_common.analyze_experiment_bandit_impl(
+        return experiments_common.analyze_experiment_bandit_impl(
             xngin_session=session, experiment=experiment, context_vals=context_vals
         )
 
@@ -187,7 +189,7 @@ async def _query_dwh_for_snapshot_data(
         # Look for the arm in position 1. If not found, use the first arm.
         baseline_arm = next((arm for arm in experiment.arms if arm.position == 1), experiment.arms[0])
         assert baseline_arm.id is not None
-        return await experiments_common.analyze_experiment_freq_impl(
+        return experiments_common.analyze_experiment_freq_impl(
             xngin_session=session,
             dsconfig=datasource.get_config(),
             experiment=experiment,
@@ -197,7 +199,7 @@ async def _query_dwh_for_snapshot_data(
     raise ValueError(f"Unsupported experiment type: {experiment_type}")
 
 
-async def _mean_context_vals_from_draws(session: AsyncSession, experiment_id: str, n_contexts: int) -> list[float]:
+def _mean_context_vals_from_draws(session: Session, experiment_id: str, n_contexts: int) -> list[float]:
     """Per-position mean of non-null context_vals across draws.
 
     Returns a zero vector when no rows match. Assumes all non-null context_vals
@@ -207,7 +209,7 @@ async def _mean_context_vals_from_draws(session: AsyncSession, experiment_id: st
     if n_contexts == 0:
         return []
     rows = (
-        await session.execute(
+        session.execute(
             text("""
                 SELECT AVG(val)
                 FROM draws, unnest(context_vals) WITH ORDINALITY AS t(val, ord)

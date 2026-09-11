@@ -1,6 +1,5 @@
 import secrets
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.routers.admin.admin_api_types import AddWebhookToOrganizationRequest
@@ -11,14 +10,14 @@ DEFAULT_NO_DWH_SOURCE_NAME = "API Only"
 
 
 def create_datasource_impl(
-    session: AsyncSession | Session, org: tables.Organization, name: str, config: RemoteDatabaseConfig
+    session: Session, org: tables.Organization, name: str, config: RemoteDatabaseConfig
 ) -> tables.Datasource:
     datasource = tables.Datasource(id=tables.datasource_id_factory(), name=name, organization=org).set_config(config)
     session.add(datasource)
     return datasource
 
 
-def create_organization_impl(session: AsyncSession | Session, user: tables.User, name: str) -> tables.Organization:
+def create_organization_impl(session: Session, user: tables.User, name: str) -> tables.Organization:
     organization = tables.Organization(name=name)
     session.add(organization)
     organization.users.append(user)  # Add the creating user to the organization
@@ -32,7 +31,7 @@ def create_organization_impl(session: AsyncSession | Session, user: tables.User,
 
 
 def create_webhook_impl(
-    session: AsyncSession | Session, org_id: str, webhook: AddWebhookToOrganizationRequest
+    session: Session, org_id: str, webhook: AddWebhookToOrganizationRequest
 ) -> tuple[str, tables.Webhook]:
     """Creates a webhook and returns its auth token and its entity."""
     auth_token = secrets.token_hex(16)

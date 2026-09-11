@@ -2,7 +2,7 @@
 
 import datetime
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from xngin.apiserver.routers.admin import admin_common
 from xngin.apiserver.routers.admin.admin_api_types import AddExperimentCreatedWebhookRequest
@@ -35,12 +35,12 @@ TESTING_DWH_DATASOURCE_NAME = "Local DWH"
 ALT_TESTING_DWH_DATASOURCE_NAME = "Alternate Local DWH"
 
 
-async def _create_and_commit_experiment(
-    session: AsyncSession,
+def _create_and_commit_experiment(
+    session: Session,
     datasource: tables.Datasource,
     create_experiment_request: CreateExperimentRequest,
 ):
-    result = await experiments_common.create_experiment_impl(
+    result = experiments_common.create_experiment_impl(
         create_experiment_request,
         datasource,
         session,
@@ -48,14 +48,12 @@ async def _create_and_commit_experiment(
         random_state=None,
         validated_webhooks=[],
     )
-    experiment = await session.get_one(tables.Experiment, result.experiment_id)
-    await experiments_common.commit_experiment_impl(session, experiment)
+    experiment = session.get_one(tables.Experiment, result.experiment_id)
+    experiments_common.commit_experiment_impl(session, experiment)
     return experiment
 
 
-async def _maybe_create_developer_samples(
-    session: AsyncSession, organization: tables.Organization, testing_dwh_dsn: str | None
-):
+def _maybe_create_developer_samples(session: Session, organization: tables.Organization, testing_dwh_dsn: str | None):
     if not testing_dwh_dsn:
         return
 
@@ -86,9 +84,9 @@ async def _maybe_create_developer_samples(
             dwh=Dsn.from_url(testing_dwh_dsn),
         ),
     )
-    await session.flush()
+    session.flush()
 
-    preassigned = await _create_and_commit_experiment(
+    preassigned = _create_and_commit_experiment(
         session,
         datasource,
         CreateExperimentRequest(
@@ -110,9 +108,9 @@ async def _maybe_create_developer_samples(
             ),
         ),
     )
-    await seed_historical_snapshots(session, preassigned, STEADY_GAIN)
+    seed_historical_snapshots(session, preassigned, STEADY_GAIN)
 
-    preassigned_2 = await _create_and_commit_experiment(
+    preassigned_2 = _create_and_commit_experiment(
         session,
         datasource,
         CreateExperimentRequest(
@@ -134,9 +132,9 @@ async def _maybe_create_developer_samples(
             ),
         ),
     )
-    await seed_historical_snapshots(session, preassigned_2, LATE_BREAKOUT)
+    seed_historical_snapshots(session, preassigned_2, LATE_BREAKOUT)
 
-    await _create_and_commit_experiment(
+    _create_and_commit_experiment(
         session,
         datasource,
         CreateExperimentRequest(
@@ -158,7 +156,7 @@ async def _maybe_create_developer_samples(
         ),
     )
 
-    await _create_and_commit_experiment(
+    _create_and_commit_experiment(
         session,
         datasource,
         CreateExperimentRequest(
@@ -177,7 +175,7 @@ async def _maybe_create_developer_samples(
         ),
     )
 
-    await _create_and_commit_experiment(
+    _create_and_commit_experiment(
         session,
         datasource,
         CreateExperimentRequest(
@@ -206,7 +204,7 @@ async def _maybe_create_developer_samples(
         ),
     )
 
-    await _create_and_commit_experiment(
+    _create_and_commit_experiment(
         session,
         alt_datasource,
         CreateExperimentRequest(
@@ -230,8 +228,8 @@ async def _maybe_create_developer_samples(
     )
 
 
-async def create_entities_for_first_time_user(
-    session: AsyncSession, user: tables.User, testing_dwh_dsn: str | None
+def create_entities_for_first_time_user(
+    session: Session, user: tables.User, testing_dwh_dsn: str | None
 ) -> tables.User:
     """Bootstraps a user with organization, datasources, and optionally experiments.
 
@@ -243,6 +241,6 @@ async def create_entities_for_first_time_user(
     function: a NoDWH datasource, and an Organization. This is the standard production deployment configuration.
     """
     organization = admin_common.create_organization_impl(session, user, DEFAULT_ORGANIZATION_NAME)
-    await session.flush()
-    await _maybe_create_developer_samples(session, organization, testing_dwh_dsn)
+    session.flush()
+    _maybe_create_developer_samples(session, organization, testing_dwh_dsn)
     return user
