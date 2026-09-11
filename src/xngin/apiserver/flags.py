@@ -58,6 +58,10 @@ PUBLISH_ALL_DOCS = truthy_env("XNGIN_PUBLISH_ALL_DOCS")
 
 XNGIN_DEVDWH_DSN = os.environ.get("XNGIN_DEVDWH_DSN", "")
 
+# How long one block of interactions with a customer data warehouse may run in total before we stop waiting for it.
+# This defends against remote warehouses, not against our own application database, which we assume does not stall.
+DWH_TIMEOUT_SECS = float(os.environ.get("XNGIN_DWH_TIMEOUT_SECS", "120"))
+
 # Hosting providers may set hosted database URL as DATABASE_URL, so we use the same.
 DATABASE_URL = os.environ.get("DATABASE_URL")
 

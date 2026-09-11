@@ -11,7 +11,12 @@ from xngin.apiserver.apikeys import BaseApiKeyError
 from xngin.apiserver.dependencies import CannotFindDatasourceError
 from xngin.apiserver.dns.safe_resolve import DnsLookupError
 from xngin.apiserver.dwh.dwh_session import CannotFindTableError
-from xngin.apiserver.exceptions_common import DwhConnectionError, DwhDatabaseDoesNotExistError, LateValidationError
+from xngin.apiserver.exceptions_common import (
+    DwhConnectionError,
+    DwhDatabaseDoesNotExistError,
+    DwhTimeoutError,
+    LateValidationError,
+)
 from xngin.apiserver.pagination import InvalidPageTokenError
 from xngin.apiserver.routers.admin.admin_api_converters import (
     CredentialsUnavailableError,
@@ -93,6 +98,12 @@ def setup(app):
     @app.exception_handler(DwhConnectionError)
     def exception_handler_dwhconnectionerror(_request: Request, exc: DwhConnectionError):
         return JSONResponse(status_code=502, content={"message": str(exc)})
+
+    @app.exception_handler(DwhTimeoutError)
+    def exception_handler_dwhtimeouterror(_request: Request, exc: DwhTimeoutError):
+        # Not registered for the builtin TimeoutError: since 3.11 that is also asyncio.TimeoutError,
+        # so unrelated timeouts would start answering 504.
+        return JSONResponse(status_code=504, content={"message": str(exc)})
 
     @app.exception_handler(DwhDatabaseDoesNotExistError)
     def exception_handler_dwhdatabasedoesnotexisterror(_request: Request, exc: DwhDatabaseDoesNotExistError):
