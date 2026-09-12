@@ -60,7 +60,7 @@ def select_experiments_to_pull() -> list[str]:
     This method establishes its own database connection.
     """
     buffer = text("interval '1 day'")
-    with database.sync_session() as session:
+    with database.get_session() as session:
         return list(
             session.scalars(
                 select(tables.Experiment.id)
@@ -103,7 +103,7 @@ def pull_one_experiment(experiment_id: str, *, dwh_timeout: float = PULL_TIMEOUT
         )
     )
 
-    with logger.contextualize(experiment_id=experiment_id), database.sync_session() as session, session.begin():
+    with logger.contextualize(experiment_id=experiment_id), database.get_session() as session, session.begin():
         # 1. Read what the warehouse query needs: the datasource config, the target and unique-id
         # columns, and the draws that still have no outcome.
         experiment = session.execute(experiment_query).scalar_one()

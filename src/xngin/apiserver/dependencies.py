@@ -14,7 +14,7 @@ def random_seed_dependency():
 
 def xngin_sync_db_session():
     """Returns a synchronous database connection to the xngin app database."""
-    with database.sync_session() as session:
+    with database.get_session() as session:
         yield session
 
 

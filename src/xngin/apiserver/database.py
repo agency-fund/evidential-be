@@ -6,8 +6,7 @@ import os
 
 from loguru import logger
 from sqlalchemy import Engine, create_engine, make_url
-from sqlalchemy.orm import Session
-from sqlalchemy.orm import sessionmaker as sync_sessionmaker_factory
+from sqlalchemy.orm import Session, sessionmaker
 
 from xngin.apiserver import flags
 
@@ -46,8 +45,8 @@ class DatabaseState:
     """Contains application-wide application database connection."""
 
     database_url: str
-    sync_engine: Engine
-    sync_sessionmaker: sync_sessionmaker_factory[Session]
+    engine: Engine
+    sessionmaker: sessionmaker[Session]
 
 
 _GLOBAL_STATE: DatabaseState | None = None
@@ -59,17 +58,17 @@ def get_sqlalchemy_database_url():
     return _GLOBAL_STATE.database_url
 
 
-def get_sync_engine():
+def get_engine():
     if _GLOBAL_STATE is None:
         raise DatabaseSetupRequiredError()
-    return _GLOBAL_STATE.sync_engine
+    return _GLOBAL_STATE.engine
 
 
-def sync_session():
-    """Returns a new synchronous Session for the application database."""
+def get_session():
+    """Returns a new Session for the application database."""
     if _GLOBAL_STATE is None:
         raise DatabaseSetupRequiredError()
-    return _GLOBAL_STATE.sync_sessionmaker()
+    return _GLOBAL_STATE.sessionmaker()
 
 
 @contextlib.contextmanager
@@ -78,17 +77,16 @@ def setup():
 
     database_url = get_server_database_url()
 
-    sync_engine = create_engine(
+    engine = create_engine(
         database_url,
         connect_args={"application_name": APP_DB_APPLICATION_NAME},
-        execution_options={"logging_token": "app_sync"},
+        execution_options={"logging_token": "app"},
         logging_name=SA_LOGGER_NAME_FOR_APP,
     )
 
     # We use expire_on_commit for reasons described in docs/SQLALCHEMY.md.
-    sync_sessionmaker = sync_sessionmaker_factory(bind=sync_engine, expire_on_commit=False)
-    _GLOBAL_STATE = DatabaseState(database_url, sync_engine, sync_sessionmaker)
+    _GLOBAL_STATE = DatabaseState(database_url, engine, sessionmaker(bind=engine, expire_on_commit=False))
     try:
         yield
     finally:
-        sync_engine.dispose()
+        engine.dispose()

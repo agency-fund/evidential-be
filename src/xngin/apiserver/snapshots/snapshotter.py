@@ -28,7 +28,7 @@ def create_pending_snapshots(snapshot_interval: int) -> None:
     """
     freshness_threshold = text(f"interval '{snapshot_interval} seconds'")
 
-    with database.sync_session() as session, session.begin():
+    with database.get_session() as session, session.begin():
         # All active experiments will be snapshot by this method. We also include experiments
         # that start tomorrow, or ended yesterday, to collect +/- 1 day on both sides of the experiment.
         buffer = text("interval '1 day'")
@@ -71,7 +71,7 @@ def make_first_snapshot(experiment_id: str, snapshot_id: str) -> None:
 
     This method is intended to be invoked immediately after a snapshot is created in response to user request.
     """
-    with database.sync_session() as session, session.begin():
+    with database.get_session() as session, session.begin():
         snapshot = (
             session.execute(
                 select(tables.Snapshot)
@@ -124,7 +124,7 @@ def process_pending_snapshots(snapshot_timeout: float, *, max_jitter_secs: float
 
     while True:
         time.sleep(random.uniform(0, max_jitter_secs))  # jitter  # noqa: S311
-        with database.sync_session() as session, session.begin():
+        with database.get_session() as session, session.begin():
             snapshot = session.execute(one_pending_snapshot).scalar_one_or_none()
             if snapshot is None:
                 logger.info("No pending snapshots available.")

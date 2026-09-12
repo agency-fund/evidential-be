@@ -249,7 +249,7 @@ def fixture_initialize_xngin_db_schema():
     """Create the application schema once for the test session."""
     with database.setup():
         create_database_if_not_exists_pg(database.get_sqlalchemy_database_url())
-        with database.get_sync_engine().begin() as conn:
+        with database.get_engine().begin() as conn:
             tables.Base.metadata.create_all(conn)
 
 
@@ -266,17 +266,17 @@ def fixture_xngin_db_session(fixture_initialize_xngin_db_schema):
     directly.
     """
     with database.setup():
-        with database.get_sync_engine().begin() as conn:
+        with database.get_engine().begin() as conn:
             for table in reversed(tables.Base.metadata.sorted_tables):
                 conn.execute(sqlalchemy.delete(table))
-        with database.sync_session() as session:
+        with database.get_session() as session:
             session.add_all([
                 tables.User(email=PRIVILEGED_EMAIL, is_privileged=True),
                 tables.User(email=UNPRIVILEGED_EMAIL, is_privileged=False),
                 tables.User(email=UNPRIVILEGED_EMAIL_2, is_privileged=False),
             ])
             session.commit()
-        with database.sync_session() as sess:
+        with database.get_session() as sess:
             try:
                 yield sess
             finally:
