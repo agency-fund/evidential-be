@@ -151,87 +151,48 @@ def get_stats_on_filters(
     return [query(col_name, ptype_fd) for col_name, ptype_fd in filter_schema.items() if db_schema.get(col_name)]
 
 
-def get_cluster_size_stats(
-    session: Session,
-    sa_table: Table,
-    cluster_column_name: str,
-    filters: list[Filter],
-) -> dict[str, float]:
-    """Calculate cluster size statistics using SQL CTE."""
-    if cluster_column_name not in sa_table.c:
-        raise LateValidationError(f"Cluster column '{cluster_column_name}' not found in table")
-
-    cluster_col = sa_table.c[cluster_column_name]
-    filters_expr = create_query_filters(sa_table, filters)
-
-    # CTE for cluster counts
-    cluster_counts = (
-        select(cluster_col.label("cluster_id"), func.count().label("cluster_size"))
-        .where(cluster_col.is_not(None), *filters_expr)
-        .group_by(cluster_col)
-        .cte("cluster_counts")
-    )
-
-    # Aggregate statistics
-    stats_query = select(
-        func.avg(cluster_counts.c.cluster_size).label("avg_cluster_size"),
-        func.min(cluster_counts.c.cluster_size).label("min_cluster_size"),
-        func.max(cluster_counts.c.cluster_size).label("max_cluster_size"),
-        (func.stddev_pop(cluster_counts.c.cluster_size) / func.avg(cluster_counts.c.cluster_size)).label("cv"),
-        func.count().label("num_clusters"),
-    )
-
-    result = session.execute(stats_query).mappings().fetchone()
-
-    if result is None or result["num_clusters"] == 0:
-        raise LateValidationError(f"No clusters found in column '{cluster_column_name}'")
-
-    return {
-        "avg_cluster_size": float(result["avg_cluster_size"]),
-        "min_cluster_size": int(result["min_cluster_size"]),
-        "max_cluster_size": int(result["max_cluster_size"]),
-        "cv": float(result["cv"]) if result["cv"] is not None else 0.0,
-        "num_clusters": int(result["num_clusters"]),
-    }
-
-
 def get_cluster_outcome_data(
     session: Session,
     sa_table: Table,
     cluster_column_name: str,
-    outcome_column_name: str,
+    outcome_column_names: Sequence[str],
     filters: list[Filter],
 ) -> Sequence[RowMapping]:
-    """Fetch cluster and outcome data for ICC calculation.
+    """Fetch cluster and outcome data for cluster power statistics in a single query.
 
     Each row returned is a SQLAlchemy ``RowMapping`` (by column name; same keys as
-    ``cluster_column_name`` / ``outcome_column_name``). Outcomes are SQL-cast to Float.
+    ``cluster_column_name`` / ``outcome_column_names``). Outcomes are SQL-cast to Float.
+
+    Rows are restricted to non-null cluster keys, but rows where an outcome is null are
+    included (with a None value): metrics are outcomes that may be filled in as the
+    experiment runs, so cluster-size statistics must count the full population, while ICC
+    calculations drop each outcome's nulls individually.
     """
     if cluster_column_name not in sa_table.c:
         raise LateValidationError(f"Cluster column '{cluster_column_name}' not found in table")
-    if outcome_column_name not in sa_table.c:
-        raise LateValidationError(f"Outcome column '{outcome_column_name}' not found in table")
+    for outcome_column_name in outcome_column_names:
+        if outcome_column_name not in sa_table.c:
+            raise LateValidationError(f"Outcome column '{outcome_column_name}' not found in table")
 
     cluster_col = sa_table.c[cluster_column_name]
-    outcome_col = sa_table.c[outcome_column_name]
     filters_expr = create_query_filters(sa_table, filters)
 
-    # PostgreSQL cannot cast BOOLEAN directly to FLOAT; go through INTEGER first.
-    if outcome_col.type.python_type is bool:
-        cast_outcome = cast(cast(outcome_col, Integer), Float)
-    else:
-        cast_outcome = cast(outcome_col, Float)
+    outcome_cols = []
+    for outcome_column_name in outcome_column_names:
+        outcome_col = sa_table.c[outcome_column_name]
+        # PostgreSQL cannot cast BOOLEAN directly to FLOAT; go through INTEGER first.
+        if outcome_col.type.python_type is bool:
+            cast_outcome = cast(cast(outcome_col, Integer), Float)
+        else:
+            cast_outcome = cast(outcome_col, Float)
+        outcome_cols.append(cast_outcome.label(outcome_column_name))
 
-    query = select(cluster_col, cast_outcome.label(outcome_column_name)).where(
-        cluster_col.is_not(None), outcome_col.is_not(None), *filters_expr
-    )
+    query = select(cluster_col, *outcome_cols).where(cluster_col.is_not(None), *filters_expr)
 
     # Explicitly ask for dict-like RowMapping objects for downstream use of each row as a dict.
     results = session.execute(query).mappings().fetchall()
 
     if not results:
-        raise LateValidationError(
-            f"No data found for cluster column '{cluster_column_name}' and outcome '{outcome_column_name}'"
-        )
+        raise LateValidationError(f"No clusters found in column '{cluster_column_name}'")
 
     return results
