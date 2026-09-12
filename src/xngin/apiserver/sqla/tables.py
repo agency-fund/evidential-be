@@ -384,20 +384,6 @@ class DatasourceTablesInspected(Base):
     response_last_updated: Mapped[datetime | None] = mapped_column()
 
 
-class ParticipantTypesInspected(Base):
-    """Stores details of the most recent participant type inspection (including exemplar values)."""
-
-    __tablename__ = "participant_types_inspected"
-
-    datasource_id: Mapped[str] = mapped_column(ForeignKey("datasources.id", ondelete="CASCADE"), primary_key=True)
-    participant_type: Mapped[str] = mapped_column(primary_key=True)
-
-    # Serialized InspectParticipantTypesResponse.
-    response: Mapped[dict | None] = mapped_column(postgresql.JSONB(none_as_null=True))
-    # Timestamp of the last update to `response`
-    response_last_updated: Mapped[datetime | None] = mapped_column()
-
-
 class ArmAssignment(Base):
     """Stores experiment treatment assignments.
 

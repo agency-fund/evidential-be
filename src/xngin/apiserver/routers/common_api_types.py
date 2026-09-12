@@ -35,7 +35,6 @@ from xngin.apiserver.limits import (
 )
 from xngin.apiserver.routers.common_enums import (
     ContextType,
-    DataType,
     ExperimentAnalysisType,
     ExperimentState,
     ExperimentsType,
@@ -677,22 +676,6 @@ class MetricPowerAnalysis(ApiBaseModel):
         int | None,
         Field(description="Effective sample size accounting for clustering (total_n / DEFF)."),
     ] = None
-
-
-class GetStrataResponseElement(ApiBaseModel):
-    """Describes a stratification variable."""
-
-    data_type: DataType
-    field_name: FieldName
-    description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
-
-
-class GetMetricsResponseElement(ApiBaseModel):
-    """Describes a metric."""
-
-    field_name: FieldName
-    data_type: DataType
-    description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
 
 
 class Filter(ApiBaseModel):
@@ -1534,35 +1517,6 @@ class GetExperimentAssignmentsResponse(ApiBaseModel):
     experiment_id: str
     sample_size: int
     assignments: list[Assignment]
-
-
-class GetFiltersResponseBase(ApiBaseModel):
-    field_name: Annotated[FieldName, Field(..., description="Name of the field.")]
-    data_type: DataType
-    relations: Annotated[list[Relation], Field(..., min_length=1, max_length=MAX_NUMBER_OF_FILTERS)]
-    description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
-
-
-class GetFiltersResponseNumericOrDate(GetFiltersResponseBase):
-    """Describes a numeric or date filter variable."""
-
-    min: datetime.datetime | datetime.date | float | int | None = Field(
-        ...,
-        description="The minimum observed value.",
-    )
-    max: datetime.datetime | datetime.date | float | int | None = Field(
-        ...,
-        description="The maximum observed value.",
-    )
-
-
-class GetFiltersResponseDiscrete(GetFiltersResponseBase):
-    """Describes a discrete filter variable."""
-
-    distinct_values: Annotated[list[str] | None, Field(..., description="Sorted list of unique values.")]
-
-
-type GetFiltersResponseElement = GetFiltersResponseNumericOrDate | GetFiltersResponseDiscrete
 
 
 class UpdateBanditArmOutcomeRequest(ApiBaseModel):

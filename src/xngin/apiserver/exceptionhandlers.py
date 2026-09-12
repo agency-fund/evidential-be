@@ -19,7 +19,6 @@ from xngin.apiserver.routers.admin.admin_api_converters import (
 from xngin.apiserver.routers.experiments.experiments_common import (
     ExperimentsAssignmentError,
 )
-from xngin.apiserver.settings import CannotFindParticipantsError
 from xngin.stats.stats_errors import StatsError
 
 
@@ -51,10 +50,6 @@ def setup(app):
 
     @app.exception_handler(CannotFindTableError)
     async def exception_handler_cannotfindthetableerror(_request: Request, exc: CannotFindTableError):
-        return JSONResponse(status_code=404, content={"message": exc.message})
-
-    @app.exception_handler(CannotFindParticipantsError)
-    async def exception_handler_cannotfindtheparticipanterror(_request: Request, exc: CannotFindParticipantsError):
         return JSONResponse(status_code=404, content={"message": exc.message})
 
     @app.exception_handler(ExperimentsAssignmentError)

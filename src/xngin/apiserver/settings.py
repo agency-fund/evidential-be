@@ -7,7 +7,6 @@ The Pydantic classes herein also provide some methods for connecting to the cust
 import base64
 import binascii
 import os
-from collections import Counter
 from typing import Annotated, Literal, Protocol
 
 import sqlalchemy
@@ -23,7 +22,6 @@ from sqlalchemy import make_url
 
 from xngin.apiserver.certs import get_amazon_trust_ca_bundle_path
 from xngin.apiserver.dwh import dwh_utils
-from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.routers.common_api_types import (
     validate_gcp_service_account_info_json,
 )
@@ -44,63 +42,6 @@ def _decrypt_string(ciphertext: str, aad: str) -> str:
 
 class ConfigBaseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
-
-class ParticipantsDef(ParticipantsSchema):
-    """Participants are a logical representation of a table in the data warehouse.
-
-    Participants are defined by a participant_type, table_name and a schema.
-    """
-
-    type: Annotated[
-        Literal["schema"],
-        Field(description="Indicates that the schema is determined by an inline schema."),
-    ]
-    participant_type: Annotated[
-        str,
-        Field(
-            description="The name of the set of participants defined by the filters. This name must be unique "
-            "within a datasource when not hidden (i.e. not auto-generated)."
-        ),
-    ]
-    hidden: Annotated[
-        bool,
-        Field(
-            default=False,
-            description="If true, this participant type is hidden from list_participant_types. "
-            "Used for auto-generated participant types.",
-        ),
-    ] = False
-
-
-class ParticipantsMixin(ConfigBaseModel):
-    """ParticipantsMixin can be added to a config type to add standardized participant definitions."""
-
-    participants: Annotated[
-        list[ParticipantsDef],
-        Field(),
-    ]
-
-    def find_participants(self, participant_type: str) -> ParticipantsDef:
-        """Returns the ParticipantsDef matching participant_type or raises CannotFindParticipantsException."""
-        found = self.find_participants_or_none(participant_type)
-        if found is None:
-            raise CannotFindParticipantsError(participant_type)
-        return found
-
-    def find_participants_or_none(self, participant_type) -> ParticipantsDef | None:
-        return next(
-            (u for u in self.participants if u.participant_type.lower() == participant_type.lower()),
-            None,
-        )
-
-    @model_validator(mode="after")
-    def check_unique_participant_types(self):
-        counted = Counter([participant.participant_type for participant in self.participants])
-        duplicates = [item for item, count in counted.items() if count > 1]
-        if duplicates:
-            raise ValueError(f"Participant types with conflicting names found: {', '.join(duplicates)}.")
-        return self
 
 
 type HttpMethodTypes = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
@@ -378,8 +319,19 @@ class NoDwh(ConfigBaseModel):
 type Dwh = Annotated[Dsn | BqDsn | NoDwh, Field(discriminator="driver")]
 
 
-class RemoteDatabaseConfig(ParticipantsMixin, ConfigBaseModel):
+class RemoteDatabaseConfig(ConfigBaseModel):
     """RemoteDatabaseConfig defines a configuration for a remote data warehouse."""
+
+    # Temporarily relaxed from the inherited extra="forbid" so this release tolerates datasources
+    # whose config still carries the removed "participants" key. That field was required with no
+    # default, so every row written before migration 20260901184333 has it, and get_config() runs on
+    # every authenticated request via datasource_dependency -- forbidding it would 422 the whole
+    # public API for any datasource the migration had not yet reached.
+    #
+    # This makes the code deployable in any order relative to the migration. Restore extra="forbid"
+    # in a follow-up release once the migration has been applied everywhere. Note that only this
+    # model is relaxed: the nested Dsn/BqDsn/NoDwh models still forbid unknown keys.
+    model_config = ConfigDict(extra="ignore")
 
     type: Literal["remote"]
 
@@ -400,18 +352,3 @@ class Datasource(ConfigBaseModel):
 
     id: str
     config: DatasourceConfig
-
-
-class CannotFindParticipantsError(Exception):
-    """Raised when we cannot find a participant in the configuration."""
-
-    def __init__(self, participant_type):
-        self.participant_type = participant_type
-        self.message = (
-            f"The participant type '{participant_type}' does not exist."
-            "(Possible typo in request, or server settings for your dwh may be "
-            "misconfigured.)"
-        )
-
-    def __str__(self):
-        return self.message

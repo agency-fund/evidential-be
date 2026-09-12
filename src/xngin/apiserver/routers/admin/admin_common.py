@@ -22,7 +22,7 @@ def create_organization_impl(session: AsyncSession, user: tables.User, name: str
     session.add(organization)
     organization.users.append(user)  # Add the creating user to the organization
 
-    nodwh_config = RemoteDatabaseConfig(participants=[], type="remote", dwh=NoDwh())
+    nodwh_config = RemoteDatabaseConfig(type="remote", dwh=NoDwh())
     nodwh_datasource = tables.Datasource(name=DEFAULT_NO_DWH_SOURCE_NAME, organization=organization).set_config(
         nodwh_config
     )

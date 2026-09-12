@@ -42,7 +42,7 @@ from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
-from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
+from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
 
 
 def normalize_bandit_analysis(response: BanditExperimentAnalysisResponse) -> BanditExperimentAnalysisResponse:
@@ -131,7 +131,7 @@ def make_snapshot_design_spec(
         metrics=[DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1)],
         strata=[],
         filters=[],
-        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+        table_name=TESTING_DWH_TABLE_NAME,
         primary_key="id",
         desired_n=desired_n,
     )
@@ -215,7 +215,7 @@ async def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_da
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
         experiment_name="test experiment",
         description="test experiment",
-        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+        table_name=TESTING_DWH_TABLE_NAME,
         primary_key="id",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
         end_date=datetime.now(UTC) + timedelta(days=1),
