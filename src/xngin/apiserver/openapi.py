@@ -43,27 +43,40 @@ API key. Create an API key in [Evidential](XNGIN_PUBLIC_PROTOCOL://XNGIN_PUBLIC_
 Evidential supports many experimentation and integration strategies. The specific endpoints you will integrate with
 depend on the type of experiment you are running and your integration strategy.
 
-Preassigned A/B experiments — assignments are created when the experiment is designed, before the experiment starts:
+Outcomes reach Evidential in one of two ways, and the experiment type determines which:
+
+- Push: your application reports each outcome by calling the outcome endpoint.
+- Pull: Evidential reads outcomes from your data source, and your application reports none.
+
+Assignment works the same way for every experiment type. Your application asks Evidential which arm a participant
+belongs to, so push and pull describe outcomes only.
+
+Preassigned A/B experiments (pull) — assignments are created when the experiment is designed, before the experiment
+starts:
 
 - `GET API_PREFIX/experiments/{experiment_id}/assignments` lists all assignments.
 - `GET API_PREFIX/experiments/{experiment_id}/assignments/csv` exports all assignments as CSV.
 - `GET API_PREFIX/experiments/{experiment_id}/assignments/{participant_id}` looks up one participant's assignment. For
   applications that can't store assignments separately, your application can call this method at runtime.
 
-Online A/B experiments — assignments are created as participants arrive:
+Online A/B experiments (pull) — assignments are created as participants arrive:
 
 - `GET API_PREFIX/experiments/{experiment_id}/assignments/{participant_id}` gets or creates a participant's assignment.
 - `POST API_PREFIX/experiments/{experiment_id}/assignments/{participant_id}/assign_with_filters`
   gets or creates an assignment when the experiment uses server-side filtering.
 
-Multi-armed Bandit (MAB) experiments — assignments are created as participants arrive, and you report each outcome:
+Multi-armed Bandit (MAB) experiments (push) — assignments are created as participants arrive, and you report each
+outcome:
 
 - `GET API_PREFIX/experiments/{experiment_id}/assignments/{participant_id}` gets or creates a participant's assignment.
 - `POST API_PREFIX/experiments/{experiment_id}/assignments/{participant_id}/outcome`
   records the outcome for a participant's arm.
 
-Contextual Multi-armed Bandit (CMAB) experiments — assignments use context values you supply, and you report each
-outcome:
+A MAB experiment whose outcome column is bound to a table in your data source (`mab_online_dwh`) uses pull instead.
+Your application calls the assignment endpoint alone, and Evidential reads each outcome from that column.
+
+Contextual Multi-armed Bandit (CMAB) experiments (push) — assignments use context values you supply, and you report
+each outcome:
 
 - `POST API_PREFIX/experiments/{experiment_id}/assignments/{participant_id}/assign_cmab`
   gets or creates a participant's assignment from the context values you supply.
