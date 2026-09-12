@@ -386,8 +386,9 @@ async def get_assignment_cmab(
     summary="Record a bandit arm outcome for a participant.",
     description="""
     Records the outcome for a participant's assigned arm and returns the updated arm parameters.
-    This endpoint is the push integration, where your application reports each outcome as it
-    happens. Used only for bandit experiments that record outcomes this way.
+
+    Use this in push integrations to report each outcome as it happens. Applies only to MAB or
+    CMAB experiments using push-based integrations.
 
     Prerequisites:
     - The experiment must record outcomes through this API. Experiments of type `mab_online_dwh`
