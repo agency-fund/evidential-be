@@ -3,7 +3,7 @@ This module defines the public API for clients to integrate with experiments.
 (See admin_api.py for Evidential UI-facing endpoints.)
 """
 
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import Generator, Iterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import Annotated, Any, cast
@@ -20,12 +20,12 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 from loguru import logger
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from xngin.apiserver import constants
 from xngin.apiserver.dependencies import (
     random_seed_dependency,
-    xngin_db_session,
+    xngin_sync_db_session,
 )
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.admin.admin_api import sort_contexts_by_id_or_raise
@@ -41,14 +41,12 @@ from xngin.apiserver.routers.common_api_types import (
     OnlineAssignmentWithFiltersRequest,
     UpdateBanditArmOutcomeRequest,
 )
-from xngin.apiserver.routers.experiments import experiments_common_csv
+from xngin.apiserver.routers.experiments import experiments_common, experiments_common_csv
 from xngin.apiserver.routers.experiments import experiments_dependencies as edeps
 from xngin.apiserver.routers.experiments.experiments_common import (
     create_assignment_for_participant,
     get_existing_assignment_for_participant,
-    get_experiment_impl,
     get_or_create_assignment_for_participant,
-    list_organization_or_datasource_experiments_impl,
     update_bandit_arm_with_outcome_impl,
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import (
@@ -97,18 +95,18 @@ router = APIRouter(
 
 
 @router.get("/experiments", summary="List experiments on a data source.")
-async def list_experiments(
+def list_experiments(
     datasource: Annotated[Datasource, Depends(edeps.datasource)],
-    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    xngin_session: Annotated[Session, Depends(xngin_sync_db_session)],
 ) -> ListExperimentsResponse:
-    return await list_organization_or_datasource_experiments_impl(
+    return experiments_common.list_organization_or_datasource_experiments_impl(
         xngin_session=xngin_session, datasource_id=datasource.id
     )
 
 
-async def _stream_experiment_assignments_response(
-    experiment: tables.Experiment, assignments: AsyncGenerator[AssignmentTypedDict]
-) -> AsyncIterator[bytes]:
+def _stream_experiment_assignments_response(
+    experiment: tables.Experiment, assignments: Generator[AssignmentTypedDict]
+) -> Iterator[bytes]:
     """Efficiently streams Assignments to the client."""
     balance_check = ExperimentStorageConverter(experiment).get_balance_check()
     yield (
@@ -123,7 +121,7 @@ async def _stream_experiment_assignments_response(
     buffered = 0
     needs_comma = False
     batch: list[bytes] = []
-    async for assignment in assignments:
+    for assignment in assignments:
         if needs_comma:
             batch.append(b",")
         batch.append(orjson.dumps(assignment))
@@ -142,19 +140,19 @@ async def _stream_experiment_assignments_response(
     "/experiments/{experiment_id}",
     summary="Get an experiment's design.",
 )
-async def get_experiment(
+def get_experiment(
     experiment: Annotated[tables.Experiment, Depends(edeps.experiment_for_full_response)],
-    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    xngin_session: Annotated[Session, Depends(xngin_sync_db_session)],
 ) -> GetExperimentResponse:
-    return await get_experiment_impl(xngin_session, experiment)
+    return experiments_common.get_experiment_impl(xngin_session, experiment)
 
 
 @router.get(
     "/experiments/{experiment_id}/assignments",
     summary="List an experiment's assignments.",
 )
-async def get_experiment_assignments(
-    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
+def get_experiment_assignments(
+    xngin_session: Annotated[Session, Depends(xngin_sync_db_session)],
     experiment: Annotated[tables.Experiment, Depends(edeps.experiment)],
 ) -> GetExperimentAssignmentsResponse:
     assignments = get_experiment_assignments_impl(xngin_session, experiment)
@@ -185,11 +183,11 @@ async def get_experiment_assignments(
     """,
     response_class=CsvStreamingResponse,
 )
-async def get_experiment_assignments_as_csv(
+def get_experiment_assignments_as_csv(
     experiment: Annotated[tables.Experiment, Depends(edeps.experiment_with_datasource_and_fields)],
-    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    xngin_session: Annotated[Session, Depends(xngin_sync_db_session)],
 ) -> CsvStreamingResponse:
-    return await experiments_common_csv.get_experiment_assignments_as_csv_impl(xngin_session, experiment)
+    return experiments_common_csv.get_experiment_assignments_as_csv_impl(xngin_session, experiment)
 
 
 @router.get(
@@ -205,10 +203,10 @@ async def get_experiment_assignments_as_csv(
       a new assignment, use the `assign_cmab` endpoint, which accepts the required context values.
     """,
 )
-async def get_assignment(
+def get_assignment(
     experiment: Annotated[tables.Experiment, Depends(edeps.experiment)],
     participant_id: str,
-    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    xngin_session: Annotated[Session, Depends(xngin_sync_db_session)],
     response: Response,
     create_if_none: Annotated[
         bool,
@@ -232,7 +230,7 @@ async def get_assignment(
         Le(86400),
     ] = int(timedelta(hours=1).total_seconds()),
 ) -> GetParticipantAssignmentResponse:
-    assignment_response = await get_or_create_assignment_for_participant(
+    assignment_response = get_or_create_assignment_for_participant(
         xngin_session=xngin_session,
         experiment=experiment,
         participant_id=participant_id,
@@ -267,11 +265,11 @@ async def get_assignment(
 
     If there are no filters on the experiment, use the get_assignment endpoint.""",
 )
-async def get_assignment_filtered(
+def get_assignment_filtered(
     experiment: Annotated[tables.Experiment, Depends(edeps.experiment_with_datasource_and_fields)],
     participant_id: str,
     body: OnlineAssignmentWithFiltersRequest,
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
     create_if_none: Annotated[
         bool,
         Query(
@@ -295,7 +293,7 @@ async def get_assignment_filtered(
             f"create assignments."
         )
 
-    return await get_or_create_assignment_for_participant(
+    return get_or_create_assignment_for_participant(
         xngin_session=session,
         experiment=experiment,
         participant_id=participant_id,
@@ -314,11 +312,11 @@ async def get_assignment_filtered(
     anyway, it is ignored.
     """,
 )
-async def get_assignment_cmab(
+def get_assignment_cmab(
     experiment: Annotated[tables.Experiment, Depends(edeps.experiment_with_contexts)],
     participant_id: str,
     body: CMABContextInputRequest,
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
     create_if_none: Annotated[
         bool,
         Query(
@@ -345,7 +343,7 @@ async def get_assignment_cmab(
             f"create assignments."
         )
 
-    assignment = await get_existing_assignment_for_participant(
+    assignment = get_existing_assignment_for_participant(
         xngin_session=session,
         experiment_id=experiment.id,
         participant_id=participant_id,
@@ -360,7 +358,7 @@ async def get_assignment_cmab(
         sorted_context_inputs = sort_contexts_by_id_or_raise(context_defns, context_inputs)
         sorted_context_vals = [ctx.context_value for ctx in sorted_context_inputs]
 
-        assignment = await create_assignment_for_participant(
+        assignment = create_assignment_for_participant(
             xngin_session=session,
             experiment=experiment,
             participant_id=participant_id,
@@ -393,11 +391,11 @@ async def get_assignment_cmab(
     The endpoint returns a 422 error if a prerequisite is not met.
     """,
 )
-async def update_bandit_arm_with_participant_outcome(
+def update_bandit_arm_with_participant_outcome(
     participant_id: str,
     body: Annotated[UpdateBanditArmOutcomeRequest, Body()],
     experiment: Annotated[tables.Experiment, Depends(edeps.experiment_with_datasource_and_fields)],
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
 ) -> ArmBandit:
     if experiment.experiment_type == ExperimentsType.MAB_ONLINE_DWH.value:
         raise LateValidationError(
@@ -405,17 +403,14 @@ async def update_bandit_arm_with_participant_outcome(
             "data warehouse. Remove this call from your integration."
         )
 
-    # Update the arm with the outcome
-    if experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value:
-        await experiment.awaitable_attrs.contexts
-
-    updated_arm = await update_bandit_arm_with_outcome_impl(
+    # Update the arm with the outcome. A CMAB experiment's contexts load lazily from here.
+    updated_arm = update_bandit_arm_with_outcome_impl(
         xngin_session=session,
         experiment=experiment,
         participant_id=participant_id,
         outcome=body.outcome,
     )
-    await session.commit()
+    session.commit()
 
     return ArmBandit(
         arm_id=updated_arm.id,

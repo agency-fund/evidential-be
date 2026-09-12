@@ -1,23 +1,19 @@
-import asyncio
 import time
 from collections import deque
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from datetime import timedelta
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
 import sentry_sdk
 from loguru import logger
 from sqlalchemy import func, select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.sql import Select
 
 from xngin.apiserver import database
 from xngin.apiserver.routers.common_api_types import ExperimentsType
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.sqla import tables
-
-if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
 
 DEFAULT_AUTOFAIL_BATCH_SIZE = 500
 DEFAULT_AUTOFAIL_TIMEOUT_SECS = timedelta(minutes=45).seconds
@@ -36,9 +32,9 @@ class AutofailOutcomeUpdater(Protocol):
     This should match the current implementation of update_bandit_arm_with_outcome_impl.
     """
 
-    async def __call__(
+    def __call__(
         self,
-        xngin_session: AsyncSession,
+        xngin_session: Session,
         experiment: tables.Experiment,
         participant_id: str,
         outcome: float,
@@ -115,7 +111,7 @@ def _autofail_experiment_query(experiment_id: str) -> Select[tuple[tables.Experi
     )
 
 
-async def _process_autofail_batch_for_experiment(
+def _process_autofail_batch_for_experiment(
     experiment_id: str,
     batch_size: int,
     update_outcome: AutofailOutcomeUpdater,
@@ -125,15 +121,15 @@ async def _process_autofail_batch_for_experiment(
     Returns the number of participant outcomes committed, or None when the experiment is no longer eligible for
     autofailing or has no draws currently eligible for processing.
     """
-    async with database.async_session() as session, session.begin():
-        experiment = await session.scalar(_autofail_experiment_query(experiment_id))
+    with database.get_session() as session, session.begin():
+        experiment = session.scalar(_autofail_experiment_query(experiment_id))
         if experiment is None:
             logger.warning(f"Autofail tried to process an experiment that is no longer eligible: {experiment_id}")
             return None
 
         participant_ids: list[str] = list(
             (
-                await session.scalars(
+                session.scalars(
                     _eligible_draw_participant_ids_query(
                         experiment.id,
                         experiment.autofail_window,
@@ -148,7 +144,7 @@ async def _process_autofail_batch_for_experiment(
 
         for participant_id in participant_ids:
             with logger.contextualize(participant_id=participant_id):
-                await update_outcome(
+                update_outcome(
                     xngin_session=session,
                     experiment=experiment,
                     participant_id=participant_id,
@@ -159,13 +155,13 @@ async def _process_autofail_batch_for_experiment(
     return len(participant_ids)
 
 
-async def process_autofails(
+def process_autofails(
     autofail_timeout: float,
     batch_sleep: float,
     batch_size: int = DEFAULT_AUTOFAIL_BATCH_SIZE,
     *,
     update_outcome: AutofailOutcomeUpdater = experiments_common.update_bandit_arm_with_outcome_impl,
-    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    sleep: Callable[[float], None] = time.sleep,
     monotonic: Callable[[], float] = time.monotonic,
 ) -> None:
     """Autofail eligible draws in atomic batches until no work remains or the run deadline is reached.
@@ -184,8 +180,8 @@ async def process_autofails(
         f"Autofail run started with batch_size={batch_size}, timeout={autofail_timeout}s, batch_sleep={batch_sleep}s."
     )
 
-    async with database.async_session() as discovery_session:
-        active_experiment_ids = deque(await discovery_session.scalars(_autofail_experiment_ids_query()))
+    with database.get_session() as discovery_session:
+        active_experiment_ids = deque(discovery_session.scalars(_autofail_experiment_ids_query()))
     logger.info(f"Autofail run found {len(active_experiment_ids)} eligible experiments.")
 
     while active_experiment_ids and monotonic() < deadline:
@@ -193,7 +189,7 @@ async def process_autofails(
         with logger.contextualize(experiment_id=experiment_id):
             batch = batches_processed + 1
             try:
-                processed_in_batch = await _process_autofail_batch_for_experiment(
+                processed_in_batch = _process_autofail_batch_for_experiment(
                     experiment_id,
                     batch_size,
                     update_outcome,
@@ -214,7 +210,7 @@ async def process_autofails(
                 f"{experiment_id}; total committed updates={draws_processed}."
             )
             sentry_sdk.metrics.count("autofail.batches.finished", 1, attributes={"experiment_id": experiment_id})
-            await sleep(batch_sleep)
+            sleep(batch_sleep)
 
     elapsed = monotonic() - started_at
     if active_experiment_ids or experiments_failed:

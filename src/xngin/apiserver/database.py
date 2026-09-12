@@ -5,9 +5,8 @@ import dataclasses
 import os
 
 from loguru import logger
-from sqlalchemy import make_url
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.ext.asyncio.engine import AsyncEngine
+from sqlalchemy import Engine, create_engine, make_url
+from sqlalchemy.orm import Session, sessionmaker
 
 from xngin.apiserver import flags
 
@@ -46,8 +45,8 @@ class DatabaseState:
     """Contains application-wide application database connection."""
 
     database_url: str
-    async_engine: AsyncEngine
-    sessionmaker: async_sessionmaker
+    engine: Engine
+    sessionmaker: sessionmaker[Session]
 
 
 _GLOBAL_STATE: DatabaseState | None = None
@@ -59,37 +58,35 @@ def get_sqlalchemy_database_url():
     return _GLOBAL_STATE.database_url
 
 
-def get_async_engine():
+def get_engine():
     if _GLOBAL_STATE is None:
         raise DatabaseSetupRequiredError()
-    return _GLOBAL_STATE.async_engine
+    return _GLOBAL_STATE.engine
 
 
-def async_session():
-    """Returns a new AsyncSession for the application database."""
+def get_session():
+    """Returns a new Session for the application database."""
     if _GLOBAL_STATE is None:
         raise DatabaseSetupRequiredError()
     return _GLOBAL_STATE.sessionmaker()
 
 
-@contextlib.asynccontextmanager
-async def setup():
+@contextlib.contextmanager
+def setup():
     global _GLOBAL_STATE
 
     database_url = get_server_database_url()
 
-    async_engine = create_async_engine(
+    engine = create_engine(
         database_url,
         connect_args={"application_name": APP_DB_APPLICATION_NAME},
-        execution_options={"logging_token": "app_async"},
+        execution_options={"logging_token": "app"},
         logging_name=SA_LOGGER_NAME_FOR_APP,
     )
 
     # We use expire_on_commit for reasons described in docs/SQLALCHEMY.md.
-    sessionmaker = async_sessionmaker(bind=async_engine, expire_on_commit=False)
-
-    _GLOBAL_STATE = DatabaseState(database_url, async_engine, sessionmaker)
+    _GLOBAL_STATE = DatabaseState(database_url, engine, sessionmaker(bind=engine, expire_on_commit=False))
     try:
         yield
     finally:
-        await async_engine.dispose()
+        engine.dispose()

@@ -8,7 +8,7 @@ Each experiment's outcomes are applied in a single transaction, so an experiment
 does not. A run that dies partway leaves the experiment untouched and the next run repeats it.
 """
 
-import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 import sentry_sdk
@@ -20,6 +20,7 @@ from xngin.apiserver import database
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.participant_metrics_queries import get_participant_metrics
 from xngin.apiserver.exceptions_common import LateValidationError
+from xngin.apiserver.flags import NPROC
 from xngin.apiserver.routers.common_api_types import DesignSpecMetricRequest
 from xngin.apiserver.routers.common_enums import ExperimentState, ExperimentsType
 from xngin.apiserver.routers.experiments.experiments_common import (
@@ -28,9 +29,14 @@ from xngin.apiserver.routers.experiments.experiments_common import (
 )
 from xngin.apiserver.sqla import tables
 
-# The amount of time one experiment's pull may run before it is abandoned. The pull job can specify a
-# different timeout via command line flags.
+# The amount of time one experiment's warehouse read may run before the pull is abandoned. The pull
+# job can specify a different budget via command line flags.
 PULL_TIMEOUT_SECS = 90
+
+
+# Each concurrent pull holds an application-database connection for the whole of its warehouse read, so this should
+# stay below the size of the connection pool.
+MAX_PULL_WORKERS = NPROC
 
 
 @dataclass(slots=True)
@@ -45,7 +51,7 @@ class PullReport:
         return f"ingested={self.ingested} invalid={self.invalid} pending={self.pending}"
 
 
-async def select_experiments_to_pull() -> list[str]:
+def select_experiments_to_pull() -> list[str]:
     """Return the ids of the experiments whose outcomes we read from a data warehouse.
 
     Covers committed MAB-DWH experiments that are running, start tomorrow, or ended yesterday. The
@@ -54,26 +60,24 @@ async def select_experiments_to_pull() -> list[str]:
     This method establishes its own database connection.
     """
     buffer = text("interval '1 day'")
-    async with database.async_session() as session:
+    with database.get_session() as session:
         return list(
-            (
-                await session.execute(
-                    select(tables.Experiment.id)
-                    .where(
-                        tables.Experiment.experiment_type == ExperimentsType.MAB_ONLINE_DWH.value,
-                        tables.Experiment.state == ExperimentState.COMMITTED.value,
-                        func.now().between(
-                            func.date_trunc("minute", tables.Experiment.start_date - buffer),
-                            func.date_trunc("minute", tables.Experiment.end_date + buffer),
-                        ),
-                    )
-                    .order_by(tables.Experiment.id)
+            session.scalars(
+                select(tables.Experiment.id)
+                .where(
+                    tables.Experiment.experiment_type == ExperimentsType.MAB_ONLINE_DWH.value,
+                    tables.Experiment.state == ExperimentState.COMMITTED.value,
+                    func.now().between(
+                        func.date_trunc("minute", tables.Experiment.start_date - buffer),
+                        func.date_trunc("minute", tables.Experiment.end_date + buffer),
+                    ),
                 )
-            ).scalars()
+                .order_by(tables.Experiment.id)
+            )
         )
 
 
-async def pull_one_experiment(experiment_id: str) -> PullReport:
+def pull_one_experiment(experiment_id: str, *, dwh_timeout: float = PULL_TIMEOUT_SECS) -> PullReport:
     """Read newly landed outcomes for one MAB_ONLINE_DWH experiment and apply them.
 
     Runs as one transaction covering all three phases:
@@ -85,7 +89,8 @@ async def pull_one_experiment(experiment_id: str) -> PullReport:
     pulled. Values the warehouse has not filled in yet, and values that fail validation, stay NULL
     and are re-read on a later run.
 
-    The locks taken in phase 1 are held until the transaction ends.
+    The locks taken in phase 1 are held until the transaction ends. This means dwh_timeout
+    is a lower limit on that lock duration, so we should be careful.
     """
     experiment_query = (
         select(tables.Experiment)
@@ -98,10 +103,10 @@ async def pull_one_experiment(experiment_id: str) -> PullReport:
         )
     )
 
-    async with database.async_session() as session, session.begin():
+    with logger.contextualize(experiment_id=experiment_id), database.get_session() as session, session.begin():
         # 1. Read what the warehouse query needs: the datasource config, the target and unique-id
         # columns, and the draws that still have no outcome.
-        experiment = (await session.execute(experiment_query)).scalar_one()
+        experiment = session.execute(experiment_query).scalar_one()
         if ExperimentsType(experiment.experiment_type) != ExperimentsType.MAB_ONLINE_DWH:
             raise MismatchedExperimentTypeError(f"Cannot pull outcomes for a {experiment.experiment_type} experiment.")
         unique_id_field = experiment.unique_id_field()
@@ -119,30 +124,28 @@ async def pull_one_experiment(experiment_id: str) -> PullReport:
         # foreign keys reference them. Taking the lock here, before the warehouse read, is what
         # keeps autofail off them for the whole pull.
         pending_ids = list(
-            (
-                await session.execute(
-                    select(tables.Draw.participant_id)
-                    .where(
-                        tables.Draw.experiment_id == experiment_id,
-                        tables.Draw.outcome.is_(None),
-                    )
-                    .order_by(tables.Draw.created_at)
-                    .with_for_update(of=tables.Draw, key_share=True)
+            session.scalars(
+                select(tables.Draw.participant_id)
+                .where(
+                    tables.Draw.experiment_id == experiment_id,
+                    tables.Draw.outcome.is_(None),
                 )
-            ).scalars()
+                .order_by(tables.Draw.created_at)
+                .with_for_update(of=tables.Draw, key_share=True)
+            )
         )
         if not pending_ids:
             return PullReport()
 
-        # 2. Read the external DWH.
-        async with DwhSession(dsconfig.dwh) as dwh:
-            sa_table = await dwh.inspect_table(table_name)
+        # 2. Read the external DWH, under a deadline so a wedged warehouse cannot hold the locks
+        # taken above indefinitely.
+        with DwhSession.open(dsconfig.dwh, timeout=dwh_timeout) as dwh:
+            sa_table = dwh.inspect_table(table_name)
             # model_construct: get_participant_metrics only reads field_name; the power-analysis
             # fields the validator demands (metric_pct_change/metric_target) don't apply here.
             target_metric = DesignSpecMetricRequest.model_construct(field_name=target_field_name)
-            participant_outcomes = await asyncio.to_thread(
+            participant_outcomes = dwh.run(
                 get_participant_metrics,
-                dwh.session,
                 sa_table,
                 [target_metric],
                 unique_id_field_name,
@@ -167,7 +170,7 @@ async def pull_one_experiment(experiment_id: str) -> PullReport:
                 report.pending += 1
                 continue
             try:
-                await update_bandit_arm_with_outcome_impl(
+                update_bandit_arm_with_outcome_impl(
                     xngin_session=session,
                     experiment=experiment,
                     participant_id=participant_id,
@@ -183,21 +186,27 @@ async def pull_one_experiment(experiment_id: str) -> PullReport:
     return report
 
 
-async def pull_all_experiments(pull_timeout: float) -> None:
-    """Pull outcomes for every experiment that needs them, one experiment at a time.
+def pull_all_experiments(pull_timeout: float) -> None:
+    """Pull outcomes for every experiment that needs them in parallel.
 
     A failure on one experiment is reported and does not stop the others.
     """
-    experiment_ids = await select_experiments_to_pull()
+    experiment_ids = select_experiments_to_pull()
     logger.info(f"Pulling outcomes for {len(experiment_ids)} experiments.")
     sentry_sdk.metrics.count("dwh_pull.experiments", len(experiment_ids))
 
     failures = 0
-    for experiment_id in experiment_ids:
+    executor = ThreadPoolExecutor(
+        max_workers=min(MAX_PULL_WORKERS, len(experiment_ids) or 1), thread_name_prefix="dwhpull"
+    )
+    futures = {
+        experiment_id: executor.submit(pull_one_experiment, experiment_id, dwh_timeout=pull_timeout)
+        for experiment_id in experiment_ids
+    }
+    for experiment_id, future in futures.items():
         with logger.contextualize(experiment_id=experiment_id):
             try:
-                async with asyncio.timeout(pull_timeout):
-                    report = await pull_one_experiment(experiment_id)
+                report = future.result()
             except Exception as exc:
                 failures += 1
                 logger.opt(exception=exc).error(f"{experiment_id}: pull failed")
@@ -209,5 +218,7 @@ async def pull_all_experiments(pull_timeout: float) -> None:
             sentry_sdk.metrics.count("dwh_pull.ingested", report.ingested, attributes=attributes)
             sentry_sdk.metrics.count("dwh_pull.invalid", report.invalid, attributes=attributes)
             sentry_sdk.metrics.count("dwh_pull.pending", report.pending, attributes=attributes)
+
+    executor.shutdown(wait=False, cancel_futures=True)
 
     logger.info(f"Pulled outcomes for {len(experiment_ids) - failures} experiments, {failures} failed.")

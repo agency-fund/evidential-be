@@ -1,7 +1,7 @@
-import asyncio
 import datetime
 import json
 import secrets
+import threading
 import time
 from dataclasses import dataclass
 from typing import Annotated
@@ -11,11 +11,11 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from loguru import logger
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 from sqlalchemy.sql.functions import count
 
 from xngin.apiserver import flags
-from xngin.apiserver.dependencies import xngin_db_session
+from xngin.apiserver.dependencies import xngin_sync_db_session
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.auth.token_cryptor import TokenCryptor
 from xngin.apiserver.sqla import tables
@@ -110,15 +110,15 @@ class GoogleOidcConfig:
 
 # _google_config and _google_config_stampede_lock are managed by get_google_configuration().
 _google_config: GoogleOidcConfig | None = None
-_google_config_stampede_lock = asyncio.Lock()
+_google_config_stampede_lock = threading.Lock()
 
 
-async def _fetch_object_200(client: httpx2.AsyncClient, url: str):
+def _fetch_object_200(client: httpx2.Client, url: str):
     """Fetches a URL using the given httpx2 client, parses the response as a JSON dictionary.
 
     Raises GoogleOidcError when the response is not a 200 status or when the response is not a dict.
     """
-    response = await client.get(url)
+    response = client.get(url)
     if response.status_code != 200:
         raise GoogleOidcError(f"Fetching {url} failed with an unexpected status code: {response.status_code}")
     parsed = response.json()
@@ -127,7 +127,7 @@ async def _fetch_object_200(client: httpx2.AsyncClient, url: str):
     return parsed
 
 
-async def get_google_configuration() -> GoogleOidcConfig:
+def get_google_configuration() -> GoogleOidcConfig:
     """Dependency providing Google's OpenID configuration."""
     global _google_config
     # When config is fresh, we can use it immediately.
@@ -135,19 +135,19 @@ async def get_google_configuration() -> GoogleOidcConfig:
         return _google_config
 
     # Send only one outbound request even if there are many waiting.
-    async with _google_config_stampede_lock:
+    with _google_config_stampede_lock:
         if _google_config and not _google_config.should_refresh():
             return _google_config
 
         logger.info("Fetching Google OpenID configuration")
         try:
-            transport = httpx2.AsyncHTTPTransport(retries=2)
-            async with httpx2.AsyncClient(transport=transport, timeout=15.0) as client:
-                config = await _fetch_object_200(client, GOOGLE_DISCOVERY_URL)
+            transport = httpx2.HTTPTransport(retries=2)
+            with httpx2.Client(transport=transport, timeout=15.0) as client:
+                config = _fetch_object_200(client, GOOGLE_DISCOVERY_URL)
                 jwks_url = config.get("jwks_uri")
                 if not jwks_url:
                     raise GoogleOidcError("config object does not have a jwks_uri field")
-                jwks_response = await _fetch_object_200(client, jwks_url)
+                jwks_response = _fetch_object_200(client, jwks_url)
                 if not jwks_response.get("keys"):
                     raise GoogleOidcError("JWKS response does not contain keys in expected format")
                 _google_config = GoogleOidcConfig(
@@ -170,7 +170,7 @@ class CompatHTTPBearer(HTTPBearer):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Authorization header is required")
 
 
-async def require_valid_session_token(
+def require_valid_session_token(
     authorization: Annotated[
         HTTPAuthorizationCredentials,
         Depends(CompatHTTPBearer()),
@@ -195,12 +195,12 @@ async def require_valid_session_token(
         ) from err
 
 
-async def require_user_from_token(
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+def require_user_from_token(
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
     principal: Annotated[Principal, Depends(require_valid_session_token)],
 ) -> tables.User:
     """Dependency for fetching the User record matching the authenticated user's email."""
-    user = await _lookup_or_create(session, principal)
+    user = _lookup_or_create(session, principal)
     if user:
         return user
     raise HTTPException(
@@ -209,14 +209,13 @@ async def require_user_from_token(
     )
 
 
-async def _lookup_or_create(session: AsyncSession, principal: Principal) -> tables.User | None:
+def _lookup_or_create(session: Session, principal: Principal) -> tables.User | None:
     """Lookup or create a user based on email, iss, sub, and iat.
 
     To support initial deployment, a User will be created if we are in airplane mode or if there are no users in the
     database yet.
     """
-    result = await session.scalars(select(tables.User).where(tables.User.email == principal.email))
-    user = result.first()
+    user = session.scalars(select(tables.User).where(tables.User.email == principal.email)).first()
     if user:
         if user.last_logout.timestamp() > principal.iat:
             return None
@@ -228,18 +227,18 @@ async def _lookup_or_create(session: AsyncSession, principal: Principal) -> tabl
         if user.iss is None:
             user.iss = principal.iss
             user.sub = principal.sub
-            await session.commit()
+            session.commit()
             return user
         return None
 
     # There are two cases when we create a user on an authenticated request:
     # 1. Airplane mode: We are in airplane mode and the request is coming from the UI in airplane mode.
     # 2. First use of installation by a developer: There are no users in the database, and this is the first request.
-    user_count = await session.scalar(select(count(tables.User.id)))
+    user_count = session.scalar(select(count(tables.User.id)))
     if user_count == 0 or (flags.AIRPLANE_MODE and principal.iss == "airplane"):
         user = tables.User(email=principal.email, iss=principal.iss, sub=principal.sub, is_privileged=True)
-        user = await create_entities_for_first_time_user(session, user, flags.XNGIN_DEVDWH_DSN)
-        await session.commit()
+        user = create_entities_for_first_time_user(session, user, flags.XNGIN_DEVDWH_DSN)
+        session.commit()
         return user
     return None
 

@@ -55,7 +55,7 @@ if TYPE_CHECKING:
     from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
 
 
-async def create_experiment(
+def create_experiment(
     datasource_metadata: DatasourceMetadata,
     aclient: AdminAPIClient,
     *,
@@ -101,9 +101,9 @@ async def create_experiment(
     return TypeAdapter(ExperimentConfig).validate_python(config)
 
 
-async def create_preassigned_experiment(datasource_metadata, aclient: AdminAPIClient):
+def create_preassigned_experiment(datasource_metadata, aclient: AdminAPIClient):
     """Creates a preassigned experiment using the Admin API."""
-    return await create_experiment(datasource_metadata, aclient, experiment_type=ExperimentsType.FREQ_PREASSIGNED)
+    return create_experiment(datasource_metadata, aclient, experiment_type=ExperimentsType.FREQ_PREASSIGNED)
 
 
 def make_unvalidated_create_experiment_request(
@@ -204,7 +204,7 @@ def make_unvalidated_create_experiment_request(
         (None, 400, "request header is required"),
     ],
 )
-async def test_list_experiments_with_various_insufficient_headers(
+def test_list_experiments_with_various_insufficient_headers(
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
@@ -213,7 +213,7 @@ async def test_list_experiments_with_various_insufficient_headers(
     expected_message,
 ):
     """Tests that listing experiments tied to a db datasource requires an API key."""
-    await create_experiment(testing_datasource, aclient)
+    create_experiment(testing_datasource, aclient)
     # Special case the absent header for compatibility with the generated client's argument types.
     if key is None:
         response = eclient.client.get("/v1/experiments", headers={"Datasource-ID": testing_datasource.datasource_id})
@@ -227,11 +227,9 @@ async def test_list_experiments_with_various_insufficient_headers(
     assert expected_message in exc.value.result.data["message"], exc.value.result.response.content
 
 
-async def test_list_experiments_with_api_key(
-    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
-):
+def test_list_experiments_with_api_key(testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient):
     """Tests that listing experiments tied to a db datasource with an API key works."""
-    new_experiment = await create_experiment(testing_datasource, aclient)
+    new_experiment = create_experiment(testing_datasource, aclient)
     experiments = eclient.list_experiments(
         api_key=testing_datasource.key, datasource_id=testing_datasource.datasource_id
     ).data
@@ -240,8 +238,8 @@ async def test_list_experiments_with_api_key(
     assert new_experiment.design_spec == experiments.items[0].design_spec
 
 
-async def test_get_experiment(testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient):
-    new_experiment = await create_preassigned_experiment(testing_datasource, aclient)
+def test_get_experiment(testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient):
+    new_experiment = create_preassigned_experiment(testing_datasource, aclient)
     response = eclient.get_experiment(api_key=testing_datasource.key, experiment_id=new_experiment.experiment_id).data
     assert response.datasource_id == testing_datasource.datasource_id
     assert response.state == ExperimentState.COMMITTED
@@ -264,7 +262,7 @@ async def test_get_experiment(testing_datasource, aclient: AdminAPIClient, eclie
 )
 # model_construct bypasses validation intentionally, so suppress expected PydanticSerializationUnexpectedValue noise
 @pytest.mark.filterwarnings("ignore:Pydantic serializer warnings:UserWarning:pydantic")
-async def test_create_experiment_api_table_name_and_primary_key_in_design_spec(
+def test_create_experiment_api_table_name_and_primary_key_in_design_spec(
     testing_datasource,
     aclient: AdminAPIClient,
     experiment_type: ExperimentsType,
@@ -302,11 +300,11 @@ def test_get_experiment_assignments_not_found(testing_datasource, eclient: Exper
     assert exc.value.result.data["detail"] == "Experiment not found or not authorized."
 
 
-async def test_get_experiment_assignments_wrong_datasource(
+def test_get_experiment_assignments_wrong_datasource(
     testing_datasource, testing_datasource_other, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """Test getting assignments for an experiment from a different datasource."""
-    experiment = await create_experiment(testing_datasource_other, aclient)
+    experiment = create_experiment(testing_datasource_other, aclient)
 
     # Try to get testing_datasource's experiment from another datasource's key.
     with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
@@ -315,10 +313,8 @@ async def test_get_experiment_assignments_wrong_datasource(
     assert exc.value.result.data["detail"] == "Experiment not found or not authorized."
 
 
-async def test_get_experiment_assignments_success(
-    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
-):
-    experiment = await create_experiment(testing_datasource, aclient)
+def test_get_experiment_assignments_success(testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient):
+    experiment = create_experiment(testing_datasource, aclient)
     first_assignment = eclient.get_assignment(
         api_key=testing_datasource.key,
         experiment_id=experiment.experiment_id,
@@ -344,12 +340,12 @@ async def test_get_experiment_assignments_success(
     assert {assignment.arm_name for assignment in parsed.assignments}.issubset({"control", "treatment"})
 
 
-async def test_get_experiment_assignments_streams_preassigned_assignments(
+def test_get_experiment_assignments_streams_preassigned_assignments(
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
 ):
-    experiment = await create_experiment(
+    experiment = create_experiment(
         testing_datasource,
         aclient,
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
@@ -387,7 +383,7 @@ async def test_get_experiment_assignments_streams_preassigned_assignments(
         assert assignment.context_values is None
 
 
-async def test_both_get_experiment_assignments_endpoints_have_matching_strata_ordering(
+def test_both_get_experiment_assignments_endpoints_have_matching_strata_ordering(
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
@@ -442,7 +438,7 @@ async def test_both_get_experiment_assignments_endpoints_have_matching_strata_or
     assert all("cluster_key" not in assignment for assignment in json_response.json()["assignments"])
 
 
-async def test_cluster_key_exports_with_preassigned_assignments(
+def test_cluster_key_exports_with_preassigned_assignments(
     testing_datasource,
     use_deterministic_random,
     aclient: AdminAPIClient,
@@ -507,12 +503,12 @@ async def test_cluster_key_exports_with_preassigned_assignments(
         assert single_assignment.cluster_key == assignment["cluster_key"]
 
 
-async def test_get_experiment_assignments_streams_bandit_assignments(
+def test_get_experiment_assignments_streams_bandit_assignments(
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
 ):
-    experiment = await create_experiment(
+    experiment = create_experiment(
         testing_datasource,
         aclient,
         experiment_type=ExperimentsType.MAB_ONLINE,
@@ -585,12 +581,12 @@ async def test_get_experiment_assignments_streams_bandit_assignments(
     assert p2.strata is None
 
 
-async def test_get_experiment_assignments_streams_cmab_context_values(
+def test_get_experiment_assignments_streams_cmab_context_values(
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
 ):
-    experiment = await create_experiment(
+    experiment = create_experiment(
         testing_datasource,
         aclient,
         experiment_type=ExperimentsType.CMAB_ONLINE,
@@ -675,10 +671,10 @@ async def test_get_experiment_assignments_streams_cmab_context_values(
     assert second_assignment.model_copy(update={"strata": None}) == p2
 
 
-async def test_get_experiment_assignments_as_csv_success(
+def test_get_experiment_assignments_as_csv_success(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
-    experiment = await create_experiment(testing_datasource, aclient)
+    experiment = create_experiment(testing_datasource, aclient)
     for i in range(10):
         assignment_response = eclient.get_assignment(
             api_key=testing_datasource.key,
@@ -706,12 +702,12 @@ async def test_get_experiment_assignments_as_csv_success(
     assert all(any(arm.arm_name in line for arm in experiment.design_spec.arms) for line in csv_lines[1:])
 
 
-async def test_get_assignment_preassigned(
+def test_get_assignment_preassigned(
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
 ):
-    preassigned_experiment = await create_preassigned_experiment(testing_datasource, aclient)
+    preassigned_experiment = create_preassigned_experiment(testing_datasource, aclient)
     assigned = eclient.get_experiment_assignments(
         api_key=testing_datasource.key,
         experiment_id=preassigned_experiment.experiment_id,
@@ -737,9 +733,9 @@ async def test_get_assignment_preassigned(
     assert parsed.assignment.arm_name == assigned.arm_name
 
 
-async def test_get_assignment_online(testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient):
+def test_get_assignment_online(testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient):
     """Test endpoint that gets an assignment for a participant via API key."""
-    online_experiment = await create_experiment(testing_datasource, aclient)
+    online_experiment = create_experiment(testing_datasource, aclient)
 
     parsed = eclient.get_assignment(
         api_key=testing_datasource.key,
@@ -779,9 +775,9 @@ async def test_get_assignment_online(testing_datasource, aclient: AdminAPIClient
     assert experiment.stopped_assignments_reason is None
 
 
-async def test_get_assignment_mab_online(testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient):
+def test_get_assignment_mab_online(testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient):
     """Test endpoint that gets an assignment for a participant via API key."""
-    online_experiment = await create_experiment(testing_datasource, aclient, experiment_type=ExperimentsType.MAB_ONLINE)
+    online_experiment = create_experiment(testing_datasource, aclient, experiment_type=ExperimentsType.MAB_ONLINE)
 
     parsed = eclient.get_assignment(
         api_key=testing_datasource.key,
@@ -827,11 +823,9 @@ async def test_get_assignment_mab_online(testing_datasource, aclient: AdminAPICl
     assert experiment.stopped_assignments_reason is None
 
 
-async def test_get_assignment_online_dont_create(
-    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
-):
+def test_get_assignment_online_dont_create(testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient):
     """Verify endpoint doesn't create an assignment when create_if_none=False."""
-    online_experiment = await create_experiment(testing_datasource, aclient)
+    online_experiment = create_experiment(testing_datasource, aclient)
 
     parsed = eclient.get_assignment(
         api_key=testing_datasource.key,
@@ -844,11 +838,11 @@ async def test_get_assignment_online_dont_create(
     assert parsed.assignment is None
 
 
-async def test_get_assignment_online_past_end_date(
+def test_get_assignment_online_past_end_date(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """Verify endpoint doesn't create an assignment for an online experiment that has ended."""
-    online_experiment = await create_experiment(
+    online_experiment = create_experiment(
         testing_datasource,
         aclient,
         end_date=datetime.now(UTC) - timedelta(days=1),
@@ -871,15 +865,13 @@ async def test_get_assignment_online_past_end_date(
     assert experiment.stopped_assignments_reason == StopAssignmentReason.END_DATE
 
 
-async def test_get_cmab_experiment_assignment_for_online_participant(
+def test_get_cmab_experiment_assignment_for_online_participant(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """
     Test getting the assignment for a participant in a CMAB online experiment.
     """
-    online_experiment = await create_experiment(
-        testing_datasource, aclient, experiment_type=ExperimentsType.CMAB_ONLINE
-    )
+    online_experiment = create_experiment(testing_datasource, aclient, experiment_type=ExperimentsType.CMAB_ONLINE)
 
     context_inputs = [
         ContextInput(context_id=context.context_id, context_value=1.0)
@@ -929,7 +921,7 @@ async def test_get_cmab_experiment_assignment_for_online_participant(
     assert experiment.stopped_assignments_reason is None
 
 
-async def test_get_cmab_experiment_assignment_for_online_participant_glific_unwrap(
+def test_get_cmab_experiment_assignment_for_online_participant_glific_unwrap(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """
@@ -940,9 +932,7 @@ async def test_get_cmab_experiment_assignment_for_online_participant_glific_unwr
     This is the same as test_get_cmab_experiment_assignment_for_online_participant
     but with different HTTP client behavior.
     """
-    online_experiment = await create_experiment(
-        testing_datasource, aclient, experiment_type=ExperimentsType.CMAB_ONLINE
-    )
+    online_experiment = create_experiment(testing_datasource, aclient, experiment_type=ExperimentsType.CMAB_ONLINE)
 
     input_data = {
         "context_inputs": [
@@ -979,10 +969,8 @@ async def test_get_cmab_experiment_assignment_for_online_participant_glific_unwr
     assert parsed.assignment.context_values == [1.0, 1.0]
 
 
-async def test_assign_cmab_wrong_experiment_type(
-    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
-):
-    online_experiment = await create_experiment(testing_datasource, aclient)
+def test_assign_cmab_wrong_experiment_type(testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient):
+    online_experiment = create_experiment(testing_datasource, aclient)
 
     with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
         eclient.get_assignment_cmab(
@@ -995,13 +983,13 @@ async def test_assign_cmab_wrong_experiment_type(
     assert "is a freq_online experiment, and not a cmab_online experiment" in exc.value.result.data.detail[0].msg
 
 
-async def test_assign_with_filters_wrong_experiment_type(
+def test_assign_with_filters_wrong_experiment_type(
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
 ):
     """Test that assign_with_filters endpoint rejects non-FREQ_ONLINE experiments."""
-    preassigned_exp = await create_preassigned_experiment(testing_datasource, aclient)
+    preassigned_exp = create_preassigned_experiment(testing_datasource, aclient)
 
     # Expect a 422 because we are using the get_assignment_filtered endpoint incorrectly.
     with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
@@ -1015,11 +1003,11 @@ async def test_assign_with_filters_wrong_experiment_type(
     assert "is a freq_preassigned experiment, and not a freq_online experiment" in exc.value.result.data.detail[0].msg
 
 
-async def test_assign_with_filters_participant_passes_filters(
+def test_assign_with_filters_participant_passes_filters(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """Test that participant passing filters gets assigned."""
-    experiment = await create_experiment(
+    experiment = create_experiment(
         testing_datasource,
         aclient,
         filters=[Filter(field_name="current_income", relation=Relation.BETWEEN, value=[1000, 5000])],
@@ -1038,10 +1026,10 @@ async def test_assign_with_filters_participant_passes_filters(
     assert parsed.assignment.arm_name in {"control", "treatment"}
 
 
-async def test_assign_with_filters_ignores_missing_content_type_header(
+def test_assign_with_filters_ignores_missing_content_type_header(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
-    experiment = await create_experiment(
+    experiment = create_experiment(
         testing_datasource,
         aclient,
         filters=[Filter(field_name="current_income", relation=Relation.BETWEEN, value=[1000, 5000])],
@@ -1064,13 +1052,13 @@ async def test_assign_with_filters_ignores_missing_content_type_header(
     assert parsed.assignment.arm_name in {"control", "treatment"}
 
 
-async def test_get_assignment_preassigned_cache_headers(
+def test_get_assignment_preassigned_cache_headers(
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
 ):
     """Test Cache-Control headers for preassigned experiments."""
-    preassigned_experiment = await create_preassigned_experiment(testing_datasource, aclient)
+    preassigned_experiment = create_preassigned_experiment(testing_datasource, aclient)
     assigned = eclient.get_experiment_assignments(
         api_key=testing_datasource.key,
         experiment_id=preassigned_experiment.experiment_id,
@@ -1093,11 +1081,11 @@ async def test_get_assignment_preassigned_cache_headers(
     assert response.response.headers["Cache-Control"] == "private, max-age=3600"
 
 
-async def test_get_assignment_online_cache_headers(
+def test_get_assignment_online_cache_headers(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """Test Cache-Control headers for online experiments."""
-    online_experiment = await create_experiment(testing_datasource, aclient)
+    online_experiment = create_experiment(testing_datasource, aclient)
 
     # No assignment when create_if_none=false = no cache header
     response = eclient.get_assignment(
@@ -1146,14 +1134,14 @@ async def test_get_assignment_online_cache_headers(
 
 
 @pytest.mark.parametrize("experiment_type", [ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE])
-async def test_get_assignment_bandit_cache_headers(
+def test_get_assignment_bandit_cache_headers(
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
     experiment_type: ExperimentsType,
 ):
     """Bandit assignments are cached only after an outcome is recorded."""
-    experiment = await create_experiment(testing_datasource, aclient, experiment_type=experiment_type)
+    experiment = create_experiment(testing_datasource, aclient, experiment_type=experiment_type)
 
     if experiment_type == ExperimentsType.CMAB_ONLINE:
         context_inputs = [
@@ -1208,7 +1196,7 @@ async def test_get_assignment_bandit_cache_headers(
         (ExperimentsType.CMAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
     ],
 )
-async def test_update_bandit_arm_with_outcome(
+def test_update_bandit_arm_with_outcome(
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
@@ -1456,11 +1444,11 @@ async def test_update_bandit_arm_with_outcome(
 
 
 @pytest.mark.parametrize("experiment_type", [ExperimentsType.FREQ_ONLINE, ExperimentsType.FREQ_PREASSIGNED])
-async def test_update_bandit_arm_with_freq_experiments_returns_422(
+def test_update_bandit_arm_with_freq_experiments_returns_422(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient, experiment_type: ExperimentsType
 ):
     """Frequentist experiments reject bandit outcome updates through the API."""
-    experiment = await create_experiment(testing_datasource, aclient, experiment_type=experiment_type)
+    experiment = create_experiment(testing_datasource, aclient, experiment_type=experiment_type)
     if experiment_type == ExperimentsType.FREQ_ONLINE:
         assignment = eclient.get_assignment(
             api_key=testing_datasource.key,
@@ -1486,7 +1474,7 @@ async def test_update_bandit_arm_with_freq_experiments_returns_422(
 
 
 @pytest.mark.skip("EVE-171")
-async def test_normal_prior_binary_reward_fits_each_outcome_exactly_once(
+def test_normal_prior_binary_reward_fits_each_outcome_exactly_once(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """The endpoint folds one recorded outcome into a Normal/Bernoulli posterior exactly once."""
@@ -1539,7 +1527,7 @@ async def test_normal_prior_binary_reward_fits_each_outcome_exactly_once(
     assert updated_arm.mu == pytest.approx(expected.mu)
 
 
-async def test_update_bandit_arm_with_outcome_rejects_non_binary_outcome_for_binary_reward(
+def test_update_bandit_arm_with_outcome_rejects_non_binary_outcome_for_binary_reward(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """An experiment whose reward is binary accepts only 0 or 1."""
@@ -1575,11 +1563,11 @@ async def test_update_bandit_arm_with_outcome_rejects_non_binary_outcome_for_bin
     assert "Must be 0 or 1" in response.text
 
 
-async def test_update_bandit_arm_with_outcome_rejects_non_numeric_outcome(
+def test_update_bandit_arm_with_outcome_rejects_non_numeric_outcome(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """Non-numeric outcome in the request body is rejected"""
-    mab_experiment = await create_experiment(testing_datasource, aclient, experiment_type=ExperimentsType.MAB_ONLINE)
+    mab_experiment = create_experiment(testing_datasource, aclient, experiment_type=ExperimentsType.MAB_ONLINE)
 
     response = eclient.client.post(
         f"/v1/experiments/{mab_experiment.experiment_id}/assignments/1/outcome",
@@ -1589,11 +1577,11 @@ async def test_update_bandit_arm_with_outcome_rejects_non_numeric_outcome(
     assert response.status_code == HTTPStatus.UNPROCESSABLE_CONTENT, response.content
 
 
-async def test_update_bandit_arm_with_outcome_rejected_for_mab_dwh(
+def test_update_bandit_arm_with_outcome_rejected_for_mab_dwh(
     xngin_session, testing_datasource, eclient: ExperimentsAPIClient
 ):
     """MAB-DWH outcomes are read from the org's DWH; the push endpoint rejects the type."""
-    experiment = await insert_experiment_and_arms(
+    experiment = insert_experiment_and_arms(
         xngin_session,
         testing_datasource.ds,
         experiment_type=ExperimentsType.MAB_ONLINE_DWH,
