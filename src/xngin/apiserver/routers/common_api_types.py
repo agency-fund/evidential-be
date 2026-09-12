@@ -94,18 +94,8 @@ class DesignSpecMetricBase(ApiBaseModel):
         Field(description="Coefficient of variation in cluster sizes (0 = equal sizes)."),
     ] = None
 
-    @model_validator(mode="after")
-    def cluster_fields_check(self) -> Self:
-        """Enforce that cluster fields are either all set or all unset."""
-        cluster_fields = (self.icc, self.avg_cluster_size, self.cv)
-        if any(f is not None for f in cluster_fields) and any(f is None for f in cluster_fields):
-            raise ValueError("icc, avg_cluster_size, and cv must all be set together or all be None")
-        return self
-
-
-class DesignSpecMetric(DesignSpecMetricBase):
-    """Defines a metric to measure in an experiment with its baseline stats."""
-
+    # Baseline stats. On responses (DesignSpecMetric) the server fills these in from the dwh; on
+    # requests (DesignSpecMetricRequest) they may be supplied to reuse stats from a prior response.
     metric_type: Annotated[MetricType | None, Field(description="Inferred from the data warehouse column type.")] = None
     metric_baseline: Annotated[float | None, Field(description="Mean of the tracked metric.")] = None
     metric_stddev: Annotated[
@@ -138,6 +128,18 @@ class DesignSpecMetric(DesignSpecMetricBase):
     ] = None
 
     @model_validator(mode="after")
+    def cluster_fields_check(self) -> Self:
+        """Enforce that cluster fields are either all set or all unset."""
+        cluster_fields = (self.icc, self.avg_cluster_size, self.cv)
+        if any(f is not None for f in cluster_fields) and any(f is None for f in cluster_fields):
+            raise ValueError("icc, avg_cluster_size, and cv must all be set together or all be None")
+        return self
+
+
+class DesignSpecMetric(DesignSpecMetricBase):
+    """Defines a metric to measure in an experiment with its baseline stats."""
+
+    @model_validator(mode="after")
     def stddev_check(self):
         """Enforce that metric_stddev is empty for non-NUMERICs. The frontend handles numerics without a
         stddev (the all-null case)."""
@@ -147,10 +149,12 @@ class DesignSpecMetric(DesignSpecMetricBase):
 
 
 class DesignSpecMetricRequest(DesignSpecMetricBase):
-    """Defines a request to look up baseline stats for a metric to measure in an experiment."""
+    """Defines a request to look up baseline stats for a metric to measure in an experiment.
 
-    # TODO: consider supporting {metric_baseline, metric_stddev, available_n} as inputs when the metric may not exist or
-    # be usable yet in the dwh, so that it it can be used as a general power/sizing calculator.
+    Baseline stats may optionally be supplied (e.g. echoed back from a prior power check's
+    `MetricPowerAnalysis.metric_spec`), in which case the server reuses them instead of
+    re-querying the data warehouse.
+    """
 
     # Override the descriptions from above:
     metric_pct_change: Annotated[
@@ -175,6 +179,41 @@ class DesignSpecMetricRequest(DesignSpecMetricBase):
         if self.metric_pct_change is None and self.metric_target is None:
             raise ValueError("Must set one of metric_pct_change or metric_target")
         return self
+
+    @model_validator(mode="after")
+    def check_baseline_stats(self) -> Self:
+        """Enforce that baseline stats are either all set or all unset, so that a power calculation
+        never mixes supplied stats with dwh-derived ones for the same metric."""
+        stats_fields = (self.metric_type, self.metric_baseline, self.available_nonnull_n, self.available_n)
+        if any(f is not None for f in stats_fields) and any(f is None for f in stats_fields):
+            raise ValueError(
+                "metric_type, metric_baseline, available_nonnull_n, and available_n must all be set "
+                "together or all be None"
+            )
+        if self.metric_stddev is not None and self.metric_type is not MetricType.NUMERIC:
+            raise ValueError("metric_stddev may only be set for NUMERIC metrics")
+        return self
+
+    @property
+    def has_baseline_stats(self) -> bool:
+        """True when this request carries the baseline stats needed to skip the dwh stats query."""
+        return self.metric_baseline is not None
+
+    def to_design_spec_metric(self) -> DesignSpecMetric:
+        """Converts a request carrying baseline stats into the equivalent dwh-derived metric."""
+        return DesignSpecMetric(
+            field_name=self.field_name,
+            metric_pct_change=self.metric_pct_change,
+            metric_target=self.metric_target,
+            icc=self.icc,
+            avg_cluster_size=self.avg_cluster_size,
+            cv=self.cv,
+            metric_type=self.metric_type,
+            metric_baseline=self.metric_baseline,
+            metric_stddev=self.metric_stddev,
+            available_nonnull_n=self.available_nonnull_n,
+            available_n=self.available_n,
+        )
 
 
 class ParticipantProperty(ApiBaseModel):
