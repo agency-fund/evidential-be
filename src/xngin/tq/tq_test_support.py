@@ -58,7 +58,7 @@ def wait_for_task_status(
     deadline = time.monotonic() + STATUS_TIMEOUT_SECS
     latest_task: tables.Task | None = None
     while time.monotonic() < deadline:
-        with database.sync_session() as session:
+        with database.get_session() as session:
             latest_task = session.get(tables.Task, task_id)
         if (
             latest_task is not None

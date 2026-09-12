@@ -121,7 +121,7 @@ def _process_autofail_batch_for_experiment(
     Returns the number of participant outcomes committed, or None when the experiment is no longer eligible for
     autofailing or has no draws currently eligible for processing.
     """
-    with database.sync_session() as session, session.begin():
+    with database.get_session() as session, session.begin():
         experiment = session.scalar(_autofail_experiment_query(experiment_id))
         if experiment is None:
             logger.warning(f"Autofail tried to process an experiment that is no longer eligible: {experiment_id}")
@@ -180,7 +180,7 @@ def process_autofails(
         f"Autofail run started with batch_size={batch_size}, timeout={autofail_timeout}s, batch_sleep={batch_sleep}s."
     )
 
-    with database.sync_session() as discovery_session:
+    with database.get_session() as discovery_session:
         active_experiment_ids = deque(discovery_session.scalars(_autofail_experiment_ids_query()))
     logger.info(f"Autofail run found {len(active_experiment_ids)} eligible experiments.")
 
