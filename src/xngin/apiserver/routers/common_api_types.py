@@ -1334,7 +1334,37 @@ type DesignSpec = Annotated[
 
 
 class PowerRequest(ApiBaseModel):
-    design_spec: AnyFrequentistDesignSpec
+    table_name: str
+    cluster_key: str | None = None
+    filters: list[Filter] = []
+    metrics: list[DesignSpecMetricRequest]
+    n_arms: int
+    arm_weights: list[float] | None = None
+    power: float = 0.8
+    alpha: float = 0.05
+    desired_n: int | None = None
+    desired_n_clusters: int | None = None
+
+    @model_validator(mode="after")
+    def validate_arm_weights(self) -> Self:
+        """Replaces BaseDesignSpec.get_validated_arm_weights, which this flat model does not inherit.
+
+        n_arms and arm_weights are separate fields here, so unlike an arms list they can disagree.
+        """
+        if self.arm_weights is None:
+            return self
+
+        if len(self.arm_weights) != self.n_arms:
+            raise ValueError(
+                f"Number of arm weights ({len(self.arm_weights)}) must match number of arms ({self.n_arms})"
+            )
+
+        # Check that weights sum to 100 (tolerance aligned with stochatreat's own check).
+        total = sum(self.arm_weights)
+        if not math.isclose(total, 100.0, rel_tol=1e-9):
+            raise ValueError(f"arm_weights must sum to 100, got {total}")
+
+        return self
 
 
 class PowerResponse(ApiBaseModel):
