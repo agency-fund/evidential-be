@@ -235,7 +235,27 @@ def convert_table_to_fields_or_raise(table: Table, design_spec: AnyFrequentistDe
     return referenced_fields_and_types
 
 
-def create_experiment_impl(
+def validate_power_fields_or_raise(
+    table: Table,
+    *,
+    metrics: list[DesignSpecMetricRequest],
+    filters: list[Filter],
+    cluster_key: str | None = None,
+) -> dict[str, DataType]:
+    referenced_fields = {
+        *[metric.field_name for metric in metrics],
+        *[filter_.field_name for filter_ in filters],
+    }
+    if cluster_key is not None:
+        referenced_fields.add(cluster_key)
+
+    referenced_fields_and_types = _resolve_referenced_field_types(table, referenced_fields)
+    _validate_metrics_and_filters_or_raise(referenced_fields_and_types, metrics, filters)
+
+    return referenced_fields_and_types
+
+
+async def create_experiment_impl(
     request: CreateExperimentRequest,
     datasource: tables.Datasource,
     xngin_session: Session,

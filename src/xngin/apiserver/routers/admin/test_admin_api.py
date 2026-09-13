@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 import numpy as np
 import pytest
 from deepdiff import DeepDiff
-from pydantic import HttpUrl
+from pydantic import HttpUrl, ValidationError
 
 from xngin.apiserver import flags
 from xngin.apiserver.conftest import convert_dwh_to_create_api_dsn, expect_status_code
@@ -1280,28 +1280,33 @@ def test_abandon_experiment(testing_datasource, aclient: AdminAPIClient):
     assert response.data.config.state == ExperimentState.ABANDONED
 
 
-def test_power_check_with_unbalanced_arms(testing_datasource, aclient: AdminAPIClient):
+def test_power_request_rejects_inconsistent_arm_weights():
+    """n_arms and arm_weights are separate fields, so the model must check they agree."""
+    metrics = [DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)]
+
+    with pytest.raises(ValidationError, match="must match number of arms"):
+        PowerRequest(table_name="dwh", metrics=metrics, n_arms=3, arm_weights=[50.0, 50.0])
+
+    with pytest.raises(ValidationError, match="must sum to 100"):
+        PowerRequest(table_name="dwh", metrics=metrics, n_arms=2, arm_weights=[10.0, 10.0])
+
+    # Consistent weights, and omitted weights (an equal split), are both accepted.
+    PowerRequest(table_name="dwh", metrics=metrics, n_arms=2, arm_weights=[20.0, 80.0])
+    PowerRequest(table_name="dwh", metrics=metrics, n_arms=2)
+
+
+async def test_power_check_with_unbalanced_arms(testing_datasource, aclient: AdminAPIClient):
     """Test power check endpoint with balanced vs unbalanced arms."""
     ds_id = testing_datasource.datasource_id
-    design_spec = PreassignedFrequentistExperimentSpec(
-        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        experiment_name="test power check",
-        description="test power check with unbalanced arms",
+    body = PowerRequest(
         table_name="dwh",
-        primary_key="id",
-        start_date=datetime(2024, 1, 1, tzinfo=UTC),
-        end_date=datetime.now(UTC) + timedelta(days=1),
-        arms=[
-            Arm(arm_name="control", arm_description="Control group"),
-            Arm(arm_name="treatment", arm_description="Treatment group"),
-        ],
         metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
-        strata=[],
         filters=[],
+        n_arms=2,
     )
 
     # Call the power check endpoint
-    power_response = aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=design_spec)).data
+    power_response = aclient.power_check(datasource_id=ds_id, body=body).data
     assert len(power_response.analyses) == 1
     metric_analysis = power_response.analyses[0]
     assert metric_analysis.metric_spec.field_name == "current_income"
@@ -1309,21 +1314,18 @@ def test_power_check_with_unbalanced_arms(testing_datasource, aclient: AdminAPIC
     assert metric_analysis.sufficient_n is True
 
     # Now check with unbalanced arms
-    design_spec.arms[0].arm_weight = 20.0
-    design_spec.arms[1].arm_weight = 80.0
-    power_response2 = aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=design_spec)).data
+    body.arm_weights = [20.0, 80.0]
+    power_response2 = aclient.power_check(datasource_id=ds_id, body=body).data
     assert len(power_response2.analyses) == 1
     metric_analysis2 = power_response2.analyses[0]
     assert metric_analysis2.metric_spec.field_name == "current_income"
     assert metric_analysis2.target_n is not None
     assert metric_analysis2.target_n > metric_analysis.target_n  # Unbalanced design requires more participants
 
-    # And again with three arms
-    design_spec.arms = [*design_spec.arms, Arm(arm_name="arm3", arm_description="Arm 3")]
-    design_spec.arms[0].arm_weight = 10
-    design_spec.arms[1].arm_weight = 50
-    design_spec.arms[2].arm_weight = 40
-    power_response3 = aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=design_spec)).data
+    # And again with three arms. Arm count and weights are separate fields now, so both are set.
+    body.n_arms = 3
+    body.arm_weights = [10.0, 50.0, 40.0]
+    power_response3 = aclient.power_check(datasource_id=ds_id, body=body).data
     assert len(power_response3.analyses) == 1
     metric_analysis3 = power_response3.analyses[0]
     assert metric_analysis3.metric_spec.field_name == "current_income"
@@ -1334,29 +1336,19 @@ def test_power_check_with_unbalanced_arms(testing_datasource, aclient: AdminAPIC
     assert metric_analysis3.target_n == math.ceil(metric_analysis2.target_n * 0.2 / 0.10)
 
 
-def test_power_check_also_sets_pct_change_with_desired_n(testing_datasource, aclient: AdminAPIClient):
-    """design_spec.desired_n populates pct_change_with_desired_n on power check analyses."""
-    design_spec = PreassignedFrequentistExperimentSpec(
-        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        experiment_name="test power check desired_n",
-        description="design_spec.desired_n drives optional MDE field",
+async def test_power_check_also_sets_pct_change_with_desired_n(testing_datasource, aclient: AdminAPIClient):
+    """desired_n populates pct_change_with_desired_n on power check analyses."""
+    body = PowerRequest(
         table_name="dwh",
-        primary_key="id",
-        start_date=datetime(2024, 1, 1, tzinfo=UTC),
-        end_date=datetime.now(UTC) + timedelta(days=1),
-        arms=[
-            Arm(arm_name="control", arm_description="Control group"),
-            Arm(arm_name="treatment", arm_description="Treatment group"),
-        ],
         metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
-        strata=[],
         filters=[],
+        n_arms=2,
         desired_n=500,
     )
 
     power_response = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=design_spec),
+        body=body,
     ).data
     assert len(power_response.analyses) == 1
     analysis = power_response.analyses[0]
@@ -1367,10 +1359,10 @@ def test_power_check_also_sets_pct_change_with_desired_n(testing_datasource, acl
     assert "There are enough units available." in analysis.msg.msg
 
     # And when not set, we get only the default minimum sample size calculation.
-    design_spec_plain = design_spec.model_copy(update={"desired_n": None})
+    body_plain = body.model_copy(update={"desired_n": None})
     power_response_plain = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=design_spec_plain),
+        body=body_plain,
     ).data
     analysis_plain = power_response_plain.analyses[0]
     assert analysis_plain.pct_change_with_desired_n is None
@@ -1385,33 +1377,23 @@ def test_power_check_when_sample_size_insufficient_and_desired_n_should_otherwis
     aclient: AdminAPIClient,
 ):
     """
-    When design_spec.desired_n set but there are insufficient units, MDE enrichment should still
+    When desired_n set but there are insufficient units, MDE enrichment should still
     succeed by otherwise assuming there are enough units to meet the desired_n. Simulates an
     exploratory use of the power calculator functionality.
     """
-    design_spec = PreassignedFrequentistExperimentSpec(
-        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        experiment_name="test power check desired_n failure",
-        description="design_spec.desired_n should surface MDE validation errors",
+    body = PowerRequest(
         table_name="dwh",
-        primary_key="id",
-        start_date=datetime(2024, 1, 1, tzinfo=UTC),
-        end_date=datetime.now(UTC) + timedelta(days=1),
-        arms=[
-            Arm(arm_name="control", arm_description="Control group"),
-            Arm(arm_name="treatment", arm_description="Treatment group"),
-        ],
         metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
-        strata=[],
         # Constrain data to force insufficient sample size for the desired metric_pct_change, but
         # still allow for a valid MDE calculation given a desired_n.
         filters=[Filter(field_name="id", relation=Relation.BETWEEN, value=[1, 100])],
+        n_arms=2,
         desired_n=1600,  # 4x the min size should allow for an MDE that's 1/2 the original MDE.
     )
 
     power_response = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=design_spec),
+        body=body,
     ).data
     assert len(power_response.analyses) == 1
     analysis = power_response.analyses[0]
@@ -1430,29 +1412,19 @@ def test_power_check_when_sample_size_insufficient_and_desired_n_has_data_valida
     When both the sample size and MDE calculation fail, we should still see the minimum sample size
     result (an error message) as the primary, with no MDE calculation result.
     """
-    design_spec = PreassignedFrequentistExperimentSpec(
-        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        experiment_name="test power check desired_n failure",
-        description="design_spec.desired_n should surface MDE validation errors",
+    body = PowerRequest(
         table_name="dwh",
-        primary_key="id",
-        start_date=datetime(2024, 1, 1, tzinfo=UTC),
-        end_date=datetime.now(UTC) + timedelta(days=1),
-        arms=[
-            Arm(arm_name="control", arm_description="Control group"),
-            Arm(arm_name="treatment", arm_description="Treatment group"),
-        ],
         metrics=[DesignSpecMetricRequest(field_name="is_onboarded_onetime", metric_pct_change=0.1)],
-        strata=[],
         # Constrain data to 1 unit available with only a NULL to force insufficient sample size, and
         # trigger a metric baseline error (due to zero non-nulls) in the MDE calculation.
         filters=[Filter(field_name="id", relation=Relation.INCLUDES, value=["1"])],
+        n_arms=2,
         desired_n=500,
     )
 
     power_response = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=design_spec),
+        body=body,
     ).data
     assert len(power_response.analyses) == 1
     analysis = power_response.analyses[0]
@@ -1465,26 +1437,16 @@ def test_power_check_when_sample_size_insufficient_and_desired_n_has_data_valida
 
 def test_power_check_when_sample_size_sufficient_and_desired_n_fails(testing_datasource, aclient: AdminAPIClient):
     """Invalid desired_n raises StatsPowerError."""
-    design_spec = PreassignedFrequentistExperimentSpec(
-        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        experiment_name="test power check desired_n failure",
-        description="design_spec.desired_n should surface MDE validation errors",
+    body = PowerRequest(
         table_name="dwh",
-        primary_key="id",
-        start_date=datetime(2024, 1, 1, tzinfo=UTC),
-        end_date=datetime.now(UTC) + timedelta(days=1),
-        arms=[
-            Arm(arm_name="control", arm_description="Control group"),
-            Arm(arm_name="treatment", arm_description="Treatment group"),
-        ],
         metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
-        strata=[],
         filters=[],
+        n_arms=2,
         desired_n=0,  # This should raise a ValueError as a precheck during the MDE calculation.
     )
 
     with expect_status_code(422, detail_contains="Chosen sample size must be positive"):
-        aclient.power_check(datasource_id=testing_datasource.datasource_id, body=PowerRequest(design_spec=design_spec))
+        aclient.power_check(datasource_id=testing_datasource.datasource_id, body=body)
 
 
 def test_power_check_answers_504_when_the_warehouse_stalls(testing_datasource, aclient: AdminAPIClient, mocker):
@@ -1524,53 +1486,42 @@ def test_power_check_answers_504_when_the_warehouse_stalls(testing_datasource, a
 def test_power_check_validations(testing_datasource, aclient: AdminAPIClient):
     """Test power check validations."""
     ds_id = testing_datasource.datasource_id
-    design_spec = PreassignedFrequentistExperimentSpec(
-        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        experiment_name="test power check with synthesized schema",
-        description="test power check using table_name and primary_key",
+    body = PowerRequest(
         table_name="dwh",
-        primary_key="id",
-        start_date=datetime(2024, 1, 1, tzinfo=UTC),
-        end_date=datetime.now(UTC) + timedelta(days=1),
-        arms=[
-            Arm(arm_name="control", arm_description="Control group"),
-            Arm(arm_name="treatment", arm_description="Treatment group"),
-        ],
         metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
-        strata=[],
         filters=[],
+        n_arms=2,
     )
 
     # First check a valid power check
-    power_response = aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=design_spec)).data
+    power_response = aclient.power_check(datasource_id=ds_id, body=body).data
     assert len(power_response.analyses) == 1
     assert power_response.analyses[0].metric_spec.field_name == "current_income"
     assert power_response.analyses[0].target_n is not None
 
-    # Now check various failure scenarios
+    # Now check various failure scenarios. A power request has no primary_key or strata, so only the
+    # metric, filter, and cluster_key columns are validated against the table.
     with expect_status_code(404, message_contains="The table '' does not exist."):
-        bad_design_spec = design_spec.model_copy(deep=True)
-        bad_design_spec.table_name = ""
-        aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=bad_design_spec))
+        aclient.power_check(datasource_id=ds_id, body=body.model_copy(update={"table_name": ""}))
 
-    with expect_status_code(422, detail_contains="columns that do not exist in the table: no_such_primary_key"):
-        bad_design_spec = design_spec.model_copy(deep=True)
-        bad_design_spec.primary_key = "no_such_primary_key"
-        aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=bad_design_spec))
-
-    with expect_status_code(
-        422, detail_contains="columns that do not exist in the table: bad_filter, bad_metric, bad_stratum"
-    ):
-        bad_design_spec = design_spec.model_copy(deep=True)
-        bad_design_spec.metrics = [DesignSpecMetricRequest(field_name="bad_metric", metric_pct_change=0.1)]
-        bad_design_spec.strata = [Stratum(field_name="bad_stratum")]
-        bad_design_spec.filters = [Filter(field_name="bad_filter", relation=Relation.INCLUDES, value=["value"])]
-        aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=bad_design_spec))
+    with expect_status_code(422, detail_contains="columns that do not exist in the table: bad_filter, bad_metric"):
+        aclient.power_check(
+            datasource_id=ds_id,
+            body=body.model_copy(
+                update={
+                    "metrics": [DesignSpecMetricRequest(field_name="bad_metric", metric_pct_change=0.1)],
+                    "filters": [Filter(field_name="bad_filter", relation=Relation.INCLUDES, value=["value"])],
+                }
+            ),
+        )
 
     with expect_status_code(422, detail_contains="Invalid metric field(s): (gender). Only boolean or numeric"):
-        bad_design_spec = design_spec.model_copy(deep=True)
-        bad_design_spec.metrics = [DesignSpecMetricRequest(field_name="gender", metric_pct_change=0.1)]
-        aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=bad_design_spec))
+        aclient.power_check(
+            datasource_id=ds_id,
+            body=body.model_copy(
+                update={"metrics": [DesignSpecMetricRequest(field_name="gender", metric_pct_change=0.1)]}
+            ),
+        )
 
 
 def test_create_experiment_with_invalid_design_url(testing_datasource, aclient: AdminAPIClient):
@@ -3842,39 +3793,25 @@ def test_list_experiments_empty(
 
 def test_power_check_with_missing_cluster_key_raises(testing_datasource, aclient: AdminAPIClient):
     """Power check raises a validation error if the cluster key column does not exist in the table."""
-    design_spec = PreassignedFrequentistExperimentSpec(
-        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        experiment_name="test missing cluster key",
-        description="test power check with missing cluster key",
-        start_date=datetime(2024, 1, 1, tzinfo=UTC),
-        end_date=datetime.now(UTC) + timedelta(days=1),
+    body = PowerRequest(
         table_name=WIDE_DWH_TABLE_NAME,
-        primary_key="id",
-        arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
         metrics=[DesignSpecMetricRequest(field_name="household_income", metric_pct_change=0.1)],
-        strata=[],
         filters=[],
+        n_arms=2,
         cluster_key="missing_key",
     )
 
     with expect_status_code(422, detail_contains="columns that do not exist in the table: missing_key"):
         aclient.power_check(
             datasource_id=testing_datasource.datasource_id,
-            body=PowerRequest(design_spec=design_spec),
+            body=body,
         )
 
 
 def test_power_check_with_manual_icc_and_nulls_in_cluster_key(testing_datasource, aclient: AdminAPIClient):
     """Power check accepts user-supplied ICC values and returns cluster analysis and handles nulls correctly."""
-    design_spec = PreassignedFrequentistExperimentSpec(
-        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        experiment_name="test cluster power",
-        description="Verify null cluster key rows are excluded from manual ICC in power check.",
-        start_date=datetime(2024, 1, 1, tzinfo=UTC),
-        end_date=datetime.now(UTC) + timedelta(days=1),
+    body = PowerRequest(
         table_name=WIDE_DWH_TABLE_NAME,
-        primary_key="id",
-        arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
         metrics=[
             DesignSpecMetricRequest(
                 field_name="household_income",
@@ -3884,14 +3821,14 @@ def test_power_check_with_manual_icc_and_nulls_in_cluster_key(testing_datasource
                 cv=0.1,
             )
         ],
-        strata=[],
         filters=[],
+        n_arms=2,
         cluster_key="age",
     )
 
     result = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=design_spec),
+        body=body,
     )
 
     assert len(result.data.analyses) == 1
@@ -3920,16 +3857,9 @@ def test_power_check_with_manual_icc_and_nulls_in_cluster_key(testing_datasource
 def test_power_check_with_desired_n_clusters(testing_datasource, aclient: AdminAPIClient):
     """desired_n_clusters populates pct_change_with_desired_n, equivalent to desired_n = clusters * avg_cluster_size."""
 
-    def make_design_spec(*, desired_n: int | None = None, desired_n_clusters: int | None = None):
-        return PreassignedFrequentistExperimentSpec(
-            experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-            experiment_name="test cluster power desired_n_clusters",
-            description="Verify desired_n_clusters drives the MDE calculation in power check.",
-            start_date=datetime(2024, 1, 1, tzinfo=UTC),
-            end_date=datetime.now(UTC) + timedelta(days=1),
+    def make_power_request(*, desired_n: int | None = None, desired_n_clusters: int | None = None):
+        return PowerRequest(
             table_name=WIDE_DWH_TABLE_NAME,
-            primary_key="id",
-            arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
             metrics=[
                 DesignSpecMetricRequest(
                     field_name="household_income",
@@ -3939,8 +3869,8 @@ def test_power_check_with_desired_n_clusters(testing_datasource, aclient: AdminA
                     cv=0.1,
                 )
             ],
-            strata=[],
             filters=[],
+            n_arms=2,
             cluster_key="age",
             desired_n=desired_n,
             desired_n_clusters=desired_n_clusters,
@@ -3948,7 +3878,7 @@ def test_power_check_with_desired_n_clusters(testing_datasource, aclient: AdminA
 
     clusters_result = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=make_design_spec(desired_n_clusters=40)),
+        body=make_power_request(desired_n_clusters=40),
     )
     clusters_analysis = clusters_result.data.analyses[0]
     assert clusters_analysis.pct_change_with_desired_n is not None
@@ -3956,7 +3886,7 @@ def test_power_check_with_desired_n_clusters(testing_datasource, aclient: AdminA
     # 40 clusters of avg_cluster_size 10 should be equivalent to desired_n=400.
     individuals_result = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=make_design_spec(desired_n=400)),
+        body=make_power_request(desired_n=400),
     )
     individuals_analysis = individuals_result.data.analyses[0]
     assert clusters_analysis.pct_change_with_desired_n == individuals_analysis.pct_change_with_desired_n
@@ -3964,7 +3894,7 @@ def test_power_check_with_desired_n_clusters(testing_datasource, aclient: AdminA
     # When both are set, desired_n_clusters takes precedence.
     both_result = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=make_design_spec(desired_n=900, desired_n_clusters=40)),
+        body=make_power_request(desired_n=900, desired_n_clusters=40),
     )
     both_analysis = both_result.data.analyses[0]
     assert both_analysis.pct_change_with_desired_n == clusters_analysis.pct_change_with_desired_n
@@ -4219,24 +4149,17 @@ def test_power_check_with_db_derived_icc_and_nulls_in_cluster_key(testing_dataso
     non-null-age rows, so that the ICC and available_n passed to the power formula are
     consistent.
     """
-    design_spec = PreassignedFrequentistExperimentSpec(
-        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        experiment_name="test db-derived icc null exclusion",
-        description="Verify null cluster key rows are excluded from DB-derived ICC in power check.",
-        start_date=datetime(2024, 1, 1, tzinfo=UTC),
-        end_date=datetime.now(UTC) + timedelta(days=1),
+    body = PowerRequest(
         table_name=WIDE_DWH_TABLE_NAME,
-        primary_key="id",
-        arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
         metrics=[DesignSpecMetricRequest(field_name="household_income", metric_pct_change=0.1)],
-        strata=[],
         filters=[],
+        n_arms=2,
         cluster_key="age",
     )
 
     result = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=design_spec),
+        body=body,
     )
 
     assert len(result.data.analyses) == 1
@@ -4263,27 +4186,17 @@ def test_power_check_with_db_derived_icc_and_nulls_in_cluster_key(testing_dataso
 
 def test_power_check_with_calculated_icc(testing_datasource, aclient: AdminAPIClient):
     """Power check calculates ICC from the database when cluster_column is provided."""
-    design_spec = PreassignedFrequentistExperimentSpec(
-        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        experiment_name="test cluster power from DB",
-        description="test power check calculating ICC from database",
-        start_date=datetime(2024, 1, 1, tzinfo=UTC),
-        end_date=datetime.now(UTC) + timedelta(days=1),
+    body = PowerRequest(
         table_name="clustered_dwh",
-        primary_key="participant_id",
-        arms=[
-            Arm(arm_name="control", arm_description="Control"),
-            Arm(arm_name="treatment", arm_description="Treatment"),
-        ],
         metrics=[DesignSpecMetricRequest(field_name="test_score", metric_pct_change=0.1)],
-        strata=[],
         filters=[],
+        n_arms=2,
         cluster_key="cluster_powerlaw",
     )
 
     result = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=design_spec),
+        body=body,
     )
 
     assert len(result.data.analyses) == 1
@@ -4306,15 +4219,8 @@ def test_power_check_cluster_with_manual_and_db_derived_metrics(testing_datasour
     manual_avg_cluster_size = 42.0
     manual_cv = 3.14
 
-    design_spec = PreassignedFrequentistExperimentSpec(
-        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-        experiment_name="test mixed cluster metrics",
-        description="manual ICC for one metric, calculated for another",
-        start_date=datetime(2024, 1, 1, tzinfo=UTC),
-        end_date=datetime.now(UTC) + timedelta(days=1),
+    body = PowerRequest(
         table_name="clustered_dwh",
-        primary_key="participant_id",
-        arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
         metrics=[
             DesignSpecMetricRequest(
                 field_name="test_score",
@@ -4325,14 +4231,12 @@ def test_power_check_cluster_with_manual_and_db_derived_metrics(testing_datasour
             ),
             DesignSpecMetricRequest(field_name="converted", metric_pct_change=0.1),
         ],
-        strata=[],
         filters=[],
+        n_arms=2,
         cluster_key="cluster_moderate",
     )
 
-    result = aclient.power_check(
-        datasource_id=testing_datasource.datasource_id, body=PowerRequest(design_spec=design_spec)
-    )
+    result = aclient.power_check(datasource_id=testing_datasource.datasource_id, body=body)
 
     assert len(result.data.analyses) == 2
     analyses_by_field = {a.metric_spec.field_name: a for a in result.data.analyses}
