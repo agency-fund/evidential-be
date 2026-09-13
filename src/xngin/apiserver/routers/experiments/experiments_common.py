@@ -1039,15 +1039,14 @@ async def _fetch_outcomes_and_context_for_arm(
     xngin_session: AsyncSession,
     experiment_id: str,
     arm_id: str,
-    outcome: float,
-    context_vals: list[float] | None,
+    experiment_type: ExperimentsType,
 ) -> tuple[list[float], list[list[float]] | None]:
     """Return the just-recorded outcome plus the arm's prior outcomes, newest first.
 
     Context values are aggregated alongside the outcomes and returned only for contextual
     bandits, i.e. when the current draw carries context.
     """
-    has_context = context_vals is not None
+    is_cmab = experiment_type == ExperimentsType.CMAB_ONLINE
     subq = (
         select(tables.Draw.outcome, tables.Draw.context_vals)
         .where(
@@ -1060,15 +1059,14 @@ async def _fetch_outcomes_and_context_for_arm(
         .subquery()
     )
     agg_cols = [func.array_agg(subq.c.outcome)]
-    if has_context:
+    if is_cmab:
         agg_cols.append(func.array_agg(subq.c.context_vals))
     agg_result = await xngin_session.execute(select(*agg_cols).select_from(subq))
     agg_row = agg_result.one()
 
-    all_prior_outcomes = agg_row[0]
-    outcomes = [outcome] + (all_prior_outcomes or [])
-    all_context_vals = ([context_vals] + (agg_row[1] or [])) if has_context else None
-    return outcomes, all_context_vals
+    all_outcomes = agg_row[0]
+    all_context_vals = agg_row[1] if is_cmab else None
+    return all_outcomes, all_context_vals
 
 
 class PartialUpdateDrawBeta(TypedDict):
@@ -1164,8 +1162,7 @@ async def update_bandit_arm_with_outcome_impl(
         xngin_session,
         experiment_id=experiment.id,
         arm_id=draw_record.arm_id,
-        outcome=outcome,
-        context_vals=draw_record.context_vals,
+        experiment_type=ExperimentsType(experiment.experiment_type),
     )
 
     updated_parameters = update_bandit_arm(
