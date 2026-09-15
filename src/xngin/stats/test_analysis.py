@@ -240,6 +240,34 @@ def test_analysis_counts_participants_absent_from_outcomes(test_assignments, tes
     assert sum(r.num_missing_values for r in bool_field_results.values()) == len(absent_ids)
 
 
+def test_analysis_with_all_identical_outcomes_in_one_arm():
+    """A treatment arm whose outcomes are all identical still gets finite mean CIs.
+
+    Its predicted-mean variance is mathematically zero, but floating-point cancellation in
+    statsmodels (Var(Intercept) + Var(coef) + 2Cov) makes it slightly negative for this data,
+    which turned the mean CI bounds into NaN before analyze_experiment collapsed them.
+    """
+    arm_a, arm_b = "a" * 32, "b" * 32
+    assignments = pd.DataFrame([{"participant_id": str(i), "arm_id": arm_a if i < 3 else arm_b} for i in range(7)])
+    # Baseline arm a: [1, 0, 0]; treatment arm b: all zeros.
+    outcomes = [
+        ParticipantOutcome(
+            participant_id=str(i),
+            metric_values=[MetricValue(metric_name="bool_field", metric_value=1 if i == 0 else 0)],
+        )
+        for i in range(7)
+    ]
+
+    result = analyze_experiment(assignments, outcomes, baseline_arm_id=arm_a)
+
+    degenerate_results = result["bool_field"][arm_b]
+    # The arm mean is exactly zero, so the zero-variance CI collapses onto it.
+    assert degenerate_results.mean_ci_lower == pytest.approx(0.0)
+    assert degenerate_results.mean_ci_upper == pytest.approx(0.0)
+    assert math.isfinite(degenerate_results.mean_ci_lower)
+    assert math.isfinite(degenerate_results.mean_ci_upper)
+
+
 def test_analysis_with_multiple_metrics(test_assignments):
     """Each metric's missing value counts are tallied independently of the other metrics'."""
     rand = random.Random(44)

@@ -128,6 +128,12 @@ def analyze_experiment(
         pred_input = pd.DataFrame({arm_col: arm_ids})
         predictions = model.get_prediction(pred_input)
         pred_summary = predictions.summary_frame(alpha=alpha)
+        # When all outcomes in an arm are identical, the predicted-mean variance is mathematically
+        # zero, but floating-point cancellation can make statsmodels compute it as slightly
+        # negative, so sqrt() turns the CI bounds into NaN. The true CI is zero-width, so collapse
+        # NaN bounds to the predicted mean (a NaN mean itself stays NaN).
+        for ci_col in ("mean_ci_lower", "mean_ci_upper"):
+            pred_summary[ci_col] = pred_summary[ci_col].fillna(pred_summary["mean"])
 
         for i, arm_id in enumerate(arm_ids):
             # Determine parameter name to use for lookingup the coefficient CIs
