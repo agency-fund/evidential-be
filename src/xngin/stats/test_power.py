@@ -662,3 +662,72 @@ def test_analyze_metric_power_desired_n_with_unbalanced_arms():
     assert metric.metric_baseline is not None
     assert result.target_possible is not None
     assert result.target_possible < metric.metric_baseline
+
+
+def make_curve_metric(**overrides):
+    defaults = dict(
+        field_name="curve_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_pct_change=0.1,
+        metric_stddev=20,
+        available_nonnull_n=1000,
+        available_n=1000,
+    )
+    return DesignSpecMetric(**{**defaults, **overrides})
+
+
+def test_check_power_mde_curve_individual():
+    sizes = [100, 200, 500, 1000]
+    analyses = check_power([make_curve_metric()], n_arms=2, desired_ns=sizes)
+
+    curve = analyses[0].mde_curve
+    assert curve is not None
+    assert [p.desired_n for p in curve] == sizes
+    assert all(p.desired_n_clusters is None for p in curve)
+    mdes = [p.pct_change for p in curve if p.pct_change is not None]
+    assert len(mdes) == len(curve)  # every point solved
+    assert all(m > 0 for m in mdes)
+    # MDE shrinks as the sample grows.
+    assert mdes == sorted(mdes, reverse=True)
+
+    # A curve point at the single desired_n matches pct_change_with_desired_n.
+    single = check_power([make_curve_metric()], n_arms=2, desired_n=500)
+    point_500 = next(p for p in curve if p.desired_n == 500)
+    assert single[0].pct_change_with_desired_n == point_500.pct_change
+
+
+def test_check_power_mde_curve_cluster():
+    metric = make_curve_metric(icc=0.02, avg_cluster_size=10, cv=0.1)
+    analyses = check_power([metric], n_arms=2, desired_ns_clusters=[20, 50, 100])
+
+    curve = analyses[0].mde_curve
+    assert curve is not None
+    assert [p.desired_n_clusters for p in curve] == [20, 50, 100]
+    # Cluster counts convert to individuals via avg_cluster_size.
+    assert [p.desired_n for p in curve] == [200, 500, 1000]
+    mdes = [p.pct_change for p in curve if p.pct_change is not None]
+    assert len(mdes) == len(curve)  # every point solved
+    assert all(m > 0 for m in mdes)
+    assert mdes == sorted(mdes, reverse=True)
+
+
+def test_check_power_mde_curve_cluster_counts_require_cluster_stats():
+    with pytest.raises(StatsPowerError, match="has no avg_cluster_size"):
+        check_power([make_curve_metric()], n_arms=2, desired_ns_clusters=[20, 50])
+
+
+def test_check_power_mde_curve_point_failure_yields_null_not_error():
+    # n=2 is too small for the solver; the point should be null while the others succeed.
+    analyses = check_power([make_curve_metric()], n_arms=2, desired_ns=[2, 500])
+
+    curve = analyses[0].mde_curve
+    assert curve is not None
+    assert [p.desired_n for p in curve] == [2, 500]
+    assert curve[0].pct_change is None
+    assert curve[1].pct_change is not None
+
+
+def test_check_power_no_curve_without_desired_ns():
+    analyses = check_power([make_curve_metric()], n_arms=2, desired_n=500)
+    assert analyses[0].mde_curve is None

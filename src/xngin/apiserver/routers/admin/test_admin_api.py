@@ -62,6 +62,7 @@ from xngin.apiserver.routers.common_api_types import (
     CreateExperimentRequest,
     CreateExperimentResponse,
     DataType,
+    DesignSpecMetric,
     DesignSpecMetricRequest,
     ExperimentConfig,
     ExperimentsType,
@@ -4191,6 +4192,241 @@ async def test_power_check_with_desired_n_clusters(testing_datasource, aclient: 
     )
     both_analysis = both_result.data.analyses[0]
     assert both_analysis.pct_change_with_desired_n == clusters_analysis.pct_change_with_desired_n
+
+
+def echo_metric_request(spec: DesignSpecMetric) -> DesignSpecMetricRequest:
+    """Builds a follow-up power check metric from a prior response's metric_spec, as the frontend would."""
+    return DesignSpecMetricRequest(
+        field_name=spec.field_name,
+        metric_pct_change=spec.metric_pct_change,
+        icc=spec.icc,
+        avg_cluster_size=spec.avg_cluster_size,
+        cv=spec.cv,
+        metric_type=spec.metric_type,
+        metric_baseline=spec.metric_baseline,
+        metric_stddev=spec.metric_stddev,
+        available_nonnull_n=spec.available_nonnull_n,
+        available_n=spec.available_n,
+    )
+
+
+async def test_power_check_reuses_provided_baseline_stats_without_dwh(testing_datasource, aclient: AdminAPIClient):
+    """Metrics carrying baseline stats are analyzed without querying the dwh at all."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test power check stats reuse",
+        description="Baseline stats from a prior response are reused instead of re-queried.",
+        table_name="dwh",
+        primary_key="id",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="control", arm_description="Control group"),
+            Arm(arm_name="treatment", arm_description="Treatment group"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+        desired_n=500,
+    )
+    first_analysis = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(design_spec=design_spec),
+    ).data.analyses[0]
+    assert first_analysis.metric_spec.metric_baseline is not None
+
+    # Echo the returned stats back. The bogus table name proves the dwh is not contacted:
+    # inspecting it would fail.
+    reuse_spec = design_spec.model_copy(
+        update={
+            "table_name": "no_such_table",
+            "metrics": [echo_metric_request(first_analysis.metric_spec)],
+        }
+    )
+    reuse_analysis = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(design_spec=reuse_spec),
+    ).data.analyses[0]
+    assert reuse_analysis == first_analysis
+
+
+async def test_power_check_queries_only_metrics_missing_baseline_stats(testing_datasource, aclient: AdminAPIClient):
+    """Metrics with and without provided baseline stats can be mixed in one power check."""
+
+    def make_design_spec(metrics: list[DesignSpecMetricRequest]) -> PreassignedFrequentistExperimentSpec:
+        return PreassignedFrequentistExperimentSpec(
+            experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+            experiment_name="test power check partial stats reuse",
+            description="Only metrics without provided baseline stats are queried from the dwh.",
+            table_name="dwh",
+            primary_key="id",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime.now(UTC) + timedelta(days=1),
+            arms=[
+                Arm(arm_name="control", arm_description="Control group"),
+                Arm(arm_name="treatment", arm_description="Treatment group"),
+            ],
+            metrics=metrics,
+            strata=[],
+            filters=[],
+        )
+
+    both_queried = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(
+            design_spec=make_design_spec([
+                DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1),
+                DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1),
+            ])
+        ),
+    ).data.analyses
+
+    # Re-issue with stats provided for one metric only; results must match the fully queried run.
+    mixed = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(
+            design_spec=make_design_spec([
+                echo_metric_request(both_queried[0].metric_spec),
+                DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1),
+            ])
+        ),
+    ).data.analyses
+    assert mixed == both_queried
+
+
+async def test_power_check_reuses_provided_cluster_stats_without_dwh(testing_datasource, aclient: AdminAPIClient):
+    """A cluster design with baseline stats and ICC provided for every metric skips the dwh."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test cluster power stats reuse",
+        description="Cluster power check with fully provided stats skips the dwh.",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
+        arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
+        metrics=[
+            DesignSpecMetricRequest(
+                field_name="household_income",
+                metric_pct_change=0.1,
+                icc=0.015,
+                avg_cluster_size=10,
+                cv=0.1,
+            )
+        ],
+        strata=[],
+        filters=[],
+        cluster_key="age",
+        desired_n_clusters=40,
+    )
+    first_analysis = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(design_spec=design_spec),
+    ).data.analyses[0]
+    assert first_analysis.pct_change_with_desired_n is not None
+
+    reuse_spec = design_spec.model_copy(
+        update={
+            "table_name": "no_such_table",
+            "metrics": [echo_metric_request(first_analysis.metric_spec)],
+        }
+    )
+    reuse_analysis = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(design_spec=reuse_spec),
+    ).data.analyses[0]
+    assert reuse_analysis == first_analysis
+
+
+async def test_power_check_mde_curve(testing_datasource, aclient: AdminAPIClient):
+    """desired_ns produces an MDE-vs-sample-size curve, consistent with the single desired_n MDE."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test power curve",
+        description="desired_ns drives the MDE curve in power check.",
+        table_name="dwh",
+        primary_key="id",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="control", arm_description="Control group"),
+            Arm(arm_name="treatment", arm_description="Treatment group"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+        desired_n=500,
+        desired_ns=[2, 250, 500, 750, 1000],
+    )
+    analysis = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(design_spec=design_spec),
+    ).data.analyses[0]
+
+    assert analysis.mde_curve is not None
+    assert [p.desired_n for p in analysis.mde_curve] == [2, 250, 500, 750, 1000]
+    # n=2 is too small to solve: best-effort null, not a failed request.
+    assert analysis.mde_curve[0].pct_change is None
+    solvable = analysis.mde_curve[1:]
+    # MDE shrinks as the sample grows, and the curve agrees with the single-value MDE at n=500.
+    mdes = [p.pct_change for p in solvable if p.pct_change is not None]
+    assert len(mdes) == len(solvable)  # every remaining point solved
+    assert mdes == sorted(mdes, reverse=True)
+    assert analysis.mde_curve[2].pct_change == analysis.pct_change_with_desired_n
+
+    # The curve also works without the dwh when stats are echoed back (see the stats reuse tests).
+    reuse_spec = design_spec.model_copy(
+        update={
+            "table_name": "no_such_table",
+            "metrics": [echo_metric_request(analysis.metric_spec)],
+        }
+    )
+    reuse_analysis = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(design_spec=reuse_spec),
+    ).data.analyses[0]
+    assert reuse_analysis.mde_curve == analysis.mde_curve
+
+
+async def test_power_check_mde_curve_clusters(testing_datasource, aclient: AdminAPIClient):
+    """desired_ns_clusters produces a per-metric converted MDE curve for cluster designs."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test cluster power curve",
+        description="desired_ns_clusters drives the MDE curve in cluster power check.",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
+        primary_key="id",
+        arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
+        metrics=[
+            DesignSpecMetricRequest(
+                field_name="household_income",
+                metric_pct_change=0.1,
+                icc=0.015,
+                avg_cluster_size=10,
+                cv=0.1,
+            )
+        ],
+        strata=[],
+        filters=[],
+        cluster_key="age",
+        desired_n_clusters=40,
+        desired_ns_clusters=[20, 40, 80],
+    )
+    analysis = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(design_spec=design_spec),
+    ).data.analyses[0]
+
+    assert analysis.mde_curve is not None
+    assert [p.desired_n_clusters for p in analysis.mde_curve] == [20, 40, 80]
+    assert [p.desired_n for p in analysis.mde_curve] == [200, 400, 800]
+    mdes = [p.pct_change for p in analysis.mde_curve if p.pct_change is not None]
+    assert len(mdes) == len(analysis.mde_curve)  # every point solved
+    assert mdes == sorted(mdes, reverse=True)
+    # The curve point at 40 clusters agrees with the single desired_n_clusters MDE.
+    assert analysis.mde_curve[1].pct_change == analysis.pct_change_with_desired_n
 
 
 async def test_power_check_with_db_derived_icc_and_nulls_in_cluster_key(testing_datasource, aclient: AdminAPIClient):
