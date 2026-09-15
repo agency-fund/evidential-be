@@ -135,17 +135,22 @@ class DesignSpecMetricBase(ApiBaseModel):
             raise ValueError("icc, avg_cluster_size, and cv must all be set together or all be None")
         return self
 
-
-class DesignSpecMetric(DesignSpecMetricBase):
-    """Defines a metric to measure in an experiment with its baseline stats."""
-
     @model_validator(mode="after")
-    def stddev_check(self):
+    def stddev_check(self) -> Self:
         """Enforce that metric_stddev is empty for non-NUMERICs. The frontend handles numerics without a
         stddev (the all-null case)."""
         if self.metric_type is not MetricType.NUMERIC and self.metric_stddev is not None:
-            raise ValueError("should not have stddev")
+            raise ValueError("metric_stddev may only be set for NUMERIC metrics")
         return self
+
+
+class DesignSpecMetric(DesignSpecMetricBase):
+    """Defines a metric to measure in an experiment with its baseline stats.
+
+    Same fields and validation as the base; kept as a distinct class so request and response
+    metrics stay separate types (and separate OpenAPI schemas) even though only
+    DesignSpecMetricRequest adds request-specific validation.
+    """
 
 
 class DesignSpecMetricRequest(DesignSpecMetricBase):
@@ -190,8 +195,6 @@ class DesignSpecMetricRequest(DesignSpecMetricBase):
                 "metric_type, metric_baseline, available_nonnull_n, and available_n must all be set "
                 "together or all be None"
             )
-        if self.metric_stddev is not None and self.metric_type is not MetricType.NUMERIC:
-            raise ValueError("metric_stddev may only be set for NUMERIC metrics")
         return self
 
     @property
