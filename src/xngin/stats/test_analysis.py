@@ -268,6 +268,32 @@ def test_analysis_with_all_identical_outcomes_in_one_arm():
     assert math.isfinite(degenerate_results.mean_ci_upper)
 
 
+def test_analysis_with_inestimable_variance_keeps_nan_mean_cis():
+    """NaN mean CI bounds from causes other than identical outcomes are surfaced, not collapsed.
+
+    With one participant per arm there are zero residual degrees of freedom, so the HC1
+    covariance is inestimable and the mean CI bounds are NaN. Each arm's single outcome is
+    trivially "all identical", but a lone observation carries no variance information, so the
+    zero-width-CI collapse must not apply and the NaNs must reach the caller.
+    """
+    arm_a, arm_b = "a" * 32, "b" * 32
+    assignments = pd.DataFrame([{"participant_id": "0", "arm_id": arm_a}, {"participant_id": "1", "arm_id": arm_b}])
+    outcomes = [
+        ParticipantOutcome(
+            participant_id=str(i),
+            metric_values=[MetricValue(metric_name="bool_field", metric_value=i)],
+        )
+        for i in range(2)
+    ]
+
+    result = analyze_experiment(assignments, outcomes, baseline_arm_id=arm_a)
+
+    for arm_id in (arm_a, arm_b):
+        arm_results = result["bool_field"][arm_id]
+        assert math.isnan(arm_results.mean_ci_lower), arm_id
+        assert math.isnan(arm_results.mean_ci_upper), arm_id
+
+
 def test_analysis_with_multiple_metrics(test_assignments):
     """Each metric's missing value counts are tallied independently of the other metrics'."""
     rand = random.Random(44)

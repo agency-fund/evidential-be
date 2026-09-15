@@ -131,9 +131,16 @@ def analyze_experiment(
         # When all outcomes in an arm are identical, the predicted-mean variance is mathematically
         # zero, but floating-point cancellation can make statsmodels compute it as slightly
         # negative, so sqrt() turns the CI bounds into NaN. The true CI is zero-width, so collapse
-        # NaN bounds to the predicted mean (a NaN mean itself stays NaN).
+        # NaN bounds to the predicted mean, but only for arms whose outcomes are verifiably all
+        # identical, with at least two observations (a single observation is trivially identical
+        # yet carries no variance information); NaNs from any other cause (e.g. zero residual
+        # degrees of freedom) pass through so callers see them as null rather than a spuriously
+        # confident zero-width CI.
+        arm_outcomes = merged_df.dropna(subset=[metric_name]).groupby(arm_col, observed=False)[metric_name]
+        identical_arms = (arm_outcomes.nunique() == 1) & (arm_outcomes.count() >= 2)
         for ci_col in ("mean_ci_lower", "mean_ci_upper"):
-            pred_summary[ci_col] = pred_summary[ci_col].fillna(pred_summary["mean"])
+            degenerate = pred_summary[ci_col].isna() & identical_arms.reindex(arm_ids).to_numpy()
+            pred_summary.loc[degenerate, ci_col] = pred_summary.loc[degenerate, "mean"]
 
         for i, arm_id in enumerate(arm_ids):
             # Determine parameter name to use for lookingup the coefficient CIs
