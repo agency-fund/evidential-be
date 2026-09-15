@@ -44,7 +44,7 @@ dev = [
     "fastapi-typed-client @ git+https://github.com/dctaf/fastapi-typed-client-fork@evid/v0.4.0+evid.1",
     "mypy>=1.19.1",
     "pandas-stubs>=2.3.3,<3",
-    "pre-commit>=4.5.0,<4.6.0",
+    "prek>=0.5.3,<0.6.0",
     "pytest-asyncio>=1.2.0",
     "pytest-env>=1.7.0,<2",
     "pytest-mock>=3.15.1,<4",
