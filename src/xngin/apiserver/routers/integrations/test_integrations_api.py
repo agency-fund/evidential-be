@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 import httpx2
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xngin.apiserver.conftest import DatasourceMetadata, expect_status_code
@@ -257,3 +257,25 @@ async def test_refetch_journeys_from_turn(
         "journey-2": "journey-2-uuid",
         "journey-3": "journey-3-uuid",
     }
+
+
+async def test_refetch_journeys_404_when_the_organization_has_no_turn_connection(
+    testing_datasource,
+    xngin_session: AsyncSession,
+    iaclient: AdminIntegrationsAPIClient,
+    iclient: IntegrationsAPIClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """The webhook resolves and its token is accepted, but the connection it refreshes is gone."""
+    monkeypatch.setattr(httpx2, "AsyncClient", FakeAsyncClient)
+    org_id = testing_datasource.organization_id
+    response = iaclient.set_organization_turn_connection(
+        organization_id=org_id,
+        body=SetConnectionToTurnRequest(turn_api_token="a" * 335),
+    ).data
+
+    await xngin_session.execute(delete(tables.TurnConnection).where(tables.TurnConnection.organization_id == org_id))
+    await xngin_session.commit()
+
+    with expect_status_code(404, text="No Turn.io connection configured for this organization."):
+        iclient.refetch_journeys_from_turn(webhook_id=response.id, auth_token=response.auth_token)

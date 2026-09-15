@@ -1,5 +1,5 @@
 from datetime import UTC, datetime, timedelta
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import httpx2
 import pytest
@@ -590,3 +590,37 @@ async def test_get_experiment_sample_calls_freq_online_with_filters(
     get_call = sample_calls.calls[1]
     assert get_call.method == "GET"
     assert get_call.path.endswith("?create_if_none=false")
+
+
+async def test_journey_mapping_reports_payload_errors_when_the_path_resolves(
+    testing_datasource,
+    testing_design_spec: MABExperimentSpec,
+    aclient: AdminAPIClient,
+    iaclient: AdminIntegrationsAPIClient,
+):
+    """A malformed payload still reports its field errors, as long as the path names a visible experiment.
+
+    The datasource and experiment are resolved as dependencies, and FastAPI solves those before it
+    validates the request body. A request that is wrong in both places therefore reports the 404.
+    """
+    ds_id = testing_datasource.datasource_id
+    experiment_id = aclient.create_experiment(
+        datasource_id=ds_id, body=CreateExperimentRequest(design_spec=testing_design_spec)
+    ).data.experiment_id
+
+    # Deliberately malformed: the typed client would not let us build this request otherwise.
+    malformed_body: Any = {"wrong_field": "x"}
+
+    with expect_status_code(422, text="arm_to_journeys", detail_eq="Field required"):
+        iaclient.set_turn_arm_journey_mapping(
+            datasource_id=ds_id,
+            experiment_id=experiment_id,
+            body=malformed_body,
+        )
+
+    with expect_status_code(404, text="Datasource not found."):
+        iaclient.set_turn_arm_journey_mapping(
+            datasource_id="nonexistent-datasource",
+            experiment_id=experiment_id,
+            body=malformed_body,
+        )

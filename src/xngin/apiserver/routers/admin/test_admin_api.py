@@ -4349,3 +4349,32 @@ async def test_create_mab_dwh_bool_target_with_normal_reward_returns_422(testing
     )
     assert result.status == HTTPStatus.UNPROCESSABLE_CONTENT
     assert "only compatible with reward_type 'binary'" in str(result.data)
+
+
+def test_org_scoped_routes_reject_datasource_from_another_organization(
+    testing_datasource, testing_datasource_other, aclient: AdminAPIClient
+):
+    """Routes that name an organization must reject a datasource owned by a different organization.
+
+    The caller is a member of both organizations here, so only the path constraint keeps the datasource
+    from being reachable under the wrong organization.
+    """
+    ds_id = testing_datasource.datasource_id
+    experiment_id = aclient.create_experiment(
+        datasource_id=ds_id,
+        body=make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE),
+    ).data.experiment_id
+
+    with expect_status_code(404, text="Datasource not found."):
+        aclient.list_snapshots(
+            organization_id=testing_datasource_other.organization_id,
+            datasource_id=ds_id,
+            experiment_id=experiment_id,
+        )
+
+    listed = aclient.list_snapshots(
+        organization_id=testing_datasource.organization_id,
+        datasource_id=ds_id,
+        experiment_id=experiment_id,
+    ).data
+    assert listed.items == []
