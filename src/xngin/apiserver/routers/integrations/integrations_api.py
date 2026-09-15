@@ -11,10 +11,10 @@ from typing import Annotated
 import httpx2
 from fastapi import APIRouter, Depends, FastAPI, Header, status
 from loguru import logger
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from xngin.apiserver import constants
-from xngin.apiserver.dependencies import retrying_httpx_dependency, xngin_db_session
+from xngin.apiserver.dependencies import retrying_httpx_dependency, xngin_sync_db_session
 from xngin.apiserver.routers.admin.admin_api import GENERIC_SUCCESS
 from xngin.apiserver.routers.admin_integrations.admin_integrations_api import refresh_journeys_dict
 from xngin.apiserver.routers.common_api_types import TurnConfigResponse
@@ -52,7 +52,7 @@ router = APIRouter(
 """,
     response_model=TurnConfigResponse,
 )
-async def get_turn_app_config(
+def get_turn_app_config(
     experiment: Annotated[tables.Experiment, Depends(edeps.experiment)],
     turn_config: Annotated[tables.ExperimentTurnConfig, Depends(ideps.turn_config)],
 ) -> TurnConfigResponse:
@@ -78,9 +78,9 @@ async def get_turn_app_config(
         },
     },
 )
-async def receive_turn_journey_update_notification(
+def receive_turn_journey_update_notification(
     turn_webhook: Annotated[tables.Webhook, Depends(ideps.turn_webhook)],
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
     auth_token: Annotated[str | None, Header(alias=constants.HEADER_WEBHOOK_TOKEN)] = None,
 ):
     """
@@ -103,7 +103,7 @@ async def receive_turn_journey_update_notification(
             ).model_dump(),
         )
     )
-    await session.commit()
+    session.commit()
     return GENERIC_SUCCESS
 
 
@@ -117,10 +117,10 @@ async def receive_turn_journey_update_notification(
         },
     },
 )
-async def refetch_journeys_from_turn(
+def refetch_journeys_from_turn(
     turn_connection: Annotated[tables.TurnConnection, Depends(ideps.turn_connection)],
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    httpx_client: Annotated[httpx2.AsyncClient, Depends(retrying_httpx_dependency)],
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
+    httpx_client: Annotated[httpx2.Client, Depends(retrying_httpx_dependency)],
 ):
     """
     Refreshes the cached Turn.io journeys for the organization owning this webhook.
@@ -135,8 +135,8 @@ async def refetch_journeys_from_turn(
        rotating the connection's token (see `set_organization_turn_connection` in
        `admin_integrations_api.py`).
     """
-    journeys = await refresh_journeys_dict(turn_connection.get_turn_api_token(), httpx_client)
+    journeys = refresh_journeys_dict(turn_connection.get_turn_api_token(), httpx_client)
     turn_connection.journeys_dict = {journey.name: journey.uuid for journey in journeys}
-    await session.commit()
+    session.commit()
 
     return GENERIC_SUCCESS

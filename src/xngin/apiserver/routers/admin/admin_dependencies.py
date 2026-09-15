@@ -20,10 +20,9 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, Path, status
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import QueryableAttribute, selectinload
+from sqlalchemy.orm import QueryableAttribute, Session, selectinload
 
-from xngin.apiserver.dependencies import xngin_db_session
+from xngin.apiserver.dependencies import xngin_sync_db_session
 from xngin.apiserver.routers.auth.auth_dependencies import require_user_from_token
 from xngin.apiserver.routers.preloads import (
     EXPERIMENT_FIELDS_WITH_FILTERS,
@@ -50,23 +49,23 @@ def privileged_caller(
     return user
 
 
-async def privileged_target_user(
+def privileged_target_user(
     user_id: Annotated[str, Path(description="The ID of the user to act on.")],
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
     _caller: Annotated[tables.User, Depends(privileged_caller)],
 ) -> tables.User:
     """Resolves the user a route names, for privileged callers only.
 
     Requires {user_id} in the route path.
     """
-    target = await session.get(tables.User, user_id)
+    target = session.get(tables.User, user_id)
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
     return target
 
 
-async def load_organization_or_raise(
-    session: AsyncSession,
+def load_organization_or_raise(
+    session: Session,
     user: tables.User,
     organization_id: str,
     /,
@@ -82,15 +81,14 @@ async def load_organization_or_raise(
         stmt = stmt.join(tables.UserOrganization).where(tables.UserOrganization.user_id == user.id)
     if preload:
         stmt = stmt.options(*[selectinload(f) for f in preload])
-    result = await session.execute(stmt)
-    org = result.scalar_one_or_none()
+    org = session.execute(stmt).scalar_one_or_none()
     if org is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found.")
     return org
 
 
-async def _load_datasource_or_raise(
-    session: AsyncSession,
+def _load_datasource_or_raise(
+    session: Session,
     user: tables.User,
     datasource_id: str,
     /,
@@ -117,15 +115,14 @@ async def _load_datasource_or_raise(
         stmt = stmt.where(tables.Organization.id == organization_id)
     if preload:
         stmt = stmt.options(*[selectinload(f) for f in preload])
-    result = await session.execute(stmt)
-    ds = result.scalar_one_or_none()
+    ds = session.execute(stmt).scalar_one_or_none()
     if ds is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Datasource not found.")
     return ds
 
 
-async def _load_experiment_or_raise(
-    session: AsyncSession,
+def _load_experiment_or_raise(
+    session: Session,
     ds: tables.Datasource,
     experiment_id: str,
     *,
@@ -148,8 +145,7 @@ async def _load_experiment_or_raise(
     options = build_preload_options(preload, nested_preload)
     if options:
         stmt = stmt.options(*options)
-    result = await session.execute(stmt)
-    exp = result.scalar_one_or_none()
+    exp = session.execute(stmt).scalar_one_or_none()
     if exp is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found.")
     return exp
@@ -164,13 +160,13 @@ class _Organization:
     def __init__(self, *, preload: list[QueryableAttribute] | None = None) -> None:
         self.preload = preload
 
-    async def __call__(
+    def __call__(
         self,
         organization_id: Annotated[str, Path()],
-        session: Annotated[AsyncSession, Depends(xngin_db_session)],
+        session: Annotated[Session, Depends(xngin_sync_db_session)],
         user: Annotated[tables.User, Depends(require_user_from_token)],
     ) -> tables.Organization:
-        return await load_organization_or_raise(session, user, organization_id, preload=self.preload)
+        return load_organization_or_raise(session, user, organization_id, preload=self.preload)
 
 
 organization = _Organization()
@@ -186,13 +182,13 @@ class _Datasource:
     def __init__(self, *, preload: list[QueryableAttribute] | None = None) -> None:
         self.preload = preload
 
-    async def __call__(
+    def __call__(
         self,
         datasource_id: Annotated[str, Path()],
-        session: Annotated[AsyncSession, Depends(xngin_db_session)],
+        session: Annotated[Session, Depends(xngin_sync_db_session)],
         user: Annotated[tables.User, Depends(require_user_from_token)],
     ) -> tables.Datasource:
-        return await _load_datasource_or_raise(session, user, datasource_id, preload=self.preload)
+        return _load_datasource_or_raise(session, user, datasource_id, preload=self.preload)
 
 
 datasource = _Datasource()
@@ -200,10 +196,10 @@ datasource_with_organization = _Datasource(preload=[tables.Datasource.organizati
 datasource_with_api_keys = _Datasource(preload=[tables.Datasource.api_keys, tables.Datasource.organization])
 
 
-async def _org_datasource(
+def _org_datasource(
     organization_id: Annotated[str, Path()],
     datasource_id: Annotated[str, Path()],
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> tables.Datasource:
     """Resolves the datasource a route names, within the organization it names.
@@ -213,7 +209,7 @@ async def _org_datasource(
     Routes that name the organization in their path must constrain the datasource lookup to it, so that a
     datasource belonging to another of the caller's organizations cannot be reached under the wrong path.
     """
-    return await _load_datasource_or_raise(session, user, datasource_id, organization_id=organization_id)
+    return _load_datasource_or_raise(session, user, datasource_id, organization_id=organization_id)
 
 
 class _Experiment:
@@ -234,13 +230,13 @@ class _Experiment:
         self.preload = preload
         self.nested_preload = nested_preload
 
-    async def __call__(
+    def __call__(
         self,
         experiment_id: Annotated[str, Path()],
         ds: Annotated[tables.Datasource, Depends(datasource)],
-        session: Annotated[AsyncSession, Depends(xngin_db_session)],
+        session: Annotated[Session, Depends(xngin_sync_db_session)],
     ) -> tables.Experiment:
-        return await _load_experiment_or_raise(
+        return _load_experiment_or_raise(
             session,
             ds,
             experiment_id,
@@ -255,6 +251,8 @@ experiment_for_analysis = _Experiment(
     preload=[tables.Experiment.contexts],
     nested_preload=[EXPERIMENT_FIELDS_WITH_FILTERS],
 )
+# commit_experiment_impl reads both of these to build the experiment.created event.
+experiment_for_commit = _Experiment(preload=[tables.Experiment.webhooks, tables.Experiment.datasource])
 experiment_for_csv_export = _Experiment(nested_preload=[EXPERIMENT_FIELDS_WITH_FILTERS])
 experiment_for_ui = _Experiment(
     preload=[tables.Experiment.webhooks, tables.Experiment.contexts],
@@ -265,28 +263,28 @@ experiment_for_ui = _Experiment(
 experiment_for_sample_calls = _Experiment(preload=[tables.Experiment.experiment_filters])
 
 
-async def org_experiment(
+def org_experiment(
     experiment_id: Annotated[str, Path()],
     ds: Annotated[tables.Datasource, Depends(_org_datasource)],
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
 ) -> tables.Experiment:
     """Resolves the experiment a route names, within the organization it names.
 
     Requires {organization_id}, {datasource_id}, and {experiment_id} in the route path.
     """
-    return await _load_experiment_or_raise(session, ds, experiment_id)
+    return _load_experiment_or_raise(session, ds, experiment_id)
 
 
-async def webhook(
+def webhook(
     webhook_id: Annotated[str, Path()],
     org: Annotated[tables.Organization, Depends(organization)],
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
 ) -> tables.Webhook:
     """Resolves the webhook a route names.
 
     Requires {organization_id} and {webhook_id} in the route path.
     """
-    wh = await session.scalar(
+    wh = session.scalar(
         select(tables.Webhook).where(
             tables.Webhook.id == webhook_id,
             tables.Webhook.organization_id == org.id,
@@ -297,16 +295,16 @@ async def webhook(
     return wh
 
 
-async def event(
+def event(
     event_id: Annotated[str, Path()],
     org: Annotated[tables.Organization, Depends(organization)],
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
 ) -> tables.Event:
     """Resolves the event a route names.
 
     Requires {organization_id} and {event_id} in the route path.
     """
-    evt = await session.scalar(
+    evt = session.scalar(
         select(tables.Event).where(
             tables.Event.id == event_id,
             tables.Event.organization_id == org.id,
@@ -317,16 +315,16 @@ async def event(
     return evt
 
 
-async def snapshot(
+def snapshot(
     snapshot_id: Annotated[str, Path()],
     exp: Annotated[tables.Experiment, Depends(org_experiment)],
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
 ) -> tables.Snapshot:
     """Resolves the snapshot a route names.
 
     Requires {organization_id}, {datasource_id}, {experiment_id}, and {snapshot_id} in the route path.
     """
-    snap = await session.scalar(
+    snap = session.scalar(
         select(tables.Snapshot).where(
             tables.Snapshot.experiment_id == exp.id,
             tables.Snapshot.id == snapshot_id,

@@ -55,10 +55,10 @@ router = APIRouter(
 
 
 @router.post("/callback")
-async def auth_callback(
+def auth_callback(
     body: CallbackRequest,
     oidc_config: Annotated[GoogleOidcConfig, Depends(get_google_configuration)],
-    httpx_client: Annotated[httpx2.AsyncClient, Depends(retrying_httpx_dependency)],
+    httpx_client: Annotated[httpx2.Client, Depends(retrying_httpx_dependency)],
     session_cryptor: Annotated[SessionTokenCryptor, Depends()],
 ) -> CallbackResponse:
     """Exchanges the OIDC authorization code and verifier for an identity token (JWT), and then creates a session token.
@@ -67,7 +67,7 @@ async def auth_callback(
     verifying the identity token from Google, we return a signed application-specific token that the frontend can
     use to authenticate the user for the remainder of their session.
     """
-    id_token = await _exchange_code_for_idtoken(oidc_config, httpx_client, body.code, body.code_verifier)
+    id_token = _exchange_code_for_idtoken(oidc_config, httpx_client, body.code, body.code_verifier)
     decoded = _validate_idtoken(oidc_config, id_token=id_token, nonce=body.nonce)
     session_token = session_cryptor.encode(
         Principal(
@@ -81,11 +81,11 @@ async def auth_callback(
     return CallbackResponse(session_token=session_token)
 
 
-async def _exchange_code_for_idtoken(
-    oidc_config: GoogleOidcConfig, httpx_client: httpx2.AsyncClient, code: str, code_verifier: str
+def _exchange_code_for_idtoken(
+    oidc_config: GoogleOidcConfig, httpx_client: httpx2.Client, code: str, code_verifier: str
 ):
     token_endpoint = oidc_config.config["token_endpoint"]
-    token_response = await httpx_client.post(
+    token_response = httpx_client.post(
         token_endpoint,
         data={
             "client_id": flags.CLIENT_ID,

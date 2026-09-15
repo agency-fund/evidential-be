@@ -3,6 +3,7 @@ import csv
 import io
 import json
 import math
+import threading
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -19,6 +20,7 @@ from pydantic import HttpUrl
 from xngin.apiserver import flags
 from xngin.apiserver.conftest import convert_dwh_to_create_api_dsn, expect_status_code
 from xngin.apiserver.dns import safe_resolve
+from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.routers.admin.admin_api_converters import CREDENTIALS_UNAVAILABLE_MESSAGE
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddExperimentCreatedWebhookRequest,
@@ -170,7 +172,7 @@ def create_org_with_default_datasource(aclient: AdminAPIClient, org_name: str) -
     return org_id, datasource_id
 
 
-async def make_freq_online_experiment(
+def make_freq_online_experiment(
     aclient: AdminAPIClient, datasource_id: str, end_date: datetime | None = None
 ) -> GetExperimentForUiResponse:
     """Create a frequentist online experiment using our API (rather than a fixture)."""
@@ -207,7 +209,7 @@ def normalize_bandit_analysis(response: BanditExperimentAnalysisResponse) -> Ban
     return response.model_copy(update={"created_at": datetime(2000, 1, 1, tzinfo=UTC)})
 
 
-async def make_bandit_online_experiment(
+def make_bandit_online_experiment(
     aclient: AdminAPIClient,
     datasource_id: str,
     *,
@@ -245,7 +247,7 @@ def make_cmab_context_inputs(
 
 
 @pytest.fixture(name="testing_experiment")
-async def fixture_testing_experiment(testing_datasource, aclient: AdminAPIClient) -> TestExperiment:
+def fixture_testing_experiment(testing_datasource, aclient: AdminAPIClient) -> TestExperiment:
     """Create a committed preassigned experiment through the Admin API."""
     datasource_id = testing_datasource.datasource_id
     created = aclient.create_experiment(
@@ -278,7 +280,7 @@ async def fixture_testing_experiment(testing_datasource, aclient: AdminAPIClient
 
 
 @pytest.fixture(name="testing_bandit_experiment")
-async def fixture_testing_bandit_experiment(
+def fixture_testing_bandit_experiment(
     request,
     testing_datasource,
     aclient: AdminAPIClient,
@@ -286,7 +288,7 @@ async def fixture_testing_bandit_experiment(
 ) -> TestExperiment:
     """Create a committed bandit experiment and optional outcomes through public APIs."""
     experiment_type, prior_type, reward_type, num_participants = request.param
-    experiment = await make_bandit_online_experiment(
+    experiment = make_bandit_online_experiment(
         aclient,
         testing_datasource.datasource_id,
         experiment_type=experiment_type,
@@ -885,7 +887,7 @@ def test_delete_datasource_scopes_resource_to_organization(
         )
 
 
-async def test_webhook_lifecycle(aclient: AdminAPIClient):
+def test_webhook_lifecycle(aclient: AdminAPIClient):
     """Test creating, updating, and deleting a webhook."""
     # Create an organization.
     org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="test_webhook_lifecycle")).data.id
@@ -1026,7 +1028,7 @@ def test_update_webhook_rejects_ssrf_url(aclient: AdminAPIClient):
         )
 
 
-async def test_lifecycle_with_db(testing_datasource, aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
+def test_lifecycle_with_db(testing_datasource, aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
     """Exercises the admin API methods that require an external database."""
     # Add the privileged user to the organization.
     aclient.add_member_to_organization(
@@ -1224,12 +1226,12 @@ async def test_lifecycle_with_db(testing_datasource, aclient: AdminAPIClient, ac
     )
 
 
-async def test_delete_experiment_scopes_resource_to_datasource(
+def test_delete_experiment_scopes_resource_to_datasource(
     testing_datasource,
     aclient: AdminAPIClient,
     aclient_unpriv: AdminAPIClient,
 ):
-    victim_experiment = await make_freq_online_experiment(aclient, testing_datasource.datasource_id)
+    victim_experiment = make_freq_online_experiment(aclient, testing_datasource.datasource_id)
     victim_experiment_id = victim_experiment.config.experiment_id
     _caller_org_id, caller_datasource_id = create_org_with_default_datasource(
         aclient_unpriv, "experiment-delete-caller-org"
@@ -1248,7 +1250,7 @@ async def test_delete_experiment_scopes_resource_to_datasource(
     assert response.config.experiment_id == victim_experiment_id
 
 
-async def test_abandon_experiment(testing_datasource, aclient: AdminAPIClient):
+def test_abandon_experiment(testing_datasource, aclient: AdminAPIClient):
     datasource_id = testing_datasource.datasource_id
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
@@ -1277,7 +1279,7 @@ async def test_abandon_experiment(testing_datasource, aclient: AdminAPIClient):
     assert response.data.config.state == ExperimentState.ABANDONED
 
 
-async def test_power_check_with_unbalanced_arms(testing_datasource, aclient: AdminAPIClient):
+def test_power_check_with_unbalanced_arms(testing_datasource, aclient: AdminAPIClient):
     """Test power check endpoint with balanced vs unbalanced arms."""
     ds_id = testing_datasource.datasource_id
     design_spec = PreassignedFrequentistExperimentSpec(
@@ -1331,7 +1333,7 @@ async def test_power_check_with_unbalanced_arms(testing_datasource, aclient: Adm
     assert metric_analysis3.target_n == math.ceil(metric_analysis2.target_n * 0.2 / 0.10)
 
 
-async def test_power_check_also_sets_pct_change_with_desired_n(testing_datasource, aclient: AdminAPIClient):
+def test_power_check_also_sets_pct_change_with_desired_n(testing_datasource, aclient: AdminAPIClient):
     """design_spec.desired_n populates pct_change_with_desired_n on power check analyses."""
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
@@ -1377,7 +1379,7 @@ async def test_power_check_also_sets_pct_change_with_desired_n(testing_datasourc
     assert "There are enough units available." in analysis.msg.msg
 
 
-async def test_power_check_when_sample_size_insufficient_and_desired_n_should_otherwise_pass(
+def test_power_check_when_sample_size_insufficient_and_desired_n_should_otherwise_pass(
     testing_datasource,
     aclient: AdminAPIClient,
 ):
@@ -1419,7 +1421,7 @@ async def test_power_check_when_sample_size_insufficient_and_desired_n_should_ot
     assert analysis.pct_change_with_desired_n == pytest.approx(0.0498, rel=1e-3)
 
 
-async def test_power_check_when_sample_size_insufficient_and_desired_n_has_data_validation_error(
+def test_power_check_when_sample_size_insufficient_and_desired_n_has_data_validation_error(
     testing_datasource,
     aclient: AdminAPIClient,
 ):
@@ -1484,7 +1486,41 @@ def test_power_check_when_sample_size_sufficient_and_desired_n_fails(testing_dat
         aclient.power_check(datasource_id=testing_datasource.datasource_id, body=PowerRequest(design_spec=design_spec))
 
 
-async def test_power_check_validations(testing_datasource, aclient: AdminAPIClient):
+def test_power_check_answers_504_when_the_warehouse_stalls(testing_datasource, aclient: AdminAPIClient, mocker):
+    """The handler has always declared this 504; until DwhSession owned a deadline it could not produce it."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="power check timeout",
+        description="power check timeout",
+        table_name="dwh",
+        primary_key="id",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="control", arm_description="Control group"),
+            Arm(arm_name="treatment", arm_description="Treatment group"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+    )
+    release = threading.Event()
+
+    def stall(*_args, **_kwargs):
+        release.wait()
+
+    mocker.patch.object(DwhSession, "_inspect_table_blocking", stall)
+    mocker.patch("xngin.apiserver.flags.DWH_TIMEOUT_SECS", 0.05)
+    try:
+        with expect_status_code(504, message_contains="did not finish inspecting a table"):
+            aclient.power_check(
+                datasource_id=testing_datasource.datasource_id, body=PowerRequest(design_spec=design_spec)
+            )
+    finally:
+        release.set()
+
+
+def test_power_check_validations(testing_datasource, aclient: AdminAPIClient):
     """Test power check validations."""
     ds_id = testing_datasource.datasource_id
     design_spec = PreassignedFrequentistExperimentSpec(
@@ -1536,7 +1572,7 @@ async def test_power_check_validations(testing_datasource, aclient: AdminAPIClie
         aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=bad_design_spec))
 
 
-async def test_create_experiment_with_invalid_design_url(testing_datasource, aclient: AdminAPIClient):
+def test_create_experiment_with_invalid_design_url(testing_datasource, aclient: AdminAPIClient):
     datasource_id = testing_datasource.datasource_id
     # Work with the raw json to construct a bad request
     request = make_createexperimentrequest_json(desired_n=1)
@@ -1556,7 +1592,7 @@ async def test_create_experiment_with_invalid_design_url(testing_datasource, acl
         aclient.create_experiment(datasource_id=datasource_id, body=request)
 
 
-async def test_create_experiment_with_primary_key_as_strata_fails(testing_datasource, aclient: AdminAPIClient):
+def test_create_experiment_with_primary_key_as_strata_fails(testing_datasource, aclient: AdminAPIClient):
     datasource_id = testing_datasource.datasource_id
     request = make_createexperimentrequest_json(desired_n=1)
     primary_key = request["design_spec"]["primary_key"]
@@ -1565,7 +1601,7 @@ async def test_create_experiment_with_primary_key_as_strata_fails(testing_dataso
         aclient.create_experiment(datasource_id=datasource_id, body=request)
 
 
-async def test_create_and_get_freq_preassigned_experiment(
+def test_create_and_get_freq_preassigned_experiment(
     testing_datasource,
     use_deterministic_random,
     aclient: AdminAPIClient,
@@ -1660,7 +1696,7 @@ async def test_create_and_get_freq_preassigned_experiment(
     assert abs(num_control - num_treat) <= 5  # Allow some wiggle room
 
 
-async def test_create_freq_preassigned_experiment_fields_use_roundtrip(
+def test_create_freq_preassigned_experiment_fields_use_roundtrip(
     testing_datasource,
     aclient: AdminAPIClient,
 ):
@@ -2062,7 +2098,7 @@ def test_create_online_mab_and_cmab_experiment_with_arm_weights(
             assert arm.covariance is not None
 
 
-async def test_update_experiment_invalid_impact(testing_experiment, aclient: AdminAPIClient):
+def test_update_experiment_invalid_impact(testing_experiment, aclient: AdminAPIClient):
     """Test updating an experiment's metadata."""
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
@@ -2080,7 +2116,7 @@ async def test_update_experiment_invalid_impact(testing_experiment, aclient: Adm
         aclient.update_experiment(datasource_id=datasource_id, experiment_id=experiment_id, body=request)
 
 
-async def test_update_experiment(testing_experiment, aclient: AdminAPIClient):
+def test_update_experiment(testing_experiment, aclient: AdminAPIClient):
     """Test updating an experiment's metadata."""
     organization_id = testing_experiment.organization_id
     datasource_id = testing_experiment.datasource_id
@@ -2116,7 +2152,7 @@ async def test_update_experiment(testing_experiment, aclient: AdminAPIClient):
 
 
 @pytest.mark.parametrize("url", ["http", "http:", "http://", "http:///", "https:///", "postgres://"])
-async def test_update_experiment_url_invalid(testing_experiment, aclient: AdminAPIClient, url):
+def test_update_experiment_url_invalid(testing_experiment, aclient: AdminAPIClient, url):
     with expect_status_code(422) as status_match:
         aclient.update_experiment(
             datasource_id=testing_experiment.datasource_id,
@@ -2136,7 +2172,7 @@ async def test_update_experiment_url_invalid(testing_experiment, aclient: AdminA
         ("https://drive.google.com/...?q=1", "https://drive.google.com/...?q=1"),
     ],
 )
-async def test_update_experiment_url_valid(testing_experiment, aclient: AdminAPIClient, url, expected_url):
+def test_update_experiment_url_valid(testing_experiment, aclient: AdminAPIClient, url, expected_url):
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
     aclient.update_experiment(
@@ -2147,7 +2183,7 @@ async def test_update_experiment_url_valid(testing_experiment, aclient: AdminAPI
     assert parsed_response.config.design_spec.design_url.encoded_string() == expected_url
 
 
-async def test_update_experiment_url_null_when_empty(testing_experiment, aclient: AdminAPIClient):
+def test_update_experiment_url_null_when_empty(testing_experiment, aclient: AdminAPIClient):
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
 
@@ -2167,7 +2203,7 @@ async def test_update_experiment_url_null_when_empty(testing_experiment, aclient
     assert parsed_response.config.design_spec.design_url is None, parsed_response
 
 
-async def test_update_experiment_invalid(testing_datasource, testing_experiment, aclient: AdminAPIClient):
+def test_update_experiment_invalid(testing_datasource, testing_experiment, aclient: AdminAPIClient):
     """Test experiment update validation checks."""
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
@@ -2196,7 +2232,7 @@ async def test_update_experiment_invalid(testing_datasource, testing_experiment,
         )
 
 
-async def test_update_arm(testing_experiment, aclient: AdminAPIClient):
+def test_update_arm(testing_experiment, aclient: AdminAPIClient):
     """Test updating an arm's metadata."""
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
@@ -2213,7 +2249,7 @@ async def test_update_arm(testing_experiment, aclient: AdminAPIClient):
     assert arm.arm_description == "updated desc"
 
 
-async def test_update_arm_invalid(testing_datasource, testing_experiment, aclient: AdminAPIClient):
+def test_update_arm_invalid(testing_datasource, testing_experiment, aclient: AdminAPIClient):
     """Test arm update validation checks."""
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
@@ -2340,7 +2376,7 @@ def test_cmab_experiments_analyze(testing_bandit_experiment, aclient: AdminAPICl
         assert analysis.post_pred_stdev is not None
 
 
-async def test_create_and_assign_mab_dwh_rejects_pushed_outcome(
+def test_create_and_assign_mab_dwh_rejects_pushed_outcome(
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
@@ -2348,7 +2384,7 @@ async def test_create_and_assign_mab_dwh_rejects_pushed_outcome(
     """End-to-end path for a MAB-DWH experiment through the public APIs: create it via the admin
     client and assign a participant. Outcomes arrive from the organization's data warehouse via
     xngin-dwh-pull, so the push endpoint rejects them and the draw stays unresolved."""
-    experiment = await make_bandit_online_experiment(
+    experiment = make_bandit_online_experiment(
         aclient,
         testing_datasource.datasource_id,
         experiment_type=ExperimentsType.MAB_ONLINE_DWH,
@@ -2389,12 +2425,12 @@ async def test_create_and_assign_mab_dwh_rejects_pushed_outcome(
     assert updated.observed_at is None
 
 
-async def test_mab_experiments_analyze_ignores_unobserved_draws_with_single_outcome(
+def test_mab_experiments_analyze_ignores_unobserved_draws_with_single_outcome(
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
 ):
-    experiment = await make_bandit_online_experiment(
+    experiment = make_bandit_online_experiment(
         aclient, testing_datasource.datasource_id, prior_type=PriorTypes.NORMAL, reward_type=LikelihoodTypes.NORMAL
     )
 
@@ -2433,12 +2469,12 @@ async def test_mab_experiments_analyze_ignores_unobserved_draws_with_single_outc
     )
 
 
-async def test_mab_experiments_analyze_ignores_unobserved_draws_with_multiple_outcomes(
+def test_mab_experiments_analyze_ignores_unobserved_draws_with_multiple_outcomes(
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
 ):
-    experiment = await make_bandit_online_experiment(
+    experiment = make_bandit_online_experiment(
         aclient, testing_datasource.datasource_id, prior_type=PriorTypes.NORMAL, reward_type=LikelihoodTypes.NORMAL
     )
 
@@ -2478,12 +2514,12 @@ async def test_mab_experiments_analyze_ignores_unobserved_draws_with_multiple_ou
     )
 
 
-async def test_mab_experiments_analyze_with_assigned_but_unobserved_participants_matches_prior(
+def test_mab_experiments_analyze_with_assigned_but_unobserved_participants_matches_prior(
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
 ):
-    experiment = await make_bandit_online_experiment(
+    experiment = make_bandit_online_experiment(
         aclient, testing_datasource.datasource_id, prior_type=PriorTypes.NORMAL, reward_type=LikelihoodTypes.NORMAL
     )
 
@@ -2507,19 +2543,19 @@ async def test_mab_experiments_analyze_with_assigned_but_unobserved_participants
         assert analysis.post_pred_stdev == analysis.prior_pred_stdev
 
 
-async def test_analyze_experiment_with_no_participants(testing_datasource, aclient: AdminAPIClient):
+def test_analyze_experiment_with_no_participants(testing_datasource, aclient: AdminAPIClient):
     datasource_id = testing_datasource.datasource_id
-    experiment_id = (await make_freq_online_experiment(aclient, datasource_id)).config.experiment_id
+    experiment_id = (make_freq_online_experiment(aclient, datasource_id)).config.experiment_id
 
     with expect_status_code(422, detail_eq="No participants found for experiment."):
         aclient.analyze_experiment(datasource_id=datasource_id, experiment_id=experiment_id)
 
 
-async def test_analyze_experiment_whose_assignments_have_no_dwh_data(
+def test_analyze_experiment_whose_assignments_have_no_dwh_data(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     datasource_id = testing_datasource.datasource_id
-    experiment_id = (await make_freq_online_experiment(aclient, datasource_id)).config.experiment_id
+    experiment_id = (make_freq_online_experiment(aclient, datasource_id)).config.experiment_id
 
     eclient.get_assignment(api_key=testing_datasource.key, experiment_id=experiment_id, participant_id="0")
 
@@ -2530,13 +2566,13 @@ async def test_analyze_experiment_whose_assignments_have_no_dwh_data(
         aclient.analyze_experiment(datasource_id=datasource_id, experiment_id=experiment_id)
 
 
-async def test_analyze_experiment_with_no_assignments_in_one_arm_yet(
+def test_analyze_experiment_with_no_assignments_in_one_arm_yet(
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
 ):
     datasource_id = testing_datasource.datasource_id
-    experiment_id = (await make_freq_online_experiment(aclient, datasource_id)).config.experiment_id
+    experiment_id = (make_freq_online_experiment(aclient, datasource_id)).config.experiment_id
 
     expected_num_assignments = 3
     assigned_arm_id: str | None = None
@@ -2668,7 +2704,7 @@ def test_admin_experiment_state_setting(
         assert experiment.config.state == expected_state
 
 
-async def test_delete_apikey_not_authorized(aclient: AdminAPIClient):
+def test_delete_apikey_not_authorized(aclient: AdminAPIClient):
     """Checks for a 403 when deleting a resource that doesn't exist.
 
     This is equivalent to testing that a user does not have access to a datasource.
@@ -2681,22 +2717,22 @@ async def test_delete_apikey_not_authorized(aclient: AdminAPIClient):
         aclient.delete_api_key(datasource_id="not-a-datasource", api_key_id="irrelevant")
 
 
-async def test_delete_apikey_authorized_and_nonexistent(testing_datasource, aclient: AdminAPIClient):
+def test_delete_apikey_authorized_and_nonexistent(testing_datasource, aclient: AdminAPIClient):
     with expect_status_code(404):
         aclient.delete_api_key(datasource_id=testing_datasource.datasource_id, api_key_id="sample-key-id")
 
 
-async def test_delete_apikey_authorized_and_nonexistent_allow_missing(testing_datasource, aclient: AdminAPIClient):
+def test_delete_apikey_authorized_and_nonexistent_allow_missing(testing_datasource, aclient: AdminAPIClient):
     aclient.delete_api_key(
         datasource_id=testing_datasource.datasource_id, api_key_id="sample-key-id", allow_missing=True
     )
 
 
-async def test_delete_apikey_authorized_and_exists(testing_datasource, aclient: AdminAPIClient):
+def test_delete_apikey_authorized_and_exists(testing_datasource, aclient: AdminAPIClient):
     aclient.delete_api_key(datasource_id=testing_datasource.datasource_id, api_key_id=testing_datasource.key_id)
 
 
-async def test_delete_apikey_authorized_and_exists_allow_missing(testing_datasource, aclient: AdminAPIClient):
+def test_delete_apikey_authorized_and_exists_allow_missing(testing_datasource, aclient: AdminAPIClient):
     aclient.delete_api_key(
         datasource_id=testing_datasource.datasource_id,
         api_key_id=testing_datasource.key_id,
@@ -2704,7 +2740,7 @@ async def test_delete_apikey_authorized_and_exists_allow_missing(testing_datasou
     )
 
 
-async def test_delete_apikey_authorized_and_exists_idempotency(testing_datasource, aclient: AdminAPIClient):
+def test_delete_apikey_authorized_and_exists_idempotency(testing_datasource, aclient: AdminAPIClient):
     aclient.delete_api_key(datasource_id=testing_datasource.datasource_id, api_key_id=testing_datasource.key_id)
 
     with expect_status_code(404):
@@ -2717,7 +2753,7 @@ async def test_delete_apikey_authorized_and_exists_idempotency(testing_datasourc
     )
 
 
-async def test_manage_apikeys(testing_datasource, aclient: AdminAPIClient):
+def test_manage_apikeys(testing_datasource, aclient: AdminAPIClient):
     ds_id = testing_datasource.datasource_id
     first_key_id = testing_datasource.key_id
 
@@ -2736,7 +2772,7 @@ async def test_manage_apikeys(testing_datasource, aclient: AdminAPIClient):
     aclient.delete_api_key(datasource_id=ds_id, api_key_id=first_key_id)
 
 
-async def test_experiment_webhook_integration(testing_datasource, aclient: AdminAPIClient):
+def test_experiment_webhook_integration(testing_datasource, aclient: AdminAPIClient):
     """Test creating an experiment with webhook associations and verifying webhook IDs in response."""
     org_id = testing_datasource.organization_id
     datasource_id = testing_datasource.datasource_id
@@ -3044,12 +3080,12 @@ def test_snapshots(aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
         )
 
 
-async def test_delete_snapshot_scopes_resource_to_datasource(
+def test_delete_snapshot_scopes_resource_to_datasource(
     aclient: AdminAPIClient,
     aclient_unpriv: AdminAPIClient,
 ):
     victim_org_id, victim_datasource_id = create_org_with_default_datasource(aclient, "snapshot-delete-victim-org")
-    victim_experiment = await make_freq_online_experiment(aclient, victim_datasource_id)
+    victim_experiment = make_freq_online_experiment(aclient, victim_datasource_id)
     snapshot = aclient.create_snapshot(
         organization_id=victim_org_id,
         datasource_id=victim_datasource_id,
@@ -3218,7 +3254,7 @@ def test_snapshot_with_nan(testing_datasource, aclient: AdminAPIClient):
         assert analysis.is_baseline == is_baseline
 
 
-async def test_delete_experiment_data_not_authorized(client):
+def test_delete_experiment_data_not_authorized(client):
     """Test that deleting experiment data without authorization returns 401."""
     response = client.request(
         "DELETE",
@@ -3229,7 +3265,7 @@ async def test_delete_experiment_data_not_authorized(client):
     assert response.status_code == 401
 
 
-async def test_delete_experiment_data_experiment_not_found(testing_datasource, aclient: AdminAPIClient):
+def test_delete_experiment_data_experiment_not_found(testing_datasource, aclient: AdminAPIClient):
     """Test that deleting data for a non-existent experiment returns 404."""
     ds_id = testing_datasource.datasource_id
     with expect_status_code(404):
@@ -3238,7 +3274,7 @@ async def test_delete_experiment_data_experiment_not_found(testing_datasource, a
         )
 
 
-async def test_delete_experiment_data_assignments(
+def test_delete_experiment_data_assignments(
     testing_experiment: TestExperiment,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
@@ -3277,7 +3313,7 @@ async def test_delete_experiment_data_assignments(
     [(ExperimentsType.MAB_ONLINE, PriorTypes.BETA, LikelihoodTypes.BERNOULLI, 10)],
     indirect=True,
 )
-async def test_delete_experiment_data_draws(
+def test_delete_experiment_data_draws(
     testing_bandit_experiment: TestExperiment,
     aclient: AdminAPIClient,
 ):
@@ -3303,7 +3339,7 @@ async def test_delete_experiment_data_draws(
     assert all(a.size == 0 for a in experiment.config.assign_summary.arm_sizes)
 
 
-async def test_delete_experiment_data_snapshots(
+def test_delete_experiment_data_snapshots(
     testing_experiment: TestExperiment,
     aclient: AdminAPIClient,
 ):
@@ -3345,7 +3381,7 @@ async def test_delete_experiment_data_snapshots(
         )
 
 
-async def test_delete_experiment_data_multiple(
+def test_delete_experiment_data_multiple(
     testing_experiment: TestExperiment,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
@@ -3387,7 +3423,7 @@ async def test_delete_experiment_data_multiple(
     assert snapshots_after.items == []
 
 
-async def test_delete_experiment_data_none_specified(
+def test_delete_experiment_data_none_specified(
     testing_experiment: TestExperiment,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
@@ -3419,9 +3455,7 @@ async def test_delete_experiment_data_none_specified(
     assert [item.id for item in snapshots_after.items] == [snapshot.id]
 
 
-async def test_create_freq_online_experiment_with_table_name_and_primary_key(
-    testing_datasource, aclient: AdminAPIClient
-):
+def test_create_freq_online_experiment_with_table_name_and_primary_key(testing_datasource, aclient: AdminAPIClient):
     """Test creating an experiment with table_name and primary_key."""
     ds_id = testing_datasource.datasource_id
 
@@ -3456,9 +3490,7 @@ def test_create_experiment_freq_design_spec_requires_table_name(testing_datasour
         aclient.create_experiment(datasource_id=ds_id, body=request_json)
 
 
-async def test_create_preassigned_experiment_with_table_name_and_primary_key(
-    testing_datasource, aclient: AdminAPIClient
-):
+def test_create_preassigned_experiment_with_table_name_and_primary_key(testing_datasource, aclient: AdminAPIClient):
     ds_id = testing_datasource.datasource_id
     request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_PREASSIGNED, desired_n=100)
     experiment_request = CreateExperimentRequest.model_validate(request_json)
@@ -3700,7 +3732,7 @@ def _create_experiment_created_event(aclient: AdminAPIClient, *, datasource_id: 
     return next(event for event in events if event.type == "experiment.created" and event.link == expected_link)
 
 
-async def test_resend_organization_event_missing_event(aclient: AdminAPIClient):
+def test_resend_organization_event_missing_event(aclient: AdminAPIClient):
     """Resending an unknown event id returns 404."""
     org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="resend-missing")).data.id
     with expect_status_code(404, text="Event not found"):
@@ -3736,7 +3768,7 @@ def test_resend_organization_event_cross_org_isolation(
         )
 
 
-async def test_list_experiments(
+def test_list_experiments(
     testing_datasource,
     testing_datasource_other,
     aclient: AdminAPIClient,
@@ -3798,7 +3830,7 @@ async def test_list_experiments(
         assert isinstance(item.design_spec, OnlineFrequentistExperimentSpec)
 
 
-async def test_list_experiments_empty(
+def test_list_experiments_empty(
     testing_datasource,
     aclient: AdminAPIClient,
 ):
@@ -3808,7 +3840,7 @@ async def test_list_experiments_empty(
     assert experiments.items == []
 
 
-async def test_power_check_with_missing_cluster_key_raises(testing_datasource, aclient: AdminAPIClient):
+def test_power_check_with_missing_cluster_key_raises(testing_datasource, aclient: AdminAPIClient):
     """Power check raises a validation error if the cluster key column does not exist in the table."""
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
@@ -3832,7 +3864,7 @@ async def test_power_check_with_missing_cluster_key_raises(testing_datasource, a
         )
 
 
-async def test_power_check_with_manual_icc_and_nulls_in_cluster_key(testing_datasource, aclient: AdminAPIClient):
+def test_power_check_with_manual_icc_and_nulls_in_cluster_key(testing_datasource, aclient: AdminAPIClient):
     """Power check accepts user-supplied ICC values and returns cluster analysis and handles nulls correctly."""
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
@@ -3885,7 +3917,7 @@ async def test_power_check_with_manual_icc_and_nulls_in_cluster_key(testing_data
     assert analysis.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
 
 
-async def test_power_check_with_desired_n_clusters(testing_datasource, aclient: AdminAPIClient):
+def test_power_check_with_desired_n_clusters(testing_datasource, aclient: AdminAPIClient):
     """desired_n_clusters populates pct_change_with_desired_n, equivalent to desired_n = clusters * avg_cluster_size."""
 
     def make_design_spec(*, desired_n: int | None = None, desired_n_clusters: int | None = None):
@@ -3938,7 +3970,7 @@ async def test_power_check_with_desired_n_clusters(testing_datasource, aclient: 
     assert both_analysis.pct_change_with_desired_n == clusters_analysis.pct_change_with_desired_n
 
 
-async def test_power_check_with_db_derived_icc_and_nulls_in_cluster_key(testing_datasource, aclient: AdminAPIClient):
+def test_power_check_with_db_derived_icc_and_nulls_in_cluster_key(testing_datasource, aclient: AdminAPIClient):
     """DB-derived ICC excludes rows with a null cluster key, and available_n is consistent.
 
     Uses wide_dwh with cluster_key="age", which has 28 null rows in a 1000-row table.
@@ -3991,7 +4023,7 @@ async def test_power_check_with_db_derived_icc_and_nulls_in_cluster_key(testing_
     assert analysis.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
 
 
-async def test_power_check_with_calculated_icc(testing_datasource, aclient: AdminAPIClient):
+def test_power_check_with_calculated_icc(testing_datasource, aclient: AdminAPIClient):
     """Power check calculates ICC from the database when cluster_column is provided."""
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
@@ -4030,7 +4062,7 @@ async def test_power_check_with_calculated_icc(testing_datasource, aclient: Admi
     assert analysis.num_clusters_total > 0
 
 
-async def test_power_check_cluster_with_manual_and_db_derived_metrics(testing_datasource, aclient: AdminAPIClient):
+def test_power_check_cluster_with_manual_and_db_derived_metrics(testing_datasource, aclient: AdminAPIClient):
     """Per-metric ICC: user-provided overrides apply only when icc is set; other metrics use the DWH."""
     manual_icc = 0.01
     manual_avg_cluster_size = 42.0
@@ -4234,7 +4266,7 @@ def test_analyze_cluster_preassigned_experiment(testing_datasource, aclient: Adm
         assert not np.isnan(arm_analysis.std_error)
 
 
-async def test_create_freq_preassigned_experiment_with_missing_cluster_key_raises(
+def test_create_freq_preassigned_experiment_with_missing_cluster_key_raises(
     testing_datasource,
     aclient: AdminAPIClient,
 ):
@@ -4264,7 +4296,7 @@ async def test_create_freq_preassigned_experiment_with_missing_cluster_key_raise
         aclient.create_experiment(datasource_id=datasource_id, body=experiment_request, random_state=42)
 
 
-async def test_create_freq_preassigned_experiment_cluster_key_has_nulls(
+def test_create_freq_preassigned_experiment_cluster_key_has_nulls(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """Creating a cluster-randomized experiment with a cluster key that has nulls should exclude those rows."""
@@ -4333,7 +4365,7 @@ async def test_create_freq_preassigned_experiment_cluster_key_has_nulls(
         assert arm_size.cluster_count == len(clusters_by_arm[arm_id])
 
 
-async def test_create_mab_dwh_bool_target_with_normal_reward_returns_422(testing_datasource, aclient: AdminAPIClient):
+def test_create_mab_dwh_bool_target_with_normal_reward_returns_422(testing_datasource, aclient: AdminAPIClient):
     """The API rejects an incompatible Normal reward for a boolean MAB-DWH target."""
     request = make_create_online_bandit_experiment_request(
         experiment_type=ExperimentsType.MAB_ONLINE_DWH,

@@ -11,7 +11,7 @@ import pandas as pd
 from pandas import DataFrame
 from psycopg.types.json import Jsonb
 from sqlalchemy import Table, insert
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from xngin.apiserver.routers.common_api_types import BalanceCheck, StrataTypedDict
 from xngin.apiserver.sql.queries import with_driver_connection
@@ -107,8 +107,8 @@ def assign_treatments_with_balance(
     )
 
 
-async def bulk_insert_arm_assignments(
-    xngin_session: AsyncSession,
+def bulk_insert_arm_assignments(
+    xngin_session: Session,
     experiment_id: str,
     arm_ids: list[str],
     participant_id_col: str,
@@ -116,7 +116,7 @@ async def bulk_insert_arm_assignments(
     assignments: AssignmentResult,
     cluster_key_col: str | None = None,
 ) -> None:
-    """Bulk insert arm assignments into the database via async COPY.
+    """Bulk insert arm assignments into the database via COPY.
 
     Args:
         xngin_session: sqlalchemy session
@@ -128,8 +128,8 @@ async def bulk_insert_arm_assignments(
         assignments: AssignmentResult containing assignments and balance check results. AssignmentResult.arm_pop
           indexes are parallel to indexes on arm_ids.
     """
-    with performance.timing("_bulk_insert_async"):
-        await _bulk_insert_async(
+    with performance.timing("_bulk_insert"):
+        _bulk_insert(
             xngin_session=xngin_session,
             experiment_id=experiment_id,
             arm_ids=arm_ids,
@@ -141,16 +141,16 @@ async def bulk_insert_arm_assignments(
 
     arm_stats_rows = []
     for i, arm_id in enumerate(arm_ids):
-        row: dict[str, int | str] = {"arm_id": arm_id, "population": int(assignments.arm_pop[i])}
+        stats_row: dict[str, int | str] = {"arm_id": arm_id, "population": int(assignments.arm_pop[i])}
         if assignments.arm_cluster_pop is not None:
-            row["cluster_count"] = int(assignments.arm_cluster_pop[i])
-        arm_stats_rows.append(row)
-    await xngin_session.execute(insert(tables.ArmStats).values(arm_stats_rows))
+            stats_row["cluster_count"] = int(assignments.arm_cluster_pop[i])
+        arm_stats_rows.append(stats_row)
+    xngin_session.execute(insert(tables.ArmStats).values(arm_stats_rows))
 
 
-async def _bulk_insert_async(
+def _bulk_insert(
     *,
-    xngin_session: AsyncSession,
+    xngin_session: Session,
     experiment_id: str,
     arm_ids: list[str],
     participant_id_col: str,
@@ -168,10 +168,10 @@ async def _bulk_insert_async(
         copy_sql = "COPY arm_assignments (experiment_id, participant_id, cluster_key, arm_id, strata) FROM STDIN"
         copy_types = ["text", "text", "text", "text", "jsonb"]
 
-    async with (
+    with (
         with_driver_connection(xngin_session) as driver_conn,
-        driver_conn.cursor() as cur,
-        cur.copy(copy_sql) as copy,
+        driver_conn.cursor() as cursor,
+        cursor.copy(copy_sql) as copy,
     ):
         copy.set_types(copy_types)
         for treatment_assignment, row in zip(assignments.treatment_ids, data, strict=True):
@@ -190,9 +190,9 @@ async def _bulk_insert_async(
             arm_id = arm_ids[treatment_assignment]
             participant_id = str(row_mapping[participant_id_col])
             if cluster_key_col is None:
-                await copy.write_row((experiment_id, participant_id, arm_id, Jsonb(strata, dumps=orjson.dumps)))
+                copy.write_row((experiment_id, participant_id, arm_id, Jsonb(strata, dumps=orjson.dumps)))
             else:
-                await copy.write_row((
+                copy.write_row((
                     experiment_id,
                     participant_id,
                     str(row_mapping[cluster_key_col]),

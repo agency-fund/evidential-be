@@ -67,20 +67,20 @@ def test_path_parameters_match_what_handlers_and_dependencies_consume():
 def test_both_kinds_of_disagreement_are_reported():
     """Guards the check itself: a passing suite never exercises the reporting above."""
 
-    async def needs_organization(organization_id: Annotated[str, Path()], experiment_id: Annotated[str, Path()]) -> str:
+    def needs_organization(organization_id: Annotated[str, Path()], experiment_id: Annotated[str, Path()]) -> str:
         return organization_id
 
-    async def ignores_organization(experiment_id: Annotated[str, Path()]) -> str:
+    def ignores_organization(experiment_id: Annotated[str, Path()]) -> str:
         return experiment_id
 
     probe = FastAPI()
 
     @probe.get("/experiments/{experiment_id}")
-    async def wants_a_parameter_the_path_lacks(dep: Annotated[str, Depends(needs_organization)]) -> str:
+    def wants_a_parameter_the_path_lacks(dep: Annotated[str, Depends(needs_organization)]) -> str:
         return dep
 
     @probe.get("/organizations/{organization_id}/experiments/{experiment_id}")
-    async def drops_the_organization_scope(dep: Annotated[str, Depends(ignores_organization)]) -> str:
+    def drops_the_organization_scope(dep: Annotated[str, Depends(ignores_organization)]) -> str:
         return dep
 
     reported = _mismatches(probe.routes)

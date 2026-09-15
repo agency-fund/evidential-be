@@ -1,7 +1,5 @@
 """Command line tool for various xngin-related operations."""
 
-import asyncio
-import functools
 import json
 import logging
 import shutil
@@ -15,12 +13,11 @@ from typing import Annotated
 import typer
 from email_validator import EmailNotValidError, validate_email
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from xngin.cli.commands import create_testing_dwh as _create_testing_dwh_cmd
 from xngin.cli.commands import databases as _databases_cmd
-from xngin.cli.common import cli_async_engine, cli_engine, console, fail, write_file_atomically
+from xngin.cli.common import cli_engine, console, fail, write_file_atomically
 from xngin.xsecrets import secretservice
 
 app = typer.Typer(help=__doc__)
@@ -32,8 +29,6 @@ _databases_cmd.register(app)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
 
 secretservice.setup(allow_noop=True)
-
-async_command = lambda f: functools.wraps(f)(lambda *args, **kwargs: asyncio.run(f(*args, **kwargs)))  # noqa: E731
 
 
 class Base64OrJson(StrEnum):
@@ -174,8 +169,7 @@ def validate_arg_is_email(email: str):
 
 
 @app.command()
-@async_command
-async def add_user(
+def add_user(
     database_url: Annotated[
         str,
         typer.Option(
@@ -228,37 +222,35 @@ async def add_user(
             "XNGIN_DEVDWH_DSN is unset.[/bold yellow]"
         )
 
-    engine = cli_async_engine(database_url)
-    async with AsyncSession(engine) as session:
+    engine = cli_engine(database_url)
+    with Session(engine) as session:
         try:
-            user = await create_entities_for_first_time_user(
-                session, tables.User(email=email, is_privileged=privileged), dwh
-            )
-            await session.commit()
-            await session.refresh(user)
+            user = create_entities_for_first_time_user(session, tables.User(email=email, is_privileged=privileged), dwh)
+            session.commit()
+            session.refresh(user)
             console.print("\n[bold green]User added successfully:[/bold green]")
             console.print(f"User ID: [cyan]{user.id}[/cyan]")
             console.print(f"Email: [cyan]{user.email}[/cyan]")
             console.print(f"Privileged: [cyan]{user.is_privileged}[/cyan]")
             api_keys = {}
-            for organization in await user.awaitable_attrs.organizations:
+            for organization in user.organizations:
                 console.print(f"Organization: [cyan]{organization.name}[/cyan] (ID: {organization.id})")
-                for datasource in await organization.awaitable_attrs.datasources:
+                for datasource in organization.datasources:
                     from xngin.apiserver import apikeys  # noqa: PLC0415
 
                     label, key = apikeys.make_key()
                     key_hash = apikeys.hash_key_or_raise(key)
                     api_keys[datasource.id] = key
-                    (await datasource.awaitable_attrs.api_keys).append(tables.ApiKey(id=label, key=key_hash))
+                    datasource.api_keys.append(tables.ApiKey(id=label, key=key_hash))
                     console.print(
                         f"  Datasource: [cyan]{datasource.name}[/cyan] "
                         f"(ID: {datasource.id}) "
                         f"[blue](API Key: {key})[/blue]"
                     )
-                    for experiment in await datasource.awaitable_attrs.experiments:
+                    for experiment in datasource.experiments:
                         console.print(f"    Experiment: [cyan]{experiment.name}[/cyan] (ID: {experiment.id})")
         except IntegrityError as err:
-            await session.rollback()
+            session.rollback()
             fail(str(err))
 
 

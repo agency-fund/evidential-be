@@ -1,9 +1,9 @@
 # mypy: disable-error-code="misc"
-from collections.abc import AsyncGenerator
+from collections.abc import Generator
 
 from fastapi.responses import StreamingResponse
 from psycopg import sql
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import AssignmentTypedDict, StrataTypedDict
@@ -19,16 +19,16 @@ class CsvStreamingResponse(StreamingResponse):
     media_type = "text/csv"
 
 
-async def _get_assignment_csv_strata_names_from_experiment(experiment: tables.Experiment) -> list[str]:
+def _get_assignment_csv_strata_names_from_experiment(experiment: tables.Experiment) -> list[str]:
     if experiment.experiment_type not in {ExperimentsType.FREQ_ONLINE.value, ExperimentsType.FREQ_PREASSIGNED.value}:
         return []
-    return sorted([ef.field_name for ef in await experiment.awaitable_attrs.experiment_fields if ef.is_strata])
+    return sorted([ef.field_name for ef in experiment.experiment_fields if ef.is_strata])
 
 
-async def _get_assignment_cluster_key_name_from_experiment(experiment: tables.Experiment) -> str | None:
+def _get_assignment_cluster_key_name_from_experiment(experiment: tables.Experiment) -> str | None:
     if experiment.experiment_type not in {ExperimentsType.FREQ_ONLINE.value, ExperimentsType.FREQ_PREASSIGNED.value}:
         return None
-    return next((ef.field_name for ef in await experiment.awaitable_attrs.experiment_fields if ef.is_cluster_key), None)
+    return next((ef.field_name for ef in experiment.experiment_fields if ef.is_cluster_key), None)
 
 
 def _build_freq_experiment_assignments_select_query(
@@ -143,12 +143,12 @@ def _build_bandit_experiment_assignments_select_query(
     """
 
 
-async def get_experiment_assignments_as_csv_impl(
-    xngin_session: AsyncSession,
+def get_experiment_assignments_as_csv_impl(
+    xngin_session: Session,
     experiment: tables.Experiment,
 ) -> CsvStreamingResponse:
-    strata_names = await _get_assignment_csv_strata_names_from_experiment(experiment)
-    cluster_key_name = await _get_assignment_cluster_key_name_from_experiment(experiment)
+    strata_names = _get_assignment_csv_strata_names_from_experiment(experiment)
+    cluster_key_name = _get_assignment_cluster_key_name_from_experiment(experiment)
     if experiment.experiment_type in {ExperimentsType.FREQ_ONLINE.value, ExperimentsType.FREQ_PREASSIGNED.value}:
         select_query = _build_freq_experiment_assignments_select_query(
             experiment.id, experiment.experiment_type, strata_names, cluster_key_name
@@ -166,13 +166,13 @@ async def get_experiment_assignments_as_csv_impl(
     )
 
 
-async def get_experiment_assignments_impl(
-    xngin_session: AsyncSession, experiment: tables.Experiment
-) -> AsyncGenerator[AssignmentTypedDict]:
+def get_experiment_assignments_impl(
+    xngin_session: Session, experiment: tables.Experiment
+) -> Generator[AssignmentTypedDict]:
     match experiment.experiment_type:
         case ExperimentsType.FREQ_ONLINE.value | ExperimentsType.FREQ_PREASSIGNED.value:
-            strata_names = await _get_assignment_csv_strata_names_from_experiment(experiment)
-            cluster_key_name = await _get_assignment_cluster_key_name_from_experiment(experiment)
+            strata_names = _get_assignment_csv_strata_names_from_experiment(experiment)
+            cluster_key_name = _get_assignment_cluster_key_name_from_experiment(experiment)
             select_query = _build_freq_experiment_assignments_select_query(
                 experiment.id,
                 experiment.experiment_type,
@@ -181,7 +181,7 @@ async def get_experiment_assignments_impl(
                 with_microseconds=True,
             )
             if cluster_key_name is None:
-                async for assignment in stream(xngin_session, select_query, JSON_STREAM_FETCH_SIZE_ROWS):
+                for assignment in stream(xngin_session, select_query, JSON_STREAM_FETCH_SIZE_ROWS):
                     participant_id, arm_id, arm_name, created_at, *strata_values = assignment
                     strata: list[StrataTypedDict] = [
                         {"field_name": strata_names[i], "strata_value": strata_values[i]}
@@ -198,7 +198,7 @@ async def get_experiment_assignments_impl(
                         "context_values": None,
                     }
             else:
-                async for assignment in stream(xngin_session, select_query, JSON_STREAM_FETCH_SIZE_ROWS):
+                for assignment in stream(xngin_session, select_query, JSON_STREAM_FETCH_SIZE_ROWS):
                     participant_id, cluster_key, arm_id, arm_name, created_at, *strata_values = assignment
                     strata = [
                         {"field_name": strata_names[i], "strata_value": strata_values[i]}
@@ -225,7 +225,7 @@ async def get_experiment_assignments_impl(
                 include_observed_at=True,
                 include_context_vals=True,
             )
-            async for assignment in stream(xngin_session, select_query, JSON_STREAM_FETCH_SIZE_ROWS):
+            for assignment in stream(xngin_session, select_query, JSON_STREAM_FETCH_SIZE_ROWS):
                 participant_id, arm_id, arm_name, created_at, outcome, observed_at, context_values = assignment
                 yield {
                     "participant_id": participant_id,
