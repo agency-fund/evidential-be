@@ -1,32 +1,25 @@
 from collections.abc import Sequence
 
-import sqlalchemy
 from sqlalchemy import (
     Float,
     Integer,
     Label,
-    Select,
     Table,
     cast,
-    distinct,
     func,
     select,
 )
 from sqlalchemy.engine.row import RowMapping
 from sqlalchemy.orm import Session
 
-from xngin.apiserver.dwh.inspection_types import FieldDescriptor
 from xngin.apiserver.dwh.query_constructors import create_query_filters
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import (
     DesignSpecMetric,
     DesignSpecMetricRequest,
     Filter,
-    GetFiltersResponseDiscrete,
-    GetFiltersResponseElement,
-    GetFiltersResponseNumericOrDate,
 )
-from xngin.apiserver.routers.common_enums import FilterClass, MetricType
+from xngin.apiserver.routers.common_enums import MetricType
 
 
 def get_stats_on_metrics(
@@ -80,75 +73,6 @@ def get_stats_on_metrics(
         )
 
     return metrics_to_return
-
-
-def get_stats_on_filters(
-    session: Session,
-    sa_table: Table,
-    db_schema: dict[str, FieldDescriptor],
-    filter_schema: dict[str, FieldDescriptor],
-    expensive: bool,
-) -> list[GetFiltersResponseElement]:
-    """Runs SELECT queries for metrics (min, max, distinct, etc) on filter fields.
-
-    This async method runs the queries against the synchronous Session in a thread.
-
-    Args:
-        session: SQLAlchemy session for customer data warehouse
-        sa_table: SQLAlchemy Table object
-        db_schema: The latest table schema in the database described as FieldDescriptors
-        filter_schema: The latest filter schema in the participant type config described as FieldDescriptors
-        expensive: If true, we run expensive min/max/distinct queries on all the columns.
-
-    Returns:
-        A mapper function that takes (column_name, column_descriptor) and returns GetFiltersResponseElement
-    """
-
-    def query(col_name: str, ptype_fd: FieldDescriptor) -> GetFiltersResponseElement:
-        db_col = db_schema.get(col_name)
-        if not db_col:
-            raise ValueError(f"Column {col_name} not found in schema.")
-
-        filter_class = db_col.data_type.filter_class(col_name)
-
-        # Collect metadata on the values in the database.
-        sa_col = sa_table.columns[col_name]
-        match filter_class:
-            case FilterClass.DISCRETE:
-                distinct_values = None
-                if expensive:
-                    stmt: Select = (
-                        sqlalchemy.select(distinct(sa_col)).where(sa_col.is_not(None)).limit(1000).order_by(sa_col)
-                    )
-                    result_discrete = session.scalars(stmt)
-                    distinct_values = [str(v) for v in result_discrete]
-                return GetFiltersResponseDiscrete(
-                    field_name=col_name,
-                    data_type=db_col.data_type,
-                    relations=filter_class.valid_relations(),
-                    description=ptype_fd.description,
-                    distinct_values=distinct_values,
-                )
-            case FilterClass.NUMERIC:
-                min_, max_ = None, None
-                if expensive:
-                    min_, max_ = session.execute(
-                        sqlalchemy.select(sqlalchemy.func.min(sa_col), sqlalchemy.func.max(sa_col)).where(
-                            sa_col.is_not(None)
-                        )
-                    ).one()
-                return GetFiltersResponseNumericOrDate(
-                    field_name=col_name,
-                    data_type=db_col.data_type,
-                    relations=filter_class.valid_relations(),
-                    description=ptype_fd.description,
-                    min=min_,
-                    max=max_,
-                )
-            case _:
-                raise RuntimeError("unexpected filter class")
-
-    return [query(col_name, ptype_fd) for col_name, ptype_fd in filter_schema.items() if db_schema.get(col_name)]
 
 
 def get_cluster_outcome_data(
