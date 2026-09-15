@@ -1604,4 +1604,4 @@ async def test_update_bandit_arm_with_outcome_rejected_for_mab_dwh(
         json={"outcome": 1.0},
     )
     assert response.status_code == HTTPStatus.UNPROCESSABLE_CONTENT, response.content
-    assert "reads outcomes from a connected data warehouse" in response.text
+    assert "pulls its outcomes from a connected data warehouse" in response.text
