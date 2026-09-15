@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import sqlalchemy
 from sqlalchemy import (
@@ -151,22 +151,26 @@ def get_stats_on_filters(
     return [query(col_name, ptype_fd) for col_name, ptype_fd in filter_schema.items() if db_schema.get(col_name)]
 
 
-def get_cluster_outcome_data(
+def get_cluster_sufficient_stats(
     session: Session,
     sa_table: Table,
     cluster_column_name: str,
     outcome_column_names: Sequence[str],
     filters: list[Filter],
+    outcome_shifts: Mapping[str, float] | None = None,
 ) -> Sequence[RowMapping]:
-    """Fetch cluster and outcome data for cluster power statistics in a single query.
+    """Fetch per-cluster sufficient statistics for cluster power calculations.
 
-    Each row returned is a SQLAlchemy ``RowMapping`` (by column name; same keys as
-    ``cluster_column_name`` / ``outcome_column_names``). Outcomes are SQL-cast to Float.
+    Returns one ``RowMapping`` per cluster with ``rows__count`` (all rows, including rows
+    whose outcomes are null: metrics are outcomes that may be filled in as the experiment
+    runs, so cluster-size statistics must count the full population) and, per outcome,
+    ``{name}__count``, ``{name}__sum``, and ``{name}__sumsq`` over that outcome's non-null
+    values. ICC and cluster-size statistics can be computed exactly from these without
+    fetching individual rows. Outcomes are SQL-cast to Float.
 
-    Rows are restricted to non-null cluster keys, but rows where an outcome is null are
-    included (with a None value): metrics are outcomes that may be filled in as the
-    experiment runs, so cluster-size statistics must count the full population, while ICC
-    calculations drop each outcome's nulls individually.
+    ``outcome_shifts`` optionally maps outcome names to a constant subtracted from each
+    value before summing (e.g. the metric's approximate mean). ICC is shift-invariant, and
+    centered sums avoid the precision loss of summing squares of large raw values.
     """
     if cluster_column_name not in sa_table.c:
         raise LateValidationError(f"Cluster column '{cluster_column_name}' not found in table")
@@ -177,7 +181,7 @@ def get_cluster_outcome_data(
     cluster_col = sa_table.c[cluster_column_name]
     filters_expr = create_query_filters(sa_table, filters)
 
-    outcome_cols = []
+    select_columns: list[Label] = [func.count().label("rows__count")]
     for outcome_column_name in outcome_column_names:
         outcome_col = sa_table.c[outcome_column_name]
         # PostgreSQL cannot cast BOOLEAN directly to FLOAT; go through INTEGER first.
@@ -185,11 +189,16 @@ def get_cluster_outcome_data(
             cast_outcome = cast(cast(outcome_col, Integer), Float)
         else:
             cast_outcome = cast(outcome_col, Float)
-        outcome_cols.append(cast_outcome.label(outcome_column_name))
+        shift = (outcome_shifts or {}).get(outcome_column_name, 0.0)
+        shifted = cast_outcome - shift
+        select_columns.extend((
+            func.count(outcome_col).label(f"{outcome_column_name}__count"),
+            func.sum(shifted).label(f"{outcome_column_name}__sum"),
+            func.sum(shifted * shifted).label(f"{outcome_column_name}__sumsq"),
+        ))
 
-    query = select(cluster_col, *outcome_cols).where(cluster_col.is_not(None), *filters_expr)
+    query = select(*select_columns).where(cluster_col.is_not(None), *filters_expr).group_by(cluster_col)
 
-    # Explicitly ask for dict-like RowMapping objects for downstream use of each row as a dict.
     results = session.execute(query).mappings().fetchall()
 
     if not results:
