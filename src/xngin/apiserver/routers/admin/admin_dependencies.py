@@ -89,6 +89,28 @@ async def load_organization_or_raise(
     return org
 
 
+class _Organization:
+    """Resolves the organization a route names.
+
+    Requires {organization_id} in the route path.
+    """
+
+    def __init__(self, *, preload: list[QueryableAttribute] | None = None) -> None:
+        self.preload = preload
+
+    async def __call__(
+        self,
+        organization_id: Annotated[str, Path()],
+        session: Annotated[AsyncSession, Depends(xngin_db_session)],
+        user: Annotated[tables.User, Depends(require_user_from_token)],
+    ) -> tables.Organization:
+        return await load_organization_or_raise(session, user, organization_id, preload=self.preload)
+
+
+organization = _Organization()
+organization_with_members = _Organization(preload=[tables.Organization.users])
+
+
 async def _load_datasource_or_raise(
     session: AsyncSession,
     user: tables.User,
@@ -122,59 +144,6 @@ async def _load_datasource_or_raise(
     if ds is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Datasource not found.")
     return ds
-
-
-async def _load_experiment_or_raise(
-    session: AsyncSession,
-    ds: tables.Datasource,
-    experiment_id: str,
-    *,
-    preload: list[QueryableAttribute] | None = None,
-    nested_preload: list[PreloadChain] | None = None,
-) -> tables.Experiment:
-    """Reads the requested experiment (related to the given datasource) from the database.
-
-    The .arms attribute will be eagerly loaded due to its frequent use and small size.
-
-    Raises 404 if not found.
-    """
-    stmt = (
-        select(tables.Experiment)
-        .options(selectinload(tables.Experiment.arms))
-        .where(tables.Experiment.datasource_id == ds.id)
-        .where(tables.Experiment.id == experiment_id)
-    )
-
-    options = build_preload_options(preload, nested_preload)
-    if options:
-        stmt = stmt.options(*options)
-    result = await session.execute(stmt)
-    exp = result.scalar_one_or_none()
-    if exp is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found.")
-    return exp
-
-
-class _Organization:
-    """Resolves the organization a route names.
-
-    Requires {organization_id} in the route path.
-    """
-
-    def __init__(self, *, preload: list[QueryableAttribute] | None = None) -> None:
-        self.preload = preload
-
-    async def __call__(
-        self,
-        organization_id: Annotated[str, Path()],
-        session: Annotated[AsyncSession, Depends(xngin_db_session)],
-        user: Annotated[tables.User, Depends(require_user_from_token)],
-    ) -> tables.Organization:
-        return await load_organization_or_raise(session, user, organization_id, preload=self.preload)
-
-
-organization = _Organization()
-organization_with_members = _Organization(preload=[tables.Organization.users])
 
 
 class _Datasource:
@@ -214,6 +183,37 @@ async def _org_datasource(
     datasource belonging to another of the caller's organizations cannot be reached under the wrong path.
     """
     return await _load_datasource_or_raise(session, user, datasource_id, organization_id=organization_id)
+
+
+async def _load_experiment_or_raise(
+    session: AsyncSession,
+    ds: tables.Datasource,
+    experiment_id: str,
+    *,
+    preload: list[QueryableAttribute] | None = None,
+    nested_preload: list[PreloadChain] | None = None,
+) -> tables.Experiment:
+    """Reads the requested experiment (related to the given datasource) from the database.
+
+    The .arms attribute will be eagerly loaded due to its frequent use and small size.
+
+    Raises 404 if not found.
+    """
+    stmt = (
+        select(tables.Experiment)
+        .options(selectinload(tables.Experiment.arms))
+        .where(tables.Experiment.datasource_id == ds.id)
+        .where(tables.Experiment.id == experiment_id)
+    )
+
+    options = build_preload_options(preload, nested_preload)
+    if options:
+        stmt = stmt.options(*options)
+    result = await session.execute(stmt)
+    exp = result.scalar_one_or_none()
+    if exp is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found.")
+    return exp
 
 
 class _Experiment:
