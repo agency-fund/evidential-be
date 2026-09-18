@@ -1051,26 +1051,26 @@ async def _fetch_outcomes_and_context_for_arm(
     bandits, i.e. when the current draw carries context.
     """
     is_cmab = experiment_type == ExperimentsType.CMAB_ONLINE
-    subq = (
+    last_100_draws = (
         select(tables.Draw.outcome, tables.Draw.context_vals)
         .where(
             tables.Draw.experiment_id == experiment_id,
             tables.Draw.arm_id == arm_id,
             tables.Draw.outcome.is_not(None),
         )
-        .order_by(tables.Draw.created_at.desc())
+        .order_by(tables.Draw.observed_at.desc())
         .limit(100)  # TODO: Make draw limiting configurable
         .subquery()
     )
-    agg_cols = [func.array_agg(subq.c.outcome)]
+    outcomes = [func.array_agg(last_100_draws.c.outcome)]
     if is_cmab:
-        agg_cols.append(func.array_agg(subq.c.context_vals))
-    agg_result = await xngin_session.execute(select(*agg_cols).select_from(subq))
-    agg_row = agg_result.one()
-
-    all_outcomes = agg_row[0]
-    all_context_vals = agg_row[1] if is_cmab else None
-    return all_outcomes, all_context_vals
+        context_vals = [func.array_agg(last_100_draws.c.context_vals)]
+        results = await xngin_session.execute(select(*outcomes, *context_vals).select_from(last_100_draws))
+        outcomes, context_vals = results.one()
+        return outcomes, context_vals
+    results = await xngin_session.execute(select(*outcomes).select_from(last_100_draws))
+    outcomes = results.one()[0]
+    return outcomes, None
 
 
 class PartialUpdateDrawBeta(TypedDict):
@@ -1161,7 +1161,7 @@ async def update_bandit_arm_with_outcome_impl(
 
     arm_to_update = next(arm for arm in experiment.arms if arm.id == draw_record.arm_id)
 
-    # Get all prior draws for this arm, sorted by creation date
+    # Get all prior draws for this arm, sorted by observation date
     outcomes, context_vals = await _fetch_outcomes_and_context_for_arm(
         xngin_session,
         experiment_id=experiment.id,
