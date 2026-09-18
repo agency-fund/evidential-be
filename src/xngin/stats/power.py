@@ -106,6 +106,7 @@ def check_power(
     n_arms: int,
     arm_weights: list[float] | None = None,
     desired_n: int | None = None,
+    desired_n_clusters: int | None = None,
     power: float = 0.8,
     alpha: float = 0.05,
 ) -> list[MetricPowerAnalysis]:
@@ -123,6 +124,9 @@ def check_power(
         arm_weights: Optional list of weights (summing to 100) for unbalanced arms, else assumes equal allocation.
         desired_n: Optional desired sample size. If provided, calculates MDE for the desired_n
             instead of the minimum sample size for a desired effect. Applies to all metrics.
+        desired_n_clusters: Optional desired number of clusters for cluster-randomized designs.
+            Converted to a per-metric desired sample size using each metric's avg_cluster_size.
+            Takes precedence over desired_n. Every metric must have avg_cluster_size set.
 
     Returns:
         List of `MetricPowerAnalysis` results, one item per metric in the same order as the input `metrics`.
@@ -130,26 +134,35 @@ def check_power(
         Each analysis object if successful should always include `target_n`, i.e. the minimum sample
         size for a desired effect.  If the analysis is not successful, see its `msg` for the reason.
 
-        Optionally, if `desired_n` is provided, it will also include `pct_change_with_desired_n`,
-        i.e. the corresponding MDE as a % change from baseline for the desired sample size. This MDE
-        calculation is done in a best-effort manner and assumes there are enough units to meet the
-        desired_n, so it can still succeed despite insufficient available units. If it fails,
-        `pct_change_with_desired_n` will be None.
+        Optionally, if `desired_n` or `desired_n_clusters` is provided, it will also include
+        `pct_change_with_desired_n`, i.e. the corresponding MDE as a % change from baseline for the
+        desired sample size. This MDE calculation is done in a best-effort manner and assumes there
+        are enough units to meet the desired size, so it can still succeed despite insufficient
+        available units. If it fails, `pct_change_with_desired_n` will be None.
     """
     analyses = []
     for metric in metrics:
+        metric_desired_n = desired_n
+        if desired_n_clusters is not None:
+            if metric.avg_cluster_size is None:
+                raise StatsPowerError(
+                    f"desired_n_clusters requires cluster statistics, but metric {metric.field_name} "
+                    "has no avg_cluster_size."
+                )
+            metric_desired_n = round(desired_n_clusters * metric.avg_cluster_size)
+
         try:
             analysis = analyze_metric_power(
                 metric=metric, n_arms=n_arms, arm_weights=arm_weights, power=power, alpha=alpha
             )
 
-            # Optional desired_n MDE calculation added to the min sample size analysis:
-            if desired_n is not None:
+            # Optional desired-size MDE calculation added to the min sample size analysis:
+            if metric_desired_n is not None:
                 mde_analysis = analyze_metric_power(
                     metric=metric,
                     n_arms=n_arms,
                     arm_weights=arm_weights,
-                    desired_n=desired_n,
+                    desired_n=metric_desired_n,
                     power=power,
                     alpha=alpha,
                 )

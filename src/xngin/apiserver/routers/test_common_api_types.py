@@ -2,6 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from xngin.apiserver.routers.common_api_types import (
+    CreateExperimentRequest,
     Filter,
     MABDwhExperimentSpec,
     PreassignedFrequentistExperimentSpec,
@@ -240,8 +241,8 @@ def test_cluster_key_and_strata_are_mutually_exclusive():
         PreassignedFrequentistExperimentSpec.model_validate(valid_spec)
 
 
-def test_desired_n_clusters_requires_cluster_key():
-    invalid_spec = {
+def _preassigned_spec_payload(**overrides):
+    payload = {
         "experiment_type": "freq_preassigned",
         "experiment_name": "test",
         "description": "test",
@@ -256,11 +257,44 @@ def test_desired_n_clusters_requires_cluster_key():
         "strata": [],
         "metrics": [{"field_name": "metric1", "metric_pct_change": 0.1}],
         "filters": [],
-        "desired_n_clusters": 10,
     }
+    payload.update(overrides)
+    return payload
+
+
+def test_desired_n_clusters_requires_cluster_key():
+    invalid_spec = _preassigned_spec_payload(desired_n_clusters=10)
 
     with pytest.raises(ValidationError, match="desired_n_clusters can only be set when cluster_key is set"):
         PreassignedFrequentistExperimentSpec.model_validate(invalid_spec)
+
+
+def test_preassigned_spec_allows_optional_sample_size():
+    """Power check reuses this spec, so desired_n / desired_n_clusters stay optional here."""
+    individual = PreassignedFrequentistExperimentSpec.model_validate(_preassigned_spec_payload())
+    assert individual.desired_n is None
+    assert individual.desired_n_clusters is None
+
+    clustered = PreassignedFrequentistExperimentSpec.model_validate(_preassigned_spec_payload(cluster_key="school_id"))
+    assert clustered.desired_n is None
+    assert clustered.desired_n_clusters is None
+
+
+def test_create_experiment_request_requires_desired_n_for_individual_preassigned():
+    with pytest.raises(ValidationError, match="Individual-randomized preassigned experiments must set desired_n"):
+        CreateExperimentRequest.model_validate({"design_spec": _preassigned_spec_payload()})
+
+    CreateExperimentRequest.model_validate({"design_spec": _preassigned_spec_payload(desired_n=100)})
+
+
+def test_create_experiment_request_requires_desired_n_clusters_for_clustered_preassigned():
+    clustered_without_n = _preassigned_spec_payload(cluster_key="school_id")
+    with pytest.raises(ValidationError, match="Cluster-randomized preassigned experiments must set desired_n_clusters"):
+        CreateExperimentRequest.model_validate({"design_spec": clustered_without_n})
+
+    CreateExperimentRequest.model_validate({
+        "design_spec": _preassigned_spec_payload(cluster_key="school_id", desired_n_clusters=10)
+    })
 
 
 def test_mab_dwh_primary_key_and_target_must_differ():

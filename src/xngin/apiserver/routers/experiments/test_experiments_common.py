@@ -291,7 +291,7 @@ def make_design_spec_clustered(
     )
 
 
-def make_create_preassigned_experiment_request(desired_n: int | None = None) -> CreateExperimentRequest:
+def make_create_preassigned_experiment_request(desired_n: int) -> CreateExperimentRequest:
     request = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_PREASSIGNED, desired_n=desired_n)
     return CreateExperimentRequest.model_validate(request)
 
@@ -825,24 +825,6 @@ async def test_create_preassigned_experiment_impl_cluster_assignment(xngin_sessi
         assert arm_id is not None
         assert arm_size.cluster_count is not None
         assert arm_size.cluster_count == len(arm_to_clusters[arm_id])
-
-
-async def test_create_experiment_impl_clustered_requires_desired_n_clusters(xngin_session, testing_datasource):
-    design_spec = make_design_spec_clustered(desired_n_clusters=None)
-    request = CreateExperimentRequest(design_spec=design_spec)
-
-    with pytest.raises(
-        LateValidationError,
-        match="Cluster-randomized preassigned experiments must have a desired_n_clusters",
-    ):
-        await create_experiment_impl(
-            request=request,
-            datasource=testing_datasource.ds,
-            xngin_session=xngin_session,
-            stratify_on_metrics=False,
-            random_state=42,
-            validated_webhooks=[],
-        )
 
 
 async def test_create_experiment_impl_clustered_rejects_empty_eligible_cohort(xngin_session, testing_datasource):

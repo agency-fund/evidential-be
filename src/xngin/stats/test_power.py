@@ -484,6 +484,88 @@ def test_check_power_with_invalid_desired_n_raises():
     assert "Chosen sample size must be positive" in str(excinfo.value)
 
 
+def test_check_power_with_desired_n_clusters_converts_per_metric():
+    """desired_n_clusters is converted to a desired_n per metric using that metric's avg_cluster_size."""
+    metrics = [
+        DesignSpecMetric(
+            field_name="metric1",
+            metric_type=MetricType.NUMERIC,
+            metric_baseline=100.0,
+            metric_stddev=20.0,
+            metric_pct_change=0.05,
+            available_n=10000,
+            available_nonnull_n=10000,
+            icc=0.05,
+            avg_cluster_size=50.0,
+            cv=0.3,
+        ),
+        # Identical to metric1 except for avg_cluster_size, so any MDE difference between the two
+        # is attributable to the per-metric cluster-size conversion alone.
+        DesignSpecMetric(
+            field_name="metric2",
+            metric_type=MetricType.NUMERIC,
+            metric_baseline=100.0,
+            metric_stddev=20.0,
+            metric_pct_change=0.05,
+            available_n=10000,
+            available_nonnull_n=10000,
+            icc=0.05,
+            avg_cluster_size=10.0,
+            cv=0.3,
+        ),
+    ]
+
+    results = check_power(metrics, n_arms=2, desired_n_clusters=20)
+
+    # Each metric's MDE should match an explicit desired_n of desired_n_clusters * its avg_cluster_size.
+    equivalent_n1 = check_power([metrics[0]], n_arms=2, desired_n=1000)
+    equivalent_n2 = check_power([metrics[1]], n_arms=2, desired_n=200)
+    assert results[0].pct_change_with_desired_n is not None
+    assert results[0].pct_change_with_desired_n == equivalent_n1[0].pct_change_with_desired_n
+    assert results[1].pct_change_with_desired_n is not None
+    assert results[1].pct_change_with_desired_n == equivalent_n2[0].pct_change_with_desired_n
+    # The metrics differ only in avg_cluster_size, so differing MDEs prove each metric was
+    # converted with its own cluster size rather than a shared one.
+    assert results[0].pct_change_with_desired_n != results[1].pct_change_with_desired_n
+
+
+def test_check_power_desired_n_clusters_takes_precedence_over_desired_n():
+    metric = DesignSpecMetric(
+        field_name="metric1",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100.0,
+        metric_stddev=20.0,
+        metric_pct_change=0.05,
+        available_n=10000,
+        available_nonnull_n=10000,
+        icc=0.05,
+        avg_cluster_size=50.0,
+        cv=0.3,
+    )
+
+    both = check_power([metric], n_arms=2, desired_n=5000, desired_n_clusters=20)
+    clusters_only = check_power([metric], n_arms=2, desired_n_clusters=20)
+    individuals_only = check_power([metric], n_arms=2, desired_n=5000)
+
+    assert both[0].pct_change_with_desired_n == clusters_only[0].pct_change_with_desired_n
+    assert both[0].pct_change_with_desired_n != individuals_only[0].pct_change_with_desired_n
+
+
+def test_check_power_desired_n_clusters_without_cluster_stats_raises():
+    metric = DesignSpecMetric(
+        field_name="metric1",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100.0,
+        metric_stddev=20.0,
+        metric_pct_change=0.05,
+        available_n=10000,
+        available_nonnull_n=10000,
+    )
+
+    with pytest.raises(StatsPowerError, match="has no avg_cluster_size"):
+        check_power([metric], n_arms=2, desired_n_clusters=20)
+
+
 def test_check_power_high_deff_gives_clear_message_not_misleading_one():
     """Regression test: cluster design with a catastrophic design effect raises reasonable error.
 
