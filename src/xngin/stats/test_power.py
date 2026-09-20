@@ -132,6 +132,71 @@ def test_analyze_metric_power_binary():
     assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
 
 
+def test_analyze_metric_power_binary_insufficient_decrease_target():
+    """The message reports the bound in the user's requested (downward) direction."""
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.BINARY,
+        metric_baseline=0.5,
+        metric_target=0.45,
+        available_nonnull_n=1000,
+        available_n=1000,
+    )
+
+    result = analyze_metric_power(metric, n_arms=2)
+
+    assert result.target_n == 3130
+    assert not result.sufficient_n
+    # The analysis fields keep fixed semantics: positive lift, plus the _lower bound.
+    assert result.target_possible == pytest.approx(0.588163, abs=1e-4)
+    assert result.target_possible_lower == pytest.approx(1 - 0.588163, abs=1e-4)
+    # The message follows the requested direction (a decrease).
+    assert result.msg is not None
+    assert result.msg.values is not None
+    assert result.msg.values["target_possible"] == pytest.approx(1 - 0.588163, abs=1e-4)
+    assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
+
+
+def test_analyze_metric_power_mde_decrease_direction():
+    """MDE mode: the message reports the bound in the requested (downward) direction."""
+    metric = DesignSpecMetric(
+        field_name="conversion_rate",
+        metric_type=MetricType.BINARY,
+        metric_baseline=0.05,
+        metric_pct_change=-0.5,
+        available_n=10000,
+        available_nonnull_n=10000,
+    )
+
+    result = analyze_metric_power(metric, n_arms=2, desired_n=1000)
+
+    assert result.target_possible == pytest.approx(0.0955, abs=1e-4)
+    assert result.target_possible_lower == pytest.approx(0.0186, abs=1e-4)
+    assert result.msg is not None
+    assert result.msg.values is not None
+    assert result.msg.values["target_possible"] == pytest.approx(0.0186, abs=1e-4)
+
+
+def test_check_power_with_desired_n_decrease_target():
+    """pct_change_with_desired_n follows the requested direction (negative for a decrease)."""
+    metrics = [
+        DesignSpecMetric(
+            field_name="metric2",
+            metric_type=MetricType.BINARY,
+            metric_baseline=0.05,
+            metric_pct_change=-0.10,
+            available_n=10000,
+            available_nonnull_n=10000,
+        ),
+    ]
+
+    results = check_power(metrics, n_arms=2, desired_n=500)
+
+    # Same magnitude of desired_n as test_check_power_with_desired_n; the increase-goal
+    # counterpart there reports +1.3619.
+    assert results[0].pct_change_with_desired_n == pytest.approx(-0.7998, abs=1e-4)
+
+
 def test_check_power_multiple_metrics():
     metrics = [
         DesignSpecMetric(
