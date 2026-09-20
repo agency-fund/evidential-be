@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 import httpx2
-from fastapi import APIRouter, Depends, FastAPI, Header, status
+from fastapi import APIRouter, Depends, FastAPI, status
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -81,11 +81,10 @@ async def get_turn_app_config(
 async def receive_turn_journey_update_notification(
     turn_webhook: Annotated[tables.Webhook, Depends(ideps.turn_webhook)],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    auth_token: Annotated[str | None, Header(alias=constants.HEADER_WEBHOOK_TOKEN)] = None,
 ):
     """
     This endpoint is used as the webhook URL for Turn.io to notify us of changes to the Journeys.
-    It is not intended to be called directly by clients, and will return a 400 error if called without
+    It is not intended to be called directly by clients, and will return a 401 error if called without
     a valid Turn.io webhook auth token.
 
     This endpoint only enqueues a task; it does not perform the refresh itself. A `tq` worker picks up
@@ -99,7 +98,7 @@ async def receive_turn_journey_update_notification(
             payload=TurnJourneysChangedTask(
                 organization_id=turn_webhook.organization_id,
                 webhook_id=turn_webhook.id,
-                webhook_auth_token=auth_token,
+                webhook_auth_token=turn_webhook.auth_token,
             ).model_dump(),
         )
     )
