@@ -667,9 +667,10 @@ class MetricPowerAnalysis(ApiBaseModel):
         Field(
             description=(
                 "The minimum detectable effect (MDE) achievable for the desired sample size at the chosen "
-                "confidence and power. Present only when design_spec.desired_n or design_spec.desired_n_clusters "
-                "is set (frequentist design specs). When desired_n_clusters is set, the desired sample size is "
-                "desired_n_clusters times this metric's avg_cluster_size."
+                "confidence and power, reported in the direction of the requested change (negative when the "
+                "requested change is a decrease from the baseline). Present only when design_spec.desired_n or "
+                "design_spec.desired_n_clusters is set (frequentist design specs). When desired_n_clusters is "
+                "set, the desired sample size is desired_n_clusters times this metric's avg_cluster_size."
             )
         ),
     ] = None

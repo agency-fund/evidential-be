@@ -6,6 +6,7 @@ from xngin.apiserver.routers.common_enums import MetricPowerAnalysisMessageType,
 from xngin.stats.cluster_power import solve_for_mde_cluster, solve_for_sample_size_cluster
 from xngin.stats.individual_power import (
     power_analysis_error,
+    requested_direction_is_down,
     solve_for_mde_individual,
     solve_for_sample_size_individual,
 )
@@ -136,7 +137,8 @@ def check_power(
 
         Optionally, if `desired_n` or `desired_n_clusters` is provided, it will also include
         `pct_change_with_desired_n`, i.e. the corresponding MDE as a % change from baseline for the
-        desired sample size. This MDE calculation is done in a best-effort manner and assumes there
+        desired sample size, in the direction of the requested change (negative when the requested
+        change is a decrease). This MDE calculation is done in a best-effort manner and assumes there
         are enough units to meet the desired size, so it can still succeed despite insufficient
         available units. If it fails, `pct_change_with_desired_n` will be None.
     """
@@ -167,9 +169,15 @@ def check_power(
                     alpha=alpha,
                 )
                 # pct_change_possible may be None if there was any error created with
-                # power_analysis_error().
-                if mde_analysis.pct_change_possible is not None:
-                    analysis.pct_change_with_desired_n = mde_analysis.pct_change_possible
+                # power_analysis_error(). Report the bound in the direction of the user's
+                # requested change.
+                pct_change_reported = (
+                    mde_analysis.pct_change_possible_lower
+                    if requested_direction_is_down(metric)
+                    else mde_analysis.pct_change_possible
+                )
+                if pct_change_reported is not None:
+                    analysis.pct_change_with_desired_n = pct_change_reported
 
             analyses.append(analysis)
 

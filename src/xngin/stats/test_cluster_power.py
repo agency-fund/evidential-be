@@ -613,6 +613,36 @@ def test_solve_for_sample_size_cluster_uses_cluster_target_for_sufficiency():
     assert result.msg.msg == result.msg.source_msg.format_map(msg_values)
 
 
+def test_solve_for_sample_size_cluster_decrease_target_message():
+    """The cluster insufficient-n message reports the bound in the requested (downward) direction."""
+    metric = DesignSpecMetric(
+        field_name="reading_score",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=90,
+        metric_stddev=20,
+        available_n=200,
+        available_nonnull_n=200,
+        icc=0.15,
+        avg_cluster_size=30,
+        cv=0.0,
+    )
+
+    result = solve_for_sample_size_cluster(metric=metric, n_arms=2)
+
+    assert result.sufficient_n is False
+    # Fixed field semantics: positive lift in target_possible, decrease in _lower.
+    assert result.target_possible is not None
+    assert result.target_possible > 100
+    assert result.target_possible_lower is not None
+    assert result.target_possible_lower < 100
+    # The message follows the requested direction (a decrease).
+    assert result.msg is not None
+    msg_values = result.msg.values  # noqa: PD011
+    assert msg_values is not None
+    assert msg_values["target_possible"] == round(result.target_possible_lower, 4)
+
+
 def test_solve_for_sample_size_cluster_possible_target_uses_cluster_mde():
     """Test that the cluster-level possible target is used (not individual) when there is insufficient sample size."""
     desired_n = 100

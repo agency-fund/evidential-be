@@ -40,6 +40,18 @@ def _calculate_arm_ratio_and_control_prob_from_weights(
     return arm_ratio, control_prob
 
 
+def requested_direction_is_down(metric: DesignSpecMetric) -> bool:
+    """Whether the metric's requested change is a decrease from the baseline.
+
+    Defaults to the improvement (positive) direction when the spec carries no target.
+    """
+    if metric.metric_target is not None and metric.metric_baseline is not None:
+        return metric.metric_target < metric.metric_baseline
+    if metric.metric_pct_change is not None:
+        return metric.metric_pct_change < 0
+    return False
+
+
 @dataclasses.dataclass(slots=True, kw_only=True, frozen=True)
 class MdeIndividualResult:
     """Both bounds of the two-sided minimum detectable effect around the baseline.
@@ -296,9 +308,15 @@ def solve_for_sample_size_individual(
         analysis.target_possible_lower = mde_result.target_possible_lower
         analysis.pct_change_possible_lower = mde_result.pct_change_possible_lower
 
+        # The message reports the bound in the direction of the user's requested change;
+        # the analysis fields keep their fixed upper/lower semantics.
+        reported_target_possible = (
+            mde_result.target_possible_lower if requested_direction_is_down(metric) else mde_result.target_possible
+        )
+
         values_map["additional_n_needed"] = target_n - effective_n
         values_map["metric_baseline"] = round(metric.metric_baseline, 4)
-        values_map["target_possible"] = round(mde_result.target_possible, 4)
+        values_map["target_possible"] = round(reported_target_possible, 4)
         values_map["metric_target"] = round(metric.metric_target, 4)
         msg_body = (
             "There are not enough non-null valued units available. "
@@ -351,11 +369,15 @@ def solve_for_mde_individual(
     analysis.pct_change_possible_lower = mde_result.pct_change_possible_lower
     analysis.sufficient_n = None  # Not applicable in MDE mode
 
-    # Create message
+    # Create message. It reports the bound in the direction of the user's requested change;
+    # the analysis fields keep their fixed upper/lower semantics.
+    reported_target_possible = (
+        mde_result.target_possible_lower if requested_direction_is_down(metric) else mde_result.target_possible
+    )
     values_map: dict[str, float | int] = {
         "desired_n": desired_n,
         "metric_baseline": round(metric.metric_baseline, 4),
-        "target_possible": round(mde_result.target_possible, 4),
+        "target_possible": round(reported_target_possible, 4),
     }
 
     msg_type = MetricPowerAnalysisMessageType.SUFFICIENT
