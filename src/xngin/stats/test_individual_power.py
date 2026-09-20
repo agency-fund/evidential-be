@@ -3,6 +3,7 @@ import pytest
 from xngin.apiserver.routers.common_api_types import DesignSpecMetric, MetricPowerAnalysis
 from xngin.apiserver.routers.common_enums import MetricType
 from xngin.stats.individual_power import (
+    requested_direction_is_down,
     solve_for_mde_individual_impl,
     solve_for_sample_size_individual,
 )
@@ -93,6 +94,20 @@ def test_solve_for_mde_individual_impl_binary_clamps_to_valid_proportions():
     result = solve_for_mde_individual_impl(metric, desired_n=40, n_arms=2)
     assert result.target_possible == 1.0
     assert 0.0 <= result.target_possible_lower < 0.95
+
+
+def test_requested_direction_is_down():
+    def metric(**overrides):
+        return DesignSpecMetric(
+            field_name="m", metric_type=MetricType.BINARY, metric_baseline=0.5, available_n=100, **overrides
+        )
+
+    assert requested_direction_is_down(metric(metric_target=0.4))
+    assert not requested_direction_is_down(metric(metric_target=0.6))
+    assert requested_direction_is_down(metric(metric_pct_change=-0.1))
+    assert not requested_direction_is_down(metric(metric_pct_change=0.1))
+    # No target at all: default to the improvement (positive) direction.
+    assert not requested_direction_is_down(metric())
 
 
 def test_solve_for_mde_individual_impl_zero_n_raises_error():
