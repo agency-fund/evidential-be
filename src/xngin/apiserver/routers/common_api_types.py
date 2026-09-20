@@ -621,7 +621,8 @@ class MetricPowerAnalysis(ApiBaseModel):
         Field(
             description=(
                 "When the sample size is too small to reach the desired metric_target, this is the target "
-                "that is possible given available_n. It is the absolute counterpart of pct_change_possible. "
+                "that is possible given available_n, in the improvement (positive) direction from the "
+                "baseline. It is the absolute counterpart of pct_change_possible. "
                 "None when the sample size is large enough to detect the desired change."
             )
         ),
@@ -634,6 +635,29 @@ class MetricPowerAnalysis(ApiBaseModel):
                 "When the sample size is too small to reach the desired metric_pct_change, this is the percent "
                 "change that is possible given available_n. It is the relative counterpart of target_possible. "
                 "None when the sample size is large enough to detect the desired change."
+            )
+        ),
+    ] = None
+
+    target_possible_lower: Annotated[
+        float | None,
+        Field(
+            description=(
+                "The counterpart of target_possible in the direction of a decrease from the baseline. The test "
+                "is two-sided, so a change to this value is detectable too. For BINARY metrics the minimum "
+                "detectable effect is symmetric in Cohen's h space but its conversion back to probability space "
+                "is not, so this bound can differ in magnitude from target_possible. "
+                "None whenever target_possible is None."
+            )
+        ),
+    ] = None
+
+    pct_change_possible_lower: Annotated[
+        float | None,
+        Field(
+            description=(
+                "The relative counterpart of target_possible_lower, as a percent change from the baseline "
+                "(negative for a decrease). None whenever pct_change_possible is None."
             )
         ),
     ] = None

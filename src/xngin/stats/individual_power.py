@@ -2,6 +2,7 @@
 Power analysis for individually-randomized designs.
 """
 
+import dataclasses
 import math
 
 import numpy as np
@@ -39,6 +40,22 @@ def _calculate_arm_ratio_and_control_prob_from_weights(
     return arm_ratio, control_prob
 
 
+@dataclasses.dataclass(slots=True, kw_only=True, frozen=True)
+class MdeIndividualResult:
+    """Both bounds of the two-sided minimum detectable effect around the baseline.
+
+    target_possible / pct_change_possible are the bound in the improvement (positive)
+    direction; the _lower fields are the detectable change below the baseline. NUMERIC
+    bounds are symmetric around the baseline. BINARY bounds are symmetric in Cohen's h
+    space, but the conversion back to probability space is not, so their magnitudes differ.
+    """
+
+    target_possible: float
+    pct_change_possible: float
+    target_possible_lower: float
+    pct_change_possible_lower: float
+
+
 def power_analysis_error(
     metric: DesignSpecMetric, msg_type: MetricPowerAnalysisMessageType, msg_body: str
 ) -> MetricPowerAnalysis:
@@ -56,7 +73,7 @@ def solve_for_mde_individual_impl(
     arm_weights: list[float] | None = None,
     alpha: float = 0.05,
     power: float = 0.8,
-) -> tuple[float, float]:
+) -> MdeIndividualResult:
     """
     Calculate MDE for individual randomization.
 
@@ -68,7 +85,7 @@ def solve_for_mde_individual_impl(
         power: Desired statistical power
         arm_weights: Optional list of weights (summing to 100) for unbalanced arms
     Returns:
-        Minimum Detectable Effect (MDE) as a tuple of absolute value and % from baseline
+        MdeIndividualResult with both bounds of the Minimum Detectable Effect (MDE)
     """
     if desired_n <= 0:
         raise ValueError("Chosen sample size must be positive.")
@@ -99,7 +116,8 @@ def solve_for_mde_individual_impl(
             )
             # need this because solve_power can return array depending on special handling from edge cases
             needed_delta = float(np.atleast_1d(needed_delta)[0])
-            target_possible = needed_delta + metric.metric_baseline
+            target_possible = metric.metric_baseline + needed_delta
+            target_possible_lower = metric.metric_baseline - needed_delta
         case MetricType.BINARY:
             power_analysis = sms.NormalIndPower()
             # Calculate minimum detectable effect size given sample size
@@ -112,20 +130,25 @@ def solve_for_mde_individual_impl(
             # need this because solve_power can return array depending on special handling from edge cases
             min_effect_size = float(np.atleast_1d(min_effect_size)[0])
 
-            # Convert Cohen's h back to proportion
-            # h = 2 * arcsin(sqrt(p1)) - 2 * arcsin(sqrt(p2))
-            # where p1 is baseline and p2 is target
-            # NOTE: typically the target proportion is > baseline, so h will be negative. But when
-            # solving for an effect size given n, it will always be positive, meaning the target
-            # will be *smaller* than baseline.
-            p1 = metric.metric_baseline
-            arcsin_p2 = (2 * np.arcsin(np.sqrt(p1)) - min_effect_size) / 2.0
-            target_possible = np.sin(arcsin_p2) ** 2
+            # Convert Cohen's h back to proportions:
+            # h = 2 * arcsin(sqrt(p2)) - 2 * arcsin(sqrt(p1)), where p1 is baseline and p2 is target.
+            # solve_power returns |h|, and the test is two-sided, so a change of h in either direction
+            # is detectable. Clamp to the arcsine domain [0, pi/2]: past it, not even a proportion of
+            # 1.0 (or 0.0) is a large enough change in that direction, so report the boundary.
+            baseline_arcsine = 2 * np.arcsin(np.sqrt(metric.metric_baseline))
+            arcsin_up = np.clip((baseline_arcsine + min_effect_size) / 2.0, 0.0, np.pi / 2)
+            arcsin_down = np.clip((baseline_arcsine - min_effect_size) / 2.0, 0.0, np.pi / 2)
+            target_possible = float(np.sin(arcsin_up) ** 2)
+            target_possible_lower = float(np.sin(arcsin_down) ** 2)
         case _:
             raise ValueError(f"metric_type must be one of {list(MetricType)}.")
 
-    pct_change_possible = target_possible / metric.metric_baseline - 1.0
-    return target_possible, pct_change_possible
+    return MdeIndividualResult(
+        target_possible=target_possible,
+        pct_change_possible=target_possible / metric.metric_baseline - 1.0,
+        target_possible_lower=target_possible_lower,
+        pct_change_possible_lower=target_possible_lower / metric.metric_baseline - 1.0,
+    )
 
 
 def solve_for_sample_size_individual(
@@ -259,7 +282,7 @@ def solve_for_sample_size_individual(
     else:
         msg_type = MetricPowerAnalysisMessageType.INSUFFICIENT
         # Calculate the Minimum Detectable Effect that meets the power spec with the available subjects.
-        target_possible, pct_change_possible = solve_for_mde_individual_impl(
+        mde_result = solve_for_mde_individual_impl(
             metric=metric,
             desired_n=effective_n,
             n_arms=n_arms,
@@ -268,12 +291,14 @@ def solve_for_sample_size_individual(
             power=power,
         )
 
-        analysis.target_possible = target_possible
-        analysis.pct_change_possible = pct_change_possible
+        analysis.target_possible = mde_result.target_possible
+        analysis.pct_change_possible = mde_result.pct_change_possible
+        analysis.target_possible_lower = mde_result.target_possible_lower
+        analysis.pct_change_possible_lower = mde_result.pct_change_possible_lower
 
         values_map["additional_n_needed"] = target_n - effective_n
         values_map["metric_baseline"] = round(metric.metric_baseline, 4)
-        values_map["target_possible"] = round(target_possible, 4)
+        values_map["target_possible"] = round(mde_result.target_possible, 4)
         values_map["metric_target"] = round(metric.metric_target, 4)
         msg_body = (
             "There are not enough non-null valued units available. "
@@ -281,7 +306,7 @@ def solve_for_sample_size_individual(
             "metric target of {metric_target}. "
             "Alternatively, with the available {available_nonnull_n} non-null units "
             "and a metric baseline of {metric_baseline}, your metric target should be "
-            "{target_possible} or further from the baseline. "  # noqa: RUF027
+            "{target_possible} or further from the baseline. "
         )
 
     # Construct our response from the parts above
@@ -308,7 +333,7 @@ def solve_for_mde_individual(
     """
     assert metric.metric_baseline is not None
 
-    target_possible, pct_change_possible = solve_for_mde_individual_impl(
+    mde_result = solve_for_mde_individual_impl(
         desired_n=desired_n,
         metric=metric,
         n_arms=n_arms,
@@ -320,15 +345,17 @@ def solve_for_mde_individual(
     # Build response object for MDE calculation
     analysis = MetricPowerAnalysis(metric_spec=metric)
     analysis.target_n = desired_n
-    analysis.target_possible = target_possible
-    analysis.pct_change_possible = pct_change_possible
+    analysis.target_possible = mde_result.target_possible
+    analysis.pct_change_possible = mde_result.pct_change_possible
+    analysis.target_possible_lower = mde_result.target_possible_lower
+    analysis.pct_change_possible_lower = mde_result.pct_change_possible_lower
     analysis.sufficient_n = None  # Not applicable in MDE mode
 
     # Create message
     values_map: dict[str, float | int] = {
         "desired_n": desired_n,
         "metric_baseline": round(metric.metric_baseline, 4),
-        "target_possible": round(target_possible, 4),
+        "target_possible": round(mde_result.target_possible, 4),
     }
 
     msg_type = MetricPowerAnalysisMessageType.SUFFICIENT
