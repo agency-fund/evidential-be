@@ -1,16 +1,35 @@
-"""Checks that every route's path parameters line up with what its handler and dependencies consume.
+"""Checks that every route's path parameters are consumed by the handler or its
+dependencies.
 
-A route states its path parameters twice: once in the decorator's path, and once in the signatures of the
-handler and sometimes via the dependencies. FastAPI does not check that the two agree, and gets both kinds of
-disagreement wrong in ways that are easy to miss:
+Route path parameters are declared in the path template using {brackets}; they
+are mapped to Python variables via method arguments. The decorator is within a
+few lines of the argument's declaration, making this an intuitive and eloquent
+way to declare the mappings. However, the path parameters can also be declared
+on a dependency of the handler, whose implementation may be in a different
+module. That causes readability issues because the declaration and usage are no
+longer coincident. If the template parameters and the handler arguments don't
+match, it will also be a source of bugs.
 
-- A parameter the path does not provide still registers. Requests then fail with a 422 naming a path
-  parameter that cannot be supplied, and the OpenAPI schema advertises a parameter absent from the template.
-- A parameter nothing consumes is silently ignored. This is the one that matters: a route under
-  /organizations/{organization_id} whose handler takes the datasource-scoped dependency instead of the
-  organization-scoped one drops the organization constraint without any symptom.
+This test mitigates the risk of the reduced readability by mechanistically
+verifying the path template matches the full tree of the handler's dependencies.
+This detects two errors:
 
-Ruff's FAST003 covers the second case, but it cannot identify usages on the transitive closure of dependencies.
+- An argument referring to a path parameter that doesn't exist. Requests then
+  fail with a 422 naming a path parameter that cannot be supplied, and the
+  OpenAPI schema advertises a parameter that isn't in the path template.
+- A path parameter not consumed by an argument. E.g. a route under
+  /organizations/{organization_id} whose handler takes the datasource-scoped
+  dependency instead of the organization-scoped one drops the organization
+  constraint without any symptoms, which would probably be a bug.
+
+Ruff's FAST003 only does half of that: it detects mismatches between the
+template and the handler arguments, but does not traverse the handler's
+arguments to verify the transitive closure of dependencies.
+
+Note this is only matching by "name" of arguments, not type -- it is always up
+to the implementers of the handlers to ensure the parameters match desired
+functionality. Viewing the generated OpenAPI spec or the generated API docs
+is a good way to verify that the API makes sense.
 """
 
 from collections.abc import Iterable, Iterator
