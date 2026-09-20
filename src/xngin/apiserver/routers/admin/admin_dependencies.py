@@ -80,8 +80,7 @@ async def load_organization_or_raise(
     stmt = select(tables.Organization).where(tables.Organization.id == organization_id)
     if not user.is_privileged:
         stmt = stmt.join(tables.UserOrganization).where(tables.UserOrganization.user_id == user.id)
-    if preload:
-        stmt = stmt.options(*[selectinload(f) for f in preload])
+    stmt = stmt.options(*build_preload_options(preload))
     result = await session.execute(stmt)
     org = result.scalar_one_or_none()
     if org is None:
@@ -137,8 +136,7 @@ async def _load_datasource_or_raise(
     )
     if organization_id:
         stmt = stmt.where(tables.Organization.id == organization_id)
-    if preload:
-        stmt = stmt.options(*[selectinload(f) for f in preload])
+    stmt = stmt.options(*build_preload_options(preload))
     result = await session.execute(stmt)
     ds = result.scalar_one_or_none()
     if ds is None:
@@ -206,9 +204,7 @@ async def _load_experiment_or_raise(
         .where(tables.Experiment.id == experiment_id)
     )
 
-    options = build_preload_options(preload, nested_preload)
-    if options:
-        stmt = stmt.options(*options)
+    stmt = stmt.options(*build_preload_options(preload, nested_preload))
     result = await session.execute(stmt)
     exp = result.scalar_one_or_none()
     if exp is None:
