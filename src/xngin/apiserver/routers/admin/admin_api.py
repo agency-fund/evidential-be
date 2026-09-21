@@ -40,8 +40,9 @@ from xngin.apiserver.dwh.inspections import (
     dehydrate_participants,
 )
 from xngin.apiserver.dwh.queries import (
+    get_cluster_sufficient_stats,
+    get_raw_metric_stats,
     get_stats_on_filters,
-    get_stats_on_metrics,
 )
 from xngin.apiserver.exceptionhandlers import XHTTPValidationError
 from xngin.apiserver.exceptions_common import LateValidationError
@@ -147,7 +148,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     make_schema_from_experiment,
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
-from xngin.apiserver.routers.power_adapters import calculate_cluster_stats_from_database
+from xngin.apiserver.routers.power_adapters import build_metric_stats, calculate_cluster_stats
 from xngin.apiserver.settings import (
     NoDwh,
     ParticipantsDef,
@@ -2273,47 +2274,61 @@ async def power_check(
         if cluster_key is not None:
             filters = [*filters, Filter(field_name=cluster_key, relation=Relation.EXCLUDES, value=[None])]
 
-        metric_stats = await asyncio.to_thread(
-            get_stats_on_metrics,
+        # Only queries run inside this block; stats are computed from the raw rows after
+        # the DWH connection is closed.
+        raw_metric_stats = await asyncio.to_thread(
+            get_raw_metric_stats,
             dwh.session,
             sa_table,
             design_spec.metrics,
             filters,
         )
 
-        # Augment with cluster-level stats if this is a cluster-randomized design.
-        if cluster_key is not None:
-            request_metrics_by_name = {m.field_name: m for m in design_spec.metrics}
-            # Derive stats from the dwh only for metrics without user-provided ICC, in one query.
-            db_derived_metrics = [
-                metric_stat.field_name
-                for metric_stat in metric_stats
-                if request_metrics_by_name[metric_stat.field_name].icc is None
-            ]
-            db_cluster_stats = (
-                await asyncio.to_thread(
-                    calculate_cluster_stats_from_database,
-                    dwh.session,
-                    sa_table,
-                    cluster_key,
-                    db_derived_metrics,
-                    filters,
-                )
-                if db_derived_metrics
-                else {}
+        # Derive cluster stats from the dwh only for metrics without user-provided ICC, in one query.
+        db_derived_metrics = (
+            [m.field_name for m in design_spec.metrics if m.icc is None] if cluster_key is not None else []
+        )
+        raw_cluster_stats = None
+        if cluster_key is not None and db_derived_metrics:
+            # Shifting each metric by its mean keeps the sums of squares in the
+            # sufficient-statistics query numerically stable.
+            outcome_shifts = {
+                field_name: raw_metric_stats[f"{field_name}__mean"]
+                for field_name in db_derived_metrics
+                if raw_metric_stats[f"{field_name}__mean"] is not None
+            }
+            raw_cluster_stats = await asyncio.to_thread(
+                get_cluster_sufficient_stats,
+                dwh.session,
+                sa_table,
+                cluster_key,
+                db_derived_metrics,
+                filters,
+                outcome_shifts,
             )
-            for metric_stat in metric_stats:
-                req_metric = request_metrics_by_name[metric_stat.field_name]
-                # If the user provided ICC, avg_cluster_size, and cv, use them instead of deriving from the dwh.
-                if req_metric.icc is not None:
-                    metric_stat.icc = req_metric.icc
-                    metric_stat.avg_cluster_size = req_metric.avg_cluster_size
-                    metric_stat.cv = req_metric.cv
-                else:
-                    cluster_stats = db_cluster_stats[metric_stat.field_name]
-                    metric_stat.icc = cluster_stats["icc"]
-                    metric_stat.avg_cluster_size = cluster_stats["avg_cluster_size"]
-                    metric_stat.cv = cluster_stats["cv"]
+
+    metric_stats = build_metric_stats(raw_metric_stats, sa_table, design_spec.metrics)
+
+    # Augment with cluster-level stats if this is a cluster-randomized design.
+    if cluster_key is not None:
+        db_cluster_stats = (
+            calculate_cluster_stats(raw_cluster_stats, cluster_key, db_derived_metrics)
+            if raw_cluster_stats is not None
+            else {}
+        )
+        request_metrics_by_name = {m.field_name: m for m in design_spec.metrics}
+        for metric_stat in metric_stats:
+            req_metric = request_metrics_by_name[metric_stat.field_name]
+            # If the user provided ICC, avg_cluster_size, and cv, use them instead of deriving from the dwh.
+            if req_metric.icc is not None:
+                metric_stat.icc = req_metric.icc
+                metric_stat.avg_cluster_size = req_metric.avg_cluster_size
+                metric_stat.cv = req_metric.cv
+            else:
+                cluster_stats = db_cluster_stats[metric_stat.field_name]
+                metric_stat.icc = cluster_stats["icc"]
+                metric_stat.avg_cluster_size = cluster_stats["avg_cluster_size"]
+                metric_stat.cv = cluster_stats["cv"]
 
     arm_weights = design_spec.get_validated_arm_weights()
 
