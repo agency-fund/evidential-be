@@ -210,7 +210,9 @@ def solve_for_sample_size_individual(
 
     # Finally, calculate the minimum sample size for the desired effect size.
     # solve_power returns the required sample size for the control, from which we derive the total n needed.
-    power_analysis = sms.TTestIndPower()
+    # Cohen's h is defined for the two-sample proportions z-test, so BINARY metrics use NormalIndPower
+    # (consistent with the MDE calculation); NUMERIC metrics keep the t-test.
+    power_analysis = sms.NormalIndPower() if metric.metric_type == MetricType.BINARY else sms.TTestIndPower()
     control_n = np.ceil(
         power_analysis.solve_power(
             effect_size=effect_size,
