@@ -283,7 +283,13 @@ def get_participant_metrics(
                 if field_name == "participant_id":
                     participant_id = result[i]
                 else:
-                    metric_values.append(MetricValue(metric_name=field_name, metric_value=result[i]))
+                    value = result[i]
+                    metric_values.append(
+                        MetricValue(
+                            metric_name=field_name,
+                            metric_value=None if value is None else float(value),
+                        )
+                    )
             if participant_id is None:
                 # Should never happen as we filter on the participant_id field.
                 raise LateValidationError("Participant ID is required.")
