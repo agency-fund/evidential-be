@@ -58,7 +58,7 @@ def get_raw_metric_stats(
     return session.execute(query).mappings().one()
 
 
-def get_cluster_outcome_data(
+def get_cluster_sufficient_stats(
     session: Session,
     sa_table: Table,
     cluster_column_name: str,
