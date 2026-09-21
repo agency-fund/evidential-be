@@ -3,16 +3,8 @@
 import sqlalchemy
 
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
-from xngin.apiserver.routers.admin.admin_api_types import (
-    ColumnDeleted,
-    Drift,
-    FieldChangedType,
-    FieldMetadata,
-    InspectDatasourceTableResponse,
-    TableDiff,
-)
+from xngin.apiserver.routers.admin.admin_api_types import FieldMetadata, InspectDatasourceTableResponse
 from xngin.apiserver.routers.common_enums import DataType
-from xngin.apiserver.settings import ParticipantsDef
 
 
 def create_schema_from_table(table: sqlalchemy.Table, unique_id_col: str | None = None, *, set_unique_id: bool = True):
@@ -93,65 +85,3 @@ def generate_field_descriptors(table: sqlalchemy.Table, unique_id_col: str):
     Uniqueness of the values in the column unique_id_col is assumed, not verified!
     """
     return {c.field_name: c for c in create_schema_from_table(table, unique_id_col).fields}
-
-
-def dehydrate_participants(participants: ParticipantsDef, tables: sqlalchemy.Table) -> ParticipantsDef:
-    """Removes fields from ParticipantsDef that are not a filter, metric, strata, unique ID, described, or annotated."""
-    participants.fields = [
-        f for f in participants.fields if f.description or f.is_filter or f.is_metric or f.is_strata or f.is_unique_id
-    ]
-    return participants
-
-
-def _sort_by_fields(fields: list[FieldDescriptor]) -> list[FieldDescriptor]:
-    """Sort fields so that unique ID field(s) come first, then by field_name."""
-    return sorted(fields, key=lambda f: (not f.is_unique_id, f.field_name))
-
-
-def rehydrate_participants(participants: ParticipantsDef, table: sqlalchemy.Table) -> ParticipantsDef:
-    """Adds fields from table that are not already in participants.fields."""
-    dehydrated = {p.field_name: p for p in participants.fields}
-    full_schema = create_schema_from_table(table, set_unique_id=False)
-
-    def maybe_merge(latest: FieldDescriptor, edited: FieldDescriptor | None) -> FieldDescriptor:
-        if edited is None:  # column is not defined in participant type
-            return latest
-        fd = latest.model_copy()
-        fd.description = edited.description
-        fd.is_filter = edited.is_filter
-        fd.is_metric = edited.is_metric
-        fd.is_strata = edited.is_strata
-        fd.is_unique_id = edited.is_unique_id
-        return fd
-
-    new_ptype = participants.model_copy()
-    # Ensure a deterministic order of fields.
-    new_ptype.fields = [maybe_merge(f, dehydrated.get(f.field_name)) for f in _sort_by_fields(full_schema.fields)]
-    ParticipantsDef.model_validate(new_ptype)
-    return new_ptype
-
-
-def build_proposed_and_drift(participants: ParticipantsDef, table: sqlalchemy.Table) -> tuple[ParticipantsDef, Drift]:
-    schema_diff: list[TableDiff] = []
-    schema = create_schema_from_table(table, set_unique_id=False)
-    schema_fields = {f.field_name: f for f in schema.fields}
-
-    # Check for changes in a ParticipantsDef at the column level against a full table schema.
-    for field in _sort_by_fields(participants.fields):
-        if field.field_name not in schema_fields:
-            schema_diff.append(ColumnDeleted(table_name=participants.table_name, column_name=field.field_name))
-        else:
-            # Check for type mismatch
-            live_field = schema_fields[field.field_name]
-            if field.data_type != live_field.data_type:
-                schema_diff.append(
-                    FieldChangedType(
-                        table_name=participants.table_name,
-                        column_name=field.field_name,
-                        old_type=field.data_type,
-                        new_type=live_field.data_type,
-                    )
-                )
-
-    proposed = rehydrate_participants(participants, table)
-    return proposed, Drift(schema_diff=schema_diff)

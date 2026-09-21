@@ -3,8 +3,8 @@ from datetime import date, datetime, time, timedelta
 from typing import Literal
 
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.routers.common_api_types import DataType, Filter, PropertyValueTypes
-from xngin.apiserver.routers.common_enums import Relation
+from xngin.apiserver.routers.common_api_types import Filter, PropertyValueTypes
+from xngin.apiserver.routers.common_enums import DataType, Relation
 
 
 def str_to_date_or_datetime(

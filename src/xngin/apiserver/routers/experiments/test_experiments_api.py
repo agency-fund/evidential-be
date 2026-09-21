@@ -47,7 +47,7 @@ from xngin.apiserver.routers.experiments.test_experiments_common import insert_e
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.admin_api_client import AdminAPIClientHTTPValidationError
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClientNotDefaultStatusError
-from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
+from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
 from xngin.stats.bandit_sampling import update_arm
 
 if TYPE_CHECKING:
@@ -1285,7 +1285,7 @@ async def test_update_bandit_arm_with_outcome(
             ],
             prior_type=prior_type,
             reward_type=reward_type,
-            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+            table_name=TESTING_DWH_TABLE_NAME,
             primary_key="id",
             target_field_name="is_onboarded" if reward_type is LikelihoodTypes.BERNOULLI else "income",
         )
