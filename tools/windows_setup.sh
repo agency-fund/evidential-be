@@ -1,6 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
+# The Docker apt repo below is Ubuntu-only; stop early on anything else.
+if ! grep -q '^ID=ubuntu$' /etc/os-release; then
+  echo "This script supports Ubuntu on WSL only. Install it with: wsl --install -d Ubuntu-24.04" >&2
+  exit 1
+fi
+
 # --- bashrc env block ---
 if ! grep -q '# windows-setup env' ~/.bashrc 2>/dev/null; then
   echo '
