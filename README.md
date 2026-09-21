@@ -19,7 +19,7 @@
 | src/xngin/apiserver/dwh/inspection\_types.py                                       |       55 |        5 |     91% |27, 45, 68, 79, 85 |
 | src/xngin/apiserver/dwh/inspections.py                                             |       64 |        4 |     94% |67, 95, 100-103 |
 | src/xngin/apiserver/dwh/participant\_metrics\_queries.py                           |      143 |        7 |     95% |73-79, 166, 263, 265, 289 |
-| src/xngin/apiserver/dwh/queries.py                                                 |       74 |       25 |     66% |107-151, 172, 175, 196 |
+| src/xngin/apiserver/dwh/queries.py                                                 |       76 |       25 |     67% |107-151, 176, 179, 205 |
 | src/xngin/apiserver/dwh/query\_constructors.py                                     |       81 |        4 |     95% |75-76, 95-96 |
 | src/xngin/apiserver/dwh/test\_dialect\_sql.py                                      |       74 |        6 |     92% |494, 507, 510-513 |
 | src/xngin/apiserver/dwh/test\_queries.py                                           |       67 |        1 |     99% |       160 |
@@ -32,7 +32,7 @@
 | src/xngin/apiserver/openapi.py                                                     |       27 |        3 |     89% |113, 178, 180 |
 | src/xngin/apiserver/pagination.py                                                  |      116 |       14 |     88% |47-48, 53-55, 61, 68, 98, 233, 235, 246-249 |
 | src/xngin/apiserver/request\_encapsulation\_middleware.py                          |       69 |        3 |     96% |   113-115 |
-| src/xngin/apiserver/routers/admin/admin\_api.py                                    |      739 |       47 |     94% |405, 417, 428, 432, 670, 1171, 1238-1244, 1430, 1467, 1588-1666, 1713, 1715-1718, 1758, 1879, 1942-1948, 1973, 1980, 2012, 2255 |
+| src/xngin/apiserver/routers/admin/admin\_api.py                                    |      740 |       47 |     94% |405, 417, 428, 432, 670, 1171, 1238-1244, 1430, 1467, 1588-1666, 1713, 1715-1718, 1758, 1879, 1942-1948, 1973, 1980, 2012, 2255 |
 | src/xngin/apiserver/routers/admin/admin\_api\_converters.py                        |       62 |        8 |     87% |29, 73-74, 84, 110-111, 123-124 |
 | src/xngin/apiserver/routers/admin/admin\_api\_types.py                             |      146 |        2 |     99% |    40, 42 |
 | src/xngin/apiserver/routers/admin/test\_admin\_api.py                              |     1767 |        3 |     99% |2877, 2890-2891 |
@@ -56,7 +56,7 @@
 | src/xngin/apiserver/routers/experiments/test\_property\_filters.py                 |       41 |        1 |     98% |        24 |
 | src/xngin/apiserver/routers/healthchecks\_api.py                                   |       16 |        2 |     88% |     26-27 |
 | src/xngin/apiserver/routers/integrations/integrations\_api.py                      |       51 |        1 |     98% |       173 |
-| src/xngin/apiserver/routers/power\_adapters.py                                     |       26 |        1 |     96% |        59 |
+| src/xngin/apiserver/routers/power\_adapters.py                                     |       26 |        1 |     96% |        61 |
 | src/xngin/apiserver/routers/test\_assignment\_adapters.py                          |      235 |        1 |     99% |       103 |
 | src/xngin/apiserver/settings.py                                                    |      143 |       23 |     84% |102, 122, 129, 135, 180-181, 241, 246, 252-253, 305-308, 327, 349, 360, 362, 372, 375, 389, 392, 417 |
 | src/xngin/apiserver/snapshots/autofail.py                                          |       74 |        2 |     97% |   131-132 |
@@ -84,7 +84,7 @@
 | src/xngin/stats/bandit\_analysis.py                                                |       73 |        4 |     95% |134, 136, 199-200 |
 | src/xngin/stats/bandit\_sampling.py                                                |       86 |        7 |     92% |184, 219, 226, 254, 282, 284, 316 |
 | src/xngin/stats/bandit\_weights\_to\_prior.py                                      |       48 |        3 |     94% |30, 78, 122 |
-| src/xngin/stats/cluster\_icc.py                                                    |       40 |        2 |     95% |    33, 57 |
+| src/xngin/stats/cluster\_icc.py                                                    |       71 |        2 |     97% |    38, 62 |
 | src/xngin/stats/cluster\_power.py                                                  |      114 |        2 |     98% |  251, 254 |
 | src/xngin/stats/individual\_power.py                                               |      103 |        5 |     95% |77, 80, 124-125, 200 |
 | src/xngin/stats/power.py                                                           |       40 |        2 |     95% |  177, 182 |
@@ -98,7 +98,7 @@
 | src/xngin/xsecrets/secretservice.py                                                |       64 |        7 |     89% |37, 45-46, 51-52, 104, 126 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                                     |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                                         |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                                          | **16266** | **1159** | **93%** |           |
+| **TOTAL**                                                                          | **16359** | **1159** | **93%** |           |
 
 84 files skipped due to complete coverage.
 
