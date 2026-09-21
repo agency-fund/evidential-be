@@ -58,7 +58,6 @@ from xngin.apiserver.testing.admin_integrations_api_client import (
 )
 from xngin.apiserver.testing.integrations_api_client import IntegrationsAPIClientNotDefaultStatusError
 from xngin.apiserver.testing.pg_helpers import create_database_if_not_exists_pg
-from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
 from xngin.db_extensions import custom_functions
 
 # SQLAlchemy's logger will append this to the name of its loggers used for the application database; e.g.
@@ -371,14 +370,6 @@ async def _make_datasource_metadata(
             dsn=convert_dwh_to_create_api_dsn(dwh),
         )
     ).data.id
-
-    aclient.create_participant_type(
-        datasource_id=datasource_id,
-        body=aapi.CreateParticipantsTypeRequest(
-            participant_type=TESTING_DWH_PARTICIPANT_DEF.participant_type,
-            schema_def=TESTING_DWH_PARTICIPANT_DEF,
-        ),
-    )
 
     key_response = aclient.create_api_key(datasource_id=datasource_id).data
     api_org = aclient.get_organization(organization_id=org_id).data
