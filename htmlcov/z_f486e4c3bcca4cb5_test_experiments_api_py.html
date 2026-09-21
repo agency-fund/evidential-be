@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_f486e4c3bcca4cb5_test_experiments_common_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-21 08:36 +0000
+            created at 2026-09-21 13:02 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -129,7 +129,7 @@
     <p class="run"><span class="n"><a id="t47" href="#t47">47</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span><span class="op">.</span><span class="nam">sqla</span> <span class="key">import</span> <span class="nam">tables</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t48" href="#t48">48</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span><span class="op">.</span><span class="nam">testing</span><span class="op">.</span><span class="nam">admin_api_client</span> <span class="key">import</span> <span class="nam">AdminAPIClientHTTPValidationError</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t49" href="#t49">49</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span><span class="op">.</span><span class="nam">testing</span><span class="op">.</span><span class="nam">experiments_api_client</span> <span class="key">import</span> <span class="nam">ExperimentsAPIClientNotDefaultStatusError</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t50" href="#t50">50</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span><span class="op">.</span><span class="nam">testing</span><span class="op">.</span><span class="nam">testing_dwh_def</span> <span class="key">import</span> <span class="nam">TESTING_DWH_PARTICIPANT_DEF</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t50" href="#t50">50</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span><span class="op">.</span><span class="nam">testing</span><span class="op">.</span><span class="nam">testing_dwh_def</span> <span class="key">import</span> <span class="nam">TESTING_DWH_TABLE_NAME</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t51" href="#t51">51</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">stats</span><span class="op">.</span><span class="nam">bandit_sampling</span> <span class="key">import</span> <span class="nam">update_arm</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t52" href="#t52">52</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="exc show_exc"><span class="n"><a id="t53" href="#t53">53</a></span><span class="t"><span class="key">if</span> <span class="nam">TYPE_CHECKING</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
@@ -1367,7 +1367,7 @@
     <p class="mis mis2 show_mis"><span class="n"><a id="t1285" href="#t1285">1285</a></span><span class="t">            <span class="op">]</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t1286" href="#t1286">1286</a></span><span class="t">            <span class="nam">prior_type</span><span class="op">=</span><span class="nam">prior_type</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t1287" href="#t1287">1287</a></span><span class="t">            <span class="nam">reward_type</span><span class="op">=</span><span class="nam">reward_type</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t1288" href="#t1288">1288</a></span><span class="t">            <span class="nam">table_name</span><span class="op">=</span><span class="nam">TESTING_DWH_PARTICIPANT_DEF</span><span class="op">.</span><span class="nam">table_name</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t1288" href="#t1288">1288</a></span><span class="t">            <span class="nam">table_name</span><span class="op">=</span><span class="nam">TESTING_DWH_TABLE_NAME</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t1289" href="#t1289">1289</a></span><span class="t">            <span class="nam">primary_key</span><span class="op">=</span><span class="str">&quot;id&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t1290" href="#t1290">1290</a></span><span class="t">            <span class="nam">target_field_name</span><span class="op">=</span><span class="str">&quot;is_onboarded&quot;</span> <span class="key">if</span> <span class="nam">reward_type</span> <span class="key">is</span> <span class="nam">LikelihoodTypes</span><span class="op">.</span><span class="nam">BERNOULLI</span> <span class="key">else</span> <span class="str">&quot;income&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t1291" href="#t1291">1291</a></span><span class="t">        <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
@@ -1696,7 +1696,7 @@
             <a class="nav" href="z_f486e4c3bcca4cb5_test_experiments_common_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-21 08:36 +0000
+            created at 2026-09-21 13:02 +0000
         </p>
     </div>
 </footer>
