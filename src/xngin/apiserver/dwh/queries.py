@@ -19,7 +19,6 @@ from xngin.apiserver.dwh.inspection_types import FieldDescriptor
 from xngin.apiserver.dwh.query_constructors import create_query_filters
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import (
-    DesignSpecMetric,
     DesignSpecMetricRequest,
     Filter,
     GetFiltersResponseDiscrete,
@@ -29,26 +28,30 @@ from xngin.apiserver.routers.common_api_types import (
 from xngin.apiserver.routers.common_enums import FilterClass, MetricType
 
 
-def get_stats_on_metrics(
-    session,
+def get_raw_metric_stats(
+    session: Session,
     sa_table: Table,
     metrics: list[DesignSpecMetricRequest],
     filters: list[Filter],
-) -> list[DesignSpecMetric]:
+) -> RowMapping:
+    """Fetch aggregate metric statistics in a single query.
+
+    Returns one row with ``rows__count`` (total rows matching the filters) and, per
+    metric, ``{name}__mean``, ``{name}__stddev``, and ``{name}__count`` over its non-null
+    values. Use build_metric_stats to turn the row into DesignSpecMetric objects.
+    """
     missing_metrics = {m.field_name for m in metrics if m.field_name not in sa_table.c}
     if len(missing_metrics) > 0:
         raise LateValidationError(f"Missing metrics (check your Datasource configuration): {missing_metrics}")
 
-    # build our query
-    metric_types = [MetricType.from_python_type(sa_table.c[m.field_name].type.python_type) for m in metrics]
     # Include in our list of stats a total count of rows targeted by the audience filters,
     # whereas the individual aggregate functions per metric ignore NULLs by default.
     select_columns: list[Label] = [func.count().label("rows__count")]
-    for metric, metric_type in zip(metrics, metric_types, strict=False):
+    for metric in metrics:
         field_name = metric.field_name
         col = sa_table.c[field_name]
         # Coerce everything to Float to avoid Decimal/Integer/Boolean issues across backends.
-        if metric_type is MetricType.NUMERIC:
+        if MetricType.from_python_type(col.type.python_type) is MetricType.NUMERIC:
             cast_column = cast(col, Float)
         else:  # re: avg(boolean) doesn't work on pg-like backends
             cast_column = cast(cast(col, Integer), Float)
@@ -59,27 +62,7 @@ def get_stats_on_metrics(
         ))
     filters_expr = create_query_filters(sa_table, filters)
     query = select(*select_columns).where(*filters_expr)
-    stats = session.execute(query).mappings().fetchone()
-
-    # finally backfill with the stats
-    metrics_to_return = []
-    for metric, metric_type in zip(metrics, metric_types, strict=False):
-        field_name = metric.field_name
-        metrics_to_return.append(
-            DesignSpecMetric(
-                field_name=metric.field_name,
-                metric_pct_change=metric.metric_pct_change,
-                metric_target=metric.metric_target,
-                metric_type=metric_type,
-                metric_baseline=stats[f"{field_name}__mean"],
-                metric_stddev=stats[f"{field_name}__stddev"] if metric_type is MetricType.NUMERIC else None,
-                available_nonnull_n=stats[f"{field_name}__count"],
-                # This value is the same across all metrics, but we replicate for convenience:
-                available_n=stats["rows__count"],
-            )
-        )
-
-    return metrics_to_return
+    return session.execute(query).mappings().one()
 
 
 def get_stats_on_filters(

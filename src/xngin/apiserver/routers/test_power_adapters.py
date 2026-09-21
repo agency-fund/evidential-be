@@ -1,5 +1,7 @@
 """Test our shim between DWH queries and cluster ICC/power stats."""
 
+from collections.abc import Mapping, Sequence
+
 import pandas as pd
 import pytest
 from sqlalchemy import MetaData, Table, create_engine
@@ -7,10 +9,24 @@ from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags
 from xngin.apiserver.conftest import get_test_uri_info
+from xngin.apiserver.dwh.queries import get_cluster_sufficient_stats
 from xngin.apiserver.routers.common_api_types import Filter
 from xngin.apiserver.routers.common_enums import Relation
-from xngin.apiserver.routers.power_adapters import calculate_cluster_stats_from_database
+from xngin.apiserver.routers.power_adapters import calculate_cluster_stats
 from xngin.stats.stats_errors import StatsPowerError
+
+
+def calculate_cluster_stats_from_database(
+    session: Session,
+    sa_table: Table,
+    cluster_column: str,
+    outcome_columns: Sequence[str],
+    filters: list[Filter],
+    outcome_shifts: Mapping[str, float] | None = None,
+) -> dict[str, dict[str, float]]:
+    """Compose the query and the pure computation, as power_check does."""
+    rows = get_cluster_sufficient_stats(session, sa_table, cluster_column, outcome_columns, filters, outcome_shifts)
+    return calculate_cluster_stats(rows, cluster_column, outcome_columns)
 
 
 @pytest.fixture(name="clustered_dwh_session", scope="module")
