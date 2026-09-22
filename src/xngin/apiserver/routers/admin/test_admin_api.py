@@ -1293,6 +1293,18 @@ def test_power_request_rejects_inconsistent_arm_weights():
     PowerRequest(table_name="dwh", metrics=metrics, n_arms=2)
 
 
+def test_power_request_desired_n_clusters_requires_cluster_key():
+    """Cluster sizing needs a cluster key, as on PreassignedFrequentistExperimentSpec."""
+    metrics = [DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)]
+
+    with pytest.raises(ValidationError, match="desired_n_clusters can only be set when cluster_key is set"):
+        PowerRequest(table_name="dwh", metrics=metrics, n_arms=2, desired_n_clusters=40)
+
+    # Valid with a cluster key, and desired_n alone needs no cluster key.
+    PowerRequest(table_name="dwh", metrics=metrics, n_arms=2, cluster_key="age", desired_n_clusters=40)
+    PowerRequest(table_name="dwh", metrics=metrics, n_arms=2, desired_n=400)
+
+
 async def test_power_check_with_unbalanced_arms(testing_datasource, aclient: AdminAPIClient):
     """Test power check endpoint with balanced vs unbalanced arms."""
     ds_id = testing_datasource.datasource_id

@@ -1420,13 +1420,23 @@ class PowerRequest(ApiBaseModel):
         Field(
             ge=1,
             description=(
-                "Desired number of clusters for a cluster-randomized design. The minimum detectable effect "
-                "is computed for this many clusters, converted to a per-metric sample size using each "
-                "metric's avg_cluster_size; takes precedence over desired_n. Requires cluster statistics, "
-                "so either set cluster_key or supply icc, avg_cluster_size, and cv on every metric."
+                "Desired number of clusters for a cluster-randomized design. "
+                "Only valid when cluster_key is set. "
+                "The minimum detectable effect is computed for this many clusters, converted to a "
+                "per-metric sample size using each metric's avg_cluster_size; takes precedence over desired_n."
             ),
         ),
     ] = None
+
+    @model_validator(mode="after")
+    def validate_cluster_randomization(self) -> Self:
+        """Mirrors PreassignedFrequentistExperimentSpec: cluster sizing needs a cluster key.
+
+        The strata rule from that spec does not apply here, since a power request has no strata.
+        """
+        if self.cluster_key is None and self.desired_n_clusters is not None:
+            raise ValueError("desired_n_clusters can only be set when cluster_key is set.")
+        return self
 
     @model_validator(mode="after")
     def validate_arm_weights(self) -> Self:
