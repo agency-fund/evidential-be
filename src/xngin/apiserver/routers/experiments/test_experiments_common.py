@@ -1402,7 +1402,7 @@ async def test_create_experiment_impl_for_freq_online_with_unbalanced_arms(
         (
             ExperimentsType.FREQ_PREASSIGNED,
             [Filter(field_name="missing_field", relation=Relation.INCLUDES, value=["value"])],
-            r"The .design_spec field refers to columns that do not exist in the table: missing_field",
+            r"Your request refers to columns that do not exist in the table: missing_field",
         ),
     ],
 )

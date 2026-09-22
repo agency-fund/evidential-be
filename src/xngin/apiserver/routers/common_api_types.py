@@ -1334,16 +1334,99 @@ type DesignSpec = Annotated[
 
 
 class PowerRequest(ApiBaseModel):
-    table_name: str
-    cluster_key: str | None = None
-    filters: list[Filter] = []
-    metrics: list[DesignSpecMetricRequest]
-    n_arms: int
-    arm_weights: list[float] | None = None
-    power: float = 0.8
-    alpha: float = 0.05
-    desired_n: int | None = None
-    desired_n_clusters: int | None = None
+    table_name: Annotated[
+        str,
+        Field(
+            max_length=MAX_LENGTH_OF_NAME_VALUE,
+            description="Data source table the baseline metric statistics are computed from.",
+        ),
+    ]
+    cluster_key: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Column name in table_name that identifies clusters for a cluster-randomized design. "
+                "When set, per-metric icc, avg_cluster_size, and cv are either supplied on each metric "
+                "or computed from this column. "
+                "When None, the design is assumed to be individual-randomized."
+            ),
+        ),
+    ] = None
+    metrics: Annotated[
+        list[DesignSpecMetricRequest],
+        Field(
+            description="Primary and optional secondary metrics to target.",
+            min_length=1,
+            max_length=MAX_NUMBER_OF_FIELDS,
+        ),
+    ]
+    filters: Annotated[
+        list[Filter],
+        Field(
+            description=(
+                "Optional filters that narrow the audience the baseline statistics are computed over, "
+                "matching the participants you want in the experiment."
+            ),
+            max_length=MAX_NUMBER_OF_FILTERS,
+        ),
+    ] = []
+    n_arms: Annotated[
+        int,
+        Field(
+            ge=2,
+            le=MAX_NUMBER_OF_ARMS,
+            description="Number of arms in the design, counting the control arm.",
+        ),
+    ]
+    arm_weights: Annotated[
+        list[ArmWeight] | None,
+        Field(
+            description=(
+                "Optional weights for unequal allocation, one per arm and ordered to match n_arms, "
+                "where the first weight is the control arm. Each weight must be greater than 0 and "
+                "less than 100, and all weights must sum to 100. Leave unset for an equal split."
+            ),
+        ),
+    ] = None
+    power: Annotated[
+        float,
+        Field(
+            ge=0,
+            le=1,
+            description="The chance of detecting a real effect when one truly exists (1 - the false negative rate).",
+        ),
+    ] = 0.8
+    alpha: Annotated[
+        float,
+        Field(
+            ge=0,
+            le=1,
+            description="The chance of a false positive: concluding there is an effect when there is none.",
+        ),
+    ] = 0.05
+    desired_n: Annotated[
+        int | None,
+        Field(
+            ge=0,
+            description=(
+                "Desired number of individual participants. When set, the power check also returns the "
+                "minimum detectable effect for this size, along with the minimum sample size. "
+                "Superseded by desired_n_clusters when both are set."
+            ),
+        ),
+    ] = None
+    desired_n_clusters: Annotated[
+        int | None,
+        Field(
+            ge=1,
+            description=(
+                "Desired number of clusters for a cluster-randomized design. The minimum detectable effect "
+                "is computed for this many clusters, converted to a per-metric sample size using each "
+                "metric's avg_cluster_size; takes precedence over desired_n. Requires cluster statistics, "
+                "so either set cluster_key or supply icc, avg_cluster_size, and cv on every metric."
+            ),
+        ),
+    ] = None
 
     @model_validator(mode="after")
     def validate_arm_weights(self) -> Self:
