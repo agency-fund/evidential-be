@@ -1347,10 +1347,7 @@ class PowerRequest(ApiBaseModel):
 
     @model_validator(mode="after")
     def validate_arm_weights(self) -> Self:
-        """Replaces BaseDesignSpec.get_validated_arm_weights, which this flat model does not inherit.
-
-        n_arms and arm_weights are separate fields here, so unlike an arms list they can disagree.
-        """
+        """If arm_weights exist, validate that the length matches n_arms and weights sum to 100 before returning."""
         if self.arm_weights is None:
             return self
 

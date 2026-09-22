@@ -199,8 +199,7 @@ def _resolve_referenced_field_types(table: Table, referenced_fields: set[str]) -
     missing_fields = referenced_fields - referenced_fields_and_types.keys()
     if missing_fields:
         raise LateValidationError(
-            "The .design_spec field refers to columns that do not exist in the table: "
-            f"{', '.join(sorted(missing_fields))}"
+            f"Your request refers to columns that do not exist in the table: {', '.join(sorted(missing_fields))}"
         )
     return referenced_fields_and_types
 
