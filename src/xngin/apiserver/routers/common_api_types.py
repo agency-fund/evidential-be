@@ -1064,6 +1064,8 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
         """
         Validate that the autofail parameters are valid.
         """
+        if self.experiment_type == ExperimentsType.MAB_ONLINE_DWH and self.enable_autofail:
+            raise ValueError(f"Autofail is not supported for {ExperimentsType.MAB_ONLINE_DWH} experiments.")
         if (
             self.enable_autofail
             and self.reward_type == LikelihoodTypes.BERNOULLI
