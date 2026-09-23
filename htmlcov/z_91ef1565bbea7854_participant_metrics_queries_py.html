@@ -54,8 +54,8 @@
             </div>
         </aside>
         <h2>
-            <span class="text">143 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">136<span class="text"> run</span></button>
+            <span class="text">144 statements &nbsp;</span>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">137<span class="text"> run</span></button>
             <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">7<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">2<span class="text"> excluded</span></button>
         </h2>
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_91ef1565bbea7854_queries_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-21 13:02 +0000
+            created at 2026-09-23 21:46 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -365,25 +365,31 @@
     <p class="run"><span class="n"><a id="t283" href="#t283">283</a></span><span class="t">                <span class="key">if</span> <span class="nam">field_name</span> <span class="op">==</span> <span class="str">&quot;participant_id&quot;</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t284" href="#t284">284</a></span><span class="t">                    <span class="nam">participant_id</span> <span class="op">=</span> <span class="nam">result</span><span class="op">[</span><span class="nam">i</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t285" href="#t285">285</a></span><span class="t">                <span class="key">else</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t286" href="#t286">286</a></span><span class="t">                    <span class="nam">metric_values</span><span class="op">.</span><span class="nam">append</span><span class="op">(</span><span class="nam">MetricValue</span><span class="op">(</span><span class="nam">metric_name</span><span class="op">=</span><span class="nam">field_name</span><span class="op">,</span> <span class="nam">metric_value</span><span class="op">=</span><span class="nam">result</span><span class="op">[</span><span class="nam">i</span><span class="op">]</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t287" href="#t287">287</a></span><span class="t">            <span class="key">if</span> <span class="nam">participant_id</span> <span class="key">is</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t288" href="#t288">288</a></span><span class="t">                <span class="com"># Should never happen as we filter on the participant_id field.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t289" href="#t289">289</a></span><span class="t">                <span class="key">raise</span> <span class="nam">LateValidationError</span><span class="op">(</span><span class="str">&quot;Participant ID is required.&quot;</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t290" href="#t290">290</a></span><span class="t">            <span class="nam">participant_outcomes</span><span class="op">.</span><span class="nam">append</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t291" href="#t291">291</a></span><span class="t">                <span class="nam">ParticipantOutcome</span><span class="op">(</span><span class="nam">participant_id</span><span class="op">=</span><span class="nam">str</span><span class="op">(</span><span class="nam">participant_id</span><span class="op">)</span><span class="op">,</span> <span class="nam">metric_values</span><span class="op">=</span><span class="nam">metric_values</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t292" href="#t292">292</a></span><span class="t">            <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t293" href="#t293">293</a></span><span class="t">            <span class="nam">batch_outcome_count</span> <span class="op">+=</span> <span class="num">1</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t294" href="#t294">294</a></span><span class="t">        <span class="nam">logger</span><span class="op">.</span><span class="nam">info</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t295" href="#t295">295</a></span><span class="t">            <span class="str">&quot;Finished participant metrics batch {}/{} outcomes={}&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t296" href="#t296">296</a></span><span class="t">            <span class="nam">batch_index</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t297" href="#t297">297</a></span><span class="t">            <span class="nam">len</span><span class="op">(</span><span class="nam">pmplans</span><span class="op">.</span><span class="nam">plans</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t298" href="#t298">298</a></span><span class="t">            <span class="nam">batch_outcome_count</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t299" href="#t299">299</a></span><span class="t">        <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t300" href="#t300">300</a></span><span class="t">    <span class="nam">logger</span><span class="op">.</span><span class="nam">info</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t301" href="#t301">301</a></span><span class="t">        <span class="str">&quot;Finished fetching participant metrics outcomes={}&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t302" href="#t302">302</a></span><span class="t">        <span class="nam">len</span><span class="op">(</span><span class="nam">participant_outcomes</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t303" href="#t303">303</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t304" href="#t304">304</a></span><span class="t">    <span class="key">return</span> <span class="nam">participant_outcomes</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t286" href="#t286">286</a></span><span class="t">                    <span class="nam">value</span> <span class="op">=</span> <span class="nam">result</span><span class="op">[</span><span class="nam">i</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t287" href="#t287">287</a></span><span class="t">                    <span class="nam">metric_values</span><span class="op">.</span><span class="nam">append</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t288" href="#t288">288</a></span><span class="t">                        <span class="nam">MetricValue</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t289" href="#t289">289</a></span><span class="t">                            <span class="nam">metric_name</span><span class="op">=</span><span class="nam">field_name</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t290" href="#t290">290</a></span><span class="t">                            <span class="nam">metric_value</span><span class="op">=</span><span class="key">None</span> <span class="key">if</span> <span class="nam">value</span> <span class="key">is</span> <span class="key">None</span> <span class="key">else</span> <span class="nam">float</span><span class="op">(</span><span class="nam">value</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t291" href="#t291">291</a></span><span class="t">                        <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t292" href="#t292">292</a></span><span class="t">                    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t293" href="#t293">293</a></span><span class="t">            <span class="key">if</span> <span class="nam">participant_id</span> <span class="key">is</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t294" href="#t294">294</a></span><span class="t">                <span class="com"># Should never happen as we filter on the participant_id field.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t295" href="#t295">295</a></span><span class="t">                <span class="key">raise</span> <span class="nam">LateValidationError</span><span class="op">(</span><span class="str">&quot;Participant ID is required.&quot;</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t296" href="#t296">296</a></span><span class="t">            <span class="nam">participant_outcomes</span><span class="op">.</span><span class="nam">append</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t297" href="#t297">297</a></span><span class="t">                <span class="nam">ParticipantOutcome</span><span class="op">(</span><span class="nam">participant_id</span><span class="op">=</span><span class="nam">str</span><span class="op">(</span><span class="nam">participant_id</span><span class="op">)</span><span class="op">,</span> <span class="nam">metric_values</span><span class="op">=</span><span class="nam">metric_values</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t298" href="#t298">298</a></span><span class="t">            <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t299" href="#t299">299</a></span><span class="t">            <span class="nam">batch_outcome_count</span> <span class="op">+=</span> <span class="num">1</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t300" href="#t300">300</a></span><span class="t">        <span class="nam">logger</span><span class="op">.</span><span class="nam">info</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t301" href="#t301">301</a></span><span class="t">            <span class="str">&quot;Finished participant metrics batch {}/{} outcomes={}&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t302" href="#t302">302</a></span><span class="t">            <span class="nam">batch_index</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t303" href="#t303">303</a></span><span class="t">            <span class="nam">len</span><span class="op">(</span><span class="nam">pmplans</span><span class="op">.</span><span class="nam">plans</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t304" href="#t304">304</a></span><span class="t">            <span class="nam">batch_outcome_count</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t305" href="#t305">305</a></span><span class="t">        <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t306" href="#t306">306</a></span><span class="t">    <span class="nam">logger</span><span class="op">.</span><span class="nam">info</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t307" href="#t307">307</a></span><span class="t">        <span class="str">&quot;Finished fetching participant metrics outcomes={}&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t308" href="#t308">308</a></span><span class="t">        <span class="nam">len</span><span class="op">(</span><span class="nam">participant_outcomes</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t309" href="#t309">309</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t310" href="#t310">310</a></span><span class="t">    <span class="key">return</span> <span class="nam">participant_outcomes</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -393,7 +399,7 @@
             <a class="nav" href="z_91ef1565bbea7854_queries_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-21 13:02 +0000
+            created at 2026-09-23 21:46 +0000
         </p>
     </div>
 </footer>
