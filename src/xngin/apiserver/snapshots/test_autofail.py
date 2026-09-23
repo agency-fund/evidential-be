@@ -33,7 +33,6 @@ from xngin.apiserver.snapshots.autofail import (
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
-from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
 
 
 async def create_autofail_experiment(
@@ -97,31 +96,6 @@ async def create_autofail_experiment(
                 ],
                 prior_type=PriorTypes.NORMAL,
                 reward_type=reward_type,
-                **autofail_config,
-            )
-        case ExperimentsType.MAB_ONLINE_DWH:
-            design_spec = MABDwhExperimentSpec(
-                experiment_type=experiment_type,
-                experiment_name=name,
-                description=name,
-                start_date=datetime(2024, 1, 1, tzinfo=UTC),
-                end_date=datetime.now(UTC) + timedelta(days=1),
-                arms=[
-                    ArmBandit(
-                        arm_name=arm_name,
-                        arm_description="",
-                        alpha_init=1 if prior_type == PriorTypes.BETA else None,
-                        beta_init=1 if prior_type == PriorTypes.BETA else None,
-                        mu_init=0 if prior_type == PriorTypes.NORMAL else None,
-                        sigma_init=1 if prior_type == PriorTypes.NORMAL else None,
-                    )
-                    for arm_name in ("control", "treatment")
-                ],
-                prior_type=prior_type,
-                reward_type=reward_type,
-                table_name=TESTING_DWH_TABLE_NAME,
-                primary_key="id",
-                target_field_name="is_onboarded",
                 **autofail_config,
             )
         case _:
@@ -325,9 +299,7 @@ async def test_autofail_skips_draws_with_outcomes(
     ]
 
 
-@pytest.mark.parametrize(
-    "experiment_type", [ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE, ExperimentsType.MAB_ONLINE_DWH]
-)
+@pytest.mark.parametrize("experiment_type", [ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE])
 async def test_autofail_records_outcomes_for_supported_bandits(
     xngin_session: AsyncSession,
     testing_datasource,

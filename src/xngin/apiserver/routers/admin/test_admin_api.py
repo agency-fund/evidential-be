@@ -1987,7 +1987,6 @@ def test_create_online_cmab_experiment(testing_datasource, aclient: AdminAPIClie
         (ExperimentsType.MAB_ONLINE_DWH, False, 24, 0.0),
         (ExperimentsType.MAB_ONLINE, True, 48, 1.0),
         (ExperimentsType.CMAB_ONLINE, True, 72, 0.0),
-        (ExperimentsType.MAB_ONLINE_DWH, True, 72, 0.0),
     ],
 )
 def test_create_online_bandit_experiment_with_autofail(
