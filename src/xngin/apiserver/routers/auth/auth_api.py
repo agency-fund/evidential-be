@@ -283,7 +283,8 @@ def _principal_from_claims(settings: OidcSettings, claims: dict) -> Principal:
     return Principal(
         email=claims["email"],
         hd=auxiliary.get("hd", ""),
-        iat=claims["iat"],
+        # JWT NumericDate values may be fractional; PyJWT has already verified that iat is numeric.
+        iat=int(claims["iat"]),
         iss=claims["iss"],
         sub=claims["sub"],
     )
