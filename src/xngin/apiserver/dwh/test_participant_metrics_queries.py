@@ -127,6 +127,7 @@ def test_get_participant_metrics(queries_dwh_session, shared_sample_tables):
         assert actual.participant_id == exp.participant_id
         assert actual.metric_values[0].metric_name == exp.metric_values[0].metric_name
         assert actual.metric_values[0].metric_value == exp.metric_values[0].metric_value
+    assert all(isinstance(metric_value.metric_value, float) for row in rows for metric_value in row.metric_values)
 
 
 def test_build_participant_metrics_query_plans_batches_sorted_ids(shared_sample_tables):
