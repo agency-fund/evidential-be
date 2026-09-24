@@ -26,19 +26,22 @@ env:
   # Allow connecting to data warehouses residing in private IP ranges.
   ALLOW_CONNECTING_TO_PRIVATE_IPS: "1"
 
-  # Google will redirect to this URL upon successful authentication. This URL is served by the frontend application
-  # and the GoogleAuthProvider component will intercept the query arguments and handle them.
-  GOOGLE_OIDC_REDIRECT_URI: "http://localhost:3000/"
+  # The identity provider used for login. Any OIDC provider supporting the authorization code flow with PKCE can be
+  # configured; see the "Enabling OIDC" page in evidential-docs.
+  XNGIN_OIDC_ISSUER: "https://accounts.google.com"
+
+  # The identity provider will redirect to this URL upon successful authentication. This URL is served by the frontend
+  # application and the AuthProvider component will intercept the query arguments and handle them.
+  XNGIN_OIDC_REDIRECT_URI: "http://localhost:3000/"
 
   # These values are configured in the xngin-development-dc project and should be used in development environments:
   # https://console.cloud.google.com/apis/credentials?organizationId=256829878972&project=xngin-development-dc.
-  GOOGLE_OIDC_CLIENT_ID: "222213100775-qa1ajcrk48il70itcbdcvgr9ib5t08uf.apps.googleusercontent.com"
+  XNGIN_OIDC_CLIENT_ID: "222213100775-qa1ajcrk48il70itcbdcvgr9ib5t08uf.apps.googleusercontent.com"
 
   # These values are configured in the evidential-live project and should only be used when validating the
   # production environments:
   # https://console.cloud.google.com/auth/clients?project=evidential-live
-  #GOOGLE_OIDC_CLIENT_ID: "314428509782-j8fgiq5dvoic01432s2bcu3isinc9kam.apps.googleusercontent.com"
-  #GOOGLE_OIDC_REDIRECT_URI: "http://localhost:3000/"
+  #XNGIN_OIDC_CLIENT_ID: "314428509782-j8fgiq5dvoic01432s2bcu3isinc9kam.apps.googleusercontent.com"
 
   # Configure customlogging.py to log dwh SQL to the custom log.
   LOG_SQL_DWH: "true"
@@ -164,7 +167,7 @@ tasks:
     desc: "Starts apiserver locally with settings compatible with local dash dev server."
     interactive: true
     dotenv:
-      # Populate GOOGLE_OIDC_CLIENT_SECRET (optional).
+      # Populate XNGIN_OIDC_CLIENT_SECRET (optional).
       - .env
     env:
       DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
