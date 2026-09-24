@@ -1,5 +1,8 @@
+import datetime
 import json
-from dataclasses import dataclass
+import threading
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 
 import httpx2
 import jwt
@@ -9,7 +12,13 @@ from loguru import logger
 from xngin.apiserver import flags
 from xngin.apiserver.routers.auth.oidc_settings import OidcSettings, check_absolute_https_url
 
+DISCOVERY_CACHE_LIFETIME = datetime.timedelta(minutes=60)
+
 LOGIN_UNAVAILABLE_DETAIL = "Login is not configured on this server."
+
+
+def _utc_now() -> datetime.datetime:
+    return datetime.datetime.now(datetime.UTC)
 
 
 class OidcProviderError(Exception):
@@ -35,18 +44,29 @@ class _Endpoints:
 class _DiscoverySnapshot:
     endpoints: _Endpoints
     signing_keys: tuple[dict, ...]
+    refreshed_at: datetime.datetime
+
+
+@dataclass(slots=True)
+class _RefreshAttempts:
+    discovery: datetime.datetime
+    jwks: datetime.datetime
 
 
 class OidcDiscovery:
-    """Loads one provider's discovery document and RS256 signing keys.
+    """Loads and caches one provider's discovery document and RS256 signing keys.
 
-    Instances are safe to share between requests.
+    Instances are safe to share between requests. Endpoint and signing-key methods load and refresh
+    provider data as needed, so callers do not manage discovery state themselves. If the discovery documents or JWKS
+    keys fail to fetch, previous successful fetches will be re-used.
     """
 
     def __init__(
         self,
         settings: OidcSettings,
         client: httpx2.Client | None = None,
+        *,
+        clock: Callable[[], datetime.datetime] = _utc_now,
     ):
         self.settings = settings
         self._client = client or httpx2.Client(
@@ -54,27 +74,73 @@ class OidcDiscovery:
             timeout=15.0,
         )
         self._owns_client = client is None
+        self._clock = clock
+        self._lock = threading.Lock()
         try:
             self._snapshot = self._fetch_discovery()
         except OidcProviderError:
             self.close()
             raise
+        self._refresh_attempts = _RefreshAttempts(
+            discovery=self._snapshot.refreshed_at,
+            jwks=self._snapshot.refreshed_at,
+        )
 
     def authorization_endpoint(self) -> str:
+        self._refresh_discovery_if_expired()
         return self._snapshot.endpoints.authorization_endpoint
 
     def token_endpoint(self) -> str:
+        self._refresh_discovery_if_expired()
         return self._snapshot.endpoints.token_endpoint
 
+    def _refresh_discovery_if_expired(self) -> None:
+        if self._snapshot_is_current() or not self._should_retry_fetch(self._refresh_attempts.discovery):
+            return
+        with self._lock:
+            if self._snapshot_is_current() or not self._should_retry_fetch(self._refresh_attempts.discovery):
+                return
+            self._refresh_attempts.discovery = self._clock()
+            try:
+                self._snapshot = self._fetch_discovery()
+            except OidcProviderError as exc:
+                logger.warning(f"OpenID discovery refresh failed; retaining cached discovery document: {exc}")
+                return
+            self._refresh_attempts.discovery = self._snapshot.refreshed_at
+            self._refresh_attempts.jwks = self._snapshot.refreshed_at
+
     def get_signing_key(self, *, kid: object, algorithm: object) -> dict | None:
-        """Returns the requested RS256 key, or None when the provider has not published it."""
+        """Returns the requested RS256 key, refreshing JWKS once when an unknown key may have rotated in."""
+        self._refresh_discovery_if_expired()
+        snapshot = self._snapshot
         if algorithm != "RS256" or not isinstance(kid, str) or not kid:
             return None
-        return self._find_signing_key(self._snapshot, kid)
+        if key := self._find_signing_key(snapshot, kid):
+            return key
+
+        with self._lock:
+            if key := self._find_signing_key(self._snapshot, kid):
+                return key
+
+            if not self._should_retry_fetch(self._refresh_attempts.jwks):
+                return None
+
+            logger.info(f"Refreshing OpenID signing keys from {self._snapshot.endpoints.jwks_uri}")
+            self._refresh_attempts.jwks = self._clock()
+            signing_keys = self._fetch_signing_keys(self._snapshot.endpoints.jwks_uri)
+            refreshed_snapshot = replace(self._snapshot, signing_keys=signing_keys)
+            self._snapshot = refreshed_snapshot
+            return self._find_signing_key(refreshed_snapshot, kid)
 
     def close(self) -> None:
         if self._owns_client:
             self._client.close()
+
+    def _snapshot_is_current(self) -> bool:
+        return self._snapshot.refreshed_at >= self._clock() - DISCOVERY_CACHE_LIFETIME
+
+    def _should_retry_fetch(self, attempted_at: datetime.datetime) -> bool:
+        return attempted_at <= self._clock() - datetime.timedelta(minutes=1)
 
     @staticmethod
     def _find_signing_key(snapshot: _DiscoverySnapshot, kid: str) -> dict | None:
@@ -118,6 +184,7 @@ class OidcDiscovery:
         return _DiscoverySnapshot(
             endpoints=endpoints,
             signing_keys=signing_keys,
+            refreshed_at=self._clock(),
         )
 
     def _validate_config(self, config: dict) -> _Endpoints:

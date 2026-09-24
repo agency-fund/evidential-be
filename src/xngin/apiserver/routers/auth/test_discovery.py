@@ -1,4 +1,7 @@
 import base64
+import datetime
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import httpx2
 import pytest
@@ -6,6 +9,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import FastAPI, HTTPException, Request
 
 from xngin.apiserver.routers.auth.discovery import (
+    DISCOVERY_CACHE_LIFETIME,
     OidcDiscovery,
     OidcDiscoveryError,
     OidcProviderTimeoutError,
@@ -15,6 +19,17 @@ from xngin.apiserver.routers.auth.oidc_settings import OidcSettings
 
 DISCOVERY_ISSUER = "https://idp.example.com"
 DISCOVERY_PATH = "/.well-known/openid-configuration"
+
+
+class FakeClock:
+    def __init__(self):
+        self.now = datetime.datetime.now(datetime.UTC)
+
+    def __call__(self) -> datetime.datetime:
+        return self.now
+
+    def advance(self, duration: datetime.timedelta) -> None:
+        self.now += duration
 
 
 def _b64url_uint(value: int) -> str:
@@ -321,3 +336,134 @@ def test_discovery_normalizes_request_failures(error_type, exception):
 
     with httpx2.Client(transport=httpx2.MockTransport(handler)) as client, pytest.raises(exception):
         OidcDiscovery(_settings(), client)
+
+
+def test_unknown_key_refreshes_only_jwks(idp_jwk):
+    published_keys = [idp_jwk]
+    requests: list[str] = []
+    clock = FakeClock()
+    with _idp_client(idp_jwk, keys=published_keys, requests=requests) as client:
+        discovery = OidcDiscovery(_settings(), client, clock=clock)
+        clock.advance(datetime.timedelta(minutes=1))
+        rotated_jwk = {**idp_jwk, "kid": "rotated"}
+        published_keys[:] = [rotated_jwk]
+
+        key = discovery.get_signing_key(kid="rotated", algorithm="RS256")
+
+    assert key == rotated_jwk
+    assert requests == [
+        f"{DISCOVERY_ISSUER}{DISCOVERY_PATH}",
+        f"{DISCOVERY_ISSUER}/keys",
+        f"{DISCOVERY_ISSUER}/keys",
+    ]
+
+
+def test_expired_discovery_refreshes_document_and_jwks(idp_jwk):
+    requests: list[str] = []
+    clock = FakeClock()
+    with _idp_client(idp_jwk, requests=requests) as client:
+        discovery = OidcDiscovery(_settings(), client, clock=clock)
+        clock.advance(DISCOVERY_CACHE_LIFETIME + datetime.timedelta(microseconds=1))
+
+        discovery.authorization_endpoint()
+
+    assert requests == [
+        f"{DISCOVERY_ISSUER}{DISCOVERY_PATH}",
+        f"{DISCOVERY_ISSUER}/keys",
+        f"{DISCOVERY_ISSUER}{DISCOVERY_PATH}",
+        f"{DISCOVERY_ISSUER}/keys",
+    ]
+
+
+def test_failed_expired_discovery_refresh_preserves_snapshot_and_rate_limits_attempts(idp_jwk):
+    requests: list[str] = []
+    discovery_status = [200]
+    clock = FakeClock()
+    with _idp_client(idp_jwk, requests=requests, discovery_status=discovery_status) as client:
+        discovery = OidcDiscovery(_settings(), client, clock=clock)
+        clock.advance(DISCOVERY_CACHE_LIFETIME + datetime.timedelta(microseconds=1))
+        discovery_status[0] = 503
+
+        first_endpoint = discovery.authorization_endpoint()
+        second_endpoint = discovery.authorization_endpoint()
+        cached_key = discovery.get_signing_key(kid="k1", algorithm="RS256")
+        clock.advance(datetime.timedelta(minutes=1))
+        third_endpoint = discovery.authorization_endpoint()
+
+    assert first_endpoint == second_endpoint == third_endpoint == f"{DISCOVERY_ISSUER}/authorize"
+    assert cached_key == idp_jwk
+    assert requests.count(f"{DISCOVERY_ISSUER}{DISCOVERY_PATH}") == 3
+    assert requests.count(f"{DISCOVERY_ISSUER}/keys") == 1
+
+
+def test_unknown_key_refresh_is_rate_limited(idp_jwk):
+    requests: list[str] = []
+    with _idp_client(idp_jwk, requests=requests) as client:
+        discovery = OidcDiscovery(_settings(), client)
+        key = discovery.get_signing_key(kid="random-attacker-kid", algorithm="RS256")
+
+    assert key is None
+    assert len(requests) == 2
+
+
+def test_unknown_key_refreshes_are_coalesced(idp_jwk, monkeypatch: pytest.MonkeyPatch):
+    published_keys = [idp_jwk]
+    requests: list[str] = []
+    clock = FakeClock()
+    with _idp_client(idp_jwk, keys=published_keys, requests=requests) as client:
+        discovery = OidcDiscovery(_settings(), client, clock=clock)
+        clock.advance(datetime.timedelta(minutes=1))
+        rotated_jwk = {**idp_jwk, "kid": "rotated"}
+        published_keys[:] = [rotated_jwk]
+        initial_lookups = threading.Barrier(2)
+        thread_state = threading.local()
+        find_signing_key = discovery._find_signing_key
+
+        def find_after_both_threads_miss(snapshot, kid):
+            key = find_signing_key(snapshot, kid)
+            if not hasattr(thread_state, "initial_lookup_finished"):
+                thread_state.initial_lookup_finished = True
+                initial_lookups.wait(timeout=5)
+            return key
+
+        monkeypatch.setattr(discovery, "_find_signing_key", find_after_both_threads_miss)
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(discovery.get_signing_key, kid="rotated", algorithm="RS256") for _ in range(2)]
+            first, second = (future.result() for future in futures)
+
+    assert first == second == rotated_jwk
+    assert requests.count(f"{DISCOVERY_ISSUER}/keys") == 2
+
+
+def test_failed_key_refresh_preserves_keys_and_rate_limits_attempts(idp_jwk):
+    jwks_status = [200]
+    requests: list[str] = []
+    clock = FakeClock()
+    with _idp_client(idp_jwk, requests=requests, jwks_status=jwks_status) as client:
+        discovery = OidcDiscovery(_settings(), client, clock=clock)
+        clock.advance(datetime.timedelta(minutes=1))
+        jwks_status[0] = 503
+
+        with pytest.raises(OidcDiscoveryError, match="status code: 503"):
+            discovery.get_signing_key(kid="first-unknown", algorithm="RS256")
+        second_unknown = discovery.get_signing_key(kid="second-unknown", algorithm="RS256")
+        cached = discovery.get_signing_key(kid="k1", algorithm="RS256")
+
+    assert second_unknown is None
+    assert cached == idp_jwk
+    assert requests.count(f"{DISCOVERY_ISSUER}/keys") == 2
+
+
+def test_non_rs256_or_missing_key_ids_never_refresh(idp_jwk):
+    requests: list[str] = []
+    clock = FakeClock()
+    with _idp_client(idp_jwk, requests=requests) as client:
+        discovery = OidcDiscovery(_settings(), client, clock=clock)
+        clock.advance(datetime.timedelta(minutes=1))
+
+        assert discovery.get_signing_key(kid="unknown", algorithm="HS256") is None
+        assert discovery.get_signing_key(kid="", algorithm="RS256") is None
+        assert discovery.get_signing_key(kid=None, algorithm="RS256") is None
+
+    assert len(requests) == 2
