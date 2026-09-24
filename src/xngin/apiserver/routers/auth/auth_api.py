@@ -37,8 +37,11 @@ CLOCK_SKEW_LEEWAY = datetime.timedelta(seconds=15)
 # userinfo endpoint, so it is checked separately.
 REQUIRED_CLAIMS = ["iss", "aud", "iat", "exp", "sub", "email"]
 
-# Bounds the length of provider-supplied headers copied into log messages.
+# Bounds the length of provider-supplied OAuth error fields and headers copied into log messages.
 MAX_OAUTH_ERROR_FIELD_LENGTH = 200
+
+# Google's OIDC issuer string, only used in informative error messages.
+GOOGLE_ISSUER = "https://accounts.google.com"
 
 OIDC_PROVIDER_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     502: {"description": "The identity provider returned an invalid or unavailable response."},
@@ -162,8 +165,11 @@ def _exchange_code_for_tokens(
     except httpx2.RequestError as exc:
         raise OidcTokenExchangeError(f"Token request to {token_endpoint} failed: {type(exc).__name__}.") from exc
     if token_response.status_code != 200:
+        if settings.issuer == GOOGLE_ISSUER and settings.client_secret is None:
+            logger.warning(f"This OIDC IDP may require {flags.ENV_XNGIN_OIDC_CLIENT_SECRET} to be set.")
         raise OidcTokenExchangeError(
-            f"Token endpoint {token_endpoint} returned status code {token_response.status_code}."
+            f"Token endpoint {token_endpoint} returned status code {token_response.status_code}"
+            f"{_describe_oauth_error(token_response)}."
         )
     try:
         response = token_response.json()
@@ -176,6 +182,26 @@ def _exchange_code_for_tokens(
         raise OidcTokenExchangeError(f"Token endpoint {token_endpoint} did not return a string id_token.")
     access_token = response.get("access_token")
     return _TokenResponse(id_token=id_token, access_token=access_token if isinstance(access_token, str) else None)
+
+
+def _describe_oauth_error(token_response: httpx2.Response) -> str:
+    """Summarizes the error and error_description fields of an RFC 6749 section 5.2 error response, if present.
+
+    Only these two fields are reported because they are intended for the client developer; the rest of the body is
+    not logged.
+    """
+    try:
+        body = token_response.json()
+    except json.JSONDecodeError, UnicodeDecodeError:
+        return ""
+    if not isinstance(body, dict):
+        return ""
+    fields = [
+        f"{name}={body[name][:MAX_OAUTH_ERROR_FIELD_LENGTH]!r}"
+        for name in ("error", "error_description")
+        if isinstance(body.get(name), str)
+    ]
+    return f" ({', '.join(fields)})" if fields else ""
 
 
 def _get_signing_key(
@@ -287,6 +313,7 @@ def _fetch_userinfo(httpx_client: httpx2.Client, userinfo_endpoint: str, *, acce
     except httpx2.RequestError as exc:
         raise OidcUserinfoError(f"Userinfo request to {userinfo_endpoint} failed: {type(exc).__name__}.") from exc
     if response.status_code != 200:
+        # RFC 6750 section 3 reports bearer token errors in the WWW-Authenticate header rather than the body.
         www_authenticate = response.headers.get("WWW-Authenticate")
         detail = f" (WWW-Authenticate={www_authenticate[:MAX_OAUTH_ERROR_FIELD_LENGTH]!r})" if www_authenticate else ""
         raise OidcUserinfoError(

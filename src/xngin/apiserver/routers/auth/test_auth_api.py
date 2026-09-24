@@ -460,8 +460,32 @@ def test_token_exchange_sends_client_secret_when_configured(discovery):
     [
         pytest.param(
             httpx2.Response(400, json={"error": "invalid_grant"}),
-            f"Token endpoint {TEST_TOKEN_ENDPOINT} returned status code 400.",
+            f"Token endpoint {TEST_TOKEN_ENDPOINT} returned status code 400 (error='invalid_grant').",
             id="error-status",
+        ),
+        pytest.param(
+            httpx2.Response(
+                401,
+                json={"error": "invalid_client", "error_description": "Unauthorized\nclient", "secret": "hidden"},
+            ),
+            f"Token endpoint {TEST_TOKEN_ENDPOINT} returned status code 401"
+            " (error='invalid_client', error_description='Unauthorized\\nclient').",
+            id="error-status-with-description",
+        ),
+        pytest.param(
+            httpx2.Response(400, json={"error": "x" * 500}),
+            f"Token endpoint {TEST_TOKEN_ENDPOINT} returned status code 400 (error='{'x' * 200}').",
+            id="error-status-truncates-fields",
+        ),
+        pytest.param(
+            httpx2.Response(400, json={"error": 42}),
+            f"Token endpoint {TEST_TOKEN_ENDPOINT} returned status code 400.",
+            id="error-status-non-string-error",
+        ),
+        pytest.param(
+            httpx2.Response(502, content=b"<html>Bad Gateway</html>"),
+            f"Token endpoint {TEST_TOKEN_ENDPOINT} returned status code 502.",
+            id="error-status-non-json",
         ),
         pytest.param(
             httpx2.Response(200, content=b"not json"),
