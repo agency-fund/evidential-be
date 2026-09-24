@@ -19,14 +19,26 @@ def truthy_env(env_var: str):
     return os.environ.get(env_var, "").lower() in {"true", "1"}
 
 
-# Flags configuring OIDC
+# Flags configuring OIDC. These are raw values; routers/auth/oidc_settings.py parses and validates them.
 AIRPLANE_MODE = truthy_env("AIRPLANE_MODE")
+ENV_XNGIN_OIDC_ISSUER = "XNGIN_OIDC_ISSUER"
+OIDC_ISSUER = os.environ.get(ENV_XNGIN_OIDC_ISSUER, "")
+ENV_XNGIN_OIDC_CLIENT_ID = "XNGIN_OIDC_CLIENT_ID"
+OIDC_CLIENT_ID = os.environ.get(ENV_XNGIN_OIDC_CLIENT_ID, "")
+ENV_XNGIN_OIDC_CLIENT_SECRET = "XNGIN_OIDC_CLIENT_SECRET"  # noqa: S105
+OIDC_CLIENT_SECRET = os.environ.get(ENV_XNGIN_OIDC_CLIENT_SECRET, "")
+ENV_XNGIN_OIDC_REDIRECT_URI = "XNGIN_OIDC_REDIRECT_URI"
+OIDC_REDIRECT_URI = os.environ.get(ENV_XNGIN_OIDC_REDIRECT_URI, "")
+ENV_XNGIN_OIDC_CLAIM_MAP = "XNGIN_OIDC_CLAIM_MAP"
+OIDC_CLAIM_MAP = os.environ.get(ENV_XNGIN_OIDC_CLAIM_MAP, "")
+
+# Legacy Google-only flags, read until the relying party is switched to the settings above.
 ENV_GOOGLE_OIDC_CLIENT_ID = "GOOGLE_OIDC_CLIENT_ID"
 CLIENT_ID = os.environ.get(ENV_GOOGLE_OIDC_CLIENT_ID)
 ENV_GOOGLE_OIDC_CLIENT_SECRET = "GOOGLE_OIDC_CLIENT_SECRET"  # noqa: S105
 CLIENT_SECRET = os.environ.get(ENV_GOOGLE_OIDC_CLIENT_SECRET)
 DEFAULT_REDIRECT_URI = f"http://localhost:8000{constants.API_PREFIX_V1}/a/oidc"
-OIDC_REDIRECT_URI = os.environ.get("GOOGLE_OIDC_REDIRECT_URI", DEFAULT_REDIRECT_URI)  # used for testing UI only
+GOOGLE_OIDC_REDIRECT_URI = os.environ.get("GOOGLE_OIDC_REDIRECT_URI", DEFAULT_REDIRECT_URI)  # used for testing UI only
 
 # XNGIN_SESSION_TOKEN_KEYSET contains a keyset for encrypting session tokens. This is generated using the
 # `xngin-cli create-nacl-keyset` command. If set to "local", we will read from a local file (see:
