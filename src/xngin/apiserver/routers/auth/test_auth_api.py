@@ -17,7 +17,7 @@ import httpx2
 import pytest
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 
 from xngin.apiserver import flags
 from xngin.apiserver.dependencies import retrying_httpx_dependency
@@ -849,7 +849,7 @@ async def test_lifespan_constructs_discovery_off_the_event_loop(monkeypatch: pyt
     loop_thread = threading.get_ident()
     constructed_in: list[int] = []
 
-    class RecordingDiscovery:
+    class RecordingDiscovery(auth_api.OidcDiscovery):
         closed = False
 
         def __init__(self, settings: OidcSettings):
@@ -873,4 +873,45 @@ async def test_lifespan_constructs_discovery_off_the_event_loop(monkeypatch: pyt
     assert constructed_in != [loop_thread]
     assert len(constructed_in) == 1
     assert discovery.closed
+    assert not hasattr(lifespan_app.state, "oidc_discovery")
+
+
+async def test_lifespan_retries_discovery_after_startup_failure(monkeypatch: pytest.MonkeyPatch):
+    attempts = 0
+    warnings: list[str] = []
+    closed: list[object] = []
+
+    class RecoveringDiscovery(auth_api.OidcDiscovery):
+        def __init__(self, settings: OidcSettings):
+            nonlocal attempts
+            attempts += 1
+            if attempts < 3:
+                raise OidcDiscoveryError("discovery document unavailable")
+
+        def authorization_endpoint(self) -> str:
+            return TEST_AUTHORIZATION_ENDPOINT
+
+        def close(self):
+            closed.append(self)
+
+    monkeypatch.setattr(flags, "AIRPLANE_MODE", False)
+    monkeypatch.setattr(auth_api.auth_dependencies, "TESTING_TOKENS_ENABLED", False)
+    monkeypatch.setattr(auth_api, "get_oidc_settings", _settings)
+    monkeypatch.setattr(auth_api, "OidcDiscovery", RecoveringDiscovery)
+    monkeypatch.setattr(auth_api.logger, "warning", warnings.append)
+    lifespan_app = FastAPI()
+    request = Request({"type": "http", "app": lifespan_app})
+
+    async with auth_api.lifespan(lifespan_app):
+        assert attempts == 1
+        discovery = get_oidc_discovery(request)
+        assert discovery is lifespan_app.state.oidc_discovery
+        with pytest.raises(OidcDiscoveryError, match="discovery document unavailable"):
+            discovery.authorization_endpoint()
+        assert discovery.authorization_endpoint() == TEST_AUTHORIZATION_ENDPOINT
+        assert discovery.authorization_endpoint() == TEST_AUTHORIZATION_ENDPOINT
+        assert attempts == 3
+
+    assert any("discovery unavailable during startup" in warning for warning in warnings)
+    assert len(closed) == 1
     assert not hasattr(lifespan_app.state, "oidc_discovery")
