@@ -134,6 +134,11 @@ class DesignSpecMetricBase(ApiBaseModel):
             raise ValueError("icc, avg_cluster_size, and cv must all be set together or all be None")
         return self
 
+    @property
+    def has_cluster_stats(self) -> bool:
+        """True when this metric carries the full set of cluster statistics."""
+        return self.icc is not None and self.avg_cluster_size is not None and self.cv is not None
+
     @model_validator(mode="after")
     def stddev_check(self) -> Self:
         """Enforce that metric_stddev is empty for non-NUMERICs. The frontend handles numerics without a
@@ -155,7 +160,7 @@ class DesignSpecMetric(DesignSpecMetricBase):
 class DesignSpecMetricRequest(DesignSpecMetricBase):
     """Defines a request to look up baseline stats for a metric to measure in an experiment.
 
-    Baseline stats may optionally be supplied (e.g. echoed back from a prior power check's
+    Baseline stats may optionally be supplied (e.g. copied from a prior power check's
     `MetricPowerAnalysis.metric_spec`), in which case the server reuses them instead of
     re-querying the data warehouse.
     """
@@ -199,7 +204,12 @@ class DesignSpecMetricRequest(DesignSpecMetricBase):
     @property
     def has_baseline_stats(self) -> bool:
         """True when this request carries the baseline stats needed to skip the dwh stats query."""
-        return self.metric_baseline is not None
+        return (
+            self.metric_type is not None
+            and self.metric_baseline is not None
+            and self.available_nonnull_n is not None
+            and self.available_n is not None
+        )
 
     def to_design_spec_metric(self) -> DesignSpecMetric:
         """Converts a request carrying baseline stats into the equivalent dwh-derived metric."""

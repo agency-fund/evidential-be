@@ -2000,7 +2000,7 @@ async def power_check(
         filters = [*filters, Filter(field_name=cluster_key, relation=Relation.EXCLUDES, value=[None])]
 
     metrics_missing_stats = [m for m in design_spec.metrics if not m.has_baseline_stats]
-    needs_cluster_stats = cluster_key is not None and any(m.icc is None for m in design_spec.metrics)
+    needs_cluster_stats = cluster_key is not None and any(not m.has_cluster_stats for m in design_spec.metrics)
 
     if not metrics_missing_stats and not needs_cluster_stats:
         # Every metric arrived with baseline stats (and cluster stats where needed), so the
@@ -2028,7 +2028,9 @@ async def power_check(
 
             # Derive cluster stats from the dwh only for metrics without user-provided ICC, in one query.
             db_derived_metrics = (
-                [m.field_name for m in design_spec.metrics if m.icc is None] if cluster_key is not None else []
+                [m.field_name for m in design_spec.metrics if not m.has_cluster_stats]
+                if cluster_key is not None
+                else []
             )
             raw_cluster_stats = None
             if cluster_key is not None and db_derived_metrics:
@@ -2078,7 +2080,7 @@ async def power_check(
             for metric_stat in metric_stats:
                 req_metric = request_metrics_by_name[metric_stat.field_name]
                 # If the user provided ICC, avg_cluster_size, and cv, use them instead of deriving from the dwh.
-                if req_metric.icc is not None:
+                if req_metric.has_cluster_stats:
                     metric_stat.icc = req_metric.icc
                     metric_stat.avg_cluster_size = req_metric.avg_cluster_size
                     metric_stat.cv = req_metric.cv

@@ -3940,7 +3940,10 @@ async def test_power_check_with_desired_n_clusters(testing_datasource, aclient: 
 
 
 def echo_metric_request(spec: DesignSpecMetric) -> DesignSpecMetricRequest:
-    """Builds a follow-up power check metric from a prior response's metric_spec, as the frontend would."""
+    """Builds a follow-up power check metric from a prior response's metric_spec, as the frontend would.
+    Note:
+    metric_target is deliberately not copied: the response carries both metric_pct_change
+    and the metric_target derived from it, while a request may only set one of the two."""
     return DesignSpecMetricRequest(
         field_name=spec.field_name,
         metric_pct_change=spec.metric_pct_change,
