@@ -5,6 +5,15 @@ from pydantic import BaseModel, Field
 CODE_VERIFIER_PATTERN = r"^[A-Za-z0-9._~-]+$"
 
 
+class OidcClientConfigResponse(BaseModel):
+    """Describes the identity provider settings the frontend needs to begin the authorization code flow with PKCE."""
+
+    authorization_endpoint: Annotated[str, Field(description="Identity provider URL that starts the login flow.")]
+    client_id: Annotated[str, Field(description="OAuth client ID registered with the identity provider.")]
+    redirect_uri: Annotated[str, Field(description="URL the identity provider redirects to after login.")]
+    scope: Annotated[str, Field(description="Scopes to request, separated by spaces.")]
+
+
 class CallbackRequest(BaseModel):
     """Contains the OIDC authorization code, PKCE verifier, and nonce for the token exchange."""
 

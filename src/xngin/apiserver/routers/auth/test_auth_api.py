@@ -626,6 +626,25 @@ def fixture_configured_app(settings, discovery, signing_key, issued_claims, monk
             app.dependency_overrides[dependency] = override
 
 
+def test_config_endpoint_returns_login_parameters(client, configured_app):
+    response = client.get("/v1/a/oidc/config")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "authorization_endpoint": TEST_AUTHORIZATION_ENDPOINT,
+        "client_id": TEST_CLIENT_ID,
+        "redirect_uri": TEST_REDIRECT_URI,
+        "scope": "openid email",
+    }
+
+
+def test_config_endpoint_unavailable_when_login_is_disabled(client):
+    response = client.get("/v1/a/oidc/config")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Login is not configured on this server."}
+
+
 def _callback_body(nonce: str = TEST_NONCE) -> dict:
     return {"code": "the-code", "code_verifier": TEST_CODE_VERIFIER, "nonce": nonce}
 
