@@ -93,7 +93,7 @@ def _exchange_code_for_idtoken(
             "client_secret": flags.CLIENT_SECRET,
             "code": code,
             "code_verifier": code_verifier,
-            "redirect_uri": flags.OIDC_REDIRECT_URI,
+            "redirect_uri": flags.GOOGLE_OIDC_REDIRECT_URI,
             "grant_type": "authorization_code",
         },
     )
