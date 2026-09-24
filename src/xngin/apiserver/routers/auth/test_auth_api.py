@@ -730,10 +730,11 @@ def _callback_body(nonce: str = TEST_NONCE) -> dict:
     return {"code": "the-code", "code_verifier": TEST_CODE_VERIFIER, "nonce": nonce}
 
 
-def test_callback_returns_session_token(client, configured_app, issued_claims):
+def test_callback_returns_session_token_that_must_not_be_cached(client, configured_app, issued_claims):
     response = client.post("/v1/a/oidc/callback", json=_callback_body())
 
     assert response.status_code == 200, response.text
+    assert response.headers["cache-control"] == "no-store"
     principal = SessionTokenCryptor().decode(response.json()["session_token"])
     assert principal == Principal(
         email="user@example.com",
