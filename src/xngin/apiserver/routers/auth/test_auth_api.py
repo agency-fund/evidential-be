@@ -177,6 +177,12 @@ def test_accepts_a_valid_token(settings, discovery, signing_key):
     assert decoded["nonce"] == TEST_NONCE
 
 
+def test_accepts_token_without_azp(settings, discovery, signing_key):
+    decoded = _validate(settings, discovery, _mint(signing_key, _claims(azp=None)))
+
+    assert decoded["sub"] == "1234567890"
+
+
 def test_rejects_unknown_kid(settings, discovery, signing_key):
     with pytest.raises(HTTPException) as exc:
         _validate(settings, discovery, _mint(signing_key, _claims(), kid="some-other-kid"))
@@ -246,12 +252,19 @@ def test_rejects_token_signed_by_another_key(settings, discovery, other_key):
     "overrides",
     [
         pytest.param({"aud": "some-other-client-id", "azp": "some-other-client-id"}, id="wrong-aud"),
+        pytest.param({"aud": [TEST_CLIENT_ID, "another-client-id"]}, id="untrusted-additional-audience"),
+        pytest.param({"aud": [TEST_CLIENT_ID, "another-client-id"], "azp": None}, id="multi-audience-without-azp"),
+        pytest.param({"aud": [TEST_CLIENT_ID]}, id="audience-array"),
         pytest.param({"iss": "https://accounts.evil.example"}, id="wrong-iss"),
+        pytest.param({"iss": "accounts.google.com"}, id="schemeless-iss"),
         pytest.param({"exp": int(datetime.datetime.now(datetime.UTC).timestamp()) - 3600}, id="expired"),
         pytest.param({"iss": None}, id="missing-iss"),
         pytest.param({"aud": None}, id="missing-aud"),
         pytest.param({"iat": None}, id="missing-iat"),
         pytest.param({"exp": None}, id="missing-exp"),
+        pytest.param({"sub": None}, id="missing-sub"),
+        pytest.param({"email": None}, id="missing-email"),
+        pytest.param({"email": 42}, id="non-string-email"),
     ],
 )
 def test_rejects_invalid_claims(settings, discovery, signing_key, overrides):
