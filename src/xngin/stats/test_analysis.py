@@ -240,6 +240,8 @@ def test_analysis_counts_participants_absent_from_outcomes(test_assignments, tes
     assert sum(r.num_missing_values for r in bool_field_results.values()) == len(absent_ids)
 
 
+# sqrt() warns when cancellation makes a mathematically zero mean variance slightly negative.
+@pytest.mark.filterwarnings("ignore:invalid value encountered in sqrt:RuntimeWarning")
 def test_analysis_with_all_identical_outcomes_in_one_arm():
     """A treatment arm whose outcomes are all identical still gets finite mean CIs.
 
@@ -268,6 +270,10 @@ def test_analysis_with_all_identical_outcomes_in_one_arm():
     assert math.isfinite(degenerate_results.mean_ci_upper)
 
 
+# HC1 and the residual scale divide by df_resid, which is 0 with one observation per arm.
+@pytest.mark.filterwarnings("ignore:divide by zero encountered in scalar divide:RuntimeWarning")
+# That non-finite covariance makes the predicted-mean variance dot product warn.
+@pytest.mark.filterwarnings("ignore:invalid value encountered in dot:RuntimeWarning")
 def test_analysis_with_inestimable_variance_keeps_nan_mean_cis():
     """NaN mean CI bounds from causes other than identical outcomes are surfaced, not collapsed.
 
