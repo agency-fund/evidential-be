@@ -29,6 +29,10 @@ class OidcDiscoveryError(OidcProviderError):
     pass
 
 
+class OidcTokenExchangeError(OidcProviderError):
+    pass
+
+
 class OidcUserinfoError(OidcProviderError):
     pass
 
