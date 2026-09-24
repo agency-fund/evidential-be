@@ -124,6 +124,7 @@ def _settings(**overrides) -> OidcSettings:
         "issuer": TEST_ISSUER,
         "client_id": TEST_CLIENT_ID,
         "redirect_uri": TEST_REDIRECT_URI,
+        "claim_map": {"hd": "hd"},
     }
     kwargs.update(overrides)
     return OidcSettings(**kwargs)
@@ -358,6 +359,35 @@ def test_rejects_iat_far_in_the_future(settings, discovery, signing_key):
     far_future = _now() + 600
     with pytest.raises(HTTPException) as exc:
         _validate(settings, discovery, _mint(signing_key, _claims(iat=far_future)))
+
+    assert exc.value.status_code == 401
+    assert exc.value.detail == "Invalid authentication credentials"
+
+
+def test_principal_applies_claim_map(settings):
+    principal = auth_api._principal_from_claims(settings, _claims())
+
+    assert principal.email == "user@example.com"
+    assert principal.hd == "example.com"
+    assert principal.iss == TEST_ISSUER
+    assert principal.sub == "1234567890"
+
+
+def test_principal_without_claim_map_leaves_auxiliary_fields_blank():
+    principal = auth_api._principal_from_claims(_settings(claim_map={}), _claims())
+
+    assert principal.hd == ""
+
+
+def test_principal_tolerates_missing_mapped_claim(settings):
+    principal = auth_api._principal_from_claims(settings, _claims(azp=None, hd=None))
+
+    assert principal.hd == ""
+
+
+def test_principal_rejects_non_string_mapped_claim(settings):
+    with pytest.raises(HTTPException) as exc:
+        auth_api._principal_from_claims(settings, _claims(hd=["example.com"]))
 
     assert exc.value.status_code == 401
     assert exc.value.detail == "Invalid authentication credentials"

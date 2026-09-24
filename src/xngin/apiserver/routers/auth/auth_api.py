@@ -95,15 +95,7 @@ def auth_callback(
     claims = _validate_idtoken(settings, signing_key, id_token=tokens.id_token, nonce=body.nonce)
     if "email_verified" not in claims:
         _require_email_verified_by_userinfo(discovery, httpx_client, claims=claims, access_token=tokens.access_token)
-    session_token = session_cryptor.encode(
-        Principal(
-            email=claims["email"],
-            hd=claims.get("hd", ""),  # optional claim only on Google hosted domains
-            iat=claims["iat"],
-            iss=claims["iss"],
-            sub=claims["sub"],
-        )
-    )
+    session_token = session_cryptor.encode(_principal_from_claims(settings, claims))
     return CallbackResponse(session_token=session_token)
 
 
@@ -275,3 +267,23 @@ def _fetch_userinfo(httpx_client: httpx2.Client, userinfo_endpoint: str, *, acce
     if not isinstance(userinfo, dict):
         raise OidcUserinfoError(f"Userinfo endpoint {userinfo_endpoint} returned a non-dictionary response.")
     return userinfo
+
+
+def _principal_from_claims(settings: OidcSettings, claims: dict) -> Principal:
+    """Builds a Principal from validated ID token claims, applying the configured claim map to auxiliary fields."""
+    auxiliary: dict[str, str] = {}
+    for claim, field_name in settings.claim_map.items():
+        value = claims.get(claim, "")
+        if not isinstance(value, str):
+            logger.warning(
+                f"ID token claim {claim!r} mapped to {field_name!r} is a {type(value).__name__}, not a string"
+            )
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials")
+        auxiliary[field_name] = value
+    return Principal(
+        email=claims["email"],
+        hd=auxiliary.get("hd", ""),
+        iat=claims["iat"],
+        iss=claims["iss"],
+        sub=claims["sub"],
+    )
