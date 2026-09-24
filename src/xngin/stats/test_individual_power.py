@@ -3,6 +3,7 @@ import pytest
 from xngin.apiserver.routers.common_api_types import DesignSpecMetric, MetricPowerAnalysis
 from xngin.apiserver.routers.common_enums import MetricType
 from xngin.stats.individual_power import (
+    requested_direction_is_down,
     solve_for_mde_individual_impl,
     solve_for_sample_size_individual,
 )
@@ -36,9 +37,12 @@ def test_solve_for_mde_individual_impl():
         available_n=1000,
     )
 
-    target_n, pct_change = solve_for_mde_individual_impl(metric, desired_n=20000, n_arms=2)
-    assert target_n == pytest.approx(100.792, rel=1e-3)
-    assert pct_change == pytest.approx(0.00793, rel=1e-3)
+    result = solve_for_mde_individual_impl(metric, desired_n=20000, n_arms=2)
+    assert result.target_possible == pytest.approx(100.792, rel=1e-3)
+    assert result.pct_change_possible == pytest.approx(0.00793, rel=1e-3)
+    # Numeric bounds are symmetric around the baseline.
+    assert result.target_possible_lower == pytest.approx(99.208, rel=1e-3)
+    assert result.pct_change_possible_lower == pytest.approx(-0.00793, rel=1e-3)
 
 
 def test_solve_for_mde_individual_impl_binary():
@@ -51,9 +55,59 @@ def test_solve_for_mde_individual_impl_binary():
         available_n=1000,
     )
 
-    target_n, pct_change = solve_for_mde_individual_impl(metric, desired_n=20000, n_arms=2)
-    assert target_n == pytest.approx(0.480, rel=1e-3)
-    assert pct_change == pytest.approx(-0.0396, rel=1e-3)
+    result = solve_for_mde_individual_impl(metric, desired_n=20000, n_arms=2)
+    # The primary bound is the positive lift; the _lower fields hold the detectable decrease
+    # (symmetric here because the baseline is 0.5).
+    assert result.target_possible == pytest.approx(0.5198, rel=1e-3)
+    assert result.pct_change_possible == pytest.approx(0.0396, rel=1e-3)
+    assert result.target_possible_lower == pytest.approx(0.480, rel=1e-3)
+    assert result.pct_change_possible_lower == pytest.approx(-0.0396, rel=1e-3)
+
+
+def test_solve_for_mde_individual_impl_binary_asymmetric_bounds():
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.BINARY,
+        metric_baseline=0.05,
+        available_nonnull_n=1000,
+        available_n=1000,
+    )
+
+    result = solve_for_mde_individual_impl(metric, desired_n=1000, n_arms=2)
+    # The MDE is symmetric in Cohen's h space but not in probability space, so the
+    # detectable lift is larger in magnitude than the detectable decrease.
+    assert result.target_possible - 0.05 == pytest.approx(0.0455, abs=1e-4)
+    assert 0.05 - result.target_possible_lower == pytest.approx(0.0314, abs=1e-4)
+
+
+def test_solve_for_mde_individual_impl_binary_clamps_to_valid_proportions():
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.BINARY,
+        metric_baseline=0.95,
+        available_nonnull_n=40,
+        available_n=40,
+    )
+
+    # With such a small sample, the needed Cohen's h exceeds what any proportion <= 1.0
+    # can produce in the positive direction, so the bound is clamped to 1.0.
+    result = solve_for_mde_individual_impl(metric, desired_n=40, n_arms=2)
+    assert result.target_possible == 1.0
+    assert 0.0 <= result.target_possible_lower < 0.95
+
+
+def test_requested_direction_is_down():
+    def metric(**overrides):
+        return DesignSpecMetric(
+            field_name="m", metric_type=MetricType.BINARY, metric_baseline=0.5, available_n=100, **overrides
+        )
+
+    assert requested_direction_is_down(metric(metric_target=0.4))
+    assert not requested_direction_is_down(metric(metric_target=0.6))
+    assert requested_direction_is_down(metric(metric_pct_change=-0.1))
+    assert not requested_direction_is_down(metric(metric_pct_change=0.1))
+    # No target at all: default to the improvement (positive) direction.
+    assert not requested_direction_is_down(metric())
 
 
 def test_solve_for_mde_individual_impl_zero_n_raises_error():
@@ -84,6 +138,6 @@ def test_solve_for_mde_individual_impl_unbalanced_arms():
         available_n=1000,
     )
 
-    target_n, pct_change = solve_for_mde_individual_impl(metric, desired_n=20000, n_arms=2, arm_weights=[20, 80])
-    assert target_n == pytest.approx(100.991, rel=1e-3)
-    assert pct_change == pytest.approx(0.00991, rel=1e-3)
+    result = solve_for_mde_individual_impl(metric, desired_n=20000, n_arms=2, arm_weights=[20, 80])
+    assert result.target_possible == pytest.approx(100.991, rel=1e-3)
+    assert result.pct_change_possible == pytest.approx(0.00991, rel=1e-3)

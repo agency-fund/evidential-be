@@ -12,6 +12,7 @@ from xngin.apiserver.routers.common_api_types import (
 )
 from xngin.apiserver.routers.common_enums import MetricPowerAnalysisMessageType
 from xngin.stats.individual_power import (
+    requested_direction_is_down,
     solve_for_mde_individual_impl,
     solve_for_sample_size_individual,
 )
@@ -37,10 +38,14 @@ class MdeClusterResult:
     values and surface the design-effect inputs without recomputing them.
     """
 
-    # The minimum detectable effect in absolute terms
+    # The minimum detectable effect in absolute terms, in the improvement (positive) direction
     target_possible: float
     # The minimum detectable effect as percent change from baseline
     pct_change_possible: float
+    # The detectable bound below the baseline (differs in magnitude for BINARY metrics)
+    target_possible_lower: float
+    # The relative counterpart of target_possible_lower
+    pct_change_possible_lower: float
     # The design effect (DEFF)
     deff: float
     # The effective sample size when accounting for clustering
@@ -263,7 +268,7 @@ def solve_for_mde_cluster_impl(
         arm_weights=arm_weights,
     )
 
-    target_possible, pct_change_possible = solve_for_mde_individual_impl(
+    mde_result = solve_for_mde_individual_impl(
         desired_n=effective_n,
         metric=metric,
         n_arms=n_arms,
@@ -272,7 +277,12 @@ def solve_for_mde_cluster_impl(
         power=power,
     )
     return MdeClusterResult(
-        target_possible=target_possible, pct_change_possible=pct_change_possible, deff=deff, effective_n=effective_n
+        target_possible=mde_result.target_possible,
+        pct_change_possible=mde_result.pct_change_possible,
+        target_possible_lower=mde_result.target_possible_lower,
+        pct_change_possible_lower=mde_result.pct_change_possible_lower,
+        deff=deff,
+        effective_n=effective_n,
     )
 
 
@@ -317,6 +327,8 @@ def solve_for_mde_cluster(
         target_n=desired_n,
         target_possible=result.target_possible,
         pct_change_possible=result.pct_change_possible,
+        target_possible_lower=result.target_possible_lower,
+        pct_change_possible_lower=result.pct_change_possible_lower,
         sufficient_n=None,  # Not applicable in MDE mode
         num_clusters_total=clusters_total,
         clusters_per_arm=clusters_per_arm_list,
@@ -325,12 +337,16 @@ def solve_for_mde_cluster(
         effective_sample_size=result.effective_n,
     )
 
-    # Create message
+    # Create message. It reports the bound in the direction of the user's requested change;
+    # the analysis fields keep their fixed upper/lower semantics.
     assert metric.metric_baseline is not None
+    reported_target_possible = (
+        result.target_possible_lower if requested_direction_is_down(metric) else result.target_possible
+    )
     values_map: dict[str, float | int] = {
         "desired_n": desired_n,
         "metric_baseline": round(metric.metric_baseline, 4),
-        "target_possible": round(result.target_possible, 4),
+        "target_possible": round(reported_target_possible, 4),
         "num_clusters_total": clusters_total,
     }
     msg_type = MetricPowerAnalysisMessageType.SUFFICIENT
@@ -384,6 +400,8 @@ def solve_for_sample_size_cluster(
             sufficient_n=individual_analysis.sufficient_n,
             target_possible=individual_analysis.target_possible,
             pct_change_possible=individual_analysis.pct_change_possible,
+            target_possible_lower=individual_analysis.target_possible_lower,
+            pct_change_possible_lower=individual_analysis.pct_change_possible_lower,
             msg=individual_analysis.msg,
         )
     else:
@@ -424,6 +442,8 @@ def solve_for_sample_size_cluster(
         sufficient_n = bool(cluster_adj_target_n <= available_nonnull_n)
         target_possible = None
         pct_change_possible = None
+        target_possible_lower = None
+        pct_change_possible_lower = None
         if not sufficient_n:
             # Let the user know: Given the clustering, what could you detect with what's available?
             mde_result = solve_for_mde_cluster_impl(
@@ -436,14 +456,18 @@ def solve_for_sample_size_cluster(
             )
             target_possible = mde_result.target_possible
             pct_change_possible = mde_result.pct_change_possible
+            target_possible_lower = mde_result.target_possible_lower
+            pct_change_possible_lower = mde_result.pct_change_possible_lower
 
+        # The message reports the bound in the direction of the user's requested change;
+        # the analysis fields keep their fixed upper/lower semantics.
         final_msg = _build_cluster_sample_size_message(
             metric=metric,
             target_n=cluster_adj_target_n,
             sufficient_n=sufficient_n,
             available_nonnull_n=available_nonnull_n,
             num_clusters_total=clusters_total,
-            target_possible=target_possible,
+            target_possible=(target_possible_lower if requested_direction_is_down(metric) else target_possible),
         )
 
         cluster_analysis = MetricPowerAnalysis(
@@ -452,6 +476,8 @@ def solve_for_sample_size_cluster(
             sufficient_n=sufficient_n,
             target_possible=target_possible,
             pct_change_possible=pct_change_possible,
+            target_possible_lower=target_possible_lower,
+            pct_change_possible_lower=pct_change_possible_lower,
             msg=final_msg,
             num_clusters_total=clusters_total,
             clusters_per_arm=clusters_per_arm_list,

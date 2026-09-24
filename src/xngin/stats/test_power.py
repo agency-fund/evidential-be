@@ -110,10 +110,13 @@ def test_analyze_metric_power_binary():
     assert result.metric_spec.metric_baseline == 0.5
     assert result.metric_spec.metric_target == 0.55
     assert result.target_n == 3130
-    # Given the available_n, here's the best we can do (cross-checked with R's power.prop.test):
-    # (since it's 2-sided, an equivalent change down is fine, too)
-    assert result.target_possible == pytest.approx(1 - 0.588163, abs=1e-4)
-    assert result.pct_change_possible == pytest.approx(1 - 1.176327, abs=1e-4)
+    # Given the available_n, here's the best we can do (cross-checked with R's power.prop.test).
+    # The reported bound is the positive lift; the test is 2-sided, so the _lower fields report
+    # the detectable change down (symmetric here because the baseline is 0.5).
+    assert result.target_possible == pytest.approx(0.588163, abs=1e-4)
+    assert result.pct_change_possible == pytest.approx(0.176327, abs=1e-4)
+    assert result.target_possible_lower == pytest.approx(1 - 0.588163, abs=1e-4)
+    assert result.pct_change_possible_lower == pytest.approx(1 - 1.176327, abs=1e-4)
     assert not result.sufficient_n
     assert result.msg is not None
     assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
@@ -123,10 +126,75 @@ def test_analyze_metric_power_binary():
         "target_n": 3130,
         "additional_n_needed": 3130 - 1000,
         "metric_baseline": 0.5,
-        "target_possible": pytest.approx(1 - 0.588163, abs=1e-4),
+        "target_possible": pytest.approx(0.588163, abs=1e-4),
         "metric_target": 0.55,
     }
     assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
+
+
+def test_analyze_metric_power_binary_insufficient_decrease_target():
+    """The message reports the bound in the user's requested (downward) direction."""
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.BINARY,
+        metric_baseline=0.5,
+        metric_target=0.45,
+        available_nonnull_n=1000,
+        available_n=1000,
+    )
+
+    result = analyze_metric_power(metric, n_arms=2)
+
+    assert result.target_n == 3130
+    assert not result.sufficient_n
+    # The analysis fields keep fixed semantics: positive lift, plus the _lower bound.
+    assert result.target_possible == pytest.approx(0.588163, abs=1e-4)
+    assert result.target_possible_lower == pytest.approx(1 - 0.588163, abs=1e-4)
+    # The message follows the requested direction (a decrease).
+    assert result.msg is not None
+    assert result.msg.values is not None
+    assert result.msg.values["target_possible"] == pytest.approx(1 - 0.588163, abs=1e-4)
+    assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
+
+
+def test_analyze_metric_power_mde_decrease_direction():
+    """MDE mode: the message reports the bound in the requested (downward) direction."""
+    metric = DesignSpecMetric(
+        field_name="conversion_rate",
+        metric_type=MetricType.BINARY,
+        metric_baseline=0.05,
+        metric_pct_change=-0.5,
+        available_n=10000,
+        available_nonnull_n=10000,
+    )
+
+    result = analyze_metric_power(metric, n_arms=2, desired_n=1000)
+
+    assert result.target_possible == pytest.approx(0.0955, abs=1e-4)
+    assert result.target_possible_lower == pytest.approx(0.0186, abs=1e-4)
+    assert result.msg is not None
+    assert result.msg.values is not None
+    assert result.msg.values["target_possible"] == pytest.approx(0.0186, abs=1e-4)
+
+
+def test_check_power_with_desired_n_decrease_target():
+    """pct_change_with_desired_n follows the requested direction (negative for a decrease)."""
+    metrics = [
+        DesignSpecMetric(
+            field_name="metric2",
+            metric_type=MetricType.BINARY,
+            metric_baseline=0.05,
+            metric_pct_change=-0.10,
+            available_n=10000,
+            available_nonnull_n=10000,
+        ),
+    ]
+
+    results = check_power(metrics, n_arms=2, desired_n=500)
+
+    # Same magnitude of desired_n as test_check_power_with_desired_n; the increase-goal
+    # counterpart there reports +1.3619.
+    assert results[0].pct_change_with_desired_n == pytest.approx(-0.7998, abs=1e-4)
 
 
 def test_check_power_multiple_metrics():
@@ -391,6 +459,9 @@ def test_analyze_metric_power_numeric_with_desired_n():
     assert result.target_n == 500
     assert result.target_possible == pytest.approx(105.0213)
     assert result.pct_change_possible == pytest.approx(0.0502, abs=1e-4)
+    # Numeric bounds are symmetric around the baseline.
+    assert result.target_possible_lower == pytest.approx(94.9787)
+    assert result.pct_change_possible_lower == pytest.approx(-0.0502, abs=1e-4)
     assert result.sufficient_n is None  # Not applicable in MDE mode
 
     # Message should mention MDE
@@ -412,9 +483,14 @@ def test_analyze_metric_power_binary_with_desired_n():
 
     # Should return MDE results
     assert result.target_n == 1000
-    assert result.target_possible == pytest.approx(0.0186, abs=1e-4)
+    # The reported MDE is the minimum detectable positive lift; the _lower fields report the
+    # detectable decrease. The bounds are asymmetric: the MDE is symmetric in Cohen's h space,
+    # but the conversion back to probability space is not.
+    assert result.target_possible == pytest.approx(0.0955, abs=1e-4)
     # re: % change = (target possible / baseline) - 1
-    assert result.pct_change_possible == pytest.approx(-0.6274, abs=1e-4)
+    assert result.pct_change_possible == pytest.approx(0.9092, abs=1e-4)
+    assert result.target_possible_lower == pytest.approx(0.0186, abs=1e-4)
+    assert result.pct_change_possible_lower == pytest.approx(-0.6274, abs=1e-4)
     assert result.sufficient_n is None
 
     # Message should mention MDE
@@ -455,16 +531,19 @@ def test_check_power_with_desired_n():
     # Currently when there's sufficient units, we don't report the tightest MDE possible if all samples were used.
     assert results[0].target_possible is None
     assert results[0].pct_change_possible is None
-    # If there are insufficient units, we report the smallest MDE possible if all samples were used.
+    # If there are insufficient units, we report the smallest MDE possible if all samples were used
+    # (positive lift, with the detectable decrease in the _lower fields).
     assert results[1].target_n == 62436
     assert results[1].sufficient_n is False
-    assert results[1].target_possible == pytest.approx(0.0385, abs=1e-4)
-    assert results[1].pct_change_possible == pytest.approx(-0.2300, abs=1e-4)
+    assert results[1].target_possible == pytest.approx(0.0629, abs=1e-4)
+    assert results[1].pct_change_possible == pytest.approx(0.2582, abs=1e-4)
+    assert results[1].target_possible_lower == pytest.approx(0.0385, abs=1e-4)
+    assert results[1].pct_change_possible_lower == pytest.approx(-0.2300, abs=1e-4)
 
     # Since desired_n=500 is set, MDE for this size is in the new field:
     assert results[0].pct_change_with_desired_n == pytest.approx(0.0502, abs=1e-4)
     # standardized effect size (Cohen's h) = 0.2505810918259752
-    assert results[1].pct_change_with_desired_n == pytest.approx(-0.7998, abs=1e-4)
+    assert results[1].pct_change_with_desired_n == pytest.approx(1.3619, abs=1e-4)
 
 
 def test_check_power_with_invalid_desired_n_raises():
@@ -661,4 +740,6 @@ def test_analyze_metric_power_desired_n_with_unbalanced_arms():
     assert result.target_n == 1000
     assert metric.metric_baseline is not None
     assert result.target_possible is not None
-    assert result.target_possible < metric.metric_baseline
+    assert result.target_possible > metric.metric_baseline
+    assert result.target_possible_lower is not None
+    assert result.target_possible_lower < metric.metric_baseline

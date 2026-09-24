@@ -237,11 +237,11 @@ def test_solve_for_mde_cluster_impl_no_clustering():
         cv=0.0,
     )
 
-    ind_target, ind_pct = solve_for_mde_individual_impl(desired_n=1000, metric=ind_metric, n_arms=2)
+    ind_result = solve_for_mde_individual_impl(desired_n=1000, metric=ind_metric, n_arms=2)
     clust_result = solve_for_mde_cluster_impl(desired_n=1000, metric=clust_metric, n_arms=2)
 
-    assert clust_result.target_possible == pytest.approx(ind_target)
-    assert clust_result.pct_change_possible == pytest.approx(ind_pct)
+    assert clust_result.target_possible == pytest.approx(ind_result.target_possible)
+    assert clust_result.pct_change_possible == pytest.approx(ind_result.pct_change_possible)
 
 
 def test_solve_for_mde_cluster_impl_higher_with_clustering():
@@ -261,11 +261,11 @@ def test_solve_for_mde_cluster_impl_higher_with_clustering():
         cv=0.0,
     )
 
-    ind_target, ind_pct = solve_for_mde_individual_impl(desired_n=600, metric=ind_metric, n_arms=2)
+    ind_result = solve_for_mde_individual_impl(desired_n=600, metric=ind_metric, n_arms=2)
     clust_result = solve_for_mde_cluster_impl(desired_n=600, metric=clust_metric, n_arms=2)
 
-    assert ind_target == pytest.approx(104.6, rel=0.01)
-    assert ind_pct == pytest.approx(0.046, rel=0.01)
+    assert ind_result.target_possible == pytest.approx(104.6, rel=0.01)
+    assert ind_result.pct_change_possible == pytest.approx(0.046, rel=0.01)
     # Achievable MDE is higher with clustering because the effective sample size is smaller:
     # With 600 participants, ICC=0.15, m=30:
     # DEFF = 5.35, effective_n = 600/5.35 = 112
@@ -288,8 +288,12 @@ def test_solve_for_mde_cluster_impl_binary_metric():
 
     # Binary metric with clustering
     # DEFF = 1 + (50-1)*0.05 = 3.45
-    assert result.target_possible == pytest.approx(0.0243, rel=0.01)
-    assert result.pct_change_possible == pytest.approx(-0.7566, rel=0.01)
+    # The primary bound is the detectable positive lift; the _lower fields report the
+    # detectable decrease (asymmetric because Cohen's h is symmetric, probability space is not).
+    assert result.target_possible == pytest.approx(0.2189, rel=0.01)
+    assert result.pct_change_possible == pytest.approx(1.1887, rel=0.01)
+    assert result.target_possible_lower == pytest.approx(0.0243, rel=0.01)
+    assert result.pct_change_possible_lower == pytest.approx(-0.7566, rel=0.01)
 
 
 def test_solve_for_mde_cluster_impl_unbalanced():
@@ -584,11 +588,11 @@ def test_solve_for_sample_size_cluster_uses_cluster_target_for_sufficiency():
         desired_n=desired_n,
         n_arms=2,
     )
-    individual_target_possible, _ = solve_for_mde_individual_impl(
+    individual_target_possible = solve_for_mde_individual_impl(
         metric=metric,
         desired_n=desired_n,
         n_arms=2,
-    )
+    ).target_possible
 
     assert result.target_n == 720
     assert result.sufficient_n is False
@@ -607,6 +611,36 @@ def test_solve_for_sample_size_cluster_uses_cluster_target_for_sufficiency():
     assert "You need at least 720 units across 24 clusters" in result.msg.msg
     assert "You need at least 128 units" not in result.msg.msg
     assert result.msg.msg == result.msg.source_msg.format_map(msg_values)
+
+
+def test_solve_for_sample_size_cluster_decrease_target_message():
+    """The cluster insufficient-n message reports the bound in the requested (downward) direction."""
+    metric = DesignSpecMetric(
+        field_name="reading_score",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=90,
+        metric_stddev=20,
+        available_n=200,
+        available_nonnull_n=200,
+        icc=0.15,
+        avg_cluster_size=30,
+        cv=0.0,
+    )
+
+    result = solve_for_sample_size_cluster(metric=metric, n_arms=2)
+
+    assert result.sufficient_n is False
+    # Fixed field semantics: positive lift in target_possible, decrease in _lower.
+    assert result.target_possible is not None
+    assert result.target_possible > 100
+    assert result.target_possible_lower is not None
+    assert result.target_possible_lower < 100
+    # The message follows the requested direction (a decrease).
+    assert result.msg is not None
+    msg_values = result.msg.values  # noqa: PD011
+    assert msg_values is not None
+    assert msg_values["target_possible"] == round(result.target_possible_lower, 4)
 
 
 def test_solve_for_sample_size_cluster_possible_target_uses_cluster_mde():
@@ -631,11 +665,11 @@ def test_solve_for_sample_size_cluster_possible_target_uses_cluster_mde():
         desired_n=desired_n,
         n_arms=2,
     )
-    individual_target_possible, _ = solve_for_mde_individual_impl(
+    individual_target_possible = solve_for_mde_individual_impl(
         metric=metric,
         desired_n=desired_n,
         n_arms=2,
-    )
+    ).target_possible
 
     assert result.sufficient_n is False
     assert result.target_possible == pytest.approx(expected_result.target_possible)

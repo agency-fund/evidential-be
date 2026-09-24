@@ -621,7 +621,8 @@ class MetricPowerAnalysis(ApiBaseModel):
         Field(
             description=(
                 "When the sample size is too small to reach the desired metric_target, this is the target "
-                "that is possible given available_n. It is the absolute counterpart of pct_change_possible. "
+                "that is possible given available_n, in the improvement (positive) direction from the "
+                "baseline. It is the absolute counterpart of pct_change_possible. "
                 "None when the sample size is large enough to detect the desired change."
             )
         ),
@@ -638,14 +639,38 @@ class MetricPowerAnalysis(ApiBaseModel):
         ),
     ] = None
 
+    target_possible_lower: Annotated[
+        float | None,
+        Field(
+            description=(
+                "The counterpart of target_possible in the direction of a decrease from the baseline. The test "
+                "is two-sided, so a change to this value is detectable too. For BINARY metrics the minimum "
+                "detectable effect is symmetric in Cohen's h space but its conversion back to probability space "
+                "is not, so this bound can differ in magnitude from target_possible. "
+                "None whenever target_possible is None."
+            )
+        ),
+    ] = None
+
+    pct_change_possible_lower: Annotated[
+        float | None,
+        Field(
+            description=(
+                "The relative counterpart of target_possible_lower, as a percent change from the baseline "
+                "(negative for a decrease). None whenever pct_change_possible is None."
+            )
+        ),
+    ] = None
+
     pct_change_with_desired_n: Annotated[
         float | None,
         Field(
             description=(
                 "The minimum detectable effect (MDE) achievable for the desired sample size at the chosen "
-                "confidence and power. Present only when design_spec.desired_n or design_spec.desired_n_clusters "
-                "is set (frequentist design specs). When desired_n_clusters is set, the desired sample size is "
-                "desired_n_clusters times this metric's avg_cluster_size."
+                "confidence and power, reported in the direction of the requested change (negative when the "
+                "requested change is a decrease from the baseline). Present only when design_spec.desired_n or "
+                "design_spec.desired_n_clusters is set (frequentist design specs). When desired_n_clusters is "
+                "set, the desired sample size is desired_n_clusters times this metric's avg_cluster_size."
             )
         ),
     ] = None
