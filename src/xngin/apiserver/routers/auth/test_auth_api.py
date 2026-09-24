@@ -24,7 +24,7 @@ from xngin.apiserver.dependencies import retrying_httpx_dependency
 from xngin.apiserver.main import app
 from xngin.apiserver.routers.auth import auth_api
 from xngin.apiserver.routers.auth.auth_dependencies import SessionTokenCryptor
-from xngin.apiserver.routers.auth.discovery import get_oidc_discovery
+from xngin.apiserver.routers.auth.discovery import OidcProviderTimeoutError, OidcUserinfoError, get_oidc_discovery
 from xngin.apiserver.routers.auth.oidc_settings import OidcSettings, get_oidc_settings
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.xsecrets.nacl_provider import NaclProviderKeyset
@@ -38,6 +38,8 @@ TEST_NONCE = "test-nonce-value"
 TEST_REDIRECT_URI = "http://localhost:3000/"
 TEST_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 TEST_CODE_VERIFIER = "v" * 43
+TEST_ACCESS_TOKEN = "test-access-token"
+TEST_USERINFO_ENDPOINT = "https://openidconnect.googleapis.com/v1/userinfo"
 
 
 def _b64url(raw: bytes) -> str:
@@ -107,6 +109,7 @@ def _claims(**overrides) -> dict:
         "azp": TEST_CLIENT_ID,
         "sub": "1234567890",
         "email": "user@example.com",
+        "email_verified": True,
         "hd": "example.com",
         "nonce": TEST_NONCE,
         "iat": now,
@@ -137,14 +140,18 @@ def fixture_discovery(signing_key):
 
 
 class FakeDiscovery:
-    def __init__(self, signing_keys: list[dict]):
+    def __init__(self, signing_keys: list[dict], userinfo_endpoint: str | None = TEST_USERINFO_ENDPOINT):
         self.signing_keys = signing_keys
+        self._userinfo_endpoint = userinfo_endpoint
 
     def authorization_endpoint(self) -> str:
         return TEST_AUTHORIZATION_ENDPOINT
 
     def token_endpoint(self) -> str:
         return TEST_TOKEN_ENDPOINT
+
+    def userinfo_endpoint(self) -> str | None:
+        return self._userinfo_endpoint
 
     def get_signing_key(self, *, kid: object, algorithm: object) -> dict | None:
         if algorithm != "RS256" or not isinstance(kid, str) or not kid:
@@ -181,6 +188,35 @@ def test_accepts_token_without_azp(settings, discovery, signing_key):
     decoded = _validate(settings, discovery, _mint(signing_key, _claims(azp=None)))
 
     assert decoded["sub"] == "1234567890"
+
+
+def test_rejects_unverified_email(settings, discovery, signing_key):
+    with pytest.raises(HTTPException) as exc:
+        _validate(settings, discovery, _mint(signing_key, _claims(email_verified=False)))
+
+    assert exc.value.status_code == 401
+    assert exc.value.detail == "Email address is not verified"
+
+
+def test_leaves_missing_email_verified_to_the_userinfo_check(settings, discovery, signing_key):
+    decoded = _validate(settings, discovery, _mint(signing_key, _claims(email_verified=None)))
+
+    assert "email_verified" not in decoded
+
+
+def test_accepts_string_true_email_verified(settings, discovery, signing_key):
+    decoded = _validate(settings, discovery, _mint(signing_key, _claims(email_verified="true")))
+
+    assert decoded["email_verified"] == "true"
+
+
+@pytest.mark.parametrize("email_verified", ["false", "TRUE", "yes", 1, 0])
+def test_rejects_other_email_verified_values(settings, discovery, signing_key, email_verified):
+    with pytest.raises(HTTPException) as exc:
+        _validate(settings, discovery, _mint(signing_key, _claims(email_verified=email_verified)))
+
+    assert exc.value.status_code == 401
+    assert exc.value.detail == "Email address is not verified"
 
 
 def test_rejects_unknown_kid(settings, discovery, signing_key):
@@ -346,11 +382,12 @@ def _form(request: httpx2.Request) -> dict[str, str]:
 def test_token_exchange_omits_client_secret_for_public_clients(settings, discovery):
     requests: list[httpx2.Request] = []
     with _token_endpoint_client(requests) as client:
-        id_token = auth_api._exchange_code_for_idtoken(
+        tokens = auth_api._exchange_code_for_tokens(
             settings, discovery, client, code="the-code", code_verifier=TEST_CODE_VERIFIER
         )
 
-    assert id_token == "the-id-token"
+    assert tokens.id_token == "the-id-token"
+    assert tokens.access_token == "ignored"
     assert str(requests[0].url) == TEST_TOKEN_ENDPOINT
     assert "authorization" not in requests[0].headers
     assert _form(requests[0]) == {
@@ -365,12 +402,161 @@ def test_token_exchange_omits_client_secret_for_public_clients(settings, discove
 def test_token_exchange_sends_client_secret_when_configured(discovery):
     requests: list[httpx2.Request] = []
     with _token_endpoint_client(requests) as client:
-        auth_api._exchange_code_for_idtoken(
+        auth_api._exchange_code_for_tokens(
             _settings(client_secret="shh"), discovery, client, code="the-code", code_verifier=TEST_CODE_VERIFIER
         )
 
     assert _form(requests[0])["client_secret"] == "shh"
     assert "authorization" not in requests[0].headers
+
+
+def test_token_exchange_tolerates_missing_access_token(settings, discovery):
+    response = httpx2.Response(200, json={"id_token": "the-id-token"})
+    with _token_endpoint_client([], response) as client:
+        tokens = auth_api._exchange_code_for_tokens(
+            settings, discovery, client, code="the-code", code_verifier=TEST_CODE_VERIFIER
+        )
+
+    assert tokens.access_token is None
+
+
+def _userinfo(**overrides) -> dict:
+    """A userinfo response for the user in _claims(); pass None to drop a claim."""
+    userinfo = {"sub": "1234567890", "email": "user@example.com", "email_verified": True}
+    userinfo.update(overrides)
+    return {k: v for k, v in userinfo.items() if v is not None}
+
+
+def _userinfo_client(requests: list[httpx2.Request], response: httpx2.Response) -> httpx2.Client:
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return response
+
+    return httpx2.Client(transport=httpx2.MockTransport(handler))
+
+
+def _check_userinfo(discovery, client, access_token: str | None = TEST_ACCESS_TOKEN):
+    claims = _claims(email_verified=None)
+    auth_api._require_email_verified_by_userinfo(discovery, client, claims=claims, access_token=access_token)
+
+
+@pytest.mark.parametrize("email_verified", [True, "true"])
+def test_userinfo_confirms_verified_email(discovery, email_verified):
+    requests: list[httpx2.Request] = []
+    with _userinfo_client(requests, httpx2.Response(200, json=_userinfo(email_verified=email_verified))) as client:
+        _check_userinfo(discovery, client)
+
+    assert len(requests) == 1
+    assert requests[0].method == "GET"
+    assert str(requests[0].url) == TEST_USERINFO_ENDPOINT
+    assert requests[0].headers["authorization"] == f"Bearer {TEST_ACCESS_TOKEN}"
+    assert requests[0].headers["accept"] == "application/json"
+
+
+@pytest.mark.parametrize(
+    ("userinfo", "detail"),
+    [
+        pytest.param(_userinfo(email_verified=False), "Email address is not verified", id="unverified"),
+        pytest.param(_userinfo(email_verified=None), "Email address is not verified", id="missing-email-verified"),
+        pytest.param(_userinfo(email_verified="false"), "Email address is not verified", id="string-false"),
+        pytest.param(_userinfo(sub="someone-else"), "Invalid authentication credentials", id="sub-mismatch"),
+        pytest.param(_userinfo(sub=None), "Invalid authentication credentials", id="missing-sub"),
+        pytest.param(_userinfo(email=None), "Invalid authentication credentials", id="missing-email"),
+        pytest.param(_userinfo(email="other@example.com"), "Invalid authentication credentials", id="email-mismatch"),
+    ],
+)
+def test_userinfo_rejects_unverified_or_mismatched_users(discovery, userinfo, detail):
+    with (
+        _userinfo_client([], httpx2.Response(200, json=userinfo)) as client,
+        pytest.raises(HTTPException) as exc,
+    ):
+        _check_userinfo(discovery, client)
+
+    assert exc.value.status_code == 401
+    assert exc.value.detail == detail
+
+
+@pytest.mark.parametrize(
+    ("userinfo_endpoint", "access_token"),
+    [
+        pytest.param(None, TEST_ACCESS_TOKEN, id="no-userinfo-endpoint"),
+        pytest.param(TEST_USERINFO_ENDPOINT, None, id="no-access-token"),
+    ],
+)
+def test_userinfo_unavailable_means_unverified(signing_key, userinfo_endpoint, access_token):
+    requests: list[httpx2.Request] = []
+    discovery = FakeDiscovery([_make_jwk(signing_key, TEST_KID)], userinfo_endpoint=userinfo_endpoint)
+    with (
+        _userinfo_client(requests, httpx2.Response(200, json=_userinfo())) as client,
+        pytest.raises(HTTPException) as exc,
+    ):
+        _check_userinfo(discovery, client, access_token=access_token)
+
+    assert exc.value.status_code == 401
+    assert exc.value.detail == "Email address is not verified"
+    assert requests == []
+
+
+@pytest.mark.parametrize(
+    ("response", "message"),
+    [
+        pytest.param(
+            httpx2.Response(
+                401,
+                headers={"WWW-Authenticate": 'Bearer error="invalid_token", error_description="expired"'},
+            ),
+            f"Userinfo endpoint {TEST_USERINFO_ENDPOINT} returned status code 401"
+            """ (WWW-Authenticate='Bearer error="invalid_token", error_description="expired"').""",
+            id="bearer-error",
+        ),
+        pytest.param(
+            httpx2.Response(403, headers={"WWW-Authenticate": "x" * 500}),
+            f"Userinfo endpoint {TEST_USERINFO_ENDPOINT} returned status code 403 (WWW-Authenticate='{'x' * 200}').",
+            id="truncates-header",
+        ),
+        pytest.param(
+            httpx2.Response(500),
+            f"Userinfo endpoint {TEST_USERINFO_ENDPOINT} returned status code 500.",
+            id="error-status",
+        ),
+        pytest.param(
+            httpx2.Response(200, headers={"Content-Type": "application/jwt; charset=utf-8"}, content=b"a.b.c"),
+            f"Userinfo endpoint {TEST_USERINFO_ENDPOINT} returned a signed or encrypted response, which is not "
+            "supported.",
+            id="jwt",
+        ),
+        pytest.param(
+            httpx2.Response(200, content=b"not json"),
+            f"Userinfo endpoint {TEST_USERINFO_ENDPOINT} returned invalid JSON.",
+            id="invalid-json",
+        ),
+        pytest.param(
+            httpx2.Response(200, json=["nope"]),
+            f"Userinfo endpoint {TEST_USERINFO_ENDPOINT} returned a non-dictionary response.",
+            id="not-an-object",
+        ),
+    ],
+)
+def test_userinfo_rejects_unusable_responses(discovery, response, message):
+    with _userinfo_client([], response) as client, pytest.raises(OidcUserinfoError) as exc:
+        _check_userinfo(discovery, client)
+
+    assert str(exc.value) == message
+
+
+@pytest.mark.parametrize(
+    ("error_type", "expected_exception"),
+    [
+        pytest.param(httpx2.ConnectError, OidcUserinfoError, id="connection"),
+        pytest.param(httpx2.ReadTimeout, OidcProviderTimeoutError, id="timeout"),
+    ],
+)
+def test_userinfo_normalizes_request_failures(discovery, error_type, expected_exception):
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        raise error_type("upstream failure", request=request)
+
+    with httpx2.Client(transport=httpx2.MockTransport(handler)) as client, pytest.raises(expected_exception):
+        _check_userinfo(discovery, client)
 
 
 @pytest.fixture(name="issued_claims")
@@ -424,6 +610,55 @@ def test_callback_rejects_token_issued_for_another_login_attempt(client, configu
 
     assert response.status_code == 401
     assert response.json() == {"detail": "Invalid nonce"}
+
+
+def _idp_client(requests: list[httpx2.Request], *, id_token: str, userinfo: dict) -> httpx2.Client:
+    """An httpx2 client whose transport answers as the token and userinfo endpoints would."""
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        if str(request.url) == TEST_USERINFO_ENDPOINT:
+            return httpx2.Response(200, json=userinfo)
+        return httpx2.Response(200, json={"id_token": id_token, "access_token": TEST_ACCESS_TOKEN})
+
+    return httpx2.Client(transport=httpx2.MockTransport(handler))
+
+
+def test_callback_does_not_query_userinfo_when_id_token_has_email_verified(client, configured_app, signing_key):
+    requests: list[httpx2.Request] = []
+    upstream = _idp_client(requests, id_token=_mint(signing_key, _claims()), userinfo=_userinfo(email_verified=False))
+    app.dependency_overrides[retrying_httpx_dependency] = lambda: upstream
+
+    response = client.post("/v1/a/oidc/callback", json=_callback_body())
+
+    assert response.status_code == 200, response.text
+    assert [str(request.url) for request in requests] == [TEST_TOKEN_ENDPOINT]
+
+
+@pytest.mark.parametrize(
+    ("email_verified", "status_code"),
+    [
+        pytest.param(True, 200, id="verified"),
+        pytest.param(False, 401, id="unverified"),
+    ],
+)
+def test_callback_checks_userinfo_when_id_token_omits_email_verified(
+    client, configured_app, signing_key, email_verified, status_code
+):
+    requests: list[httpx2.Request] = []
+    upstream = _idp_client(
+        requests,
+        id_token=_mint(signing_key, _claims(email_verified=None)),
+        userinfo=_userinfo(email_verified=email_verified),
+    )
+    app.dependency_overrides[retrying_httpx_dependency] = lambda: upstream
+
+    response = client.post("/v1/a/oidc/callback", json=_callback_body())
+
+    assert response.status_code == status_code, response.text
+    assert [str(request.url) for request in requests] == [TEST_TOKEN_ENDPOINT, TEST_USERINFO_ENDPOINT]
+    if status_code == 401:
+        assert response.json() == {"detail": "Email address is not verified"}
 
 
 def test_callback_unavailable_when_login_is_disabled(client):

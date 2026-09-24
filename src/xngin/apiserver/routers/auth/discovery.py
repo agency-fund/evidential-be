@@ -29,6 +29,10 @@ class OidcDiscoveryError(OidcProviderError):
     pass
 
 
+class OidcUserinfoError(OidcProviderError):
+    pass
+
+
 class OidcProviderTimeoutError(OidcProviderError):
     pass
 
@@ -38,6 +42,8 @@ class _Endpoints:
     authorization_endpoint: str
     token_endpoint: str
     jwks_uri: str
+    # Optional in discovery documents; used only when an ID token omits email_verified.
+    userinfo_endpoint: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +99,10 @@ class OidcDiscovery:
     def token_endpoint(self) -> str:
         self._refresh_discovery_if_expired()
         return self._snapshot.endpoints.token_endpoint
+
+    def userinfo_endpoint(self) -> str | None:
+        self._refresh_discovery_if_expired()
+        return self._snapshot.endpoints.userinfo_endpoint
 
     def _refresh_discovery_if_expired(self) -> None:
         if self._snapshot_is_current() or not self._should_retry_fetch(self._refresh_attempts.discovery):
@@ -204,10 +214,24 @@ class OidcDiscovery:
                 raise OidcDiscoveryError(f"Discovery document's {key} {reason} (got {value!r}).")
             return value
 
+        def optional_endpoint(key: str) -> str | None:
+            # An unusable optional endpoint should not prevent logins that never need it.
+            value = config.get(key)
+            if value is None:
+                return None
+            if not isinstance(value, str):
+                logger.warning(f"Ignoring discovery document's {key}: it must be a string (got {value!r}).")
+                return None
+            if reason := check_absolute_https_url(value, allow_http=endpoints_may_use_http):
+                logger.warning(f"Ignoring discovery document's {key}: it {reason} (got {value!r}).")
+                return None
+            return value
+
         endpoints = _Endpoints(
             authorization_endpoint=endpoint("authorization_endpoint"),
             token_endpoint=endpoint("token_endpoint"),
             jwks_uri=endpoint("jwks_uri"),
+            userinfo_endpoint=optional_endpoint("userinfo_endpoint"),
         )
 
         self._require_supported(config, "response_types_supported", "code", required=True)
