@@ -9,7 +9,7 @@ from typing import Annotated, Any
 
 import httpx2
 import jwt
-from fastapi import APIRouter, Depends, FastAPI, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Response
 from loguru import logger
 from starlette import status
 
@@ -114,6 +114,7 @@ def auth_callback(
     discovery: Annotated[OidcDiscovery, Depends(get_oidc_discovery)],
     httpx_client: Annotated[httpx2.Client, Depends(retrying_httpx_dependency)],
     session_cryptor: Annotated[SessionTokenCryptor, Depends()],
+    response: Response,
 ) -> CallbackResponse:
     """Exchanges the OIDC authorization code and verifier for an identity token (JWT), and then creates a session token.
 
@@ -129,6 +130,8 @@ def auth_callback(
     if "email_verified" not in claims:
         _require_email_verified_by_userinfo(discovery, httpx_client, claims=claims, access_token=tokens.access_token)
     session_token = session_cryptor.encode(_principal_from_claims(settings, claims))
+    # The session token is a bearer credential, so no cache may keep a copy of this response.
+    response.headers["Cache-Control"] = "no-store"
     return CallbackResponse(session_token=session_token)
 
 
