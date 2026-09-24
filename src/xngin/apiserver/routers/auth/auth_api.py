@@ -16,7 +16,7 @@ from starlette import status
 from xngin.apiserver import constants, flags
 from xngin.apiserver.dependencies import retrying_httpx_dependency
 from xngin.apiserver.routers.auth import auth_dependencies
-from xngin.apiserver.routers.auth.auth_api_types import CallbackRequest, CallbackResponse
+from xngin.apiserver.routers.auth.auth_api_types import CallbackRequest, CallbackResponse, OidcClientConfigResponse
 from xngin.apiserver.routers.auth.auth_dependencies import SessionTokenCryptor
 from xngin.apiserver.routers.auth.discovery import (
     OidcDiscovery,
@@ -24,7 +24,7 @@ from xngin.apiserver.routers.auth.discovery import (
     OidcUserinfoError,
     get_oidc_discovery,
 )
-from xngin.apiserver.routers.auth.oidc_settings import OidcSettings, get_oidc_settings
+from xngin.apiserver.routers.auth.oidc_settings import SCOPE, OidcSettings, get_oidc_settings
 from xngin.apiserver.routers.auth.principal import Principal
 
 # The identity provider and this server may disagree slightly about the wall clock. PyJWT applies this leeway to the
@@ -72,6 +72,24 @@ router = APIRouter(
     lifespan=lifespan,
     prefix=constants.API_PREFIX_V1 + "/a/oidc",
 )
+
+
+@router.get("/config")
+def oidc_client_config(
+    settings: Annotated[OidcSettings, Depends(get_oidc_settings)],
+    discovery: Annotated[OidcDiscovery, Depends(get_oidc_discovery)],
+) -> OidcClientConfigResponse:
+    """Returns the identity provider settings the frontend needs to begin the login flow.
+
+    The frontend builds the authorization request from these values, so the backend environment is the only place
+    the identity provider is configured.
+    """
+    return OidcClientConfigResponse(
+        authorization_endpoint=discovery.authorization_endpoint(),
+        client_id=settings.client_id,
+        redirect_uri=settings.redirect_uri,
+        scope=SCOPE,
+    )
 
 
 @router.post("/callback")
