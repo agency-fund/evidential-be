@@ -1973,7 +1973,13 @@ async def power_check(
     user: Annotated[tables.User, Depends(require_user_from_token)],
     body: PowerRequest,
 ) -> PowerResponse:
-    """Performs a power check for the specified datasource."""
+    """Performs a power check for the specified datasource.
+
+    Metrics carrying baseline stats (e.g. echoed back from a prior power check response) are used
+    as-is rather than re-queried from the data warehouse. When no metric needs the warehouse — every
+    metric has baseline stats, and cluster stats for cluster-randomized designs — the warehouse is
+    not contacted at all, so the design spec is not validated against the participants table.
+    """
     design_spec = body.design_spec
     ds = await get_datasource_or_raise(session, user, datasource_id)
     if isinstance(ds.config, NoDwh):
@@ -1983,76 +1989,106 @@ async def power_check(
         )
     dsconfig = ds.get_config()
 
-    async with DwhSession(dsconfig.dwh) as dwh:
-        sa_table = await dwh.inspect_table(design_spec.table_name)
-        # Validate the fields used in the design spec are present in the table and that filter values are valid.
-        _ = convert_table_to_fields_or_raise(sa_table, design_spec)
+    filters = design_spec.filters
+    cluster_key = None
+    desired_n_clusters = None
+    if isinstance(design_spec, PreassignedFrequentistExperimentSpec):
+        cluster_key = design_spec.cluster_key
+        desired_n_clusters = design_spec.desired_n_clusters
+    # Exclude rows without a valid cluster key.
+    if cluster_key is not None:
+        filters = [*filters, Filter(field_name=cluster_key, relation=Relation.EXCLUDES, value=[None])]
 
-        filters = design_spec.filters
-        cluster_key = None
-        desired_n_clusters = None
-        if isinstance(design_spec, PreassignedFrequentistExperimentSpec):
-            cluster_key = design_spec.cluster_key
-            desired_n_clusters = design_spec.desired_n_clusters
-        # Exclude rows without a valid cluster key.
-        if cluster_key is not None:
-            filters = [*filters, Filter(field_name=cluster_key, relation=Relation.EXCLUDES, value=[None])]
+    metrics_missing_stats = [m for m in design_spec.metrics if not m.has_baseline_stats]
+    needs_cluster_stats = cluster_key is not None and any(not m.has_cluster_stats for m in design_spec.metrics)
 
-        # Only queries run inside this block; stats are computed from the raw rows after
-        # the DWH connection is closed.
-        raw_metric_stats = await asyncio.to_thread(
-            get_raw_metric_stats,
-            dwh.session,
-            sa_table,
-            design_spec.metrics,
-            filters,
-        )
+    if not metrics_missing_stats and not needs_cluster_stats:
+        # Every metric arrived with baseline stats (and cluster stats where needed), so the
+        # warehouse is not contacted at all.
+        metric_stats = [m.to_design_spec_metric() for m in design_spec.metrics]
+    else:
+        async with DwhSession(dsconfig.dwh) as dwh:
+            sa_table = await dwh.inspect_table(design_spec.table_name)
+            # Validate the fields used in the design spec are present in the table and that filter values are valid.
+            _ = convert_table_to_fields_or_raise(sa_table, design_spec)
 
-        # Derive cluster stats from the dwh only for metrics without user-provided ICC, in one query.
-        db_derived_metrics = (
-            [m.field_name for m in design_spec.metrics if m.icc is None] if cluster_key is not None else []
-        )
-        raw_cluster_stats = None
-        if cluster_key is not None and db_derived_metrics:
-            # Shifting each metric by its mean keeps the sums of squares in the
-            # sufficient-statistics query numerically stable.
-            outcome_shifts = {
-                field_name: raw_metric_stats[f"{field_name}__mean"]
-                for field_name in db_derived_metrics
-                if raw_metric_stats[f"{field_name}__mean"] is not None
-            }
-            raw_cluster_stats = await asyncio.to_thread(
-                get_cluster_sufficient_stats,
-                dwh.session,
-                sa_table,
-                cluster_key,
-                db_derived_metrics,
-                filters,
-                outcome_shifts,
+            # Only queries run inside this block; stats are computed from the raw rows after
+            # the DWH connection is closed. Metrics carrying baseline stats are not queried.
+            raw_metric_stats = (
+                await asyncio.to_thread(
+                    get_raw_metric_stats,
+                    dwh.session,
+                    sa_table,
+                    metrics_missing_stats,
+                    filters,
+                )
+                if metrics_missing_stats
+                else None
             )
 
-    metric_stats = build_metric_stats(raw_metric_stats, sa_table, design_spec.metrics)
+            # Derive cluster stats from the dwh only for metrics without user-provided ICC, in one query.
+            db_derived_metrics = (
+                [m.field_name for m in design_spec.metrics if not m.has_cluster_stats]
+                if cluster_key is not None
+                else []
+            )
+            raw_cluster_stats = None
+            if cluster_key is not None and db_derived_metrics:
+                # Shifting each metric by its mean keeps the sums of squares in the
+                # sufficient-statistics query numerically stable. The mean comes from the raw
+                # query row for queried metrics and from the supplied baseline for echoed ones.
+                supplied_baselines = {
+                    m.field_name: m.metric_baseline for m in design_spec.metrics if m.has_baseline_stats
+                }
+                outcome_shifts = {}
+                for field_name in db_derived_metrics:
+                    if field_name in supplied_baselines:
+                        mean = supplied_baselines[field_name]
+                    else:
+                        mean = raw_metric_stats[f"{field_name}__mean"] if raw_metric_stats is not None else None
+                    if mean is not None:
+                        outcome_shifts[field_name] = mean
+                raw_cluster_stats = await asyncio.to_thread(
+                    get_cluster_sufficient_stats,
+                    dwh.session,
+                    sa_table,
+                    cluster_key,
+                    db_derived_metrics,
+                    filters,
+                    outcome_shifts,
+                )
 
-    # Augment with cluster-level stats if this is a cluster-randomized design.
-    if cluster_key is not None:
-        db_cluster_stats = (
-            calculate_cluster_stats(raw_cluster_stats, cluster_key, db_derived_metrics)
-            if raw_cluster_stats is not None
-            else {}
+        queried_stats = (
+            build_metric_stats(raw_metric_stats, sa_table, metrics_missing_stats)
+            if raw_metric_stats is not None
+            else []
         )
-        request_metrics_by_name = {m.field_name: m for m in design_spec.metrics}
-        for metric_stat in metric_stats:
-            req_metric = request_metrics_by_name[metric_stat.field_name]
-            # If the user provided ICC, avg_cluster_size, and cv, use them instead of deriving from the dwh.
-            if req_metric.icc is not None:
-                metric_stat.icc = req_metric.icc
-                metric_stat.avg_cluster_size = req_metric.avg_cluster_size
-                metric_stat.cv = req_metric.cv
-            else:
-                cluster_stats = db_cluster_stats[metric_stat.field_name]
-                metric_stat.icc = cluster_stats["icc"]
-                metric_stat.avg_cluster_size = cluster_stats["avg_cluster_size"]
-                metric_stat.cv = cluster_stats["cv"]
+        queried_stats_by_name = {m.field_name: m for m in queried_stats}
+        metric_stats = [
+            m.to_design_spec_metric() if m.has_baseline_stats else queried_stats_by_name[m.field_name]
+            for m in design_spec.metrics
+        ]
+
+        # Augment with cluster-level stats if this is a cluster-randomized design.
+        if cluster_key is not None:
+            db_cluster_stats = (
+                calculate_cluster_stats(raw_cluster_stats, cluster_key, db_derived_metrics)
+                if raw_cluster_stats is not None
+                else {}
+            )
+            request_metrics_by_name = {m.field_name: m for m in design_spec.metrics}
+            for metric_stat in metric_stats:
+                req_metric = request_metrics_by_name[metric_stat.field_name]
+                # If the user provided ICC, avg_cluster_size, and cv, use them instead of deriving from the dwh.
+                if req_metric.has_cluster_stats:
+                    metric_stat.icc = req_metric.icc
+                    metric_stat.avg_cluster_size = req_metric.avg_cluster_size
+                    metric_stat.cv = req_metric.cv
+                else:
+                    cluster_stats = db_cluster_stats[metric_stat.field_name]
+                    metric_stat.icc = cluster_stats["icc"]
+                    metric_stat.avg_cluster_size = cluster_stats["avg_cluster_size"]
+                    metric_stat.cv = cluster_stats["cv"]
 
     arm_weights = design_spec.get_validated_arm_weights()
 
