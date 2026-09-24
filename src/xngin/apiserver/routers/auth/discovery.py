@@ -3,6 +3,7 @@ import json
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from typing import Protocol
 
 import httpx2
 import jwt
@@ -63,6 +64,18 @@ class _RefreshAttempts:
     jwks: datetime.datetime
 
 
+class OidcDiscoveryClient(Protocol):
+    def authorization_endpoint(self) -> str: ...
+
+    def token_endpoint(self) -> str: ...
+
+    def userinfo_endpoint(self) -> str | None: ...
+
+    def get_signing_key(self, *, kid: object, algorithm: object) -> dict | None: ...
+
+    def close(self) -> None: ...
+
+
 class OidcDiscovery:
     """Loads and caches one provider's discovery document and RS256 signing keys.
 
@@ -70,6 +83,19 @@ class OidcDiscovery:
     provider data as needed, so callers do not manage discovery state themselves. If the discovery documents or JWKS
     keys fail to fetch, previous successful fetches will be re-used.
     """
+
+    @classmethod
+    def startup(cls, settings: OidcSettings) -> OidcDiscoveryClient:
+        """Load now when possible, or return a client that retries on its first use.
+
+        This allows the server to start up even if we can't successfully acquire a discovery document; interactive
+        logins will be broken but the Integration API can still be served.
+        """
+        try:
+            return cls(settings)
+        except OidcProviderError as exc:
+            logger.warning(f"OpenID discovery unavailable during startup; login will retry on request: {exc}")
+            return _LazyOidcDiscovery(settings, cls)
 
     def __init__(
         self,
@@ -274,12 +300,47 @@ class OidcDiscovery:
         return True
 
 
+class _LazyOidcDiscovery:
+    """Keeps failed initial discovery separate from a fully initialized client."""
+
+    def __init__(self, settings: OidcSettings, discovery_type: type[OidcDiscovery]):
+        self._settings = settings
+        self._discovery_type = discovery_type
+        self._discovery: OidcDiscovery | None = None
+        self._lock = threading.Lock()
+
+    def _get_discovery(self) -> OidcDiscovery:
+        if self._discovery is not None:
+            return self._discovery
+        with self._lock:
+            if self._discovery is None:
+                self._discovery = self._discovery_type(self._settings)
+            return self._discovery
+
+    def authorization_endpoint(self) -> str:
+        return self._get_discovery().authorization_endpoint()
+
+    def token_endpoint(self) -> str:
+        return self._get_discovery().token_endpoint()
+
+    def userinfo_endpoint(self) -> str | None:
+        return self._get_discovery().userinfo_endpoint()
+
+    def get_signing_key(self, *, kid: object, algorithm: object) -> dict | None:
+        return self._get_discovery().get_signing_key(kid=kid, algorithm=algorithm)
+
+    def close(self) -> None:
+        with self._lock:
+            if self._discovery is not None:
+                self._discovery.close()
+
+
 def get_oidc_discovery(
     request: Request,
-) -> OidcDiscovery:
+) -> OidcDiscoveryClient:
     """Provides the application-owned discovery client for the configured identity provider."""
     discovery = getattr(request.app.state, "oidc_discovery", None)
-    if not isinstance(discovery, OidcDiscovery):
-        # The lifespan skips creating the discovery client in airplane mode and when testing tokens are enabled.
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=LOGIN_UNAVAILABLE_DETAIL)
-    return discovery
+    if isinstance(discovery, OidcDiscovery | _LazyOidcDiscovery):
+        return discovery
+    # The lifespan skips creating the discovery client in airplane mode and when testing tokens are enabled.
+    raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=LOGIN_UNAVAILABLE_DETAIL)

@@ -20,6 +20,7 @@ from xngin.apiserver.routers.auth.auth_api_types import CallbackRequest, Callbac
 from xngin.apiserver.routers.auth.auth_dependencies import SessionTokenCryptor
 from xngin.apiserver.routers.auth.discovery import (
     OidcDiscovery,
+    OidcDiscoveryClient,
     OidcProviderTimeoutError,
     OidcTokenExchangeError,
     OidcUserinfoError,
@@ -68,12 +69,11 @@ async def lifespan(app: FastAPI):
         return
 
     # Construction fetches the discovery document and signing keys, so keep that blocking I/O off the event loop.
-    discovery = await asyncio.to_thread(OidcDiscovery, get_oidc_settings())
-    app.state.oidc_discovery = discovery
+    app.state.oidc_discovery = await asyncio.to_thread(OidcDiscovery.startup, get_oidc_settings())
     try:
         yield
     finally:
-        discovery.close()
+        app.state.oidc_discovery.close()
         del app.state.oidc_discovery
 
 
@@ -89,7 +89,7 @@ router = APIRouter(
 )
 def oidc_client_config(
     settings: Annotated[OidcSettings, Depends(get_oidc_settings)],
-    discovery: Annotated[OidcDiscovery, Depends(get_oidc_discovery)],
+    discovery: Annotated[OidcDiscoveryClient, Depends(get_oidc_discovery)],
 ) -> OidcClientConfigResponse:
     """Returns the identity provider settings the frontend needs to begin the login flow.
 
@@ -111,7 +111,7 @@ def oidc_client_config(
 def auth_callback(
     body: CallbackRequest,
     settings: Annotated[OidcSettings, Depends(get_oidc_settings)],
-    discovery: Annotated[OidcDiscovery, Depends(get_oidc_discovery)],
+    discovery: Annotated[OidcDiscoveryClient, Depends(get_oidc_discovery)],
     httpx_client: Annotated[httpx2.Client, Depends(retrying_httpx_dependency)],
     session_cryptor: Annotated[SessionTokenCryptor, Depends()],
     response: Response,
@@ -144,7 +144,7 @@ class _TokenResponse:
 
 def _exchange_code_for_tokens(
     settings: OidcSettings,
-    discovery: OidcDiscovery,
+    discovery: OidcDiscoveryClient,
     httpx_client: httpx2.Client,
     *,
     code: str,
@@ -208,7 +208,7 @@ def _describe_oauth_error(token_response: httpx2.Response) -> str:
 
 
 def _get_signing_key(
-    discovery: OidcDiscovery,
+    discovery: OidcDiscoveryClient,
     *,
     id_token: str,
 ) -> dict:
@@ -274,7 +274,7 @@ def _is_email_verified(claims: dict) -> bool:
 
 
 def _require_email_verified_by_userinfo(
-    discovery: OidcDiscovery,
+    discovery: OidcDiscoveryClient,
     httpx_client: httpx2.Client,
     *,
     claims: dict,
