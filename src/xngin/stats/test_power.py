@@ -728,6 +728,27 @@ def test_check_power_mde_curve_point_failure_yields_null_not_error():
     assert curve[1].pct_change is not None
 
 
+def test_check_power_unsolvable_desired_n_fails_request():
+    """An explicit desired_n the solver cannot handle fails the check, even when the curve could continue.
+
+    n=2 is too small to solve. desired_ns includes a solvable size, but that range is supplementary:
+    the caller's chosen sample size is what must succeed.
+    """
+    with pytest.raises(StatsPowerError):
+        check_power([make_curve_metric()], n_arms=2, desired_n=2, desired_ns=[2, 500])
+
+
 def test_check_power_no_curve_without_desired_ns():
     analyses = check_power([make_curve_metric()], n_arms=2, desired_n=500)
     assert analyses[0].mde_curve is None
+
+
+def test_check_power_mde_curve_cluster_counts_take_precedence_over_desired_ns():
+    """When both lists are set, the curve is the cluster-count range of values."""
+    metric = make_curve_metric(icc=0.02, avg_cluster_size=10, cv=0.1)
+    both = check_power([metric], n_arms=2, desired_ns=[100, 200], desired_ns_clusters=[20, 50, 100])
+    clusters_only = check_power([metric], n_arms=2, desired_ns_clusters=[20, 50, 100])
+    individuals_only = check_power([metric], n_arms=2, desired_ns=[100, 200])
+
+    assert both[0].mde_curve == clusters_only[0].mde_curve
+    assert both[0].mde_curve != individuals_only[0].mde_curve
