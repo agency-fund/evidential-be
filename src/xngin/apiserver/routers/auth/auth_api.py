@@ -1,5 +1,6 @@
-"""Implements a basic Google OIDC RP."""
+"""Implements an OIDC relying party for a single configured identity provider (authorization code flow with PKCE)."""
 
+import asyncio
 import datetime
 from contextlib import asynccontextmanager
 from typing import Annotated
@@ -14,20 +15,14 @@ from xngin.apiserver import constants, flags
 from xngin.apiserver.dependencies import retrying_httpx_dependency
 from xngin.apiserver.routers.auth import auth_dependencies
 from xngin.apiserver.routers.auth.auth_api_types import CallbackRequest, CallbackResponse
-from xngin.apiserver.routers.auth.auth_dependencies import (
-    GoogleOidcConfig,
-    SessionTokenCryptor,
-    get_google_configuration,
-)
+from xngin.apiserver.routers.auth.auth_dependencies import SessionTokenCryptor
+from xngin.apiserver.routers.auth.discovery import OidcDiscovery, get_oidc_discovery
+from xngin.apiserver.routers.auth.oidc_settings import OidcSettings, get_oidc_settings
 from xngin.apiserver.routers.auth.principal import Principal
 
-# Google's token issuer and this server may disagree slightly about the wall clock. PyJWT applies this leeway to the
+# The identity provider and this server may disagree slightly about the wall clock. PyJWT applies this leeway to the
 # iat, nbf, and exp claims.
 CLOCK_SKEW_LEEWAY = datetime.timedelta(seconds=30)
-
-
-class OidcMisconfiguredError(Exception):
-    pass
 
 
 def validate_environment_variables():
@@ -35,17 +30,27 @@ def validate_environment_variables():
     if flags.AIRPLANE_MODE or auth_dependencies.TESTING_TOKENS_ENABLED:
         return
 
-    if not flags.CLIENT_ID:
-        raise OidcMisconfiguredError(f"{flags.ENV_GOOGLE_OIDC_CLIENT_ID} environment variable is not set.")
-    if not flags.CLIENT_SECRET:
-        logger.warning(f"{flags.ENV_GOOGLE_OIDC_CLIENT_SECRET} environment variable is not set.")
+    settings = get_oidc_settings()
+    if settings.client_secret is None:
+        logger.info(f"{flags.ENV_XNGIN_OIDC_CLIENT_SECRET} is not set; the token exchange will use a public client.")
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI):
+async def lifespan(app: FastAPI):
     logger.info(f"Starting router: {__name__} (prefix={router.prefix})")
     validate_environment_variables()
-    yield
+    if flags.AIRPLANE_MODE or auth_dependencies.TESTING_TOKENS_ENABLED:
+        yield
+        return
+
+    # Construction fetches the discovery document and signing keys, so keep that blocking I/O off the event loop.
+    discovery = await asyncio.to_thread(OidcDiscovery, get_oidc_settings())
+    app.state.oidc_discovery = discovery
+    try:
+        yield
+    finally:
+        discovery.close()
+        del app.state.oidc_discovery
 
 
 router = APIRouter(
@@ -57,46 +62,54 @@ router = APIRouter(
 @router.post("/callback")
 def auth_callback(
     body: CallbackRequest,
-    oidc_config: Annotated[GoogleOidcConfig, Depends(get_google_configuration)],
+    settings: Annotated[OidcSettings, Depends(get_oidc_settings)],
+    discovery: Annotated[OidcDiscovery, Depends(get_oidc_discovery)],
     httpx_client: Annotated[httpx2.Client, Depends(retrying_httpx_dependency)],
     session_cryptor: Annotated[SessionTokenCryptor, Depends()],
 ) -> CallbackResponse:
     """Exchanges the OIDC authorization code and verifier for an identity token (JWT), and then creates a session token.
 
-    This is the final step in acquiring a JWT from Google promising that the user successfully authenticated. After
-    verifying the identity token from Google, we return a signed application-specific token that the frontend can
-    use to authenticate the user for the remainder of their session.
+    This is the final step in acquiring a JWT from the identity provider promising that the user successfully
+    authenticated. After verifying the identity token, we return a signed application-specific token that the
+    frontend can use to authenticate the user for the remainder of their session.
     """
-    id_token = _exchange_code_for_idtoken(oidc_config, httpx_client, body.code, body.code_verifier)
-    decoded = _validate_idtoken(oidc_config, id_token=id_token, nonce=body.nonce)
+    id_token = _exchange_code_for_idtoken(
+        settings, discovery, httpx_client, code=body.code, code_verifier=body.code_verifier
+    )
+    signing_key = _get_signing_key(discovery, id_token=id_token)
+    claims = _validate_idtoken(settings, signing_key, id_token=id_token, nonce=body.nonce)
     session_token = session_cryptor.encode(
         Principal(
-            email=decoded["email"],
-            hd=decoded.get("hd", ""),  # optional claim only on Google hosted domains
-            iat=decoded["iat"],
-            iss=decoded["iss"],
-            sub=decoded["sub"],
+            email=claims["email"],
+            hd=claims.get("hd", ""),  # optional claim only on Google hosted domains
+            iat=claims["iat"],
+            iss=claims["iss"],
+            sub=claims["sub"],
         )
     )
     return CallbackResponse(session_token=session_token)
 
 
 def _exchange_code_for_idtoken(
-    oidc_config: GoogleOidcConfig, httpx_client: httpx2.Client, code: str, code_verifier: str
-):
-    token_endpoint = oidc_config.config["token_endpoint"]
-    token_response = httpx_client.post(
-        token_endpoint,
-        data={
-            "client_id": flags.CLIENT_ID,
-            # client_secret is not strictly required by PKCE spec but Google requires it.
-            "client_secret": flags.CLIENT_SECRET,
-            "code": code,
-            "code_verifier": code_verifier,
-            "redirect_uri": flags.GOOGLE_OIDC_REDIRECT_URI,
-            "grant_type": "authorization_code",
-        },
-    )
+    settings: OidcSettings,
+    discovery: OidcDiscovery,
+    httpx_client: httpx2.Client,
+    *,
+    code: str,
+    code_verifier: str,
+) -> str:
+    token_endpoint = discovery.token_endpoint()
+    data = {
+        "client_id": settings.client_id,
+        "code": code,
+        "code_verifier": code_verifier,
+        "redirect_uri": settings.redirect_uri,
+        "grant_type": "authorization_code",
+    }
+    if settings.client_secret is not None:
+        # PKCE does not require a client secret, but Google does.
+        data["client_secret"] = settings.client_secret
+    token_response = httpx_client.post(token_endpoint, data=data)
     if token_response.status_code != 200:
         raise HTTPException(
             status_code=500,
@@ -106,45 +119,54 @@ def _exchange_code_for_idtoken(
     if not isinstance(response, dict):
         raise HTTPException(status_code=500, detail=f"Unexpected response from {token_endpoint}")
     id_token = response.get("id_token")
-    if id_token is None or not isinstance(id_token, str):
+    if not isinstance(id_token, str):
         raise HTTPException(status_code=500, detail=f"Unexpected response from {token_endpoint}")
     return id_token
 
 
-def _validate_idtoken(oidc_config: GoogleOidcConfig, *, id_token: str, nonce: str) -> dict:
-    """Validates a Google ID token (JWT) and returns the claims as a Python dictionary."""
+def _get_signing_key(
+    discovery: OidcDiscovery,
+    *,
+    id_token: str,
+) -> dict:
+    """Selects the token's signing key, allowing discovery to refresh JWKS when needed."""
     try:
         header = jwt.get_unverified_header(id_token)
-    except jwt.PyJWTError as e:
-        logger.warning(f"JWT header parsing failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials"
-        ) from e
-    key = next((jwk for jwk in oidc_config.jwks["keys"] if jwk["kid"] == header["kid"]), None)
-    if not key:
+    except jwt.PyJWTError as exc:
+        logger.warning(f"JWT header parsing failed: {exc}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Unable to find appropriate key",
-        )
+            detail="Invalid authentication credentials",
+        ) from exc
+    if header.get("alg") != "RS256":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials")
+    key = discovery.get_signing_key(kid=header.get("kid"), algorithm=header.get("alg"))
+    if key is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unable to find appropriate key")
+    return key
+
+
+def _validate_idtoken(settings: OidcSettings, signing_key: dict, *, id_token: str, nonce: str) -> dict:
+    """Validates an ID token (JWT) from the configured identity provider and returns the claims as a dictionary."""
     try:
-        decoded = jwt.decode(
+        claims = jwt.decode(
             id_token,
-            jwt.PyJWK(key, algorithm="RS256"),
+            jwt.PyJWK(signing_key, algorithm="RS256"),
             algorithms=["RS256"],
-            audience=flags.CLIENT_ID,
-            issuer=oidc_config.config.get("issuer"),
+            audience=settings.client_id,
+            issuer=settings.issuer,
             leeway=CLOCK_SKEW_LEEWAY,
             options={"require": ["iss", "aud", "iat", "exp"]},
         )
         # Confirming that authorized party (azp) and audience (aud) match is not strictly necessary but if Google ever
         # issues a token where azp an aud don't match then we would like to know about it.
-        if decoded["azp"] != decoded["aud"]:
+        if claims["azp"] != claims["aud"]:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid azp/aud")
-        if decoded.get("nonce") != nonce:
+        if claims.get("nonce") != nonce:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid nonce")
     except jwt.PyJWTError as e:
         logger.warning(f"JWT validation failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials"
         ) from e
-    return decoded
+    return claims

@@ -3,8 +3,6 @@
 import enum
 import os
 
-from xngin.apiserver import constants
-
 
 def is_dev_environment():
     return os.environ.get("ENVIRONMENT", "") in {"dev", ""}
@@ -31,14 +29,6 @@ ENV_XNGIN_OIDC_REDIRECT_URI = "XNGIN_OIDC_REDIRECT_URI"
 OIDC_REDIRECT_URI = os.environ.get(ENV_XNGIN_OIDC_REDIRECT_URI, "")
 ENV_XNGIN_OIDC_CLAIM_MAP = "XNGIN_OIDC_CLAIM_MAP"
 OIDC_CLAIM_MAP = os.environ.get(ENV_XNGIN_OIDC_CLAIM_MAP, "")
-
-# Legacy Google-only flags, read until the relying party is switched to the settings above.
-ENV_GOOGLE_OIDC_CLIENT_ID = "GOOGLE_OIDC_CLIENT_ID"
-CLIENT_ID = os.environ.get(ENV_GOOGLE_OIDC_CLIENT_ID)
-ENV_GOOGLE_OIDC_CLIENT_SECRET = "GOOGLE_OIDC_CLIENT_SECRET"  # noqa: S105
-CLIENT_SECRET = os.environ.get(ENV_GOOGLE_OIDC_CLIENT_SECRET)
-DEFAULT_REDIRECT_URI = f"http://localhost:8000{constants.API_PREFIX_V1}/a/oidc"
-GOOGLE_OIDC_REDIRECT_URI = os.environ.get("GOOGLE_OIDC_REDIRECT_URI", DEFAULT_REDIRECT_URI)  # used for testing UI only
 
 # XNGIN_SESSION_TOKEN_KEYSET contains a keyset for encrypting session tokens. This is generated using the
 # `xngin-cli create-nacl-keyset` command. If set to "local", we will read from a local file (see:
