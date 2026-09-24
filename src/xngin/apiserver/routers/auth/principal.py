@@ -8,7 +8,7 @@ class Principal(BaseModel):
     """
 
     email: str  # user email
-    hd: str  # hosted domain
+    hd: str  # auxiliary field (e.g. Google hosted domain), populated from ID token claims via XNGIN_OIDC_CLAIM_MAP
     iat: int  # issued-at timestamp
     iss: str  # issuer
     sub: str  # subject identifier

@@ -38,6 +38,9 @@ env:
   # https://console.cloud.google.com/apis/credentials?organizationId=256829878972&project=xngin-development-dc.
   XNGIN_OIDC_CLIENT_ID: "222213100775-qa1ajcrk48il70itcbdcvgr9ib5t08uf.apps.googleusercontent.com"
 
+  # Copies Google's hosted domain claim onto the session principal.
+  XNGIN_OIDC_CLAIM_MAP: "hd:hd"
+
   # These values are configured in the evidential-live project and should only be used when validating the
   # production environments:
   # https://console.cloud.google.com/auth/clients?project=evidential-live
