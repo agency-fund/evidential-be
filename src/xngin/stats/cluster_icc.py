@@ -5,8 +5,13 @@ These functions accept dataframes rather than database sessions, following the p
 established in analysis.py. The API layer is responsible for fetching data from the DWH.
 """
 
+from collections.abc import Sequence
+
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
+
+type _FloatArray = Sequence[float] | npt.NDArray[np.float64]
 
 
 def _icc_one_way_random_intercept(df: pd.DataFrame, *, cluster_column: str, outcome_column: str) -> float:
@@ -50,6 +55,70 @@ def _icc_one_way_random_intercept(df: pd.DataFrame, *, cluster_column: str, outc
 
     # 4. Final calculation of ICC as the ratio of between-cluster variance to total variance.
     # If MSB < MSW, the point estimate for sigma_b is 0 (prevents negative ICC)
+    var_between = max(0.0, (msb - msw) / n0)
+    var_within = msw
+    total_var = var_between + var_within
+    if total_var == 0:
+        return 0.0
+
+    return float(np.clip(var_between / total_var, 0.0, 1.0))
+
+
+def calculate_icc_from_sufficient_stats(
+    *,
+    counts: _FloatArray,
+    sums: _FloatArray,
+    sumsqs: _FloatArray,
+) -> float:
+    """
+    Calculate intraclass correlation (ICC) from per-cluster sufficient statistics.
+
+    Computes the same one-way random-effects ANOVA estimator as
+    calculate_icc_from_dataframe, but from one (count, sum, sum-of-squares) triple per
+    cluster instead of individual observations. The sums may be over values shifted by
+    any per-metric constant (ICC is shift-invariant); all three arrays must describe the
+    same non-null observations and use the same shift.
+
+    Args:
+        counts: Number of non-null observations in each cluster; all must be > 0
+        sums: Sum of the observations in each cluster
+        sumsqs: Sum of the squared observations in each cluster
+
+    Returns:
+        ICC value between 0 and 1
+
+    Raises:
+        ValueError: If there are fewer than 2 clusters or insufficient observations
+    """
+    n = np.asarray(counts, dtype=np.float64)
+    s = np.asarray(sums, dtype=np.float64)
+    q = np.asarray(sumsqs, dtype=np.float64)
+    if not (len(n) == len(s) == len(q)):
+        raise ValueError("counts, sums, and sumsqs must have the same length")
+    if np.any(n <= 0):
+        raise ValueError("counts must all be positive; drop clusters without observations")
+
+    k = len(n)
+    if k < 2:
+        raise ValueError("Need at least 2 clusters to calculate ICC")
+    n_total = float(n.sum())
+    df_b = k - 1
+    df_w = n_total - k
+    if df_w < 1:
+        raise ValueError("Insufficient within-cluster data (need N > clusters)")
+
+    # ANOVA sums of squares via the identity sum((x - mean)^2) = sum(x^2) - sum(x)^2 / n.
+    # Each term is a sum of squares, so clamp tiny negative floating-point results to 0.
+    between_terms = s**2 / n
+    ssw = max(0.0, float(q.sum() - between_terms.sum()))
+    ssb = max(0.0, float(between_terms.sum() - s.sum() ** 2 / n_total))
+    msb = ssb / df_b
+    msw = ssw / df_w
+
+    # n0 is the "effective cluster size" adjustment for unequal cluster sizes.
+    n0 = (n_total - float((n**2).sum()) / n_total) / df_b
+
+    # If MSB < MSW, the point estimate for sigma_b is 0 (prevents negative ICC).
     var_between = max(0.0, (msb - msw) / n0)
     var_within = msw
     total_var = var_between + var_within

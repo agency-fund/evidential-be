@@ -355,13 +355,29 @@ def test_design_spec_metric_request_baseline_stats_all_or_none():
     )
     assert full_stats.has_baseline_stats is True
 
-    # A partial set of baseline stats is rejected.
+    # A partial set of baseline stats is rejected. First create without validation.
+    partial_stats = DesignSpecMetricRequest.model_construct(
+        field_name="metric1", metric_pct_change=0.1, metric_baseline=100.0
+    )
+
+    # If such a model were normally validated, it would raise a validation error.
     with pytest.raises(ValidationError, match="must all be set together"):
-        DesignSpecMetricRequest(
-            field_name="metric1",
-            metric_pct_change=0.1,
-            metric_baseline=100.0,
-        )
+        DesignSpecMetricRequest.model_validate(partial_stats.model_dump())
+
+    # But even on the unvalidated model, has_baseline_stats works as a manual check.
+    assert partial_stats.has_baseline_stats is False
+
+
+def test_design_spec_metric_has_cluster_stats():
+    full = DesignSpecMetricRequest(field_name="metric1", metric_pct_change=0.1, icc=0.02, avg_cluster_size=10, cv=0.1)
+    assert full.has_cluster_stats is True
+
+    none = DesignSpecMetricRequest(field_name="metric1", metric_pct_change=0.1)
+    assert none.has_cluster_stats is False
+
+    # A partial trio would fail validation; on an unvalidated model has_cluster_stats still says no.
+    partial = DesignSpecMetricRequest.model_construct(field_name="metric1", metric_pct_change=0.1, icc=0.02)
+    assert partial.has_cluster_stats is False
 
 
 def test_design_spec_metric_request_stddev_requires_numeric():

@@ -4,7 +4,6 @@ This module defines the internal Evidential UI-facing Admin API endpoints.
 """
 
 import asyncio
-import json
 import secrets
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -33,15 +32,11 @@ from xngin.apiserver import constants
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
-from xngin.apiserver.dwh.dwh_session import CannotFindTableError, DwhSession
-from xngin.apiserver.dwh.inspections import (
-    build_proposed_and_drift,
-    create_inspect_table_response_from_table,
-    dehydrate_participants,
-)
+from xngin.apiserver.dwh.dwh_session import DwhSession
+from xngin.apiserver.dwh.inspections import create_inspect_table_response_from_table
 from xngin.apiserver.dwh.queries import (
-    get_stats_on_filters,
-    get_stats_on_metrics,
+    get_cluster_sufficient_stats,
+    get_raw_metric_stats,
 )
 from xngin.apiserver.exceptionhandlers import XHTTPValidationError
 from xngin.apiserver.exceptions_common import LateValidationError
@@ -70,29 +65,23 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     CreateDatasourceResponse,
     CreateOrganizationRequest,
     CreateOrganizationResponse,
-    CreateParticipantsTypeRequest,
-    CreateParticipantsTypeResponse,
     CreateSnapshotResponse,
     CreateUserRequest,
     CreateUserResponse,
     DatasourceSummary,
     DeleteExperimentDataRequest,
-    Drift,
     EventSummary,
     GetDatasourceResponse,
     GetExperimentForUiResponse,
     GetOrganizationResponse,
-    GetParticipantsTypeResponse,
     GetSnapshotResponse,
     GetUserResponse,
     InspectDatasourceResponse,
     InspectDatasourceTableResponse,
-    InspectParticipantTypesResponse,
     ListApiKeysResponse,
     ListDatasourcesResponse,
     ListOrganizationEventsResponse,
     ListOrganizationsResponse,
-    ListParticipantsTypeResponse,
     ListSnapshotsResponse,
     ListUsersResponse,
     ListWebhooksResponse,
@@ -102,14 +91,11 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     PostgresDsn,
     RedshiftDsn,
     SnapshotStatus,
-    TableDeleted,
     UpdateArmRequest,
     UpdateDatasourceRequest,
     UpdateExperimentRequest,
     UpdateOrganizationRequest,
     UpdateOrganizationWebhookRequest,
-    UpdateParticipantsTypeRequest,
-    UpdateParticipantsTypeResponse,
     UserDetail,
     UserSummary,
     WebhookSummary,
@@ -128,8 +114,6 @@ from xngin.apiserver.routers.common_api_types import (
     ExperimentAnalysisResponse,
     ExperimentsType,
     Filter,
-    GetMetricsResponseElement,
-    GetStrataResponseElement,
     ListExperimentsResponse,
     MABDwhExperimentSpec,
     MABExperimentSpec,
@@ -147,12 +131,8 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     make_schema_from_experiment,
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
-from xngin.apiserver.routers.power_adapters import calculate_cluster_stats_from_database
-from xngin.apiserver.settings import (
-    NoDwh,
-    ParticipantsDef,
-    RemoteDatabaseConfig,
-)
+from xngin.apiserver.routers.power_adapters import build_metric_stats, calculate_cluster_stats
+from xngin.apiserver.settings import NoDwh, RemoteDatabaseConfig
 from xngin.apiserver.snapshots import snapshotter
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
@@ -1351,7 +1331,7 @@ async def create_datasource(
 
     raise_unless_safe_hostname(body.dsn)
 
-    config = RemoteDatabaseConfig(participants=[], type="remote", dwh=api_dsn_to_settings_dwh(body.dsn))
+    config = RemoteDatabaseConfig(type="remote", dwh=api_dsn_to_settings_dwh(body.dsn))
     if connectivity_check and config.dwh.driver != "none":
         async with DwhSession(config.dwh) as dwh:
             await dwh.connectivity_check()
@@ -1382,11 +1362,7 @@ async def update_datasource(
     invalidate_inspect_tables = delete(tables.DatasourceTablesInspected).where(
         tables.DatasourceTablesInspected.datasource_id == datasource_id
     )
-    invalidate_inspect_ptype = delete(tables.ParticipantTypesInspected).where(
-        tables.ParticipantTypesInspected.datasource_id == datasource_id
-    )
     await session.execute(invalidate_inspect_tables)
-    await session.execute(invalidate_inspect_ptype)
 
     await session.commit()
     return GENERIC_SUCCESS
@@ -1523,257 +1499,6 @@ async def delete_datasource(
         allow_missing,
         authz.is_user_authorized_on_organization(user, organization_id),
         resource_query,
-    )
-    await session.commit()
-    return response
-
-
-@router.get("/datasources/{datasource_id}/participants")
-async def list_participant_types(
-    datasource_id: str,
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(require_user_from_token)],
-) -> ListParticipantsTypeResponse:
-    ds = await get_datasource_or_raise(session, user, datasource_id)
-    participants = ds.get_config().participants
-    return ListParticipantsTypeResponse(
-        items=list(
-            sorted(
-                [p for p in participants if not p.hidden],
-                key=lambda p: p.participant_type,
-            )
-        ),
-        has_hidden=any(p for p in participants if p.hidden),
-    )
-
-
-@router.post("/datasources/{datasource_id}/participants")
-async def create_participant_type(
-    datasource_id: str,
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(require_user_from_token)],
-    body: CreateParticipantsTypeRequest,
-) -> CreateParticipantsTypeResponse:
-    ds = await get_datasource_or_raise(session, user, datasource_id)
-    participants_def = ParticipantsDef(
-        type="schema",
-        participant_type=body.participant_type,
-        table_name=body.schema_def.table_name,
-        fields=body.schema_def.fields,
-    )
-    config = ds.get_config()
-    config.participants.append(participants_def)
-    ds.set_config(config)
-    await session.commit()
-    return CreateParticipantsTypeResponse(
-        participant_type=participants_def.participant_type,
-        schema_def=body.schema_def,
-    )
-
-
-@router.get(
-    "/datasources/{datasource_id}/participants/{participant_id}/inspect",
-    responses=DWH_CONNECTION_AND_NOT_FOUND_RESPONSES,
-)
-async def inspect_participant_types(
-    datasource_id: str,
-    participant_id: str,
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(require_user_from_token)],
-    refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
-    expensive: Annotated[bool, Query(description="Whether to run expensive metadata queries.")] = False,
-) -> InspectParticipantTypesResponse:
-    """Returns filter, strata, and metric field metadata for a participant type, including exemplars for
-    filter fields."""
-    ds = await get_datasource_or_raise(session, user, datasource_id)
-    dsconfig = ds.get_config()
-    # CannotFindParticipantsError will be handled by exceptionhandlers.
-    pconfig = dsconfig.find_participants(participant_id)
-
-    if (
-        not refresh
-        and (cached := await session.get(tables.ParticipantTypesInspected, (datasource_id, participant_id)))
-        and cache_is_fresh(cached.response_last_updated)
-        and cached.response is not None
-    ):
-        return InspectParticipantTypesResponse.model_validate(cached.response)
-
-    await session.execute(
-        delete(tables.ParticipantTypesInspected).where(
-            tables.ParticipantTypesInspected.datasource_id == datasource_id,
-            tables.ParticipantTypesInspected.participant_type == participant_id,
-        )
-    )
-    await session.commit()
-
-    filter_fields = {c.field_name: c for c in pconfig.fields if c.is_filter}
-    strata_fields = {c.field_name: c for c in pconfig.fields if c.is_strata}
-    metric_cols = {c.field_name: c for c in pconfig.fields if c.is_metric}
-
-    async def inspect_participant_types_impl() -> InspectParticipantTypesResponse:
-        async with DwhSession(dsconfig.dwh) as dwh:
-            result = await dwh.inspect_table_with_descriptors(pconfig.table_name, pconfig.get_unique_id_field())
-            filter_data = await asyncio.to_thread(
-                get_stats_on_filters, dwh.session, result.sa_table, result.db_schema, filter_fields, expensive
-            )
-
-        return InspectParticipantTypesResponse(
-            metrics=sorted(
-                [
-                    GetMetricsResponseElement(
-                        data_type=result.db_schema.get(col_name).data_type,  # type: ignore[union-attr]
-                        field_name=col_name,
-                        description=col_descriptor.description,
-                    )
-                    for col_name, col_descriptor in metric_cols.items()
-                    if result.db_schema.get(col_name)
-                ],
-                key=lambda item: item.field_name,
-            ),
-            strata=sorted(
-                [
-                    GetStrataResponseElement(
-                        data_type=result.db_schema.get(field_name).data_type,  # type: ignore[union-attr]
-                        field_name=field_name,
-                        description=field_descriptor.description,
-                    )
-                    for field_name, field_descriptor in strata_fields.items()
-                    if result.db_schema.get(field_name)
-                ],
-                key=lambda item: item.field_name,
-            ),
-            filters=sorted(
-                filter_data,
-                key=lambda item: item.field_name,
-            ),
-        )
-
-    response = await inspect_participant_types_impl()
-
-    session.add(
-        tables.ParticipantTypesInspected(
-            datasource_id=datasource_id,
-            participant_type=participant_id,
-            # This value may contain Python datetime objects. The default JSON serializer doesn't serialize them
-            # but the Pydantic serializer turns them into ISO8601 strings. This could be better.
-            response=json.loads(response.model_dump_json()),
-            response_last_updated=datetime.now(UTC),
-        )
-    )
-
-    await session.commit()
-
-    return response
-
-
-@router.get(
-    "/datasources/{datasource_id}/participants/{participant_id}",
-    responses=DWH_CONNECTION_AND_NOT_FOUND_RESPONSES,
-)
-async def get_participant_type(
-    datasource_id: str,
-    participant_id: str,
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(require_user_from_token)],
-) -> GetParticipantsTypeResponse:
-    ds = await get_datasource_or_raise(session, user, datasource_id)
-    # CannotFindParticipantsError will be handled by exceptionhandlers.
-    participants = ds.get_config().find_participants(participant_id)
-    async with DwhSession(ds.get_config().dwh) as dwh:
-        try:
-            inspected = await dwh.inspect_table(participants.table_name)
-            # Compose a new participant config from an existing one and build diffs
-            # This will add all of the columns from the DWH that are not already described by participants to proposed.
-            proposed, drift = build_proposed_and_drift(participants, inspected)
-        except CannotFindTableError:
-            proposed = participants
-            drift = Drift(schema_diff=[TableDeleted(table_name=participants.table_name)])
-
-        return GetParticipantsTypeResponse(current=participants, proposed=proposed, drift=drift)
-
-
-@router.patch(
-    "/datasources/{datasource_id}/participants/{participant_id}",
-    response_model=UpdateParticipantsTypeResponse,
-)
-async def update_participant_type(
-    datasource_id: str,
-    participant_id: str,
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(require_user_from_token)],
-    body: UpdateParticipantsTypeRequest,
-):
-    ds = await get_datasource_or_raise(session, user, datasource_id)
-    config = ds.get_config()
-    participant = config.find_participants(participant_id)
-    config.participants.remove(participant)
-    if body.participant_type is not None:
-        participant.participant_type = body.participant_type
-    if body.table_name is not None:
-        participant.table_name = body.table_name
-    if body.fields is not None:
-        participant.fields = body.fields
-        async with DwhSession(ds.get_config().dwh) as dwh:
-            inspected = await dwh.inspect_table(participant.table_name)
-            participant = dehydrate_participants(participant, inspected)
-
-    config.participants.append(participant)
-    ds.set_config(config)
-
-    # Invalidate the participant types cached inspections because the configuration may have been updated and they may
-    # be stale.
-    await session.execute(
-        delete(tables.ParticipantTypesInspected).where(
-            tables.ParticipantTypesInspected.datasource_id == datasource_id,
-            tables.ParticipantTypesInspected.participant_type == participant_id,
-        )
-    )
-    await session.commit()
-    return UpdateParticipantsTypeResponse(
-        participant_type=participant.participant_type,
-        table_name=participant.table_name,
-        fields=participant.fields,
-    )
-
-
-@router.delete(
-    "/datasources/{datasource_id}/participants/{participant_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-)
-async def delete_participant(
-    datasource_id: str,
-    participant_id: str,
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(require_user_from_token)],
-    allow_missing: Annotated[
-        bool,
-        Query(description="If true, return a 204 even if the resource does not exist."),
-    ] = False,
-):
-    async def get_participants_or_none(session_: AsyncSession):
-        resource = (
-            await session_.execute(select(tables.Datasource).where(tables.Datasource.id == datasource_id))
-        ).scalar_one_or_none()
-        if resource is None:
-            return None
-        config = resource.get_config()
-        participant = config.find_participants_or_none(participant_id)
-        if participant is None:
-            return None
-        return resource
-
-    def deleter(_session: AsyncSession, resource: tables.Datasource):
-        config = resource.get_config()
-        participant = config.find_participants(participant_id)
-        config.participants.remove(participant)
-        resource.set_config(config)
-
-    response = await handle_delete(
-        session,
-        allow_missing,
-        authz.is_user_authorized_on_datasource(user, datasource_id),
-        get_participants_or_none,
-        deleter,
     )
     await session.commit()
     return response
@@ -2277,9 +2002,11 @@ async def power_check(
         filters = [*filters, Filter(field_name=cluster_key, relation=Relation.EXCLUDES, value=[None])]
 
     metrics_missing_stats = [m for m in design_spec.metrics if not m.has_baseline_stats]
-    needs_cluster_stats = cluster_key is not None and any(m.icc is None for m in design_spec.metrics)
+    needs_cluster_stats = cluster_key is not None and any(not m.has_cluster_stats for m in design_spec.metrics)
 
     if not metrics_missing_stats and not needs_cluster_stats:
+        # Every metric arrived with baseline stats (and cluster stats where needed), so the
+        # warehouse is not contacted at all.
         metric_stats = [m.to_design_spec_metric() for m in design_spec.metrics]
     else:
         async with DwhSession(dsconfig.dwh) as dwh:
@@ -2287,56 +2014,83 @@ async def power_check(
             # Validate the fields used in the design spec are present in the table and that filter values are valid.
             _ = convert_table_to_fields_or_raise(sa_table, design_spec)
 
-            queried_stats = (
+            # Only queries run inside this block; stats are computed from the raw rows after
+            # the DWH connection is closed. Metrics carrying baseline stats are not queried.
+            raw_metric_stats = (
                 await asyncio.to_thread(
-                    get_stats_on_metrics,
+                    get_raw_metric_stats,
                     dwh.session,
                     sa_table,
                     metrics_missing_stats,
                     filters,
                 )
                 if metrics_missing_stats
+                else None
+            )
+
+            # Derive cluster stats from the dwh only for metrics without user-provided ICC, in one query.
+            db_derived_metrics = (
+                [m.field_name for m in design_spec.metrics if not m.has_cluster_stats]
+                if cluster_key is not None
                 else []
             )
-            queried_stats_by_name = {m.field_name: m for m in queried_stats}
-            metric_stats = [
-                m.to_design_spec_metric() if m.has_baseline_stats else queried_stats_by_name[m.field_name]
-                for m in design_spec.metrics
-            ]
-
-            # Augment with cluster-level stats if this is a cluster-randomized design.
-            if cluster_key is not None:
-                request_metrics_by_name = {m.field_name: m for m in design_spec.metrics}
-                # Derive stats from the dwh only for metrics without user-provided ICC, in one query.
-                db_derived_metrics = [
-                    metric_stat.field_name
-                    for metric_stat in metric_stats
-                    if request_metrics_by_name[metric_stat.field_name].icc is None
-                ]
-                db_cluster_stats = (
-                    await asyncio.to_thread(
-                        calculate_cluster_stats_from_database,
-                        dwh.session,
-                        sa_table,
-                        cluster_key,
-                        db_derived_metrics,
-                        filters,
-                    )
-                    if db_derived_metrics
-                    else {}
-                )
-                for metric_stat in metric_stats:
-                    req_metric = request_metrics_by_name[metric_stat.field_name]
-                    # If the user provided ICC, avg_cluster_size, and cv, use them instead of deriving from the dwh.
-                    if req_metric.icc is not None:
-                        metric_stat.icc = req_metric.icc
-                        metric_stat.avg_cluster_size = req_metric.avg_cluster_size
-                        metric_stat.cv = req_metric.cv
+            raw_cluster_stats = None
+            if cluster_key is not None and db_derived_metrics:
+                # Shifting each metric by its mean keeps the sums of squares in the
+                # sufficient-statistics query numerically stable. The mean comes from the raw
+                # query row for queried metrics and from the supplied baseline for echoed ones.
+                supplied_baselines = {
+                    m.field_name: m.metric_baseline for m in design_spec.metrics if m.has_baseline_stats
+                }
+                outcome_shifts = {}
+                for field_name in db_derived_metrics:
+                    if field_name in supplied_baselines:
+                        mean = supplied_baselines[field_name]
                     else:
-                        cluster_stats = db_cluster_stats[metric_stat.field_name]
-                        metric_stat.icc = cluster_stats["icc"]
-                        metric_stat.avg_cluster_size = cluster_stats["avg_cluster_size"]
-                        metric_stat.cv = cluster_stats["cv"]
+                        mean = raw_metric_stats[f"{field_name}__mean"] if raw_metric_stats is not None else None
+                    if mean is not None:
+                        outcome_shifts[field_name] = mean
+                raw_cluster_stats = await asyncio.to_thread(
+                    get_cluster_sufficient_stats,
+                    dwh.session,
+                    sa_table,
+                    cluster_key,
+                    db_derived_metrics,
+                    filters,
+                    outcome_shifts,
+                )
+
+        queried_stats = (
+            build_metric_stats(raw_metric_stats, sa_table, metrics_missing_stats)
+            if raw_metric_stats is not None
+            else []
+        )
+        queried_stats_by_name = {m.field_name: m for m in queried_stats}
+        metric_stats = [
+            m.to_design_spec_metric() if m.has_baseline_stats else queried_stats_by_name[m.field_name]
+            for m in design_spec.metrics
+        ]
+
+        # Augment with cluster-level stats if this is a cluster-randomized design.
+        if cluster_key is not None:
+            db_cluster_stats = (
+                calculate_cluster_stats(raw_cluster_stats, cluster_key, db_derived_metrics)
+                if raw_cluster_stats is not None
+                else {}
+            )
+            request_metrics_by_name = {m.field_name: m for m in design_spec.metrics}
+            for metric_stat in metric_stats:
+                req_metric = request_metrics_by_name[metric_stat.field_name]
+                # If the user provided ICC, avg_cluster_size, and cv, use them instead of deriving from the dwh.
+                if req_metric.has_cluster_stats:
+                    metric_stat.icc = req_metric.icc
+                    metric_stat.avg_cluster_size = req_metric.avg_cluster_size
+                    metric_stat.cv = req_metric.cv
+                else:
+                    cluster_stats = db_cluster_stats[metric_stat.field_name]
+                    metric_stat.icc = cluster_stats["icc"]
+                    metric_stat.avg_cluster_size = cluster_stats["avg_cluster_size"]
+                    metric_stat.cv = cluster_stats["cv"]
 
     arm_weights = design_spec.get_validated_arm_weights()
 

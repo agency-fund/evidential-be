@@ -36,7 +36,6 @@ from xngin.apiserver.limits import (
 )
 from xngin.apiserver.routers.common_enums import (
     ContextType,
-    DataType,
     ExperimentAnalysisType,
     ExperimentState,
     ExperimentsType,
@@ -136,23 +135,33 @@ class DesignSpecMetricBase(ApiBaseModel):
             raise ValueError("icc, avg_cluster_size, and cv must all be set together or all be None")
         return self
 
-
-class DesignSpecMetric(DesignSpecMetricBase):
-    """Defines a metric to measure in an experiment with its baseline stats."""
+    @property
+    def has_cluster_stats(self) -> bool:
+        """True when this metric carries the full set of cluster statistics."""
+        return self.icc is not None and self.avg_cluster_size is not None and self.cv is not None
 
     @model_validator(mode="after")
-    def stddev_check(self):
+    def stddev_check(self) -> Self:
         """Enforce that metric_stddev is empty for non-NUMERICs. The frontend handles numerics without a
         stddev (the all-null case)."""
         if self.metric_type is not MetricType.NUMERIC and self.metric_stddev is not None:
-            raise ValueError("should not have stddev")
+            raise ValueError("metric_stddev may only be set for NUMERIC metrics")
         return self
+
+
+class DesignSpecMetric(DesignSpecMetricBase):
+    """Defines a metric to measure in an experiment with its baseline stats.
+
+    Same fields and validation as the base; kept as a distinct class so request and response
+    metrics stay separate types (and separate OpenAPI schemas) even though only
+    DesignSpecMetricRequest adds request-specific validation.
+    """
 
 
 class DesignSpecMetricRequest(DesignSpecMetricBase):
     """Defines a request to look up baseline stats for a metric to measure in an experiment.
 
-    Baseline stats may optionally be supplied (e.g. echoed back from a prior power check's
+    Baseline stats may optionally be supplied (e.g. copied from a prior power check's
     `MetricPowerAnalysis.metric_spec`), in which case the server reuses them instead of
     re-querying the data warehouse.
     """
@@ -191,14 +200,17 @@ class DesignSpecMetricRequest(DesignSpecMetricBase):
                 "metric_type, metric_baseline, available_nonnull_n, and available_n must all be set "
                 "together or all be None"
             )
-        if self.metric_stddev is not None and self.metric_type is not MetricType.NUMERIC:
-            raise ValueError("metric_stddev may only be set for NUMERIC metrics")
         return self
 
     @property
     def has_baseline_stats(self) -> bool:
         """True when this request carries the baseline stats needed to skip the dwh stats query."""
-        return self.metric_baseline is not None
+        return (
+            self.metric_type is not None
+            and self.metric_baseline is not None
+            and self.available_nonnull_n is not None
+            and self.available_n is not None
+        )
 
     def to_design_spec_metric(self) -> DesignSpecMetric:
         """Converts a request carrying baseline stats into the equivalent dwh-derived metric."""
@@ -756,22 +768,6 @@ class MetricPowerAnalysis(ApiBaseModel):
         int | None,
         Field(description="Effective sample size accounting for clustering (total_n / DEFF)."),
     ] = None
-
-
-class GetStrataResponseElement(ApiBaseModel):
-    """Describes a stratification variable."""
-
-    data_type: DataType
-    field_name: FieldName
-    description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
-
-
-class GetMetricsResponseElement(ApiBaseModel):
-    """Describes a metric."""
-
-    field_name: FieldName
-    data_type: DataType
-    description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
 
 
 class Filter(ApiBaseModel):
@@ -1643,35 +1639,6 @@ class GetExperimentAssignmentsResponse(ApiBaseModel):
     experiment_id: str
     sample_size: int
     assignments: list[Assignment]
-
-
-class GetFiltersResponseBase(ApiBaseModel):
-    field_name: Annotated[FieldName, Field(..., description="Name of the field.")]
-    data_type: DataType
-    relations: Annotated[list[Relation], Field(..., min_length=1, max_length=MAX_NUMBER_OF_FILTERS)]
-    description: Annotated[str, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)]
-
-
-class GetFiltersResponseNumericOrDate(GetFiltersResponseBase):
-    """Describes a numeric or date filter variable."""
-
-    min: datetime.datetime | datetime.date | float | int | None = Field(
-        ...,
-        description="The minimum observed value.",
-    )
-    max: datetime.datetime | datetime.date | float | int | None = Field(
-        ...,
-        description="The maximum observed value.",
-    )
-
-
-class GetFiltersResponseDiscrete(GetFiltersResponseBase):
-    """Describes a discrete filter variable."""
-
-    distinct_values: Annotated[list[str] | None, Field(..., description="Sorted list of unique values.")]
-
-
-type GetFiltersResponseElement = GetFiltersResponseNumericOrDate | GetFiltersResponseDiscrete
 
 
 class UpdateBanditArmOutcomeRequest(ApiBaseModel):

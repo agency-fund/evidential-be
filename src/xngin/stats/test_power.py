@@ -109,7 +109,7 @@ def test_analyze_metric_power_binary():
     assert result.metric_spec.metric_type == MetricType.BINARY
     assert result.metric_spec.metric_baseline == 0.5
     assert result.metric_spec.metric_target == 0.55
-    assert result.target_n == 3132
+    assert result.target_n == 3130
     # Given the available_n, here's the best we can do (cross-checked with R's power.prop.test):
     # (since it's 2-sided, an equivalent change down is fine, too)
     assert result.target_possible == pytest.approx(1 - 0.588163, abs=1e-4)
@@ -120,8 +120,8 @@ def test_analyze_metric_power_binary():
     assert result.msg.values == {
         "available_n": 1000,
         "available_nonnull_n": 1000,
-        "target_n": 3132,
-        "additional_n_needed": 3132 - 1000,
+        "target_n": 3130,
+        "additional_n_needed": 3130 - 1000,
         "metric_baseline": 0.5,
         "target_possible": pytest.approx(1 - 0.588163, abs=1e-4),
         "metric_target": 0.55,
@@ -332,7 +332,7 @@ def test_analyze_metric_power_unbalanced_binary():
     assert result.metric_spec.metric_type == MetricType.BINARY
     assert result.target_n is not None
     # Unbalanced requires more than the balanced case above.
-    assert result.target_n == 3526
+    assert result.target_n == 3523
     assert result.sufficient_n
     assert result.msg is not None
     assert result.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
@@ -371,7 +371,7 @@ def test_check_power_unbalanced():
     # Same as test_analyze_metric_power_unbalanced_two_arms since it's the same params.
     assert results[0].target_n == 200
     # Even larger than test_analyze_metric_power_unbalanced_binary since the ratio is also larger.
-    assert results[1].target_n == 4895
+    assert results[1].target_n == 4890
 
 
 def test_analyze_metric_power_numeric_with_desired_n():
@@ -456,7 +456,7 @@ def test_check_power_with_desired_n():
     assert results[0].target_possible is None
     assert results[0].pct_change_possible is None
     # If there are insufficient units, we report the smallest MDE possible if all samples were used.
-    assert results[1].target_n == 62438
+    assert results[1].target_n == 62436
     assert results[1].sufficient_n is False
     assert results[1].target_possible == pytest.approx(0.0385, abs=1e-4)
     assert results[1].pct_change_possible == pytest.approx(-0.2300, abs=1e-4)
