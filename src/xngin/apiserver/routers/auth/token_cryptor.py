@@ -54,10 +54,10 @@ class TokenCryptor:
             raise TokenCryptorMisconfiguredError(f"{self._keyset_env_var} is invalid") from err
         return NaclProvider(keyset)
 
-    def encrypt(self, plaintext: bytes | str) -> str:
-        return self._prefix + self._instance.encrypt(plaintext, b"")
+    def encrypt(self, plaintext: bytes | str, aad: bytes = b"") -> str:
+        return self._prefix + self._instance.encrypt(plaintext, aad)
 
-    def decrypt(self, token: str) -> bytes:
+    def decrypt(self, token: str, aad: bytes = b"") -> bytes:
         if not token.startswith(self._prefix):
             raise InvalidTokenError
-        return self._instance.decrypt(token[len(self._prefix) :], b"", self._ttl)
+        return self._instance.decrypt(token[len(self._prefix) :], aad, self._ttl)
