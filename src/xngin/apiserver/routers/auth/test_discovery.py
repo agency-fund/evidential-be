@@ -225,11 +225,28 @@ def test_discovery_requires_https_endpoints(idp_jwk, overrides, message):
     assert str(exc.value) == message
 
 
-def test_discovery_ignores_unused_optional_endpoints(idp_jwk):
-    with _idp_client(idp_jwk, {"userinfo_endpoint": "not-a-url"}) as client:
+def test_discovery_exposes_userinfo_endpoint(idp_jwk):
+    with _idp_client(idp_jwk, {"userinfo_endpoint": f"{DISCOVERY_ISSUER}/userinfo"}) as client:
+        discovery = OidcDiscovery(_settings(), client)
+
+    assert discovery.userinfo_endpoint() == f"{DISCOVERY_ISSUER}/userinfo"
+
+
+@pytest.mark.parametrize(
+    "userinfo_endpoint",
+    [
+        pytest.param(None, id="absent"),
+        pytest.param("not-a-url", id="not-a-url"),
+        pytest.param("http://idp.example.com/userinfo", id="http"),
+        pytest.param(42, id="not-a-string"),
+    ],
+)
+def test_discovery_ignores_missing_or_unusable_userinfo_endpoint(idp_jwk, userinfo_endpoint):
+    with _idp_client(idp_jwk, {"userinfo_endpoint": userinfo_endpoint}) as client:
         discovery = OidcDiscovery(_settings(), client)
 
     assert discovery.authorization_endpoint() == f"{DISCOVERY_ISSUER}/authorize"
+    assert discovery.userinfo_endpoint() is None
 
 
 def test_discovery_allows_http_endpoints_for_a_development_http_issuer(idp_jwk):
