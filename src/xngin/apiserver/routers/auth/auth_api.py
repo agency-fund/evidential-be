@@ -5,7 +5,7 @@ import datetime
 import json
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Annotated
+from typing import Annotated, Any
 
 import httpx2
 import jwt
@@ -21,6 +21,7 @@ from xngin.apiserver.routers.auth.auth_dependencies import SessionTokenCryptor
 from xngin.apiserver.routers.auth.discovery import (
     OidcDiscovery,
     OidcProviderTimeoutError,
+    OidcTokenExchangeError,
     OidcUserinfoError,
     get_oidc_discovery,
 )
@@ -38,6 +39,11 @@ REQUIRED_CLAIMS = ["iss", "aud", "iat", "exp", "sub", "email"]
 
 # Bounds the length of provider-supplied headers copied into log messages.
 MAX_OAUTH_ERROR_FIELD_LENGTH = 200
+
+OIDC_PROVIDER_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
+    502: {"description": "The identity provider returned an invalid or unavailable response."},
+    504: {"description": "The identity provider request timed out."},
+}
 
 
 def validate_environment_variables():
@@ -74,7 +80,10 @@ router = APIRouter(
 )
 
 
-@router.get("/config")
+@router.get(
+    "/config",
+    responses=OIDC_PROVIDER_ERROR_RESPONSES,
+)
 def oidc_client_config(
     settings: Annotated[OidcSettings, Depends(get_oidc_settings)],
     discovery: Annotated[OidcDiscovery, Depends(get_oidc_discovery)],
@@ -92,7 +101,10 @@ def oidc_client_config(
     )
 
 
-@router.post("/callback")
+@router.post(
+    "/callback",
+    responses=OIDC_PROVIDER_ERROR_RESPONSES,
+)
 def auth_callback(
     body: CallbackRequest,
     settings: Annotated[OidcSettings, Depends(get_oidc_settings)],
@@ -143,18 +155,25 @@ def _exchange_code_for_tokens(
     if settings.client_secret is not None:
         # PKCE does not require a client secret, but Google does.
         data["client_secret"] = settings.client_secret
-    token_response = httpx_client.post(token_endpoint, data=data)
+    try:
+        token_response = httpx_client.post(token_endpoint, data=data)
+    except httpx2.TimeoutException as exc:
+        raise OidcProviderTimeoutError(f"Token request to {token_endpoint} timed out.") from exc
+    except httpx2.RequestError as exc:
+        raise OidcTokenExchangeError(f"Token request to {token_endpoint} failed: {type(exc).__name__}.") from exc
     if token_response.status_code != 200:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Unexpected status code from token endpoint: {token_response.status_code}",
+        raise OidcTokenExchangeError(
+            f"Token endpoint {token_endpoint} returned status code {token_response.status_code}."
         )
-    response = token_response.json()
+    try:
+        response = token_response.json()
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise OidcTokenExchangeError(f"Token endpoint {token_endpoint} returned invalid JSON.") from exc
     if not isinstance(response, dict):
-        raise HTTPException(status_code=500, detail=f"Unexpected response from {token_endpoint}")
+        raise OidcTokenExchangeError(f"Token endpoint {token_endpoint} returned a non-dictionary response.")
     id_token = response.get("id_token")
     if not isinstance(id_token, str):
-        raise HTTPException(status_code=500, detail=f"Unexpected response from {token_endpoint}")
+        raise OidcTokenExchangeError(f"Token endpoint {token_endpoint} did not return a string id_token.")
     access_token = response.get("access_token")
     return _TokenResponse(id_token=id_token, access_token=access_token if isinstance(access_token, str) else None)
 

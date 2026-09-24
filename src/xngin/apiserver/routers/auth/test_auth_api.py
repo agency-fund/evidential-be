@@ -24,7 +24,13 @@ from xngin.apiserver.dependencies import retrying_httpx_dependency
 from xngin.apiserver.main import app
 from xngin.apiserver.routers.auth import auth_api
 from xngin.apiserver.routers.auth.auth_dependencies import SessionTokenCryptor
-from xngin.apiserver.routers.auth.discovery import OidcProviderTimeoutError, OidcUserinfoError, get_oidc_discovery
+from xngin.apiserver.routers.auth.discovery import (
+    OidcDiscoveryError,
+    OidcProviderTimeoutError,
+    OidcTokenExchangeError,
+    OidcUserinfoError,
+    get_oidc_discovery,
+)
 from xngin.apiserver.routers.auth.oidc_settings import OidcSettings, get_oidc_settings
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.xsecrets.nacl_provider import NaclProviderKeyset
@@ -449,6 +455,57 @@ def test_token_exchange_sends_client_secret_when_configured(discovery):
     assert "authorization" not in requests[0].headers
 
 
+@pytest.mark.parametrize(
+    ("response", "message"),
+    [
+        pytest.param(
+            httpx2.Response(400, json={"error": "invalid_grant"}),
+            f"Token endpoint {TEST_TOKEN_ENDPOINT} returned status code 400.",
+            id="error-status",
+        ),
+        pytest.param(
+            httpx2.Response(200, content=b"not json"),
+            f"Token endpoint {TEST_TOKEN_ENDPOINT} returned invalid JSON.",
+            id="invalid-json",
+        ),
+        pytest.param(
+            httpx2.Response(200, json=["nope"]),
+            f"Token endpoint {TEST_TOKEN_ENDPOINT} returned a non-dictionary response.",
+            id="not-an-object",
+        ),
+        pytest.param(
+            httpx2.Response(200, json={"access_token": "only"}),
+            f"Token endpoint {TEST_TOKEN_ENDPOINT} did not return a string id_token.",
+            id="missing-id-token",
+        ),
+    ],
+)
+def test_token_exchange_rejects_unusable_responses(settings, discovery, response, message):
+    with _token_endpoint_client([], response) as client, pytest.raises(OidcTokenExchangeError) as exc:
+        auth_api._exchange_code_for_tokens(
+            settings, discovery, client, code="the-code", code_verifier=TEST_CODE_VERIFIER
+        )
+
+    assert str(exc.value) == message
+
+
+@pytest.mark.parametrize(
+    ("error_type", "expected_exception"),
+    [
+        pytest.param(httpx2.ConnectError, OidcTokenExchangeError, id="connection"),
+        pytest.param(httpx2.ReadTimeout, OidcProviderTimeoutError, id="timeout"),
+    ],
+)
+def test_token_exchange_normalizes_request_failures(settings, discovery, error_type, expected_exception):
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        raise error_type("upstream failure", request=request)
+
+    with httpx2.Client(transport=httpx2.MockTransport(handler)) as client, pytest.raises(expected_exception):
+        auth_api._exchange_code_for_tokens(
+            settings, discovery, client, code="the-code", code_verifier=TEST_CODE_VERIFIER
+        )
+
+
 def test_token_exchange_tolerates_missing_access_token(settings, discovery):
     response = httpx2.Response(200, json={"id_token": "the-id-token"})
     with _token_endpoint_client([], response) as client:
@@ -668,6 +725,44 @@ def test_callback_rejects_token_issued_for_another_login_attempt(client, configu
 
     assert response.status_code == 401
     assert response.json() == {"detail": "Invalid nonce"}
+
+
+def test_callback_normalizes_invalid_token_endpoint_response(client, configured_app):
+    upstream = _token_endpoint_client([], httpx2.Response(200, content=b"not json"))
+    app.dependency_overrides[retrying_httpx_dependency] = lambda: upstream
+
+    response = client.post("/v1/a/oidc/callback", json=_callback_body())
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": "Identity provider returned an invalid or unavailable response."}
+    assert TEST_TOKEN_ENDPOINT not in response.text
+
+
+def test_callback_normalizes_token_endpoint_timeout(client, configured_app):
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        raise httpx2.ReadTimeout("upstream included sensitive details", request=request)
+
+    upstream = httpx2.Client(transport=httpx2.MockTransport(handler))
+    app.dependency_overrides[retrying_httpx_dependency] = lambda: upstream
+
+    response = client.post("/v1/a/oidc/callback", json=_callback_body())
+
+    assert response.status_code == 504
+    assert response.json() == {"detail": "Identity provider request timed out."}
+    assert "sensitive" not in response.text
+
+
+def test_config_normalizes_discovery_failure(client, configured_app):
+    def unavailable_discovery():
+        raise OidcDiscoveryError("provider endpoint included sensitive details")
+
+    app.dependency_overrides[get_oidc_discovery] = unavailable_discovery
+
+    response = client.get("/v1/a/oidc/config")
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": "Identity provider returned an invalid or unavailable response."}
+    assert "sensitive" not in response.text
 
 
 def _idp_client(requests: list[httpx2.Request], *, id_token: str, userinfo: dict) -> httpx2.Client:
