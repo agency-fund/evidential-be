@@ -373,6 +373,15 @@ def test_principal_applies_claim_map(settings):
     assert principal.sub == "1234567890"
 
 
+def test_principal_accepts_fractional_iat(settings, discovery, signing_key):
+    iat = _now() + 0.75
+    claims = _validate(settings, discovery, _mint(signing_key, _claims(iat=iat)))
+
+    principal = auth_api._principal_from_claims(settings, claims)
+
+    assert principal.iat == int(iat)
+
+
 def test_principal_without_claim_map_leaves_auxiliary_fields_blank():
     principal = auth_api._principal_from_claims(_settings(claim_map={}), _claims())
 
