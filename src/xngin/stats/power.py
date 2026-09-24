@@ -1,3 +1,5 @@
+import math
+
 from xngin.apiserver.routers.common_api_types import (
     DesignSpecMetric,
     MdeCurvePoint,
@@ -117,19 +119,17 @@ def _mde_curve_for_metric(
     avg_cluster_size. A size where the calculation fails yields a null pct_change so that a
     single bad point (typically one too small to solve) does not fail the whole curve.
     """
+
+    sizes: list[tuple[int | None, int]] = []
     if desired_ns_clusters is not None:
         if metric.avg_cluster_size is None:
             raise StatsPowerError(
                 f"desired_ns_clusters requires cluster statistics, but metric {metric.field_name} "
                 "has no avg_cluster_size."
             )
-        sizes: list[tuple[int | None, int]] = [
-            (clusters, round(clusters * metric.avg_cluster_size)) for clusters in desired_ns_clusters
-        ]
+        sizes = [(clusters, math.ceil(clusters * metric.avg_cluster_size)) for clusters in desired_ns_clusters]
     elif desired_ns is not None:
         sizes = [(None, n) for n in desired_ns]
-    else:
-        return None
 
     curve = []
     for clusters, n in sizes:
@@ -145,8 +145,10 @@ def _mde_curve_for_metric(
             pct_change = point_analysis.pct_change_possible
         except StatsPowerError, ZeroDivisionError, ValueError:
             pct_change = None
+
         curve.append(MdeCurvePoint(desired_n=n, desired_n_clusters=clusters, pct_change=pct_change))
-    return curve
+
+    return curve or None
 
 
 def check_power(
