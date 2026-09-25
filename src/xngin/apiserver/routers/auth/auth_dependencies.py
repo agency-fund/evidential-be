@@ -1,12 +1,9 @@
 import datetime
 import json
 import secrets
-import threading
 import time
-from dataclasses import dataclass
 from typing import Annotated
 
-import httpx2
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from loguru import logger
@@ -16,6 +13,8 @@ from sqlalchemy.sql.functions import count
 
 from xngin.apiserver import flags
 from xngin.apiserver.dependencies import xngin_sync_db_session
+from xngin.apiserver.routers.auth.discovery import LOGIN_UNAVAILABLE_DETAIL, get_oidc_discovery
+from xngin.apiserver.routers.auth.oidc_settings import get_oidc_settings
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.auth.token_cryptor import TokenCryptor
 from xngin.apiserver.sqla import tables
@@ -26,8 +25,6 @@ from xngin.xsecrets import chafernet
 SESSION_TOKEN_LIFETIME = datetime.timedelta(hours=12).seconds
 SESSION_TOKEN_LOCAL_KEYSET_FILE = ".xngin_session_token_keyset"  # noqa: S105
 SESSION_TOKEN_PREFIX = "xa_"  # noqa: S105
-
-GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
 
 # Set TESTING_TOKENS_ENABLED to allow statically defined bearer tokens to skip the JWT validation.
 AIRPLANE_TOKEN = "airplane-mode-token"  # noqa: S105
@@ -70,14 +67,6 @@ TESTING_TOKENS: dict[str, Principal] = {
 }
 
 
-class GoogleOidcError(Exception):
-    pass
-
-
-class ServerAppearsOfflineError(Exception):
-    pass
-
-
 class SessionTokenCryptor:
     """Codec for encrypted serializations of Principals."""
 
@@ -96,69 +85,6 @@ class SessionTokenCryptor:
     def decode(self, token: str) -> Principal:
         decrypted = self._token_cryptor.decrypt(token)
         return Principal.model_validate_json(decrypted)
-
-
-@dataclass
-class GoogleOidcConfig:
-    last_refreshed: datetime.datetime
-    config: dict
-    jwks: dict
-
-    def should_refresh(self):
-        return self.last_refreshed < datetime.datetime.now() - datetime.timedelta(hours=1)
-
-
-# _google_config and _google_config_stampede_lock are managed by get_google_configuration().
-_google_config: GoogleOidcConfig | None = None
-_google_config_stampede_lock = threading.Lock()
-
-
-def _fetch_object_200(client: httpx2.Client, url: str):
-    """Fetches a URL using the given httpx2 client, parses the response as a JSON dictionary.
-
-    Raises GoogleOidcError when the response is not a 200 status or when the response is not a dict.
-    """
-    response = client.get(url)
-    if response.status_code != 200:
-        raise GoogleOidcError(f"Fetching {url} failed with an unexpected status code: {response.status_code}")
-    parsed = response.json()
-    if not isinstance(parsed, dict):
-        raise GoogleOidcError(f"{url} returned a non-dictionary response")
-    return parsed
-
-
-def get_google_configuration() -> GoogleOidcConfig:
-    """Dependency providing Google's OpenID configuration."""
-    global _google_config
-    # When config is fresh, we can use it immediately.
-    if _google_config and not _google_config.should_refresh():
-        return _google_config
-
-    # Send only one outbound request even if there are many waiting.
-    with _google_config_stampede_lock:
-        if _google_config and not _google_config.should_refresh():
-            return _google_config
-
-        logger.info("Fetching Google OpenID configuration")
-        try:
-            transport = httpx2.HTTPTransport(retries=2)
-            with httpx2.Client(transport=transport, timeout=15.0) as client:
-                config = _fetch_object_200(client, GOOGLE_DISCOVERY_URL)
-                jwks_url = config.get("jwks_uri")
-                if not jwks_url:
-                    raise GoogleOidcError("config object does not have a jwks_uri field")
-                jwks_response = _fetch_object_200(client, jwks_url)
-                if not jwks_response.get("keys"):
-                    raise GoogleOidcError("JWKS response does not contain keys in expected format")
-                _google_config = GoogleOidcConfig(
-                    last_refreshed=datetime.datetime.now(),
-                    config=config,
-                    jwks=jwks_response,
-                )
-        except httpx2.ConnectError as exc:
-            raise ServerAppearsOfflineError("We appear to be offline.") from exc
-        else:
-            return _google_config
 
 
 class CompatHTTPBearer(HTTPBearer):
@@ -261,11 +187,12 @@ def get_special_principal(token: str) -> Principal | None:
 def disable(app):
     """Disables interaction with internet-dependent authentication resources."""
 
-    def noop():
-        pass
+    def unavailable():
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=LOGIN_UNAVAILABLE_DETAIL)
 
-    # Disable fetching of OIDC configuration data.
-    app.dependency_overrides[get_google_configuration] = noop
+    # Neither the environment nor the identity provider is consulted; login endpoints report that login is unavailable.
+    app.dependency_overrides[get_oidc_settings] = unavailable
+    app.dependency_overrides[get_oidc_discovery] = unavailable
 
 
 def setup(app):
