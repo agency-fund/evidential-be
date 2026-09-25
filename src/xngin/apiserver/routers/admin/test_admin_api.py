@@ -2623,6 +2623,7 @@ def test_admin_experiment_state_setting(
     expected_status,
     expected_detail,
     aclient: AdminAPIClient,
+    use_deterministic_random,
 ):
     datasource_id = testing_datasource.datasource_id
 
