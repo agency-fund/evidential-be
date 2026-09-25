@@ -326,6 +326,31 @@ def test_mab_dwh_primary_key_and_target_must_differ():
         MABDwhExperimentSpec.model_validate(invalid_spec)
 
 
+def test_mab_dwh_rejects_autofail():
+    """MABDwhExperimentSpec rejects enable_autofail=True; autofail isn't supported for DWH experiments."""
+    valid_spec = {
+        "experiment_type": "mab_online_dwh",
+        "experiment_name": "test",
+        "description": "test",
+        "start_date": "2024-01-01T00:00:00+00:00",
+        "end_date": "2024-12-31T00:00:00+00:00",
+        "table_name": "dwh",
+        "primary_key": "id",
+        "target_field_name": "is_onboarded",
+        "arms": [
+            {"arm_name": "C", "arm_description": "C", "alpha_init": 50.0, "beta_init": 1.0},
+            {"arm_name": "T", "arm_description": "T", "alpha_init": 1.0, "beta_init": 50.0},
+        ],
+    }
+    spec = MABDwhExperimentSpec.model_validate(valid_spec)
+    assert spec.enable_autofail is False
+
+    invalid_spec = valid_spec.copy()
+    invalid_spec["enable_autofail"] = "True"
+    with pytest.raises(ValidationError, match="Autofail is not supported for"):
+        MABDwhExperimentSpec.model_validate(invalid_spec)
+
+
 def test_sample_calls_labels_must_be_unique():
     def call(label):
         return SampleCall(label=label, method="GET", path="/v1/x", headers={})
