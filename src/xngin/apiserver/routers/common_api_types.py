@@ -1334,7 +1334,149 @@ type DesignSpec = Annotated[
 
 
 class PowerRequest(ApiBaseModel):
-    design_spec: AnyFrequentistDesignSpec
+    table_name: Annotated[
+        str,
+        Field(
+            max_length=MAX_LENGTH_OF_NAME_VALUE,
+            description="Data source table the baseline metric statistics are computed from.",
+        ),
+    ]
+    cluster_key: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Column name in table_name that identifies clusters for a cluster-randomized design. "
+                "When set, per-metric icc, avg_cluster_size, and cv are either supplied on each metric "
+                "or computed from this column. "
+                "When None, the design is assumed to be individual-randomized."
+            ),
+        ),
+    ] = None
+    metrics: Annotated[
+        list[DesignSpecMetricRequest],
+        Field(
+            description="Primary and optional secondary metrics to target.",
+            min_length=1,
+            max_length=MAX_NUMBER_OF_FIELDS,
+        ),
+    ]
+    filters: Annotated[
+        list[Filter],
+        Field(
+            description=(
+                "Optional filters that narrow the audience the baseline statistics are computed over, "
+                "matching the participants you want in the experiment."
+            ),
+            max_length=MAX_NUMBER_OF_FILTERS,
+        ),
+    ] = []
+    n_arms: Annotated[
+        int,
+        Field(
+            ge=2,
+            le=MAX_NUMBER_OF_ARMS,
+            description="Number of arms in the design, counting the control arm.",
+        ),
+    ]
+    arm_weights: Annotated[
+        list[ArmWeight] | None,
+        Field(
+            description=(
+                "Optional weights for unequal allocation, one per arm and ordered to match n_arms, "
+                "where the first weight is the control arm. Each weight must be greater than 0 and "
+                "less than 100, and all weights must sum to 100. Leave unset for an equal split."
+            ),
+        ),
+    ] = None
+    power: Annotated[
+        float,
+        Field(
+            ge=0,
+            le=1,
+            description="The chance of detecting a real effect when one truly exists (1 - the false negative rate).",
+        ),
+    ] = 0.8
+    alpha: Annotated[
+        float,
+        Field(
+            ge=0,
+            le=1,
+            description="The chance of a false positive: concluding there is an effect when there is none.",
+        ),
+    ] = 0.05
+    desired_n: Annotated[
+        int | None,
+        Field(
+            ge=0,
+            description=(
+                "Desired number of individual participants. When set, the power check also returns the "
+                "minimum detectable effect for this size, along with the minimum sample size. "
+                "Superseded by desired_n_clusters when both are set."
+            ),
+        ),
+    ] = None
+    desired_n_clusters: Annotated[
+        int | None,
+        Field(
+            ge=1,
+            description=(
+                "Desired number of clusters for a cluster-randomized design. "
+                "Only valid when cluster_key is set. "
+                "The minimum detectable effect is computed for this many clusters, converted to a "
+                "per-metric sample size using each metric's avg_cluster_size; takes precedence over desired_n."
+            ),
+        ),
+    ] = None
+    desired_ns: Annotated[
+        list[int] | None,
+        Field(
+            description=(
+                "Optional list of desired individual participant sample sizes. When set, returns MDE curve: "
+                "the minimum detectable effect for each requested sample size. "
+                "Superseded by desired_ns_clusters when both are set."
+            ),
+        ),
+    ] = None
+    desired_ns_clusters: Annotated[
+        list[int] | None,
+        Field(
+            description=(
+                "Optional list of desired cluster counts for a cluster-randomized design. "
+                "Only valid when cluster_key is set. "
+                "Returns MDE curve for each cluster count; takes precedence over desired_ns."
+            ),
+        ),
+    ] = None
+
+    @model_validator(mode="after")
+    def validate_cluster_randomization(self) -> Self:
+        """Mirrors PreassignedFrequentistExperimentSpec: cluster sizing needs a cluster key.
+
+        The strata rule from that spec does not apply here, since a power request has no strata.
+        """
+        if self.cluster_key is None and self.desired_n_clusters is not None:
+            raise ValueError("desired_n_clusters can only be set when cluster_key is set.")
+        if self.cluster_key is None and self.desired_ns_clusters is not None:
+            raise ValueError("desired_ns_clusters can only be set when cluster_key is set.")
+        return self
+
+    @model_validator(mode="after")
+    def validate_arm_weights(self) -> Self:
+        """If arm_weights exist, validate that the length matches n_arms and weights sum to 100 before returning."""
+        if self.arm_weights is None:
+            return self
+
+        if len(self.arm_weights) != self.n_arms:
+            raise ValueError(
+                f"Number of arm weights ({len(self.arm_weights)}) must match number of arms ({self.n_arms})"
+            )
+
+        # Check that weights sum to 100 (tolerance aligned with stochatreat's own check).
+        total = sum(self.arm_weights)
+        if not math.isclose(total, 100.0, rel_tol=1e-9):
+            raise ValueError(f"arm_weights must sum to 100, got {total}")
+
+        return self
 
 
 class PowerResponse(ApiBaseModel):

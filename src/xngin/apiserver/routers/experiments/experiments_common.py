@@ -199,10 +199,36 @@ def _resolve_referenced_field_types(table: Table, referenced_fields: set[str]) -
     missing_fields = referenced_fields - referenced_fields_and_types.keys()
     if missing_fields:
         raise LateValidationError(
-            "The .design_spec field refers to columns that do not exist in the table: "
-            f"{', '.join(sorted(missing_fields))}"
+            f"Your request refers to columns that do not exist in the table: {', '.join(sorted(missing_fields))}"
         )
     return referenced_fields_and_types
+
+
+def _validate_metrics_and_filters_or_raise(
+    referenced_fields_and_types: dict[str, DataType],
+    metrics: Sequence[DesignSpecMetricRequest],
+    filters: Sequence[Filter],
+) -> None:
+    """Check metric columns are usable as metrics and that filter values suit their column type.
+
+    Shared by the experiment-creation and power-check validation paths so the two cannot drift.
+
+    Raises: LateValidationError if a metric column is not boolean or numeric, or if a filter value
+    is invalid for its field type.
+    """
+    bad_metric_types = [
+        m.field_name for m in metrics if not referenced_fields_and_types[m.field_name].is_supported_as_metric()
+    ]
+    if bad_metric_types:
+        raise LateValidationError(
+            f"Invalid metric field(s): ({', '.join(bad_metric_types)}). "
+            "Only boolean or numeric data types are supported as metrics."
+        )
+
+    for filter_ in filters:
+        field_type = referenced_fields_and_types[filter_.field_name]
+        for value in filter_.value:
+            validate_filter_value(filter_.field_name, value, field_type)
 
 
 def convert_table_to_fields_or_raise(table: Table, design_spec: AnyFrequentistDesignSpec) -> dict[str, DataType]:
@@ -217,22 +243,27 @@ def convert_table_to_fields_or_raise(table: Table, design_spec: AnyFrequentistDe
         referenced_fields.add(design_spec.cluster_key)
 
     referenced_fields_and_types = _resolve_referenced_field_types(table, referenced_fields)
+    _validate_metrics_and_filters_or_raise(referenced_fields_and_types, design_spec.metrics, design_spec.filters)
 
-    bad_metric_types = [
-        m.field_name
-        for m in design_spec.metrics
-        if not referenced_fields_and_types[m.field_name].is_supported_as_metric()
-    ]
-    if bad_metric_types:
-        raise LateValidationError(
-            f"Invalid metric field(s): ({', '.join(bad_metric_types)}). "
-            "Only boolean or numeric data types are supported as metrics."
-        )
+    return referenced_fields_and_types
 
-    for filter_ in design_spec.filters:
-        field_type = referenced_fields_and_types[filter_.field_name]
-        for value in filter_.value:
-            validate_filter_value(filter_.field_name, value, field_type)
+
+def validate_power_fields_or_raise(
+    table: Table,
+    *,
+    metrics: list[DesignSpecMetricRequest],
+    filters: list[Filter],
+    cluster_key: str | None = None,
+) -> dict[str, DataType]:
+    referenced_fields = {
+        *[metric.field_name for metric in metrics],
+        *[filter_.field_name for filter_ in filters],
+    }
+    if cluster_key is not None:
+        referenced_fields.add(cluster_key)
+
+    referenced_fields_and_types = _resolve_referenced_field_types(table, referenced_fields)
+    _validate_metrics_and_filters_or_raise(referenced_fields_and_types, metrics, filters)
 
     return referenced_fields_and_types
 
