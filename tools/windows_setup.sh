@@ -90,6 +90,7 @@ sudo usermod -aG docker "$USER"
 # --- language / tool installs ---
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ~/.local/bin/uv tool install go-task-bin
+~/.local/bin/uv tool install prek
 curl -sSf https://atlasgo.sh | sh -s -- -y
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.5/install.sh | bash
 # --- Node 26 via nvm ---
@@ -100,6 +101,7 @@ set +e
 set -e
 nvm install 26
 nvm alias default 26
+npm install -g pnpm
 
 echo ___ Done installing tools:
 atlas version
