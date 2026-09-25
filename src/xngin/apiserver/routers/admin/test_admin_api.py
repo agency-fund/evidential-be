@@ -247,6 +247,24 @@ def make_cmab_context_inputs(
     ]
 
 
+def design_spec_to_power_request(design_spec: PreassignedFrequentistExperimentSpec) -> PowerRequest:
+    """Convert a design_spec to PowerRequest by extracting flattened fields."""
+    return PowerRequest(
+        table_name=design_spec.table_name,
+        cluster_key=design_spec.cluster_key,
+        filters=design_spec.filters,
+        metrics=design_spec.metrics,
+        n_arms=len(design_spec.arms),
+        arm_weights=design_spec.get_validated_arm_weights(),
+        power=design_spec.power,
+        alpha=design_spec.alpha,
+        desired_n=design_spec.desired_n,
+        desired_n_clusters=design_spec.desired_n_clusters,
+        desired_ns=design_spec.desired_ns,
+        desired_ns_clusters=design_spec.desired_ns_clusters,
+    )
+
+
 @pytest.fixture(name="testing_experiment")
 def fixture_testing_experiment(testing_datasource, aclient: AdminAPIClient) -> TestExperiment:
     """Create a committed preassigned experiment through the Admin API."""
@@ -3952,7 +3970,7 @@ async def test_power_check_reuses_provided_baseline_stats_without_dwh(testing_da
     )
     first_analysis = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=design_spec),
+        body=design_spec_to_power_request(design_spec),
     ).data.analyses[0]
     assert first_analysis.metric_spec.metric_baseline is not None
 
@@ -3966,7 +3984,7 @@ async def test_power_check_reuses_provided_baseline_stats_without_dwh(testing_da
     )
     reuse_analysis = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=reuse_spec),
+        body=design_spec_to_power_request(reuse_spec),
     ).data.analyses[0]
     assert reuse_analysis == first_analysis
 
@@ -3994,23 +4012,19 @@ async def test_power_check_queries_only_metrics_missing_baseline_stats(testing_d
 
     both_queried = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(
-            design_spec=make_design_spec([
-                DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1),
-                DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1),
-            ])
-        ),
+        body=design_spec_to_power_request(make_design_spec([
+            DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1),
+            DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1),
+        ])),
     ).data.analyses
 
     # Re-issue with stats provided for one metric only; results must match the fully queried run.
     mixed = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(
-            design_spec=make_design_spec([
-                echo_metric_request(both_queried[0].metric_spec),
-                DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1),
-            ])
-        ),
+        body=design_spec_to_power_request(make_design_spec([
+            echo_metric_request(both_queried[0].metric_spec),
+            DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1),
+        ])),
     ).data.analyses
     assert mixed == both_queried
 
@@ -4042,7 +4056,7 @@ async def test_power_check_reuses_provided_cluster_stats_without_dwh(testing_dat
     )
     first_analysis = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=design_spec),
+        body=design_spec_to_power_request(design_spec),
     ).data.analyses[0]
     assert first_analysis.pct_change_with_desired_n is not None
 
@@ -4054,7 +4068,7 @@ async def test_power_check_reuses_provided_cluster_stats_without_dwh(testing_dat
     )
     reuse_analysis = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=reuse_spec),
+        body=design_spec_to_power_request(reuse_spec),
     ).data.analyses[0]
     assert reuse_analysis == first_analysis
 
@@ -4081,7 +4095,7 @@ async def test_power_check_mde_curve(testing_datasource, aclient: AdminAPIClient
     )
     analysis = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=design_spec),
+        body=design_spec_to_power_request(design_spec),
     ).data.analyses[0]
 
     assert analysis.mde_curve is not None
@@ -4104,7 +4118,7 @@ async def test_power_check_mde_curve(testing_datasource, aclient: AdminAPIClient
     )
     reuse_analysis = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=reuse_spec),
+        body=design_spec_to_power_request(reuse_spec),
     ).data.analyses[0]
     assert reuse_analysis.mde_curve == analysis.mde_curve
 
@@ -4137,7 +4151,7 @@ async def test_power_check_mde_curve_clusters(testing_datasource, aclient: Admin
     )
     analysis = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=design_spec),
+        body=design_spec_to_power_request(design_spec),
     ).data.analyses[0]
 
     assert analysis.mde_curve is not None
