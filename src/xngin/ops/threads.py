@@ -28,7 +28,6 @@ class ThreadTimeout:
     def __init__(self, executor: ThreadPoolExecutor, deadline: float):
         self._executor = executor
         self._deadline = deadline
-        self._expired = False
 
     @property
     def remaining(self) -> float:
@@ -37,8 +36,8 @@ class ThreadTimeout:
 
     @property
     def expired(self) -> bool:
-        """Whether the deadline has passed, or a run() has already given up on a call."""
-        return self._expired or self.remaining <= 0
+        """Whether the deadline has passed."""
+        return self.remaining <= 0
 
     def submit[T](self, fn: Callable[..., T], /, *args: Any, **kwargs: Any) -> Future[T]:
         """Queues fn on the helper thread without waiting for it.
@@ -71,7 +70,6 @@ class ThreadTimeout:
             if future.done():
                 # fn raised TimeoutError itself; the deadline is still intact.
                 raise
-            self._expired = True
             future.add_done_callback(_log_abandoned_failure)
             raise
 
