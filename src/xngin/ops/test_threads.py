@@ -4,6 +4,7 @@ import threading
 import time
 
 import pytest
+from loguru import logger
 
 from xngin.ops.threads import timeout_thread
 
@@ -40,6 +41,38 @@ def test_exiting_after_a_timeout_does_not_wait_for_the_abandoned_call():
         assert time.monotonic() - started_at < 1.0
     finally:
         release.set()
+
+
+@pytest.mark.parametrize("error_type", [None, ValueError, TimeoutError])
+def test_abandoned_calls_log_only_late_failures(error_type):
+    release = threading.Event()
+    messages: list[str] = []
+    failure = error_type("late failure") if error_type is not None else None
+    sink = logger.add(messages.append, filter=lambda record: record["function"] == "_log_abandoned_failure")
+
+    def finish_late():
+        release.wait()
+        if failure is not None:
+            raise failure
+
+    try:
+        with timeout_thread(seconds=0.01, name="test-abandoned") as timeout:
+            with pytest.raises(TimeoutError):
+                timeout.run(finish_late)
+            # Queued work starts only after the abandoned call's completion callbacks finish.
+            drained = timeout.submit(lambda: None)
+        assert not messages
+        release.set()
+        drained.result(timeout=5)
+        if failure is None:
+            assert not messages
+        else:
+            assert len(messages) == 1
+            assert f"{type(failure).__name__}: late failure" in messages[0]
+            assert "Abandoned thread call failed" in messages[0]
+    finally:
+        release.set()
+        logger.remove(sink)
 
 
 def test_the_helper_thread_is_named_after_the_timeout_and_the_caller():

@@ -7,6 +7,15 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from typing import Any
 
+from loguru import logger
+
+
+def _log_abandoned_failure[T](future: Future[T]) -> None:
+    try:
+        future.result()
+    except Exception:
+        logger.exception("Abandoned thread call failed after its deadline.")
+
 
 class ThreadTimeout:
     """Runs blocking calls on one helper thread, under one shared deadline.
@@ -63,6 +72,7 @@ class ThreadTimeout:
                 # fn raised TimeoutError itself; the deadline is still intact.
                 raise
             self._expired = True
+            future.add_done_callback(_log_abandoned_failure)
             raise
 
 
