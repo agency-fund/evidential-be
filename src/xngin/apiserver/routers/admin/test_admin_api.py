@@ -3981,19 +3981,23 @@ async def test_power_check_queries_only_metrics_missing_baseline_stats(testing_d
 
     both_queried = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=design_spec_to_power_request(make_design_spec([
-            DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1),
-            DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1),
-        ])),
+        body=design_spec_to_power_request(
+            make_design_spec([
+                DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1),
+                DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1),
+            ])
+        ),
     ).data.analyses
 
     # Re-issue with stats provided for one metric only; results must match the fully queried run.
     mixed = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=design_spec_to_power_request(make_design_spec([
-            echo_metric_request(both_queried[0].metric_spec),
-            DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1),
-        ])),
+        body=design_spec_to_power_request(
+            make_design_spec([
+                echo_metric_request(both_queried[0].metric_spec),
+                DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1),
+            ])
+        ),
     ).data.analyses
     assert mixed == both_queried
 

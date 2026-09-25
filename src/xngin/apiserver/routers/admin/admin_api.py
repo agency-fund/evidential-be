@@ -1991,7 +1991,7 @@ async def power_check(
     filters = body.filters
     cluster_key = body.cluster_key
     desired_n_clusters = body.desired_n_clusters
-    desired_ns_clusters = None
+    desired_ns_clusters = body.desired_ns_clusters
     # Exclude rows without a valid cluster key.
     if cluster_key is not None:
         filters = [*filters, Filter(field_name=cluster_key, relation=Relation.EXCLUDES, value=[None])]
@@ -2030,18 +2030,14 @@ async def power_check(
 
             # Derive cluster stats from the dwh only for metrics without user-provided ICC, in one query.
             db_derived_metrics = (
-                [m.field_name for m in body.metrics if not m.has_cluster_stats]
-                if cluster_key is not None
-                else []
+                [m.field_name for m in body.metrics if not m.has_cluster_stats] if cluster_key is not None else []
             )
             raw_cluster_stats = None
             if cluster_key is not None and db_derived_metrics:
                 # Shifting each metric by its mean keeps the sums of squares in the
                 # sufficient-statistics query numerically stable. The mean comes from the raw
                 # query row for queried metrics and from the supplied baseline for echoed ones.
-                supplied_baselines = {
-                    m.field_name: m.metric_baseline for m in body.metrics if m.has_baseline_stats
-                }
+                supplied_baselines = {m.field_name: m.metric_baseline for m in body.metrics if m.has_baseline_stats}
                 outcome_shifts = {}
                 for field_name in db_derived_metrics:
                     if field_name in supplied_baselines:
@@ -2102,7 +2098,7 @@ async def power_check(
             desired_n=body.desired_n,
             desired_n_clusters=desired_n_clusters,
             desired_ns=body.desired_ns,
-            desired_ns_clusters=body.desired_ns_clusters,
+            desired_ns_clusters=desired_ns_clusters,
         )
     )
 
