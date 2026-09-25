@@ -1039,36 +1039,34 @@ async def _fetch_outcomes_and_context_for_arm(
     xngin_session: AsyncSession,
     experiment_id: str,
     arm_id: str,
-    outcome: float,
-    context_vals: list[float] | None,
+    experiment_type: ExperimentsType,
 ) -> tuple[list[float], list[list[float]] | None]:
     """Return the just-recorded outcome plus the arm's prior outcomes, newest first.
 
     Context values are aggregated alongside the outcomes and returned only for contextual
     bandits, i.e. when the current draw carries context.
     """
-    has_context = context_vals is not None
-    subq = (
+    is_cmab = experiment_type == ExperimentsType.CMAB_ONLINE
+    last_100_draws = (
         select(tables.Draw.outcome, tables.Draw.context_vals)
         .where(
             tables.Draw.experiment_id == experiment_id,
             tables.Draw.arm_id == arm_id,
             tables.Draw.outcome.is_not(None),
         )
-        .order_by(tables.Draw.created_at.desc())
+        .order_by(tables.Draw.observed_at.desc())
         .limit(100)  # TODO: Make draw limiting configurable
         .subquery()
     )
-    agg_cols = [func.array_agg(subq.c.outcome)]
-    if has_context:
-        agg_cols.append(func.array_agg(subq.c.context_vals))
-    agg_result = await xngin_session.execute(select(*agg_cols).select_from(subq))
-    agg_row = agg_result.one()
-
-    all_prior_outcomes = agg_row[0]
-    outcomes = [outcome] + (all_prior_outcomes or [])
-    all_context_vals = ([context_vals] + (agg_row[1] or [])) if has_context else None
-    return outcomes, all_context_vals
+    outcomes = [func.array_agg(last_100_draws.c.outcome)]
+    if is_cmab:
+        context_vals = [func.array_agg(last_100_draws.c.context_vals)]
+        results = await xngin_session.execute(select(*outcomes, *context_vals).select_from(last_100_draws))
+        outcomes, context_vals = results.one()
+        return outcomes, context_vals
+    results = await xngin_session.execute(select(*outcomes).select_from(last_100_draws))
+    outcomes = results.one()[0]
+    return outcomes, None
 
 
 class PartialUpdateDrawBeta(TypedDict):
@@ -1159,13 +1157,12 @@ async def update_bandit_arm_with_outcome_impl(
 
     arm_to_update = next(arm for arm in experiment.arms if arm.id == draw_record.arm_id)
 
-    # Get all prior draws for this arm, sorted by creation date
+    # Get all prior draws for this arm, sorted by observation date
     outcomes, context_vals = await _fetch_outcomes_and_context_for_arm(
         xngin_session,
         experiment_id=experiment.id,
         arm_id=draw_record.arm_id,
-        outcome=outcome,
-        context_vals=draw_record.context_vals,
+        experiment_type=ExperimentsType(experiment.experiment_type),
     )
 
     updated_parameters = update_bandit_arm(

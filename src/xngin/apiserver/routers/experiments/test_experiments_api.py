@@ -1485,7 +1485,6 @@ async def test_update_bandit_arm_with_freq_experiments_returns_422(
     assert "Cannot dynamically update arms for frequentist experiments" in str(exc.value.result.data)
 
 
-@pytest.mark.skip("EVE-171")
 async def test_normal_prior_binary_reward_fits_each_outcome_exactly_once(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
@@ -1537,6 +1536,69 @@ async def test_normal_prior_binary_reward_fits_each_outcome_exactly_once(
     assert isinstance(expected, UpdateTypeNormal)
 
     assert updated_arm.mu == pytest.approx(expected.mu)
+
+
+async def test_beta_prior_binary_reward_uses_outcome_in_order_exactly_once(
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+):
+    """The endpoint folds one recorded outcome into a Beta/Bernoulli posterior exactly once."""
+    initial_alpha = 1.0
+    initial_beta = 1.0
+    design_spec = MABExperimentSpec(
+        experiment_type=ExperimentsType.MAB_ONLINE,
+        experiment_name="beta prior binary reward",
+        description="beta prior binary reward",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            ArmBandit(arm_name="control", arm_description="", alpha_init=initial_alpha + 100, beta_init=initial_beta),
+            ArmBandit(arm_name="treatment", arm_description="", alpha_init=initial_alpha, beta_init=initial_beta),
+        ],
+        prior_type=PriorTypes.BETA,
+        reward_type=LikelihoodTypes.BERNOULLI,
+        contexts=None,
+    )
+    experiment_id = aclient.create_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        body=CreateExperimentRequest(design_spec=design_spec),
+    ).data.experiment_id
+    aclient.commit_experiment(datasource_id=testing_datasource.datasource_id, experiment_id=experiment_id)
+
+    # Do assignment for participant 2 before 1
+    eclient.get_assignment(
+        api_key=testing_datasource.key,
+        experiment_id=experiment_id,
+        participant_id="2",
+    )
+
+    eclient.get_assignment(
+        api_key=testing_datasource.key,
+        experiment_id=experiment_id,
+        participant_id="1",
+    )
+
+    # Update the outcome for participant 1 before 2
+    updated_arm = eclient.update_bandit_arm_with_participant_outcome(
+        api_key=testing_datasource.key,
+        body=UpdateBanditArmOutcomeRequest(outcome=1.0),
+        experiment_id=experiment_id,
+        participant_id="1",
+    ).data
+
+    assert updated_arm.arm_name == "control"
+    assert updated_arm.alpha == initial_alpha + 101
+    assert updated_arm.beta == initial_beta
+
+    updated_arm = eclient.update_bandit_arm_with_participant_outcome(
+        api_key=testing_datasource.key,
+        body=UpdateBanditArmOutcomeRequest(outcome=0.0),
+        experiment_id=experiment_id,
+        participant_id="2",
+    ).data
+
+    assert updated_arm.arm_name == "control"
+    assert updated_arm.alpha == initial_alpha + 101
+    assert updated_arm.beta == initial_beta + 1
 
 
 async def test_update_bandit_arm_with_outcome_rejects_non_binary_outcome_for_binary_reward(
