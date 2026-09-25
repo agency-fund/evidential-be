@@ -17,6 +17,8 @@ from xngin.apiserver.routers.admin.admin_common import DEFAULT_NO_DWH_SOURCE_NAM
 from xngin.apiserver.routers.admin.test_admin_api import find_ds_with_name
 from xngin.apiserver.routers.auth.auth_dependencies import (
     PRIVILEGED_TOKEN_FOR_TESTING,
+    SESSION_TOKEN_LIFETIME,
+    SESSION_TOKEN_PREFIX,
     TESTING_TOKENS,
     UNPRIVILEGED_TOKEN_FOR_TESTING,
     SessionTokenCryptor,
@@ -112,6 +114,56 @@ def test_require_valid_session_token_invalid(variant):
                 cryp,
             )
         assert exc.value.status_code == 401
+
+
+@pytest.fixture(name="session_token_env")
+def fixture_session_token_env(monkeypatch: pytest.MonkeyPatch):
+    """Configures a session token keyset and the identity provider settings used by session_token_aad()."""
+    monkeypatch.setenv(flags.ENV_SESSION_TOKEN_KEYSET, NaclProviderKeyset.create().serialize_base64())
+    monkeypatch.setattr(flags, "OIDC_ISSUER", "https://idp.example.com")
+    monkeypatch.setattr(flags, "OIDC_CLIENT_ID", "client-id")
+
+
+SESSION_PRINCIPAL = Principal(email="test@example.com", hd="", iat=0, iss="https://idp.example.com", sub="sub")
+
+
+def test_session_token_round_trips(session_token_env):
+    token = SessionTokenCryptor().encode(SESSION_PRINCIPAL)
+
+    assert SessionTokenCryptor().decode(token) == SESSION_PRINCIPAL
+
+
+@pytest.mark.parametrize(
+    ("setting", "value"),
+    [
+        pytest.param("OIDC_ISSUER", "https://other-idp.example.com", id="issuer"),
+        pytest.param("OIDC_CLIENT_ID", "other-client-id", id="client-id"),
+    ],
+)
+def test_session_token_is_rejected_after_idp_configuration_changes(
+    session_token_env, monkeypatch: pytest.MonkeyPatch, setting, value
+):
+    token = SessionTokenCryptor().encode(SESSION_PRINCIPAL)
+    monkeypatch.setattr(flags, setting, value)
+
+    with pytest.raises(HTTPException, match="token invalid") as exc:
+        require_valid_session_token(
+            HTTPAuthorizationCredentials(scheme="Bearer", credentials=token), SessionTokenCryptor()
+        )
+    assert exc.value.status_code == 401
+
+
+def test_session_token_without_aad_is_still_accepted(session_token_env):
+    """Tokens issued before session_token_aad() was introduced remain valid until they expire."""
+    legacy_cryptor = TokenCryptor(
+        ttl=SESSION_TOKEN_LIFETIME,
+        keyset_env_var=flags.ENV_SESSION_TOKEN_KEYSET,
+        local_keyset_filename="file-does-not-exist",
+        prefix=SESSION_TOKEN_PREFIX,
+    )
+    legacy_token = legacy_cryptor.encrypt(SESSION_PRINCIPAL.model_dump_json().encode())
+
+    assert SessionTokenCryptor().decode(legacy_token) == SESSION_PRINCIPAL
 
 
 def test_token_cryptor_uses_custom_prefix_and_env_var():

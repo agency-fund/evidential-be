@@ -25,6 +25,7 @@ from xngin.xsecrets import chafernet
 SESSION_TOKEN_LIFETIME = datetime.timedelta(hours=12).seconds
 SESSION_TOKEN_LOCAL_KEYSET_FILE = ".xngin_session_token_keyset"  # noqa: S105
 SESSION_TOKEN_PREFIX = "xa_"  # noqa: S105
+SESSION_TOKEN_AAD_VERSION = "xngin-session-v1"  # noqa: S105
 
 # Set TESTING_TOKENS_ENABLED to allow statically defined bearer tokens to skip the JWT validation.
 AIRPLANE_TOKEN = "airplane-mode-token"  # noqa: S105
@@ -67,6 +68,21 @@ TESTING_TOKENS: dict[str, Principal] = {
 }
 
 
+def session_token_aad() -> bytes:
+    """Returns the associated data that binds session tokens to the identity provider configuration that issued them.
+
+    A token fails to decrypt after the issuer or client ID changes, so sessions from a previously configured identity
+    provider end immediately. The raw flag values are used so that this works when OIDC is not configured (e.g. in
+    airplane mode).
+    """
+    fields = [
+        SESSION_TOKEN_AAD_VERSION,
+        flags.OIDC_ISSUER.strip(),
+        flags.OIDC_CLIENT_ID.strip(),
+    ]
+    return json.dumps(fields, separators=(",", ":")).encode()
+
+
 class SessionTokenCryptor:
     """Codec for encrypted serializations of Principals."""
 
@@ -77,13 +93,19 @@ class SessionTokenCryptor:
             local_keyset_filename=SESSION_TOKEN_LOCAL_KEYSET_FILE,
             prefix=SESSION_TOKEN_PREFIX,
         )
+        self._aad = session_token_aad()
 
     def encode(self, principal: Principal) -> str:
         payload = json.dumps(principal.model_dump(), separators=(",", ":")).encode()
-        return self._token_cryptor.encrypt(payload)
+        return self._token_cryptor.encrypt(payload, self._aad)
 
     def decode(self, token: str) -> Principal:
-        decrypted = self._token_cryptor.decrypt(token)
+        try:
+            decrypted = self._token_cryptor.decrypt(token, self._aad)
+        except chafernet.InvalidTokenError:
+            # TODO: Remove this fallback 13 hours after deployment. Session tokens issued before they were bound to
+            # session_token_aad() were encrypted with empty associated data and stay valid for SESSION_TOKEN_LIFETIME.
+            decrypted = self._token_cryptor.decrypt(token, b"")
         return Principal.model_validate_json(decrypted)
 
 
