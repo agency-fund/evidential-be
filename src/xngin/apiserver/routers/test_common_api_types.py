@@ -3,13 +3,15 @@ from pydantic import ValidationError
 
 from xngin.apiserver.routers.common_api_types import (
     CreateExperimentRequest,
+    DesignSpecMetric,
+    DesignSpecMetricRequest,
     Filter,
     MABDwhExperimentSpec,
     PreassignedFrequentistExperimentSpec,
     SampleCall,
     SampleCalls,
 )
-from xngin.apiserver.routers.common_enums import Relation
+from xngin.apiserver.routers.common_enums import MetricType, Relation
 
 VALID_COLUMN_NAMES = [
     "column_name",
@@ -324,6 +326,31 @@ def test_mab_dwh_primary_key_and_target_must_differ():
         MABDwhExperimentSpec.model_validate(invalid_spec)
 
 
+def test_mab_dwh_rejects_autofail():
+    """MABDwhExperimentSpec rejects enable_autofail=True; autofail isn't supported for DWH experiments."""
+    valid_spec = {
+        "experiment_type": "mab_online_dwh",
+        "experiment_name": "test",
+        "description": "test",
+        "start_date": "2024-01-01T00:00:00+00:00",
+        "end_date": "2024-12-31T00:00:00+00:00",
+        "table_name": "dwh",
+        "primary_key": "id",
+        "target_field_name": "is_onboarded",
+        "arms": [
+            {"arm_name": "C", "arm_description": "C", "alpha_init": 50.0, "beta_init": 1.0},
+            {"arm_name": "T", "arm_description": "T", "alpha_init": 1.0, "beta_init": 50.0},
+        ],
+    }
+    spec = MABDwhExperimentSpec.model_validate(valid_spec)
+    assert spec.enable_autofail is False
+
+    invalid_spec = valid_spec.copy()
+    invalid_spec["enable_autofail"] = "True"
+    with pytest.raises(ValidationError, match="Autofail is not supported for"):
+        MABDwhExperimentSpec.model_validate(invalid_spec)
+
+
 def test_sample_calls_labels_must_be_unique():
     def call(label):
         return SampleCall(label=label, method="GET", path="/v1/x", headers={})
@@ -334,3 +361,109 @@ def test_sample_calls_labels_must_be_unique():
     # Duplicate labels are rejected (the FE keys its rendered list on them).
     with pytest.raises(ValidationError, match="calls must have unique labels"):
         SampleCalls(calls=[call("Get assignment"), call("Get assignment")])
+
+
+def test_design_spec_metric_request_baseline_stats_all_or_none():
+    # No baseline stats is valid.
+    no_stats = DesignSpecMetricRequest(field_name="metric1", metric_pct_change=0.1)
+    assert no_stats.has_baseline_stats is False
+
+    # All baseline stats together is valid.
+    full_stats = DesignSpecMetricRequest(
+        field_name="metric1",
+        metric_pct_change=0.1,
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100.0,
+        metric_stddev=15.0,
+        available_nonnull_n=900,
+        available_n=1000,
+    )
+    assert full_stats.has_baseline_stats is True
+
+    # A partial set of baseline stats is rejected. First create without validation.
+    partial_stats = DesignSpecMetricRequest.model_construct(
+        field_name="metric1", metric_pct_change=0.1, metric_baseline=100.0
+    )
+
+    # If such a model were normally validated, it would raise a validation error.
+    with pytest.raises(ValidationError, match="must all be set together"):
+        DesignSpecMetricRequest.model_validate(partial_stats.model_dump())
+
+    # But even on the unvalidated model, has_baseline_stats works as a manual check.
+    assert partial_stats.has_baseline_stats is False
+
+
+def test_design_spec_metric_has_cluster_stats():
+    full = DesignSpecMetricRequest(field_name="metric1", metric_pct_change=0.1, icc=0.02, avg_cluster_size=10, cv=0.1)
+    assert full.has_cluster_stats is True
+
+    none = DesignSpecMetricRequest(field_name="metric1", metric_pct_change=0.1)
+    assert none.has_cluster_stats is False
+
+    # A partial trio would fail validation; on an unvalidated model has_cluster_stats still says no.
+    partial = DesignSpecMetricRequest.model_construct(field_name="metric1", metric_pct_change=0.1, icc=0.02)
+    assert partial.has_cluster_stats is False
+
+
+def test_design_spec_metric_request_stddev_requires_numeric():
+    with pytest.raises(ValidationError, match="metric_stddev may only be set for NUMERIC metrics"):
+        DesignSpecMetricRequest(
+            field_name="metric1",
+            metric_pct_change=0.1,
+            metric_type=MetricType.BINARY,
+            metric_baseline=0.4,
+            metric_stddev=0.2,
+            available_nonnull_n=900,
+            available_n=1000,
+        )
+
+
+def test_design_spec_metric_request_to_design_spec_metric():
+    request = DesignSpecMetricRequest(
+        field_name="metric1",
+        metric_pct_change=0.1,
+        icc=0.05,
+        avg_cluster_size=20.0,
+        cv=0.3,
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100.0,
+        metric_stddev=15.0,
+        available_nonnull_n=900,
+        available_n=1000,
+    )
+    metric = request.to_design_spec_metric()
+    assert metric == DesignSpecMetric(
+        field_name="metric1",
+        metric_pct_change=0.1,
+        icc=0.05,
+        avg_cluster_size=20.0,
+        cv=0.3,
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100.0,
+        metric_stddev=15.0,
+        available_nonnull_n=900,
+        available_n=1000,
+    )
+
+
+def test_desired_ns_clusters_requires_cluster_key():
+    invalid_spec = {
+        "experiment_type": "freq_preassigned",
+        "experiment_name": "test",
+        "description": "test",
+        "table_name": "dwh",
+        "primary_key": "id",
+        "start_date": "2024-01-01T00:00:00+00:00",
+        "end_date": "2024-12-31T00:00:00+00:00",
+        "arms": [
+            {"arm_name": "C", "arm_description": "C"},
+            {"arm_name": "T", "arm_description": "T"},
+        ],
+        "strata": [],
+        "metrics": [{"field_name": "metric1", "metric_pct_change": 0.1}],
+        "filters": [],
+        "desired_ns_clusters": [10, 20],
+    }
+
+    with pytest.raises(ValidationError, match="desired_ns_clusters can only be set when cluster_key is set"):
+        PreassignedFrequentistExperimentSpec.model_validate(invalid_spec)

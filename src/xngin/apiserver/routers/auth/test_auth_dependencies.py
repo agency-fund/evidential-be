@@ -25,14 +25,14 @@ from xngin.apiserver.routers.auth.auth_dependencies import (
 )
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.auth.token_cryptor import TokenCryptor, TokenCryptorMisconfiguredError
-from xngin.apiserver.routers.common_enums import DataType
-from xngin.apiserver.settings import NoDwh, ParticipantsDef
+from xngin.apiserver.settings import NoDwh
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.bootstrap import (
     ALT_TESTING_DWH_DATASOURCE_NAME,
     DEFAULT_ORGANIZATION_NAME,
     TESTING_DWH_DATASOURCE_NAME,
 )
+from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
 from xngin.xsecrets.nacl_provider import NaclProviderKeyset
 
 
@@ -249,18 +249,9 @@ async def test_initial_user_setup_matches_testing_dwh(xngin_session: AsyncSessio
     # Validate that we added the testing dwh datasource.
     ds = find_ds_with_name(datasources, TESTING_DWH_DATASOURCE_NAME)
     ds_config = ds.get_config()
-    pt_def = ds_config.participants[0]
-    # Assert it's a "schema" type, not the old "sheets" type.
-    assert isinstance(pt_def, ParticipantsDef)
-    # Check auto-generated ParticipantsDef is aligned with the test dwh.
     async with DwhSession(ds_config.dwh) as dwh:
-        sa_table = await dwh.inspect_table(pt_def.table_name)
-    col_names = {c.name for c in sa_table.columns}
-    field_names = {f.field_name for f in pt_def.fields}
-    assert col_names == field_names
-    for field in pt_def.fields:
-        col = sa_table.columns[field.field_name]
-        assert DataType.match(col.type) == field.data_type
+        sa_table = await dwh.inspect_table(TESTING_DWH_TABLE_NAME)
+    assert "id" in sa_table.columns
 
     _ = find_ds_with_name(datasources, ALT_TESTING_DWH_DATASOURCE_NAME)
 

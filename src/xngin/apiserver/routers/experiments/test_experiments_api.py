@@ -41,12 +41,14 @@ from xngin.apiserver.routers.common_enums import (
     ExperimentState,
     Relation,
     StopAssignmentReason,
+    UpdateTypeNormal,
 )
 from xngin.apiserver.routers.experiments.test_experiments_common import insert_experiment_and_arms
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.admin_api_client import AdminAPIClientHTTPValidationError
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClientNotDefaultStatusError
-from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
+from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
+from xngin.stats.bandit_sampling import update_arm
 
 if TYPE_CHECKING:
     from xngin.apiserver.testing.admin_api_client import AdminAPIClient
@@ -1283,7 +1285,7 @@ async def test_update_bandit_arm_with_outcome(
             ],
             prior_type=prior_type,
             reward_type=reward_type,
-            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+            table_name=TESTING_DWH_TABLE_NAME,
             primary_key="id",
             target_field_name="is_onboarded" if reward_type is LikelihoodTypes.BERNOULLI else "income",
         )
@@ -1481,6 +1483,59 @@ async def test_update_bandit_arm_with_freq_experiments_returns_422(
         )
     assert exc.value.result.status == HTTPStatus.UNPROCESSABLE_CONTENT
     assert "Cannot dynamically update arms for frequentist experiments" in str(exc.value.result.data)
+
+
+async def test_normal_prior_binary_reward_fits_each_outcome_exactly_once(
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+):
+    """The endpoint folds one recorded outcome into a Normal/Bernoulli posterior exactly once."""
+    initial_mu = [0.0]
+    initial_covariance = [[1.0]]
+    design_spec = MABExperimentSpec(
+        experiment_type=ExperimentsType.MAB_ONLINE,
+        experiment_name="normal prior binary reward",
+        description="normal prior binary reward",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            ArmBandit(arm_name="control", arm_description="", mu_init=initial_mu[0], sigma_init=1.0),
+            ArmBandit(arm_name="treatment", arm_description="", mu_init=initial_mu[0], sigma_init=1.0),
+        ],
+        prior_type=PriorTypes.NORMAL,
+        reward_type=LikelihoodTypes.BERNOULLI,
+        contexts=None,
+    )
+    experiment_id = aclient.create_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        body=CreateExperimentRequest(design_spec=design_spec),
+    ).data.experiment_id
+    aclient.commit_experiment(datasource_id=testing_datasource.datasource_id, experiment_id=experiment_id)
+
+    eclient.get_assignment(
+        api_key=testing_datasource.key,
+        experiment_id=experiment_id,
+        participant_id="1",
+    )
+    updated_arm = eclient.update_bandit_arm_with_participant_outcome(
+        api_key=testing_datasource.key,
+        body=UpdateBanditArmOutcomeRequest(outcome=1.0),
+        experiment_id=experiment_id,
+        participant_id="1",
+    ).data
+
+    expected = update_arm(
+        experiment=tables.Experiment(
+            experiment_type=ExperimentsType.MAB_ONLINE.value,
+            prior_type=PriorTypes.NORMAL.value,
+            reward_type=LikelihoodTypes.BERNOULLI.value,
+        ),
+        arm_to_update=tables.Arm(mu=initial_mu, covariance=initial_covariance),
+        outcomes=[1.0],
+        context=None,
+    )
+    assert isinstance(expected, UpdateTypeNormal)
+
+    assert updated_arm.mu == pytest.approx(expected.mu)
 
 
 async def test_beta_prior_binary_reward_uses_outcome_in_order_exactly_once(
