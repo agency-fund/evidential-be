@@ -31,13 +31,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from xngin.apiserver import constants
 from xngin.apiserver.dependencies import retrying_httpx_dependency, xngin_db_session
 from xngin.apiserver.routers.admin import admin_common, authz
+from xngin.apiserver.routers.admin import admin_dependencies as adeps
 from xngin.apiserver.routers.admin.admin_api import (
     GENERIC_SUCCESS,
     STANDARD_ADMIN_RESPONSES,
     HTTPExceptionError,
-    get_datasource_or_raise,
-    get_experiment_via_ds_or_raise,
-    get_organization_or_raise,
 )
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddTurnJourneysChangedWebhookRequest,
@@ -156,6 +154,15 @@ router = APIRouter(
 )
 
 
+async def _get_turn_connection(session: AsyncSession, organization_id: str) -> tables.TurnConnection | None:
+    """Returns the organization's Turn.io connection, if it has one.
+
+    organization_id is the primary key of turn_connections, so an organization has at most one.
+    Callers decide what a missing connection means: some create one, some 404, some 409.
+    """
+    return await session.get(tables.TurnConnection, organization_id)
+
+
 async def get_turn_webhook_or_raise(
     session: AsyncSession,
     allow_missing: bool = False,
@@ -187,9 +194,8 @@ async def get_turn_webhook_or_raise(
     responses=TURN_JOURNEYS_RESPONSES,
 )
 async def set_organization_turn_connection(
-    organization_id: str,
+    organization: Annotated[tables.Organization, Depends(adeps.organization)],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(require_user_from_token)],
     body: Annotated[SetConnectionToTurnRequest, Body(...)],
     httpx_client: Annotated[httpx2.AsyncClient, Depends(retrying_httpx_dependency)],
 ) -> AddWebhookToOrganizationResponse:
@@ -212,18 +218,14 @@ async def set_organization_turn_connection(
     we don't end up in a state where the token is updated but the journeys list is out of sync
     with the new token.
     """
-    org = await get_organization_or_raise(session, user, organization_id)
-
-    turn_connection = (
-        await session.execute(select(tables.TurnConnection).where(tables.TurnConnection.organization_id == org.id))
-    ).scalar_one_or_none()
+    turn_connection = await _get_turn_connection(session, organization.id)
 
     if turn_connection is None:
-        turn_connection = tables.TurnConnection(organization_id=org.id)
+        turn_connection = tables.TurnConnection(organization_id=organization.id)
         turn_connection.set_turn_api_token(body.turn_api_token)
         session.add(turn_connection)
 
-    turn_webhook = await get_turn_webhook_or_raise(session, organization_id=org.id, allow_missing=True)
+    turn_webhook = await get_turn_webhook_or_raise(session, organization_id=organization.id, allow_missing=True)
 
     token_changed = turn_connection.get_turn_api_token() != body.turn_api_token
     should_refresh_journeys = turn_webhook is None or token_changed
@@ -231,7 +233,7 @@ async def set_organization_turn_connection(
     if turn_webhook is None:
         _, turn_webhook = admin_common.create_webhook_impl(
             session=session,
-            org_id=org.id,
+            org_id=organization.id,
             webhook=AddTurnJourneysChangedWebhookRequest(
                 name="Turn Journeys Changed Webhook",
             ),
@@ -244,8 +246,8 @@ async def set_organization_turn_connection(
 
     else:
         logger.info(
-            f"Turn.io API token provided in request is the same as the existing token for organization {org.id}. "
-            f"Not updating token."
+            f"Turn.io API token provided in request is the same as the existing token for "
+            f"organization {organization.id}. Not updating token."
         )
 
     if should_refresh_journeys:
@@ -266,9 +268,8 @@ async def set_organization_turn_connection(
 
 @router.get("/integrations/turn-connection/{organization_id}")
 async def get_organization_turn_connection(
-    organization_id: str,
+    organization: Annotated[tables.Organization, Depends(adeps.organization)],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(require_user_from_token)],
     allow_missing: Annotated[
         bool, Query(description="If true, return a 200 with default/empty field values if the resource does not exist.")
     ] = False,
@@ -278,15 +279,11 @@ async def get_organization_turn_connection(
     Raises 404 if no Turn connection has been configured for the organization (or if the
     organization does not exist / the user does not have access to it).
     """
-    org = await get_organization_or_raise(session, user, organization_id)
-
-    turn_connection = (
-        await session.execute(select(tables.TurnConnection).where(tables.TurnConnection.organization_id == org.id))
-    ).scalar_one_or_none()
+    turn_connection = await _get_turn_connection(session, organization.id)
     if turn_connection is None and not allow_missing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Turn connection not found")
 
-    webhook = await get_turn_webhook_or_raise(session, organization_id=org.id, allow_missing=allow_missing)
+    webhook = await get_turn_webhook_or_raise(session, organization_id=organization.id, allow_missing=allow_missing)
 
     return GetTurnConnectionResponse(
         turn_api_token_preview=turn_connection.turn_api_token_preview if turn_connection else "",
@@ -302,9 +299,8 @@ async def get_organization_turn_connection(
     "/integrations/turn-connection/{organization_id}/regenerate-webhook-token", responses=TURN_JOURNEYS_RESPONSES
 )
 async def regenerate_turn_webhook_token(
-    organization_id: str,
+    organization: Annotated[tables.Organization, Depends(adeps.organization)],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(require_user_from_token)],
     allow_missing: Annotated[
         bool, Query(description="If true, return a 200 with default/empty field values if the resource does not exist.")
     ] = False,
@@ -318,9 +314,9 @@ async def regenerate_turn_webhook_token(
     organization does not exist / the user does not have access to it). If allow_missing is True,
     returns a 200 response with all string fields set to empty string and url set to None instead.
     """
-    org = await get_organization_or_raise(session, user, organization_id)
-
-    turn_webhook = await get_turn_webhook_or_raise(session, organization_id=org.id, allow_missing=allow_missing)
+    turn_webhook = await get_turn_webhook_or_raise(
+        session, organization_id=organization.id, allow_missing=allow_missing
+    )
 
     if turn_webhook is not None:
         turn_webhook.auth_token = secrets.token_hex(16)
@@ -386,19 +382,14 @@ async def delete_turn_connection_from_organization(
 
 @router.get("/integrations/turn-connection/{organization_id}/journeys", responses=TURN_JOURNEYS_RESPONSES)
 async def get_organization_turn_journeys(
-    organization_id: str,
+    organization: Annotated[tables.Organization, Depends(adeps.organization)],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> GetTurnJourneysResponse:
     """Returns a {name: uuid} map of Turn.io journeys available to the organization.
 
     The stored Journey list is returned to avoid repeatedly calling the Turn.io API.
     """
-    org = await get_organization_or_raise(session, user, organization_id)
-
-    turn_connection = (
-        await session.execute(select(tables.TurnConnection).where(tables.TurnConnection.organization_id == org.id))
-    ).scalar_one_or_none()
+    turn_connection = await _get_turn_connection(session, organization.id)
     if turn_connection is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Turn connection not found")
 
@@ -422,20 +413,13 @@ async def get_organization_turn_journeys(
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def set_turn_arm_journey_mapping(
-    datasource_id: str,
-    experiment_id: str,
+    experiment: Annotated[tables.Experiment, Depends(adeps.experiment)],
+    datasource: Annotated[tables.Datasource, Depends(adeps.datasource)],
     body: SetTurnArmJourneyMappingRequest,
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(require_user_from_token)],
 ):
     """Adds or updates the mapping from each arm ID of the experiment to a Turn.io Journey ID."""
-    ds = await get_datasource_or_raise(session, user, datasource_id)
-    experiment = await get_experiment_via_ds_or_raise(session, ds, experiment_id)
-    turn_connection = (
-        await session.execute(
-            select(tables.TurnConnection).where(tables.TurnConnection.organization_id == ds.organization_id)
-        )
-    ).scalar_one_or_none()
+    turn_connection = await _get_turn_connection(session, datasource.organization_id)
     if not turn_connection:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -459,14 +443,14 @@ async def set_turn_arm_journey_mapping(
     turn_config = (
         await session.execute(
             select(tables.ExperimentTurnConfig).where(
-                tables.ExperimentTurnConfig.experiment_id == experiment_id,
+                tables.ExperimentTurnConfig.experiment_id == experiment.id,
             )
         )
     ).scalar_one_or_none()
 
     if turn_config is None:
         turn_config = tables.ExperimentTurnConfig(
-            experiment_id=experiment_id,
+            experiment_id=experiment.id,
             arm_journey_map=body.arm_to_journeys,
         )
         session.add(turn_config)
@@ -479,18 +463,15 @@ async def set_turn_arm_journey_mapping(
 
 @router.get("/integrations/turn-journey-mapping/datasources/{datasource_id}/experiments/{experiment_id}")
 async def get_turn_arm_journey_mapping(
-    datasource_id: str,
-    experiment_id: str,
+    experiment: Annotated[tables.Experiment, Depends(adeps.experiment)],
+    datasource: Annotated[tables.Datasource, Depends(adeps.datasource)],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> GetTurnArmJourneyMappingResponse:
     """Returns the current mapping from each arm ID of the experiment to a Turn.io Journey ID, if it exists."""
-    ds = await get_datasource_or_raise(session, user, datasource_id)
-    await get_experiment_via_ds_or_raise(session, ds, experiment_id)
     turn_config = (
         await session.execute(
             select(tables.ExperimentTurnConfig).where(
-                tables.ExperimentTurnConfig.experiment_id == experiment_id,
+                tables.ExperimentTurnConfig.experiment_id == experiment.id,
             )
         )
     ).scalar_one_or_none()
@@ -503,7 +484,7 @@ async def get_turn_arm_journey_mapping(
 
     turn_journeys_row = await session.execute(
         select(tables.TurnConnection.journeys_dict).where(
-            tables.TurnConnection.organization_id == ds.organization_id,
+            tables.TurnConnection.organization_id == datasource.organization_id,
         )
     )
     turn_journeys = turn_journeys_row.scalar_one_or_none()
@@ -523,8 +504,7 @@ async def get_turn_arm_journey_mapping(
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def delete_turn_arm_journey_mapping(
-    datasource_id: str,
-    experiment_id: str,
+    experiment: Annotated[tables.Experiment, Depends(adeps.experiment)],
     session: Annotated[AsyncSession, Depends(xngin_db_session)],
     user: Annotated[tables.User, Depends(require_user_from_token)],
     allow_missing: Annotated[
@@ -533,16 +513,16 @@ async def delete_turn_arm_journey_mapping(
     ] = False,
 ):
     """Deletes the mapping from each arm ID of the experiment to a Turn.io Journey ID, if it exists."""
-    ds = await get_datasource_or_raise(session, user, datasource_id)
-    await get_experiment_via_ds_or_raise(session, ds, experiment_id)
     turn_config_query = select(tables.ExperimentTurnConfig).where(
-        tables.ExperimentTurnConfig.experiment_id == experiment_id
+        tables.ExperimentTurnConfig.experiment_id == experiment.id
     )
 
+    # Resolving the experiment already proved access to its datasource; this repeats the check the way
+    # the other delete handlers do, rather than passing a clause that is always true.
     response = await handle_delete(
         session,
         allow_missing,
-        authz.is_user_authorized_on_datasource(user, datasource_id),
+        authz.is_user_authorized_on_datasource(user, experiment.datasource_id),
         turn_config_query,
     )
     await session.commit()
@@ -550,11 +530,8 @@ async def delete_turn_arm_journey_mapping(
 
 
 @router.get("/integrations/datasources/{datasource_id}/experiments/{experiment_id}/sample-calls")
-async def get_experiment_sample_calls(
-    datasource_id: str,
-    experiment_id: str,
-    session: Annotated[AsyncSession, Depends(xngin_db_session)],
-    user: Annotated[tables.User, Depends(require_user_from_token)],
+def get_experiment_sample_calls(
+    experiment: Annotated[tables.Experiment, Depends(adeps.experiment_for_sample_calls)],
 ) -> SampleCalls | None:
     """Return example API calls for integrating with this experiment.
 
@@ -563,11 +540,4 @@ async def get_experiment_sample_calls(
     freq_online experiments that have eligibility filters. Returns null for experiment types without
     a meaningful example (currently CMAB, whose assignment needs a context vector).
     """
-    ds = await get_datasource_or_raise(session, user, datasource_id)
-    experiment = await get_experiment_via_ds_or_raise(
-        session,
-        ds,
-        experiment_id,
-        preload=[tables.Experiment.experiment_filters],
-    )
     return make_sample_calls(experiment)

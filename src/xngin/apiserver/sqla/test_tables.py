@@ -48,7 +48,7 @@ async def test_datasource_set_table_list(xngin_session, testing_datasource):
 async def test_get_config_tolerates_legacy_participants_key(xngin_session, testing_datasource):
     """Datasources not yet reached by migration 20260901184333 must still load.
 
-    get_config() runs on every authenticated request via datasource_dependency, so rejecting the
+    get_config() runs on every authenticated request via edeps.datasource, so rejecting the
     removed "participants" key would take the public API down for any unmigrated datasource. Drop
     this test in the same change that restores extra="forbid" on RemoteDatabaseConfig.
     """
