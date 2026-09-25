@@ -18,9 +18,7 @@ from sqlalchemy import delete, make_url
 from sqlalchemy.dialects.postgresql import psycopg
 from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.engine.url import URL
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-)
+from sqlalchemy.orm import Session
 from sqlalchemy_bigquery import dialect as bigquery_dialect
 from starlette.testclient import TestClient
 
@@ -247,16 +245,16 @@ def fixture_integrations_api_client(xngin_session):
 
 
 @pytest.fixture(scope="session")
-async def fixture_initialize_xngin_db_schema():
+def fixture_initialize_xngin_db_schema():
     """Create the application schema once for the test session."""
-    async with database.setup():
+    with database.setup():
         create_database_if_not_exists_pg(database.get_sqlalchemy_database_url())
-        async with database.get_async_engine().begin() as conn:
-            await conn.run_sync(tables.Base.metadata.create_all)
+        with database.get_engine().begin() as conn:
+            tables.Base.metadata.create_all(conn)
 
 
 @pytest.fixture(name="xngin_session")
-async def fixture_xngin_db_session(fixture_initialize_xngin_db_schema):
+def fixture_xngin_db_session(fixture_initialize_xngin_db_schema):
     """Yields a SQLAlchemy session suitable for direct interaction with the database.
 
     This will delete all rows from the application tables at the beginning of every test. The users table will be seeded
@@ -267,29 +265,29 @@ async def fixture_xngin_db_session(fixture_initialize_xngin_db_schema):
     Where possible, prefer using the API methods to test functionality rather than touching the database
     directly.
     """
-    async with database.setup():
-        async with database.get_async_engine().begin() as conn:
+    with database.setup():
+        with database.get_engine().begin() as conn:
             for table in reversed(tables.Base.metadata.sorted_tables):
-                await conn.execute(sqlalchemy.delete(table))
-        async with database.async_session() as session:
+                conn.execute(sqlalchemy.delete(table))
+        with database.get_session() as session:
             session.add_all([
                 tables.User(email=PRIVILEGED_EMAIL, is_privileged=True),
                 tables.User(email=UNPRIVILEGED_EMAIL, is_privileged=False),
                 tables.User(email=UNPRIVILEGED_EMAIL_2, is_privileged=False),
             ])
-            await session.commit()
-        async with database.async_session() as sess:
+            session.commit()
+        with database.get_session() as sess:
             try:
                 yield sess
             finally:
-                await sess.close()
+                sess.close()
 
 
-async def delete_seeded_users(xngin_session: AsyncSession):
+def delete_seeded_users(xngin_session: Session):
     """Deletes users created by the xngin_session fixture."""
-    await xngin_session.execute(delete(tables.User))
-    await xngin_session.commit()
-    await xngin_session.reset()
+    xngin_session.execute(delete(tables.User))
+    xngin_session.commit()
+    xngin_session.reset()
 
 
 @pytest.fixture(name="use_deterministic_random")
@@ -327,11 +325,9 @@ class DatasourceMetadata:
 
 
 @pytest.fixture(name="testing_datasource")
-async def fixture_testing_datasource(
-    xngin_session: AsyncSession, aclient: admin_api_client.AdminAPIClient
-) -> DatasourceMetadata:
+def fixture_testing_datasource(xngin_session: Session, aclient: admin_api_client.AdminAPIClient) -> DatasourceMetadata:
     """Creates a datasource fixture using the Admin API."""
-    return await _make_datasource_metadata(
+    return _make_datasource_metadata(
         xngin_session,
         aclient=aclient,
         org_name="testing datasource",
@@ -339,20 +335,20 @@ async def fixture_testing_datasource(
 
 
 @pytest.fixture(name="testing_datasource_other")
-async def fixture_testing_datasource_other(
-    xngin_session: AsyncSession,
+def fixture_testing_datasource_other(
+    xngin_session: Session,
     aclient: admin_api_client.AdminAPIClient,
 ) -> DatasourceMetadata:
     """Creates a second datasource fixture using the Admin API."""
-    return await _make_datasource_metadata(
+    return _make_datasource_metadata(
         xngin_session,
         aclient=aclient,
         org_name="testing datasource other",
     )
 
 
-async def _make_datasource_metadata(
-    xngin_session: AsyncSession, *, aclient: admin_api_client.AdminAPIClient, org_name: str
+def _make_datasource_metadata(
+    xngin_session: Session, *, aclient: admin_api_client.AdminAPIClient, org_name: str
 ) -> DatasourceMetadata:
     """Generates a new Organization, Datasource, and API key for testing.
 
@@ -375,8 +371,8 @@ async def _make_datasource_metadata(
     api_org = aclient.get_organization(organization_id=org_id).data
     api_ds = aclient.get_datasource(datasource_id=datasource_id).data
 
-    org = await xngin_session.get_one(tables.Organization, org_id)
-    datasource = await xngin_session.get_one(tables.Datasource, datasource_id)
+    org = xngin_session.get_one(tables.Organization, org_id)
+    datasource = xngin_session.get_one(tables.Datasource, datasource_id)
 
     return DatasourceMetadata(
         ds=datasource,

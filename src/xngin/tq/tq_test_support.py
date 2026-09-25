@@ -1,13 +1,12 @@
 """Shared test helpers for the tq package."""
 
-import asyncio
 import queue
 import threading
 import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from xngin.apiserver import database
 from xngin.apiserver.sqla import tables
@@ -49,7 +48,7 @@ def tq_runner(queue_instance: TaskQueue) -> Generator[None]:
             raise AssertionError(f"TaskQueue thread raised an exception: {error_collector.get()!r}")
 
 
-async def wait_for_task_status(
+def wait_for_task_status(
     task_id: str,
     expected_status: str,
     *,
@@ -59,22 +58,22 @@ async def wait_for_task_status(
     deadline = time.monotonic() + STATUS_TIMEOUT_SECS
     latest_task: tables.Task | None = None
     while time.monotonic() < deadline:
-        async with database.async_session() as session:
-            latest_task = await session.get(tables.Task, task_id)
+        with database.get_session() as session:
+            latest_task = session.get(tables.Task, task_id)
         if (
             latest_task is not None
             and latest_task.status == expected_status
             and (predicate is None or predicate(latest_task))
         ):
             return latest_task
-        await asyncio.sleep(0.10)
+        time.sleep(0.10)
     raise AssertionError(
         f"Task {task_id} did not reach status {expected_status!r} before timeout. Last observed task: {latest_task!r}"
     )
 
 
-async def insert_task(
-    xngin_session: AsyncSession,
+def insert_task(
+    xngin_session: Session,
     *,
     task_type: str,
     payload: dict | None = None,
@@ -82,6 +81,6 @@ async def insert_task(
     """Inserts a task using SQLAlchemy."""
     task = tables.Task(task_type=task_type, payload=payload)
     xngin_session.add(task)
-    await xngin_session.commit()
-    await xngin_session.refresh(task)
+    xngin_session.commit()
+    xngin_session.refresh(task)
     return task

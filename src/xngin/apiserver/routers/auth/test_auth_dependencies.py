@@ -8,7 +8,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags
 from xngin.apiserver.conftest import delete_seeded_users
@@ -61,25 +61,25 @@ def temporary_unset_env_var(name: str):
             os.environ[name] = previous
 
 
-async def test_require_valid_session_token_missing_prefix():
+def test_require_valid_session_token_missing_prefix():
     cryp = SessionTokenCryptor()
     with pytest.raises(HTTPException, match="token invalid") as exc:
-        await require_valid_session_token(HTTPAuthorizationCredentials(scheme="Bearer", credentials="abc"), cryp)
+        require_valid_session_token(HTTPAuthorizationCredentials(scheme="Bearer", credentials="abc"), cryp)
     assert exc.value.status_code == 401
 
 
-async def test_require_valid_session_token_misconfigured():
+def test_require_valid_session_token_misconfigured():
     cryp = SessionTokenCryptor()
     with pytest.raises(TokenCryptorMisconfiguredError):
-        await require_valid_session_token(HTTPAuthorizationCredentials(scheme="Bearer", credentials="xa_abc"), cryp)
+        require_valid_session_token(HTTPAuthorizationCredentials(scheme="Bearer", credentials="xa_abc"), cryp)
 
 
-async def test_require_valid_session_token():
+def test_require_valid_session_token():
     with temporary_env_var(flags.ENV_SESSION_TOKEN_KEYSET, NaclProviderKeyset.create().serialize_base64()):
         cryp = SessionTokenCryptor()
         expected = Principal(email="test@example.com", hd="", iat=0, iss="", sub="")
         valid_token = cryp.encode(expected)
-        actual = await require_valid_session_token(
+        actual = require_valid_session_token(
             HTTPAuthorizationCredentials(
                 scheme="Bearer",
                 credentials=valid_token,
@@ -90,12 +90,12 @@ async def test_require_valid_session_token():
 
 
 @pytest.mark.parametrize("variant", ["x", ".", " ", "==", "  ", "===", ";", "\n"])
-async def test_require_valid_session_token_invalid(variant):
+def test_require_valid_session_token_invalid(variant):
     with temporary_env_var(flags.ENV_SESSION_TOKEN_KEYSET, NaclProviderKeyset.create().serialize_base64()):
         cryp = SessionTokenCryptor()
         expected = Principal(email="test@example.com", hd="", iat=0, iss="", sub="")
         with pytest.raises(HTTPException, match="token invalid") as exc:
-            await require_valid_session_token(
+            require_valid_session_token(
                 HTTPAuthorizationCredentials(
                     scheme="Bearer",
                     credentials=cryp.encode(expected) + variant,
@@ -104,7 +104,7 @@ async def test_require_valid_session_token_invalid(variant):
             )
         assert exc.value.status_code == 401
         with pytest.raises(HTTPException, match="token invalid") as exc:
-            await require_valid_session_token(
+            require_valid_session_token(
                 HTTPAuthorizationCredentials(
                     scheme="Bearer",
                     credentials=variant + cryp.encode(expected),
@@ -143,114 +143,114 @@ def test_token_cryptor_reads_configured_local_keyset_file(tmp_path):
         assert cryptor.decrypt(token) == b"payload"
 
 
-async def test_user_from_token_invite(xngin_session: AsyncSession):
+def test_user_from_token_invite(xngin_session: Session):
     """
     Tests that invited users are updated with the IDP details on their first login, and
     that they are then bound to that IDP afterwards.
     """
-    await delete_seeded_users(xngin_session)
+    delete_seeded_users(xngin_session)
 
     xngin_session.add(tables.User(email="u1@example.com", iss="iss", sub="sub"))
     # Invited users have (iss, sub) = (None, None).
     xngin_session.add(tables.User(email="inv@example.com", iss=None, sub=None))
-    await xngin_session.commit()
+    xngin_session.commit()
 
     invited_user_principal = Principal(
         email="inv@example.com", iss="invited", sub="invited", hd="", iat=int(time.time())
     )
 
-    second_user = await require_user_from_token(xngin_session, invited_user_principal)
+    second_user = require_user_from_token(xngin_session, invited_user_principal)
     assert second_user.iss == "invited"
     assert second_user.sub == "invited"
 
-    second_user_again = await require_user_from_token(xngin_session, invited_user_principal)
+    second_user_again = require_user_from_token(xngin_session, invited_user_principal)
     assert second_user_again.iss == "invited"
     assert second_user_again.sub == "invited"
 
     different_idp_iss = invited_user_principal.model_copy(update={"iss": "otheridp"})
     with pytest.raises(HTTPException, match="user not found") as exc:
-        await require_user_from_token(xngin_session, different_idp_iss)
+        require_user_from_token(xngin_session, different_idp_iss)
     assert exc.value.status_code == 401
 
     different_idp_sub = invited_user_principal.model_copy(update={"sub": "othersub"})
     with pytest.raises(HTTPException, match="user not found") as exc:
-        await require_user_from_token(xngin_session, different_idp_sub)
+        require_user_from_token(xngin_session, different_idp_sub)
     assert exc.value.status_code == 401
 
 
-async def test_user_from_token_when_users_exist(xngin_session: AsyncSession):
-    unpriv = await require_user_from_token(xngin_session, TESTING_TOKENS[UNPRIVILEGED_TOKEN_FOR_TESTING])
+def test_user_from_token_when_users_exist(xngin_session: Session):
+    unpriv = require_user_from_token(xngin_session, TESTING_TOKENS[UNPRIVILEGED_TOKEN_FOR_TESTING])
     assert not unpriv.is_privileged
-    priv = await require_user_from_token(xngin_session, TESTING_TOKENS[PRIVILEGED_TOKEN_FOR_TESTING])
+    priv = require_user_from_token(xngin_session, TESTING_TOKENS[PRIVILEGED_TOKEN_FOR_TESTING])
     assert priv.is_privileged
 
     with pytest.raises(HTTPException, match="user not found") as exc:
-        await require_user_from_token(
+        require_user_from_token(
             xngin_session,
             Principal(email="usernotfound@example.com", iss="", sub="", hd="", iat=int(time.time())),
         )
     assert exc.value.status_code == 401
 
 
-async def test_user_from_token_initial_setup(xngin_session: AsyncSession):
+def test_user_from_token_initial_setup(xngin_session: Session):
     # emulate first time developer experience by deleting the seeded users
-    await delete_seeded_users(xngin_session)
+    delete_seeded_users(xngin_session)
 
-    first_user = await require_user_from_token(
+    first_user = require_user_from_token(
         xngin_session, Principal(email="firstuser@example.com", iss="", sub="", hd="", iat=int(time.time()))
     )
     assert first_user.is_privileged
-    await xngin_session.refresh(first_user, ["organizations"])
+    xngin_session.refresh(first_user, ["organizations"])
     assert len(first_user.organizations) == 1
 
     with pytest.raises(HTTPException, match="user not found") as exc:
-        await require_user_from_token(
+        require_user_from_token(
             xngin_session,
             Principal(email="seconduser@example.com", iss="", sub="", hd="", iat=int(time.time())),
         )
     assert exc.value.status_code == 401
 
 
-async def test_user_from_token_expired(xngin_session: AsyncSession):
+def test_user_from_token_expired(xngin_session: Session):
     # emulate first time developer experience by deleting the seeded users
-    await delete_seeded_users(xngin_session)
+    delete_seeded_users(xngin_session)
 
-    user = await require_user_from_token(
+    user = require_user_from_token(
         xngin_session, Principal(email="firstuser@example.com", iss="", sub="", hd="", iat=0)
     )
 
     now = datetime.now()
     user.last_logout = now + timedelta(days=365)
-    await xngin_session.commit()
+    xngin_session.commit()
 
     with pytest.raises(fastapi.HTTPException, match="Expired session") as exc:
-        await require_user_from_token(
+        require_user_from_token(
             xngin_session, Principal(email="firstuser@example.com", iss="", sub="", hd="", iat=int(now.timestamp()))
         )
     assert exc.value.status_code == 401
 
 
-async def test_initial_user_setup_matches_testing_dwh(xngin_session: AsyncSession):
-    await delete_seeded_users(xngin_session)
+def test_initial_user_setup_matches_testing_dwh(xngin_session: Session):
+    delete_seeded_users(xngin_session)
 
-    first_user = await require_user_from_token(
+    first_user = require_user_from_token(
         xngin_session, Principal(email="initial@example.com", iss="", sub="", hd="", iat=int(time.time()))
     )
-    await xngin_session.commit()
+    xngin_session.commit()
 
     # Validate directly from the db that our default org was created with datasources.
-    await xngin_session.refresh(first_user, ["organizations"])
+    xngin_session.refresh(first_user, ["organizations"])
     assert len(first_user.organizations) == 1
     organization = first_user.organizations[0]
     assert organization.name == DEFAULT_ORGANIZATION_NAME
-    datasources: list[tables.Datasource] = await organization.awaitable_attrs.datasources
+    datasources: list[tables.Datasource] = organization.datasources
     assert len(datasources) == 3, [d.name for d in datasources]
 
     # Validate that we added the testing dwh datasource.
     ds = find_ds_with_name(datasources, TESTING_DWH_DATASOURCE_NAME)
     ds_config = ds.get_config()
-    async with DwhSession(ds_config.dwh) as dwh:
-        sa_table = await dwh.inspect_table(TESTING_DWH_TABLE_NAME)
+    with DwhSession.open(ds_config.dwh) as dwh:
+        sa_table = dwh.inspect_table(TESTING_DWH_TABLE_NAME)
     assert "id" in sa_table.columns
 
     _ = find_ds_with_name(datasources, ALT_TESTING_DWH_DATASOURCE_NAME)
@@ -259,7 +259,7 @@ async def test_initial_user_setup_matches_testing_dwh(xngin_session: AsyncSessio
     ds = find_ds_with_name(datasources, DEFAULT_NO_DWH_SOURCE_NAME)
     assert isinstance(ds.get_config().dwh, NoDwh)
 
-    experiment_count = await xngin_session.scalar(
+    experiment_count = xngin_session.scalar(
         select(func.count())
         .select_from(tables.Experiment)
         .where(tables.Experiment.datasource_id.in_([datasource.id for datasource in datasources]))
@@ -267,7 +267,7 @@ async def test_initial_user_setup_matches_testing_dwh(xngin_session: AsyncSessio
     assert experiment_count == 6
 
     snapshot_count_rows = (
-        await xngin_session.execute(
+        xngin_session.execute(
             select(tables.Snapshot.experiment_id, func.count())
             .group_by(tables.Snapshot.experiment_id)
             .where(

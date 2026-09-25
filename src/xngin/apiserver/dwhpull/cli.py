@@ -1,6 +1,5 @@
 """dwh-pull reads bandit outcomes from organizations' data warehouses."""
 
-import asyncio
 import os
 from typing import Annotated
 
@@ -21,10 +20,10 @@ sentry.setup()
 app = typer.Typer(help="Reads bandit outcomes from organizations' data warehouses.")
 
 
-async def apull(pull_timeout: int):
-    """Pulls outcomes (async wrapper)."""
-    async with database.setup():
-        await dwhpull.pull_all_experiments(pull_timeout)
+def run_pulls(pull_timeout: int):
+    """Pull outcomes within the application database lifespan."""
+    with database.setup():
+        dwhpull.pull_all_experiments(pull_timeout)
 
 
 @app.command()
@@ -34,8 +33,8 @@ def pull(
         typer.Option(
             "--max-time",
             min=1,
-            help="Maximum duration of one experiment's pull (in seconds). An experiment that takes "
-            "longer than this is abandoned for this run and reported as a failure.",
+            help="Maximum time to wait for one experiment's data warehouse read (in seconds). An "
+            "experiment whose read takes longer is abandoned for this run and reported as a failure.",
         ),
     ] = dwhpull.PULL_TIMEOUT_SECS,
 ):
@@ -54,7 +53,7 @@ def pull(
     cronjob_monitor_slug = os.environ.get(ENV_CRONJOB_MONITOR_SLUG, "")
     if cronjob_monitor_slug:
         with monitor(monitor_slug=cronjob_monitor_slug):
-            asyncio.run(apull(pull_timeout))
+            run_pulls(pull_timeout)
     else:
-        asyncio.run(apull(pull_timeout))
+        run_pulls(pull_timeout)
     logger.info("pull() finished successfully.")

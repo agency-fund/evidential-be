@@ -12,14 +12,14 @@ def random_seed_dependency():
     return
 
 
-async def xngin_db_session():
-    """Returns a database connection to the xngin app database (not customer data warehouse)."""
-    async with database.async_session() as session:
+def xngin_sync_db_session():
+    """Returns a synchronous database connection to the xngin app database."""
+    with database.get_session() as session:
         yield session
 
 
-async def retrying_httpx_dependency():
+def retrying_httpx_dependency():
     """Returns a new httpx2 client that will retry on connection errors"""
-    transport = httpx2.AsyncHTTPTransport(retries=2)
-    async with httpx2.AsyncClient(transport=transport, timeout=15.0) as client:
+    transport = httpx2.HTTPTransport(retries=2)
+    with httpx2.Client(transport=transport, timeout=15.0) as client:
         yield client
