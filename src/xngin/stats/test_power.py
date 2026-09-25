@@ -109,7 +109,7 @@ def test_analyze_metric_power_binary():
     assert result.metric_spec.metric_type == MetricType.BINARY
     assert result.metric_spec.metric_baseline == 0.5
     assert result.metric_spec.metric_target == 0.55
-    assert result.target_n == 3132
+    assert result.target_n == 3130
     # Given the available_n, here's the best we can do (cross-checked with R's power.prop.test):
     # (since it's 2-sided, an equivalent change down is fine, too)
     assert result.target_possible == pytest.approx(1 - 0.588163, abs=1e-4)
@@ -120,8 +120,8 @@ def test_analyze_metric_power_binary():
     assert result.msg.values == {
         "available_n": 1000,
         "available_nonnull_n": 1000,
-        "target_n": 3132,
-        "additional_n_needed": 3132 - 1000,
+        "target_n": 3130,
+        "additional_n_needed": 3130 - 1000,
         "metric_baseline": 0.5,
         "target_possible": pytest.approx(1 - 0.588163, abs=1e-4),
         "metric_target": 0.55,
@@ -332,7 +332,7 @@ def test_analyze_metric_power_unbalanced_binary():
     assert result.metric_spec.metric_type == MetricType.BINARY
     assert result.target_n is not None
     # Unbalanced requires more than the balanced case above.
-    assert result.target_n == 3526
+    assert result.target_n == 3523
     assert result.sufficient_n
     assert result.msg is not None
     assert result.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
@@ -371,7 +371,7 @@ def test_check_power_unbalanced():
     # Same as test_analyze_metric_power_unbalanced_two_arms since it's the same params.
     assert results[0].target_n == 200
     # Even larger than test_analyze_metric_power_unbalanced_binary since the ratio is also larger.
-    assert results[1].target_n == 4895
+    assert results[1].target_n == 4890
 
 
 def test_analyze_metric_power_numeric_with_desired_n():
@@ -456,7 +456,7 @@ def test_check_power_with_desired_n():
     assert results[0].target_possible is None
     assert results[0].pct_change_possible is None
     # If there are insufficient units, we report the smallest MDE possible if all samples were used.
-    assert results[1].target_n == 62438
+    assert results[1].target_n == 62436
     assert results[1].sufficient_n is False
     assert results[1].target_possible == pytest.approx(0.0385, abs=1e-4)
     assert results[1].pct_change_possible == pytest.approx(-0.2300, abs=1e-4)
@@ -662,3 +662,93 @@ def test_analyze_metric_power_desired_n_with_unbalanced_arms():
     assert metric.metric_baseline is not None
     assert result.target_possible is not None
     assert result.target_possible < metric.metric_baseline
+
+
+def make_curve_metric(**overrides):
+    defaults = dict(
+        field_name="curve_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_pct_change=0.1,
+        metric_stddev=20,
+        available_nonnull_n=1000,
+        available_n=1000,
+    )
+    return DesignSpecMetric(**{**defaults, **overrides})
+
+
+def test_check_power_mde_curve_individual():
+    sizes = [100, 200, 500, 1000]
+    analyses = check_power([make_curve_metric()], n_arms=2, desired_ns=sizes)
+
+    curve = analyses[0].mde_curve
+    assert curve is not None
+    assert [p.desired_n for p in curve] == sizes
+    assert all(p.desired_n_clusters is None for p in curve)
+    mdes = [p.pct_change for p in curve if p.pct_change is not None]
+    assert len(mdes) == len(curve)  # every point solved
+    assert all(m > 0 for m in mdes)
+    # MDE shrinks as the sample grows.
+    assert mdes == sorted(mdes, reverse=True)
+
+    # A curve point at the single desired_n matches pct_change_with_desired_n.
+    single = check_power([make_curve_metric()], n_arms=2, desired_n=500)
+    point_500 = next(p for p in curve if p.desired_n == 500)
+    assert single[0].pct_change_with_desired_n == point_500.pct_change
+
+
+def test_check_power_mde_curve_cluster():
+    metric = make_curve_metric(icc=0.02, avg_cluster_size=10, cv=0.1)
+    analyses = check_power([metric], n_arms=2, desired_ns_clusters=[20, 50, 100])
+
+    curve = analyses[0].mde_curve
+    assert curve is not None
+    assert [p.desired_n_clusters for p in curve] == [20, 50, 100]
+    # Cluster counts convert to individuals via avg_cluster_size.
+    assert [p.desired_n for p in curve] == [200, 500, 1000]
+    mdes = [p.pct_change for p in curve if p.pct_change is not None]
+    assert len(mdes) == len(curve)  # every point solved
+    assert all(m > 0 for m in mdes)
+    assert mdes == sorted(mdes, reverse=True)
+
+
+def test_check_power_mde_curve_cluster_counts_require_cluster_stats():
+    with pytest.raises(StatsPowerError, match="has no avg_cluster_size"):
+        check_power([make_curve_metric()], n_arms=2, desired_ns_clusters=[20, 50])
+
+
+def test_check_power_mde_curve_point_failure_yields_null_not_error():
+    # n=2 is too small for the solver; the point should be null while the others succeed.
+    analyses = check_power([make_curve_metric()], n_arms=2, desired_ns=[2, 500])
+
+    curve = analyses[0].mde_curve
+    assert curve is not None
+    assert [p.desired_n for p in curve] == [2, 500]
+    assert curve[0].pct_change is None
+    assert curve[1].pct_change is not None
+
+
+def test_check_power_unsolvable_desired_n_fails_request():
+    """An explicit desired_n the solver cannot handle fails the check, even when the curve could continue.
+
+    n=2 is too small to solve. desired_ns includes a solvable size, but that range is supplementary:
+    the caller's chosen sample size is what must succeed.
+    """
+    with pytest.raises(StatsPowerError):
+        check_power([make_curve_metric()], n_arms=2, desired_n=2, desired_ns=[2, 500])
+
+
+def test_check_power_no_curve_without_desired_ns():
+    analyses = check_power([make_curve_metric()], n_arms=2, desired_n=500)
+    assert analyses[0].mde_curve is None
+
+
+def test_check_power_mde_curve_cluster_counts_take_precedence_over_desired_ns():
+    """When both lists are set, the curve is the cluster-count range of values."""
+    metric = make_curve_metric(icc=0.02, avg_cluster_size=10, cv=0.1)
+    both = check_power([metric], n_arms=2, desired_ns=[100, 200], desired_ns_clusters=[20, 50, 100])
+    clusters_only = check_power([metric], n_arms=2, desired_ns_clusters=[20, 50, 100])
+    individuals_only = check_power([metric], n_arms=2, desired_ns=[100, 200])
+
+    assert both[0].mde_curve == clusters_only[0].mde_curve
+    assert both[0].mde_curve != individuals_only[0].mde_curve

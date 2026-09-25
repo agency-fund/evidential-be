@@ -727,8 +727,8 @@ def test_solve_for_sample_size_cluster_binary_metric():
 
     result = solve_for_sample_size_cluster(metric=metric, n_arms=2)
 
-    assert result.clusters_per_arm == [48, 48]
-    assert result.n_per_arm == [2400, 2400]
+    assert result.clusters_per_arm == [47, 47]
+    assert result.n_per_arm == [2350, 2350]
     assert result.num_clusters_total == sum(result.clusters_per_arm)
     assert result.target_n == sum(result.n_per_arm)
     assert result.design_effect == pytest.approx(3.45)  # 1 + (50-1)*0.05

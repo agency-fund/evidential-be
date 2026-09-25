@@ -3,18 +3,30 @@
 import asyncio
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import Table, text
 from sqlalchemy.exc import DataError
+from sqlalchemy.orm import Session
 
 from xngin.apiserver.conftest import DbType, get_queries_test_uri
 from xngin.apiserver.dwh.dwh_session import DwhSession
-from xngin.apiserver.dwh.queries import get_stats_on_metrics
+from xngin.apiserver.dwh.queries import get_raw_metric_stats
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.routers.common_api_types import DesignSpecMetric, DesignSpecMetricRequest
+from xngin.apiserver.routers.common_api_types import DesignSpecMetric, DesignSpecMetricRequest, Filter
 from xngin.apiserver.routers.common_enums import MetricType
+from xngin.apiserver.routers.power_adapters import build_metric_stats
 from xngin.apiserver.settings import Dsn
 
 pytest_plugins = ("xngin.apiserver.dwh.dwh_test_support",)
+
+
+def get_stats_on_metrics(
+    session: Session,
+    sa_table: Table,
+    metrics: list[DesignSpecMetricRequest],
+    filters: list[Filter],
+) -> list[DesignSpecMetric]:
+    """Compose the query and the pure computation, as power_check does."""
+    return build_metric_stats(get_raw_metric_stats(session, sa_table, metrics, filters), sa_table, metrics)
 
 
 def test_get_stats_on_missing_metric_raises_error(queries_dwh_session, shared_sample_tables):

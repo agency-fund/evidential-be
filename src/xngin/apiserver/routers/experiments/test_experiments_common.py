@@ -66,7 +66,7 @@ from xngin.apiserver.routers.experiments.experiments_common_csv import get_exper
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.assertions import assert_dates_equal
-from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
+from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
 from xngin.stats.assignment import AssignmentResult
 
 
@@ -103,7 +103,7 @@ def make_createexperimentrequest_json(
     )
     match experiment_type:
         case ExperimentsType.FREQ_PREASSIGNED | ExperimentsType.FREQ_ONLINE:
-            table_name = table_name or TESTING_DWH_PARTICIPANT_DEF.table_name
+            table_name = table_name or TESTING_DWH_TABLE_NAME
             primary_key = primary_key or "id"
             return {
                 "design_spec": {
@@ -207,7 +207,7 @@ def make_createexperimentrequest_json(
                     "prior_type": prior_type,
                     "reward_type": reward_type,
                     "arms": mab_dwh_arms,
-                    "table_name": table_name or TESTING_DWH_PARTICIPANT_DEF.table_name,
+                    "table_name": table_name or TESTING_DWH_TABLE_NAME,
                     "primary_key": primary_key or "id",
                     "target_field_name": target_field_name,
                     **autofail_spec,
@@ -1730,7 +1730,7 @@ async def test_create_experiment_impl_for_mab_dwh_online(
 
     experiment = await xngin_session.get(tables.Experiment, response.experiment_id)
     assert experiment.experiment_type == ExperimentsType.MAB_ONLINE_DWH
-    assert experiment.datasource_table == TESTING_DWH_PARTICIPANT_DEF.table_name
+    assert experiment.datasource_table == TESTING_DWH_TABLE_NAME
 
     # Two ExperimentField rows: one is_unique_id, one is_target.
     experiment_fields = await experiment.awaitable_attrs.experiment_fields
@@ -1956,7 +1956,7 @@ async def test_get_experiment_impl_of_legacy_experiment(xngin_session, testing_d
     experiment_db, expected_design_spec = await make_insertable_experiment(
         testing_datasource.ds,
         ExperimentState.COMMITTED,
-        table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+        table_name=TESTING_DWH_TABLE_NAME,
         primary_key="id",
     )
     experiment_db.webhooks = [
@@ -2094,7 +2094,7 @@ async def test_get_experiment_assignments_as_csv_impl(xngin_session, testing_dat
         design_spec=PreassignedFrequentistExperimentSpec(
             experiment_name="test experiment",
             description="test experiment",
-            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+            table_name=TESTING_DWH_TABLE_NAME,
             primary_key="id",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
             end_date=datetime.now(UTC) + timedelta(days=1),
@@ -2128,7 +2128,7 @@ async def test_get_experiment_assignments_as_csv_impl_emits_null_for_missing_met
         design_spec=PreassignedFrequentistExperimentSpec(
             experiment_name="test experiment",
             description="test experiment",
-            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+            table_name=TESTING_DWH_TABLE_NAME,
             primary_key="id",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
             end_date=datetime.now(UTC) + timedelta(days=1),
@@ -2176,7 +2176,7 @@ async def test_get_experiment_assignments_as_csv_impl_uses_sorted_strata_header_
         design_spec=PreassignedFrequentistExperimentSpec(
             experiment_name="test experiment",
             description="test experiment",
-            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+            table_name=TESTING_DWH_TABLE_NAME,
             primary_key="id",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
             end_date=datetime.now(UTC) + timedelta(days=1),
@@ -2202,7 +2202,7 @@ async def test_get_experiment_assignments_as_csv_impl_omits_strata_columns_when_
         design_spec=PreassignedFrequentistExperimentSpec(
             experiment_name="test experiment",
             description="test experiment",
-            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+            table_name=TESTING_DWH_TABLE_NAME,
             primary_key="id",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
             end_date=datetime.now(UTC) + timedelta(days=1),
@@ -2551,7 +2551,7 @@ async def test_get_or_create_assignment_for_participant_with_filters_in_online_f
         design_spec=OnlineFrequentistExperimentSpec(
             experiment_name="test experiment",
             description="test experiment",
-            table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+            table_name=TESTING_DWH_TABLE_NAME,
             primary_key="id",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
             end_date=datetime.now(UTC) + timedelta(days=1),

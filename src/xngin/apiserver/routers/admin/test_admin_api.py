@@ -19,8 +19,6 @@ from pydantic import HttpUrl
 from xngin.apiserver import flags
 from xngin.apiserver.conftest import convert_dwh_to_create_api_dsn, expect_status_code
 from xngin.apiserver.dns import safe_resolve
-from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
-from xngin.apiserver.dwh.inspections import ColumnDeleted, Drift, FieldChangedType
 from xngin.apiserver.routers.admin.admin_api_converters import CREDENTIALS_UNAVAILABLE_MESSAGE
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddExperimentCreatedWebhookRequest,
@@ -28,7 +26,6 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     BqDsn,
     CreateDatasourceRequest,
     CreateOrganizationRequest,
-    CreateParticipantsTypeRequest,
     DeleteExperimentDataRequest,
     FieldMetadata,
     GcpServiceAccount,
@@ -39,12 +36,10 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     RedshiftDsn,
     RevealedStr,
     SnapshotStatus,
-    TableDeleted,
     UpdateArmRequest,
     UpdateDatasourceRequest,
     UpdateExperimentRequest,
     UpdateOrganizationWebhookRequest,
-    UpdateParticipantsTypeRequest,
 )
 from xngin.apiserver.routers.admin.admin_common import DEFAULT_NO_DWH_SOURCE_NAME
 from xngin.apiserver.routers.auth.auth_dependencies import (
@@ -61,7 +56,7 @@ from xngin.apiserver.routers.common_api_types import (
     ContextInput,
     CreateExperimentRequest,
     CreateExperimentResponse,
-    DataType,
+    DesignSpecMetric,
     DesignSpecMetricRequest,
     ExperimentConfig,
     ExperimentsType,
@@ -80,6 +75,7 @@ from xngin.apiserver.routers.common_api_types import (
     UpdateBanditArmOutcomeRequest,
 )
 from xngin.apiserver.routers.common_enums import (
+    DataType,
     ExperimentState,
     MetricPowerAnalysisMessageType,
     Relation,
@@ -97,8 +93,8 @@ from xngin.apiserver.testing.experiments_api_client import (
     ExperimentsAPIClient,
     ExperimentsAPIClientNotDefaultStatusError,
 )
-from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_PARTICIPANT_DEF
-from xngin.apiserver.testing.wide_dwh_def import WIDE_DWH_PARTICIPANT_DEF
+from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
+from xngin.apiserver.testing.wide_dwh_def import WIDE_DWH_TABLE_NAME
 
 SAMPLE_GCLOUD_SERVICE_ACCOUNT = {
     "auth_provider_x509_cert_url": "",
@@ -187,7 +183,7 @@ async def make_freq_online_experiment(
                 experiment_type=ExperimentsType.FREQ_ONLINE,
                 experiment_name="test experiment",
                 description="test experiment",
-                table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+                table_name=TESTING_DWH_TABLE_NAME,
                 primary_key="id",
                 start_date=datetime(2024, 1, 1, tzinfo=UTC),
                 end_date=end_date,
@@ -260,7 +256,7 @@ async def fixture_testing_experiment(testing_datasource, aclient: AdminAPIClient
                 experiment_type=ExperimentsType.FREQ_PREASSIGNED,
                 experiment_name="test experiment",
                 description="test experiment",
-                table_name=TESTING_DWH_PARTICIPANT_DEF.table_name,
+                table_name=TESTING_DWH_TABLE_NAME,
                 primary_key="id",
                 start_date=datetime(2024, 1, 1, tzinfo=UTC),
                 end_date=datetime.now(UTC) + timedelta(days=1),
@@ -1031,194 +1027,6 @@ def test_update_webhook_rejects_ssrf_url(aclient: AdminAPIClient):
         )
 
 
-def test_participants_lifecycle(testing_datasource, aclient: AdminAPIClient):
-    """Test getting, creating, listing, updating, and deleting a participant type."""
-    ds_id = testing_datasource.datasource_id
-
-    # Get participants
-    parsed = aclient.get_participant_type(datasource_id=ds_id, participant_id="test_participant_type").data.current
-    assert parsed.type == "schema"
-    assert parsed.participant_type == "test_participant_type"
-    assert parsed.table_name == "dwh"
-
-    # Create participant
-    create_pt_response = aclient.create_participant_type(
-        datasource_id=ds_id,
-        body=CreateParticipantsTypeRequest(
-            participant_type="newpt",
-            schema_def=ParticipantsSchema(
-                table_name="dwh",
-                fields=[
-                    FieldDescriptor(
-                        field_name="id",
-                        data_type=DataType.BIGINT,
-                        description="test",
-                        is_unique_id=True,
-                        is_strata=False,
-                        is_filter=False,
-                        is_metric=False,
-                    )
-                ],
-            ),
-        ),
-    ).data
-    assert create_pt_response.participant_type == "newpt"
-
-    # List participants
-    list_pt_response = aclient.list_participant_types(datasource_id=ds_id).data
-    assert len(list_pt_response.items) == 2, list_pt_response
-
-    # Update participant
-    update_pt_response = aclient.update_participant_type(
-        datasource_id=ds_id, participant_id="newpt", body=UpdateParticipantsTypeRequest(participant_type="renamedpt")
-    ).data
-    assert update_pt_response.participant_type == "renamedpt"
-
-    # List participants (again)
-    list_pt_response = aclient.list_participant_types(datasource_id=ds_id).data
-    assert len(list_pt_response.items) == 2, list_pt_response
-
-    # Get the named participant type
-    participants_def = aclient.get_participant_type(datasource_id=ds_id, participant_id="renamedpt").data.current
-    assert participants_def.participant_type == "renamedpt"
-
-    # Delete the renamed participant type.
-    aclient.delete_participant(datasource_id=ds_id, participant_id="renamedpt")
-
-    # Delete the renamed participant type again.
-    with expect_status_code(404):
-        aclient.delete_participant(datasource_id=ds_id, participant_id="renamedpt")
-
-    # Delete the renamed participant type again w/allow_missing.
-    aclient.delete_participant(datasource_id=ds_id, participant_id="renamedpt", allow_missing=True)
-
-    # Get the named participant type after it has been deleted
-    with expect_status_code(404):
-        aclient.get_participant_type(datasource_id=ds_id, participant_id="renamedpt")
-
-    # Delete the testing participant type.
-    aclient.delete_participant(datasource_id=ds_id, participant_id="test_participant_type")
-
-    # Delete the testing participant type a 2nd time.
-    with expect_status_code(404):
-        aclient.delete_participant(datasource_id=ds_id, participant_id="test_participant_type")
-
-    # Delete a participant type in a non-existent datasource.
-    with expect_status_code(403):
-        aclient.delete_participant(datasource_id="ds-not-exist", participant_id="test_participant_type")
-
-
-def test_create_participants_type_without_unique_id(testing_datasource, aclient: AdminAPIClient):
-    response = aclient.create_participant_type(
-        datasource_id=testing_datasource.datasource_id,
-        body=CreateParticipantsTypeRequest.model_construct(
-            participant_type="newpt",
-            schema_def=ParticipantsSchema.model_construct(
-                table_name="dwh",
-                fields=[
-                    FieldDescriptor(
-                        field_name="newf",
-                        data_type=DataType.INTEGER,
-                        description="test",
-                        is_unique_id=False,  # previously used to require a field be set to true
-                        is_strata=False,
-                        is_filter=False,
-                        is_metric=False,
-                    )
-                ],
-            ),
-        ),
-    )
-    assert response.data.participant_type == "newpt"
-    assert response.data.schema_def.fields[0].is_unique_id is False
-
-
-def test_get_participants_type_with_schema_drift(testing_datasource, aclient: AdminAPIClient):
-    """Test schema drift detection when a column is missing from the table and a type changed."""
-    ds_id = testing_datasource.datasource_id
-    # Initial schema: simulate a type change and a missing column
-    schema = ParticipantsSchema(
-        table_name="dwh",
-        fields=[
-            FieldDescriptor(
-                field_name="id",
-                data_type=DataType.INTEGER,
-                description="simulating integer -> bigint",
-                is_unique_id=True,
-            ),
-            FieldDescriptor(
-                field_name="is_engaged",
-                data_type=DataType.BOOLEAN,
-                description="ok",
-                is_filter=True,
-            ),
-            FieldDescriptor(
-                field_name="missing_col",
-                data_type=DataType.CHARACTER_VARYING,
-                description="simulates a deleted column",
-                is_metric=True,
-            ),
-        ],
-    )
-
-    # Create participant type with the initial schema
-    aclient.create_participant_type(
-        datasource_id=ds_id, body=CreateParticipantsTypeRequest(participant_type="pt", schema_def=schema)
-    )
-
-    # Get the participant type to fetch drift info
-    get_response = aclient.get_participant_type(datasource_id=ds_id, participant_id="pt").data
-
-    # First verify the drift is as expected.
-    assert get_response.drift == Drift(
-        schema_diff=[
-            FieldChangedType(table_name="dwh", column_name="id", old_type=DataType.INTEGER, new_type=DataType.BIGINT),
-            ColumnDeleted(table_name="dwh", column_name="missing_col"),
-        ]
-    )
-
-    # Verify that the current (last known) schema is the dehydrated minimal schema.
-    current = get_response.current.fields
-    assert current == schema.fields
-
-    # Verify the full proposed schema has the expected field changes.
-    proposed = get_response.proposed.fields
-    assert len(proposed) > len(current)
-    id_field = next((f for f in proposed if f.field_name == "id"), None)
-    assert id_field == schema.fields[0].model_copy(update={"data_type": DataType.BIGINT})
-    is_engaged_field = next((f for f in proposed if f.field_name == "is_engaged"), None)
-    assert is_engaged_field == schema.fields[1]
-    missing_col_field = next((f for f in proposed if f.field_name == schema.fields[2].field_name), None)
-    assert missing_col_field is None
-
-
-def test_get_participants_type_bad_table(testing_datasource, aclient: AdminAPIClient):
-    ds_id = testing_datasource.datasource_id
-    schema = ParticipantsSchema(
-        table_name="deleted_dwh",
-        fields=[
-            FieldDescriptor(
-                field_name="newf",
-                data_type=DataType.INTEGER,
-                description="test",
-                is_unique_id=True,
-            )
-        ],
-    )
-    aclient.create_participant_type(
-        datasource_id=ds_id, body=CreateParticipantsTypeRequest(participant_type="newpt", schema_def=schema)
-    )
-    # Now verify that the underlying table looks like it was deleted.
-    get_response = aclient.get_participant_type(datasource_id=ds_id, participant_id="newpt").data
-    assert get_response.drift == Drift(schema_diff=[TableDeleted(table_name=schema.table_name)])
-    # And that the old known state is still returned as well.
-    current_def = get_response.current
-    assert current_def.participant_type == "newpt"
-    assert current_def.table_name == schema.table_name
-    assert current_def.fields == schema.fields
-    assert get_response.proposed == current_def
-
-
 async def test_lifecycle_with_db(testing_datasource, aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
     """Exercises the admin API methods that require an external database."""
     # Add the privileged user to the organization.
@@ -1298,49 +1106,7 @@ async def test_lifecycle_with_db(testing_datasource, aclient: AdminAPIClient, ac
         ],
     )
 
-    # Create participant
-    participant_type = "participant_type_dwh"
-    created_participant_type = aclient.create_participant_type(
-        datasource_id=testing_datasource.datasource_id,
-        body=CreateParticipantsTypeRequest(
-            participant_type=participant_type,
-            schema_def=ParticipantsSchema(
-                table_name="dwh",
-                fields=[
-                    FieldDescriptor(
-                        field_name="id",
-                        data_type=DataType.BIGINT,
-                        description="test",
-                        is_unique_id=True,
-                        is_strata=False,
-                        is_filter=False,
-                        is_metric=False,
-                    ),
-                    FieldDescriptor(
-                        field_name="current_income",
-                        data_type=DataType.NUMERIC,
-                        description="test",
-                        is_unique_id=False,
-                        is_strata=False,
-                        is_filter=False,
-                        is_metric=True,
-                    ),
-                    FieldDescriptor(
-                        field_name="is_engaged",
-                        data_type=DataType.BOOLEAN,
-                        description="test",
-                        is_unique_id=False,
-                        is_strata=False,
-                        is_filter=True,
-                        is_metric=True,
-                    ),
-                ],
-            ),
-        ),
-    ).data
-    assert created_participant_type.participant_type == participant_type
-
-    # Create experiment using that participant type.
+    # Create an experiment using the inspected datasource table.
     create_exp_dict = make_createexperimentrequest_json(desired_n=100)
     create_exp_request = CreateExperimentRequest.model_validate(create_exp_dict)
     create_exp_request.design_spec.design_url = HttpUrl("https://example.com/design")
@@ -2222,7 +1988,6 @@ def test_create_online_cmab_experiment(testing_datasource, aclient: AdminAPIClie
         (ExperimentsType.MAB_ONLINE_DWH, False, 24, 0.0),
         (ExperimentsType.MAB_ONLINE, True, 48, 1.0),
         (ExperimentsType.CMAB_ONLINE, True, 72, 0.0),
-        (ExperimentsType.MAB_ONLINE_DWH, True, 72, 0.0),
     ],
 )
 def test_create_online_bandit_experiment_with_autofail(
@@ -3086,14 +2851,6 @@ def test_snapshots(aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
         )
     ).data
 
-    aclient.create_participant_type(
-        datasource_id=create_datasource_response.id,
-        body=CreateParticipantsTypeRequest(
-            participant_type="test_participant_type",
-            schema_def=TESTING_DWH_PARTICIPANT_DEF,
-        ),
-    )
-
     experiment_id = aclient.create_experiment(
         datasource_id=create_datasource_response.id,
         body=CreateExperimentRequest(
@@ -3669,7 +3426,6 @@ async def test_create_freq_online_experiment_with_table_name_and_primary_key(
     ds_id = testing_datasource.datasource_id
 
     request_json = make_createexperimentrequest_json(experiment_type=ExperimentsType.FREQ_ONLINE)
-    initial_participant_count = len(aclient.list_participant_types(datasource_id=ds_id).data.items)
     experiment_request = CreateExperimentRequest.model_validate(request_json)
 
     created = aclient.create_experiment(
@@ -3677,9 +3433,6 @@ async def test_create_freq_online_experiment_with_table_name_and_primary_key(
         body=experiment_request,
         random_state=42,
     ).data
-
-    # Verify no participant type was persisted to datasource config.
-    assert len(aclient.list_participant_types(datasource_id=ds_id).data.items) == initial_participant_count
 
     # Verify datasource_table is set to the requested table name
     experiment = aclient.get_experiment_for_ui(datasource_id=ds_id, experiment_id=created.experiment_id).data
@@ -3746,14 +3499,6 @@ def test_list_snapshots_pagination(aclient: AdminAPIClient):
             dsn=valid_dsn,
         )
     ).data
-
-    aclient.create_participant_type(
-        datasource_id=ds.id,
-        body=CreateParticipantsTypeRequest(
-            participant_type="test_participant_type",
-            schema_def=TESTING_DWH_PARTICIPANT_DEF,
-        ),
-    )
 
     experiment_id = aclient.create_experiment(
         datasource_id=ds.id,
@@ -4071,7 +3816,7 @@ async def test_power_check_with_missing_cluster_key_raises(testing_datasource, a
         description="test power check with missing cluster key",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
         end_date=datetime.now(UTC) + timedelta(days=1),
-        table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
+        table_name=WIDE_DWH_TABLE_NAME,
         primary_key="id",
         arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
         metrics=[DesignSpecMetricRequest(field_name="household_income", metric_pct_change=0.1)],
@@ -4095,7 +3840,7 @@ async def test_power_check_with_manual_icc_and_nulls_in_cluster_key(testing_data
         description="Verify null cluster key rows are excluded from manual ICC in power check.",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
         end_date=datetime.now(UTC) + timedelta(days=1),
-        table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
+        table_name=WIDE_DWH_TABLE_NAME,
         primary_key="id",
         arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
         metrics=[
@@ -4150,7 +3895,7 @@ async def test_power_check_with_desired_n_clusters(testing_datasource, aclient: 
             description="Verify desired_n_clusters drives the MDE calculation in power check.",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
             end_date=datetime.now(UTC) + timedelta(days=1),
-            table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
+            table_name=WIDE_DWH_TABLE_NAME,
             primary_key="id",
             arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
             metrics=[
@@ -4193,6 +3938,244 @@ async def test_power_check_with_desired_n_clusters(testing_datasource, aclient: 
     assert both_analysis.pct_change_with_desired_n == clusters_analysis.pct_change_with_desired_n
 
 
+def echo_metric_request(spec: DesignSpecMetric) -> DesignSpecMetricRequest:
+    """Builds a follow-up power check metric from a prior response's metric_spec, as the frontend would.
+    Note:
+    metric_target is deliberately not copied: the response carries both metric_pct_change
+    and the metric_target derived from it, while a request may only set one of the two."""
+    return DesignSpecMetricRequest(
+        field_name=spec.field_name,
+        metric_pct_change=spec.metric_pct_change,
+        icc=spec.icc,
+        avg_cluster_size=spec.avg_cluster_size,
+        cv=spec.cv,
+        metric_type=spec.metric_type,
+        metric_baseline=spec.metric_baseline,
+        metric_stddev=spec.metric_stddev,
+        available_nonnull_n=spec.available_nonnull_n,
+        available_n=spec.available_n,
+    )
+
+
+async def test_power_check_reuses_provided_baseline_stats_without_dwh(testing_datasource, aclient: AdminAPIClient):
+    """Metrics carrying baseline stats are analyzed without querying the dwh at all."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test power check stats reuse",
+        description="Baseline stats from a prior response are reused instead of re-queried.",
+        table_name="dwh",
+        primary_key="id",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="control", arm_description="Control group"),
+            Arm(arm_name="treatment", arm_description="Treatment group"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+        desired_n=500,
+    )
+    first_analysis = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(design_spec=design_spec),
+    ).data.analyses[0]
+    assert first_analysis.metric_spec.metric_baseline is not None
+
+    # Echo the returned stats back. The bogus table name proves the dwh is not contacted:
+    # inspecting it would fail.
+    reuse_spec = design_spec.model_copy(
+        update={
+            "table_name": "no_such_table",
+            "metrics": [echo_metric_request(first_analysis.metric_spec)],
+        }
+    )
+    reuse_analysis = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(design_spec=reuse_spec),
+    ).data.analyses[0]
+    assert reuse_analysis == first_analysis
+
+
+async def test_power_check_queries_only_metrics_missing_baseline_stats(testing_datasource, aclient: AdminAPIClient):
+    """Metrics with and without provided baseline stats can be mixed in one power check."""
+
+    def make_design_spec(metrics: list[DesignSpecMetricRequest]) -> PreassignedFrequentistExperimentSpec:
+        return PreassignedFrequentistExperimentSpec(
+            experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+            experiment_name="test power check partial stats reuse",
+            description="Only metrics without provided baseline stats are queried from the dwh.",
+            table_name="dwh",
+            primary_key="id",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime.now(UTC) + timedelta(days=1),
+            arms=[
+                Arm(arm_name="control", arm_description="Control group"),
+                Arm(arm_name="treatment", arm_description="Treatment group"),
+            ],
+            metrics=metrics,
+            strata=[],
+            filters=[],
+        )
+
+    both_queried = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(
+            design_spec=make_design_spec([
+                DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1),
+                DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1),
+            ])
+        ),
+    ).data.analyses
+
+    # Re-issue with stats provided for one metric only; results must match the fully queried run.
+    mixed = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(
+            design_spec=make_design_spec([
+                echo_metric_request(both_queried[0].metric_spec),
+                DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1),
+            ])
+        ),
+    ).data.analyses
+    assert mixed == both_queried
+
+
+async def test_power_check_reuses_provided_cluster_stats_without_dwh(testing_datasource, aclient: AdminAPIClient):
+    """A cluster design with baseline stats and ICC provided for every metric skips the dwh."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test cluster power stats reuse",
+        description="Cluster power check with fully provided stats skips the dwh.",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        table_name=WIDE_DWH_TABLE_NAME,
+        primary_key="id",
+        arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
+        metrics=[
+            DesignSpecMetricRequest(
+                field_name="household_income",
+                metric_pct_change=0.1,
+                icc=0.015,
+                avg_cluster_size=10,
+                cv=0.1,
+            )
+        ],
+        strata=[],
+        filters=[],
+        cluster_key="age",
+        desired_n_clusters=40,
+    )
+    first_analysis = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(design_spec=design_spec),
+    ).data.analyses[0]
+    assert first_analysis.pct_change_with_desired_n is not None
+
+    reuse_spec = design_spec.model_copy(
+        update={
+            "table_name": "no_such_table",
+            "metrics": [echo_metric_request(first_analysis.metric_spec)],
+        }
+    )
+    reuse_analysis = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(design_spec=reuse_spec),
+    ).data.analyses[0]
+    assert reuse_analysis == first_analysis
+
+
+async def test_power_check_mde_curve(testing_datasource, aclient: AdminAPIClient):
+    """desired_ns produces an MDE-vs-sample-size curve, consistent with the single desired_n MDE."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test power curve",
+        description="desired_ns drives the MDE curve in power check.",
+        table_name="dwh",
+        primary_key="id",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="control", arm_description="Control group"),
+            Arm(arm_name="treatment", arm_description="Treatment group"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+        desired_n=500,
+        desired_ns=[2, 250, 500, 750, 1000],
+    )
+    analysis = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(design_spec=design_spec),
+    ).data.analyses[0]
+
+    assert analysis.mde_curve is not None
+    assert [p.desired_n for p in analysis.mde_curve] == [2, 250, 500, 750, 1000]
+    # n=2 is too small to solve: best-effort null, not a failed request.
+    assert analysis.mde_curve[0].pct_change is None
+    solvable = analysis.mde_curve[1:]
+    # MDE shrinks as the sample grows, and the curve agrees with the single-value MDE at n=500.
+    mdes = [p.pct_change for p in solvable if p.pct_change is not None]
+    assert len(mdes) == len(solvable)  # every remaining point solved
+    assert mdes == sorted(mdes, reverse=True)
+    assert analysis.mde_curve[2].pct_change == analysis.pct_change_with_desired_n
+
+    # The curve also works without the dwh when stats are echoed back (see the stats reuse tests).
+    reuse_spec = design_spec.model_copy(
+        update={
+            "table_name": "no_such_table",
+            "metrics": [echo_metric_request(analysis.metric_spec)],
+        }
+    )
+    reuse_analysis = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(design_spec=reuse_spec),
+    ).data.analyses[0]
+    assert reuse_analysis.mde_curve == analysis.mde_curve
+
+
+async def test_power_check_mde_curve_clusters(testing_datasource, aclient: AdminAPIClient):
+    """desired_ns_clusters produces a per-metric converted MDE curve for cluster designs."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test cluster power curve",
+        description="desired_ns_clusters drives the MDE curve in cluster power check.",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        table_name=WIDE_DWH_TABLE_NAME,
+        primary_key="id",
+        arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
+        metrics=[
+            DesignSpecMetricRequest(
+                field_name="household_income",
+                metric_pct_change=0.1,
+                icc=0.015,
+                avg_cluster_size=10,
+                cv=0.1,
+            )
+        ],
+        strata=[],
+        filters=[],
+        cluster_key="age",
+        desired_n_clusters=40,
+        desired_ns_clusters=[20, 40, 80],
+    )
+    analysis = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=PowerRequest(design_spec=design_spec),
+    ).data.analyses[0]
+
+    assert analysis.mde_curve is not None
+    assert [p.desired_n_clusters for p in analysis.mde_curve] == [20, 40, 80]
+    assert [p.desired_n for p in analysis.mde_curve] == [200, 400, 800]
+    mdes = [p.pct_change for p in analysis.mde_curve if p.pct_change is not None]
+    assert len(mdes) == len(analysis.mde_curve)  # every point solved
+    assert mdes == sorted(mdes, reverse=True)
+    # The curve point at 40 clusters agrees with the single desired_n_clusters MDE.
+    assert analysis.mde_curve[1].pct_change == analysis.pct_change_with_desired_n
+
+
 async def test_power_check_with_db_derived_icc_and_nulls_in_cluster_key(testing_datasource, aclient: AdminAPIClient):
     """DB-derived ICC excludes rows with a null cluster key, and available_n is consistent.
 
@@ -4210,7 +4193,7 @@ async def test_power_check_with_db_derived_icc_and_nulls_in_cluster_key(testing_
         description="Verify null cluster key rows are excluded from DB-derived ICC in power check.",
         start_date=datetime(2024, 1, 1, tzinfo=UTC),
         end_date=datetime.now(UTC) + timedelta(days=1),
-        table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
+        table_name=WIDE_DWH_TABLE_NAME,
         primary_key="id",
         arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
         metrics=[DesignSpecMetricRequest(field_name="household_income", metric_pct_change=0.1)],
@@ -4500,7 +4483,7 @@ async def test_create_freq_preassigned_experiment_with_missing_cluster_key_raise
             experiment_type="freq_preassigned",
             experiment_name="Missing cluster key",
             description="Cluster key column does not exist in the table.",
-            table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
+            table_name=WIDE_DWH_TABLE_NAME,
             primary_key="id",
             cluster_key="missing_key",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
@@ -4529,7 +4512,7 @@ async def test_create_freq_preassigned_experiment_cluster_key_has_nulls(
             experiment_type="freq_preassigned",
             experiment_name="Cluster key with null values",
             description="Cluster key has null values that should be excluded.",
-            table_name=WIDE_DWH_PARTICIPANT_DEF.table_name,
+            table_name=WIDE_DWH_TABLE_NAME,
             primary_key="id",
             cluster_key="age",
             start_date=datetime(2024, 1, 1, tzinfo=UTC),
