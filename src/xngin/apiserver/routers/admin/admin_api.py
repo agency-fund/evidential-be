@@ -2101,8 +2101,8 @@ async def power_check(
             arm_weights=body.arm_weights,
             desired_n=body.desired_n,
             desired_n_clusters=desired_n_clusters,
-            desired_ns=None,
-            desired_ns_clusters=desired_ns_clusters,
+            desired_ns=body.desired_ns,
+            desired_ns_clusters=body.desired_ns_clusters,
         )
     )
 

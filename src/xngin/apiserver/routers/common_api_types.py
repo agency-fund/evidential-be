@@ -1427,6 +1427,26 @@ class PowerRequest(ApiBaseModel):
             ),
         ),
     ] = None
+    desired_ns: Annotated[
+        list[int] | None,
+        Field(
+            description=(
+                "Optional list of desired individual participant sample sizes. When set, returns MDE curve: "
+                "the minimum detectable effect for each requested sample size. "
+                "Superseded by desired_ns_clusters when both are set."
+            ),
+        ),
+    ] = None
+    desired_ns_clusters: Annotated[
+        list[int] | None,
+        Field(
+            description=(
+                "Optional list of desired cluster counts for a cluster-randomized design. "
+                "Only valid when cluster_key is set. "
+                "Returns MDE curve for each cluster count; takes precedence over desired_ns."
+            ),
+        ),
+    ] = None
 
     @model_validator(mode="after")
     def validate_cluster_randomization(self) -> Self:
@@ -1436,6 +1456,8 @@ class PowerRequest(ApiBaseModel):
         """
         if self.cluster_key is None and self.desired_n_clusters is not None:
             raise ValueError("desired_n_clusters can only be set when cluster_key is set.")
+        if self.cluster_key is None and self.desired_ns_clusters is not None:
+            raise ValueError("desired_ns_clusters can only be set when cluster_key is set.")
         return self
 
     @model_validator(mode="after")
