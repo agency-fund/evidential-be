@@ -1627,7 +1627,7 @@ def update_arm(
     responses=DWH_CONNECTION_AND_NOT_FOUND_RESPONSES,
 )
 def power_check(
-    datasource: Annotated[tables.Datasource, Depends(adeps.datasource_sync)],
+    datasource: Annotated[tables.Datasource, Depends(adeps.datasource)],
     body: PowerRequest,
 ) -> PowerResponse:
     """Performs a power check for the specified datasource.
@@ -1654,6 +1654,9 @@ def power_check(
         desired_n_clusters = design_spec.desired_n_clusters
         desired_ns_clusters = design_spec.desired_ns_clusters
     # Exclude rows without a valid cluster key.
+    if cluster_key is not None:
+        filters = [*filters, Filter(field_name=cluster_key, relation=Relation.EXCLUDES, value=[None])]
+
     metrics_missing_stats = [m for m in design_spec.metrics if not m.has_baseline_stats]
     needs_cluster_stats = cluster_key is not None and any(not m.has_cluster_stats for m in design_spec.metrics)
 
@@ -1662,10 +1665,7 @@ def power_check(
         # warehouse is not contacted at all.
         metric_stats = [m.to_design_spec_metric() for m in design_spec.metrics]
     else:
-        raw_metric_stats = None
-        raw_cluster_stats = None
-        db_derived_metrics = []
-        with SyncDwhSession.open(dsconfig.dwh) as dwh:
+        with DwhSession.open(dsconfig.dwh) as dwh:
             sa_table = dwh.inspect_table(design_spec.table_name)
             # Validate the fields used in the design spec are present in the table and that filter values are valid.
             _ = convert_table_to_fields_or_raise(sa_table, design_spec)

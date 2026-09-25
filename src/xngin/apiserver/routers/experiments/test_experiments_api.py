@@ -1473,7 +1473,6 @@ def test_update_bandit_arm_with_freq_experiments_returns_422(
     assert "Cannot dynamically update arms for frequentist experiments" in str(exc.value.result.data)
 
 
-@pytest.mark.skip("EVE-171")
 def test_normal_prior_binary_reward_fits_each_outcome_exactly_once(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
