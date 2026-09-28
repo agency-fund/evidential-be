@@ -7,7 +7,6 @@ from itertools import cycle
 import numpy as np
 from scipy import stats
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, joinedload
 
 from xngin.apiserver.routers.common_api_types import (
@@ -267,20 +266,20 @@ def build_historical_snapshot_payloads(
     return payloads
 
 
-async def seed_historical_snapshots(
-    session: AsyncSession,
+def seed_historical_snapshots(
+    session: Session,
     experiment: tables.Experiment,
     profile: HistoricalSnapshotProfile,
 ) -> int:
     """Insert fake historical snapshots for one experiment if none exist yet."""
-    existing_snapshot_id = await session.scalar(
+    existing_snapshot_id = session.scalar(
         select(tables.Snapshot.id).where(tables.Snapshot.experiment_id == experiment.id).limit(1)
     )
     if existing_snapshot_id is not None:
         return 0
 
     # Refresh relationships here because bootstrap has only loaded the Experiment row, not its arms.
-    await session.refresh(experiment, ["arms"])
+    session.refresh(experiment, ["arms"])
     payloads = build_historical_snapshot_payloads(experiment, profile)
     snapshots = [
         tables.Snapshot(

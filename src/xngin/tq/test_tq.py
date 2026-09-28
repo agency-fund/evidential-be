@@ -4,7 +4,7 @@ from datetime import timedelta
 
 import psycopg
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from xngin.tq import task_queue as task_queue_module
 from xngin.tq.task_queue import Task, TaskQueue
@@ -13,7 +13,7 @@ from xngin.tq.tq_test_support import insert_task, tq_runner, wait_for_task_statu
 pytest_plugins = ("xngin.apiserver.conftest",)
 
 
-async def test_task_queue_processes_pending_task_successfully(xngin_session: AsyncSession, tq_dsn: str):
+def test_task_queue_processes_pending_task_successfully(xngin_session: Session, tq_dsn: str):
     task_queue = TaskQueue(dsn=tq_dsn, max_retries=1, poll_interval_secs=1)
     handled_task_ids: queue.SimpleQueue[str] = queue.SimpleQueue()
 
@@ -22,13 +22,13 @@ async def test_task_queue_processes_pending_task_successfully(xngin_session: Asy
 
     task_queue.register_handler("test.success", handler)
     with tq_runner(task_queue):
-        task = await insert_task(
+        task = insert_task(
             xngin_session,
             task_type="test.success",
             payload={"value": "ok"},
         )
 
-        completed_task = await wait_for_task_status(task.id, "success")
+        completed_task = wait_for_task_status(task.id, "success")
 
         assert handled_task_ids.get(timeout=1) == task.id
         assert handled_task_ids.empty()
@@ -36,26 +36,26 @@ async def test_task_queue_processes_pending_task_successfully(xngin_session: Asy
         assert completed_task.message is None
 
 
-async def test_task_queue_marks_unhandled_task_dead_when_max_retries_zero(
-    xngin_session: AsyncSession,
+def test_task_queue_marks_unhandled_task_dead_when_max_retries_zero(
+    xngin_session: Session,
     tq_dsn: str,
 ):
     task_queue = TaskQueue(dsn=tq_dsn, max_retries=0, poll_interval_secs=1)
     with tq_runner(task_queue):
-        task = await insert_task(
+        task = insert_task(
             xngin_session,
             task_type="test.unhandled",
             payload={"value": "missing-handler"},
         )
 
-        dead_task = await wait_for_task_status(task.id, "dead")
+        dead_task = wait_for_task_status(task.id, "dead")
 
         assert dead_task.retry_count == 1
         assert dead_task.message == "No handler for task type: test.unhandled"
 
 
-async def test_task_queue_requeues_failed_task_with_backoff(
-    xngin_session: AsyncSession,
+def test_task_queue_requeues_failed_task_with_backoff(
+    xngin_session: Session,
     tq_dsn: str,
 ):
     task_queue = TaskQueue(dsn=tq_dsn, max_retries=1, poll_interval_secs=1)
@@ -67,13 +67,13 @@ async def test_task_queue_requeues_failed_task_with_backoff(
 
     task_queue.register_handler("test.retry", handler)
     with tq_runner(task_queue):
-        task = await insert_task(
+        task = insert_task(
             xngin_session,
             task_type="test.retry",
             payload={"value": "retry"},
         )
 
-        pending_task = await wait_for_task_status(
+        pending_task = wait_for_task_status(
             task.id,
             "pending",
             predicate=lambda row: row.retry_count == 1 and row.message == "handler failed",

@@ -12,6 +12,14 @@ class DwhDatabaseDoesNotExistError(Exception):
     """Raised when the target database or dataset does not exist."""
 
 
+class DwhTimeoutError(TimeoutError):
+    """Raised when a data warehouse interaction outlives the deadline its caller gave it.
+
+    Subclasses TimeoutError so that `except TimeoutError` still catches it, while the type name
+    remains informative wherever we report the failure back to a user.
+    """
+
+
 class DwhConnectionError(Exception):
     """Raised when there is a connection error to the data warehouse."""
 

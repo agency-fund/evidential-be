@@ -51,7 +51,7 @@ async def lifespan(_app: FastAPI):
             "allowed origins (e.g. https://frontend.example.com)."
         )
 
-    async with database.setup():
+    with database.setup():
         yield
 
 

@@ -15,13 +15,12 @@ from typing import Annotated
 from fastapi import Depends, Header, HTTPException, Path
 from fastapi.security.api_key import APIKeyHeader
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import QueryableAttribute, joinedload
+from sqlalchemy.orm import QueryableAttribute, Session, joinedload
 from starlette import status
 
 from xngin.apiserver import apikeys, constants
 from xngin.apiserver.apikeys import hash_key_or_raise, require_valid_api_key
-from xngin.apiserver.dependencies import CannotFindDatasourceError, xngin_db_session
+from xngin.apiserver.dependencies import CannotFindDatasourceError, xngin_sync_db_session
 from xngin.apiserver.routers.preloads import (
     EXPERIMENT_FIELDS_WITH_FILTERS,
     PreloadChain,
@@ -56,7 +55,7 @@ class _DatasourceApiKeyHeader(APIKeyHeader):
         return api_key
 
 
-async def datasource(
+def datasource(
     datasource_id: Annotated[
         str,
         Header(
@@ -65,7 +64,7 @@ async def datasource(
             description="The ID of the datasource to operate on.",
         ),
     ],
-    xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
+    xngin_session: Annotated[Session, Depends(xngin_sync_db_session)],
     api_key: Annotated[
         str,
         Depends(_DatasourceApiKeyHeader()),
@@ -75,8 +74,8 @@ async def datasource(
     if not datasource_id:
         raise CannotFindDatasourceError(f"{constants.HEADER_CONFIG_ID} is required.")
 
-    if from_db := await xngin_session.get(tables.Datasource, datasource_id):
-        await require_valid_api_key(xngin_session, api_key, datasource_id)
+    if from_db := xngin_session.get(tables.Datasource, datasource_id):
+        require_valid_api_key(xngin_session, api_key, datasource_id)
         dsconfig = from_db.get_config()
         return Datasource(id=datasource_id, config=dsconfig)
 
@@ -104,14 +103,14 @@ class _Experiment:
         self.preload = preload
         self.nested_preload = nested_preload
 
-    async def __call__(
+    def __call__(
         self,
         experiment_id: Annotated[str, Path(..., description="The ID of the experiment to fetch.")],
         api_key: Annotated[
             str,
             Depends(_DatasourceApiKeyHeader()),
         ],
-        xngin_session: Annotated[AsyncSession, Depends(xngin_db_session)],
+        xngin_session: Annotated[Session, Depends(xngin_sync_db_session)],
     ) -> tables.Experiment:
         """
         Returns the Experiment db object for experiment_id, if the API key grants access to its datasource.
@@ -142,7 +141,7 @@ class _Experiment:
         options = build_preload_options(self.preload, self.nested_preload)
         if options:
             query = query.options(*options)
-        experiment = (await xngin_session.scalars(query)).unique().one_or_none()
+        experiment = xngin_session.scalars(query).unique().one_or_none()
 
         if not experiment:
             raise HTTPException(
