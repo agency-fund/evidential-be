@@ -85,11 +85,11 @@ def test_analyze_metric_power_numeric_insufficient(available_nonnull_n, availabl
         "metric_target": 14.5272,
     }
 
-    # Check that null warning appears when there are nulls
+    # Check that null note appears when there are nulls
     if available_nonnull_n != available_n:
-        assert "WARNING" in result.msg.msg
+        assert "NOTE" in result.msg.msg
     else:
-        assert "WARNING" not in result.msg.msg
+        assert "NOTE" not in result.msg.msg
 
     assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
 
@@ -221,7 +221,7 @@ def test_analyze_metric_with_zero_available_nonnull_n_returns_insufficient():
 
     assert result.msg is not None
     assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
-    assert "You have no units with non-null values" in result.msg.msg
+    assert "Cannot run power calculation. Your column has all null values" in result.msg.msg
     # When returning early error, values is None
     assert result.msg.values is None
     assert result.target_n is None
