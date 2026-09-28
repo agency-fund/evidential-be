@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_876e2672045df4e5_test_draws_perf_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.16.1">coverage.py v7.16.1</a>,
-            created at 2026-09-25 11:18 +0000
+            created at 2026-09-28 02:12 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -85,7 +85,7 @@
     <p class="run"><span class="n"><a id="t3" href="#t3">3</a></span><span class="t"><span class="key">import</span> <span class="nam">string</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t4" href="#t4">4</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t5" href="#t5">5</a></span><span class="t"><span class="key">from</span> <span class="nam">sqlalchemy</span> <span class="key">import</span> <span class="nam">select</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t6" href="#t6">6</a></span><span class="t"><span class="key">from</span> <span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">ext</span><span class="op">.</span><span class="nam">asyncio</span> <span class="key">import</span> <span class="nam">AsyncSession</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t6" href="#t6">6</a></span><span class="t"><span class="key">from</span> <span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">orm</span> <span class="key">import</span> <span class="nam">Session</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t7" href="#t7">7</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t8" href="#t8">8</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span> <span class="key">import</span> <span class="nam">constants</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t9" href="#t9">9</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span><span class="op">.</span><span class="nam">sqla</span> <span class="key">import</span> <span class="nam">tables</span>&nbsp;</span><span class="r"></span></p>
@@ -161,7 +161,7 @@
     <p class="run"><span class="n"><a id="t79" href="#t79">79</a></span><span class="t">    <span class="key">return</span> <span class="nam">id_</span><span class="op">,</span> <span class="nam">key</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t80" href="#t80">80</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t81" href="#t81">81</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t82" href="#t82">82</a></span><span class="t"><span class="key">async</span> <span class="key">def</span> <span class="nam">require_valid_api_key</span><span class="op">(</span><span class="nam">session</span><span class="op">:</span> <span class="nam">AsyncSession</span><span class="op">,</span> <span class="nam">api_key</span><span class="op">:</span> <span class="nam">str</span> <span class="op">|</span> <span class="key">None</span><span class="op">,</span> <span class="nam">datasource_id</span><span class="op">:</span> <span class="nam">str</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t82" href="#t82">82</a></span><span class="t"><span class="key">def</span> <span class="nam">require_valid_api_key</span><span class="op">(</span><span class="nam">session</span><span class="op">:</span> <span class="nam">Session</span><span class="op">,</span> <span class="nam">api_key</span><span class="op">:</span> <span class="nam">str</span> <span class="op">|</span> <span class="key">None</span><span class="op">,</span> <span class="nam">datasource_id</span><span class="op">:</span> <span class="nam">str</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t83" href="#t83">83</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Queries the database for a matching API key with privileges on the config referenced by config_id.&quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t84" href="#t84">84</a></span><span class="t">    <span class="nam">key_hash</span> <span class="op">=</span> <span class="nam">hash_key_or_raise</span><span class="op">(</span><span class="nam">api_key</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t85" href="#t85">85</a></span><span class="t">    <span class="nam">stmt</span> <span class="op">=</span> <span class="op">(</span>&nbsp;</span><span class="r"></span></p>
@@ -170,7 +170,7 @@
     <p class="run run2"><span class="n"><a id="t88" href="#t88">88</a></span><span class="t">        <span class="op">.</span><span class="nam">where</span><span class="op">(</span><span class="nam">tables</span><span class="op">.</span><span class="nam">ApiKey</span><span class="op">.</span><span class="nam">datasource_id</span> <span class="op">==</span> <span class="nam">datasource_id</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t89" href="#t89">89</a></span><span class="t">        <span class="op">.</span><span class="nam">where</span><span class="op">(</span><span class="nam">tables</span><span class="op">.</span><span class="nam">ApiKey</span><span class="op">.</span><span class="nam">key</span> <span class="op">==</span> <span class="nam">key_hash</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t90" href="#t90">90</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t91" href="#t91">91</a></span><span class="t">    <span class="nam">result</span> <span class="op">=</span> <span class="key">await</span> <span class="nam">session</span><span class="op">.</span><span class="nam">execute</span><span class="op">(</span><span class="nam">stmt</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t91" href="#t91">91</a></span><span class="t">    <span class="nam">result</span> <span class="op">=</span> <span class="nam">session</span><span class="op">.</span><span class="nam">execute</span><span class="op">(</span><span class="nam">stmt</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t92" href="#t92">92</a></span><span class="t">    <span class="nam">row</span> <span class="op">=</span> <span class="nam">result</span><span class="op">.</span><span class="nam">scalar_one_or_none</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t93" href="#t93">93</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t94" href="#t94">94</a></span><span class="t">    <span class="key">if</span> <span class="key">not</span> <span class="nam">row</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
@@ -184,7 +184,7 @@
             <a class="nav" href="z_876e2672045df4e5_test_draws_perf_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.16.1">coverage.py v7.16.1</a>,
-            created at 2026-09-25 11:18 +0000
+            created at 2026-09-28 02:12 +0000
         </p>
     </div>
 </footer>
