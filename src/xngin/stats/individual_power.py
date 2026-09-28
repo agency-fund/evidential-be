@@ -157,13 +157,16 @@ def solve_for_sample_size_individual(
 
     # Check for zero effective_n (no non-null values)
     if effective_n <= 0:
+        # Only show error when ALL values are null (100%)
+        error_msg = (
+            f"Cannot run power calculation. Your column has all null values ({metric.available_n} nulls out of "
+            f"{metric.available_n}). Please populate your column with data or adjust your filters to target "
+            f"units with non-null values."
+        )
         return power_analysis_error(
             metric,
             MetricPowerAnalysisMessageType.INSUFFICIENT,
-            (
-                "You have no units with non-null values for this metric. "
-                "Adjust your filters to target units with non-null values."
-            ),
+            error_msg,
         )
 
     # Calculate target from pct_change if needed
@@ -239,15 +242,17 @@ def solve_for_sample_size_individual(
     # Check for nulls only if nonnull_n is provided
     has_nulls = metric.available_nonnull_n is not None and metric.available_nonnull_n != metric.available_n
 
+    # One-time metric is eligible when power calc succeeds and column has nulls
+    if has_nulls:
+        analysis.metric_spec = metric.model_copy(update={"is_one_time_eligible": True})
+
     msg_base_stats = (
         "There are {available_n} units available. You need at least {target_n} units to satisfy your design specs."
     )
     msg_null_warning = (
         (
-            "WARNING: Of the available units, {available_nonnull_n} have a non-null value. "
-            "These calculations only used units with a real value present, but random assignment "
-            "samples from *all* units that meet your filters, including those missing a value. If "
-            "you do not want that, add a filter on this metric to exclude nulls."
+            "NOTE: Only {available_nonnull_n} of {available_n} units have non-null values. "
+            "Consider using one-time metric mode to assign only these participants."
         )
         if has_nulls
         else ""
