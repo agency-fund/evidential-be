@@ -266,7 +266,7 @@ def validate_power_fields_or_raise(
     return referenced_fields_and_types
 
 
-async def create_experiment_impl(
+def create_experiment_impl(
     request: CreateExperimentRequest,
     datasource: tables.Datasource,
     xngin_session: Session,

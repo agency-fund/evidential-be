@@ -1660,8 +1660,8 @@ def power_check(
         # warehouse is not contacted at all.
         metric_stats = [m.to_design_spec_metric() for m in body.metrics]
     else:
-        async with DwhSession(dsconfig.dwh) as dwh:
-            sa_table = await dwh.inspect_table(body.table_name)
+        with DwhSession.open(dsconfig.dwh) as dwh:
+            sa_table = dwh.inspect_table(body.table_name)
             # Validate the fields used in the request are present in the table and that filter values are valid.
             _ = validate_power_fields_or_raise(
                 sa_table,
