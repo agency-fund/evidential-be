@@ -5,6 +5,7 @@ import sqlalchemy
 from fastapi import Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+from loguru import logger
 from pydantic import BaseModel, ValidationError
 
 from xngin.apiserver.apikeys import BaseApiKeyError
@@ -21,6 +22,7 @@ from xngin.apiserver.pagination import InvalidPageTokenError
 from xngin.apiserver.routers.admin.admin_api_converters import (
     CredentialsUnavailableError,
 )
+from xngin.apiserver.routers.auth.discovery import OidcProviderError, OidcProviderTimeoutError
 from xngin.apiserver.routers.experiments.experiments_common import (
     ExperimentsAssignmentError,
 )
@@ -112,6 +114,19 @@ def setup(app):
     @app.exception_handler(DnsLookupError)
     def exception_handler_dnslookuperror(_request: Request, exc: DnsLookupError):
         return JSONResponse(status_code=502, content={"message": str(exc)})
+
+    @app.exception_handler(OidcProviderTimeoutError)
+    def exception_handler_oidcprovidertimeout(_request: Request, exc: OidcProviderTimeoutError):
+        logger.warning(f"Identity provider request timed out: {exc}")
+        return JSONResponse(status_code=504, content={"detail": "Identity provider request timed out."})
+
+    @app.exception_handler(OidcProviderError)
+    def exception_handler_oidcprovidererror(_request: Request, exc: OidcProviderError):
+        logger.warning(f"Identity provider request failed: {exc}")
+        return JSONResponse(
+            status_code=502,
+            content={"detail": "Identity provider returned an invalid or unavailable response."},
+        )
 
     @app.exception_handler(InvalidPageTokenError)
     def exception_handler_invalidpagetokenerror(_request: Request, _exc: InvalidPageTokenError):
