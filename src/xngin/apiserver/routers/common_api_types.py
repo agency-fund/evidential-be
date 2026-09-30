@@ -126,6 +126,31 @@ class DesignSpecMetricBase(ApiBaseModel):
             )
         ),
     ] = None
+    is_one_time_eligible: Annotated[
+        bool,
+        Field(
+            description=(
+                "True if metric is eligible for one-time mode (has both null and non-null values). "
+                "When enabled, only participants with null values are assigned to the experiment."
+            )
+        ),
+    ] = False
+    use_one_time_metric: Annotated[
+        bool,
+        Field(
+            description=(
+                "Enable one-time metric mode: only assign participants with null values for this metric. "
+                "Can only be True if is_one_time_eligible is True."
+            )
+        ),
+    ] = False
+
+    @model_validator(mode="after")
+    def validate_one_time_metric(self) -> Self:
+        """Enforce that use_one_time_metric can only be True if is_one_time_eligible is True."""
+        if self.use_one_time_metric and not self.is_one_time_eligible:
+            raise ValueError("use_one_time_metric can only be set to True when is_one_time_eligible is True")
+        return self
 
     @model_validator(mode="after")
     def cluster_fields_check(self) -> Self:
