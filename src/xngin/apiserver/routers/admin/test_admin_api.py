@@ -210,6 +210,44 @@ def normalize_bandit_analysis(response: BanditExperimentAnalysisResponse) -> Ban
     return response.model_copy(update={"created_at": datetime(2000, 1, 1, tzinfo=UTC)})
 
 
+def design_spec_to_power_request(design_spec, **kwargs):
+    """Convert a design_spec to a PowerRequest for power check tests."""
+    cluster_key = (
+        getattr(design_spec, "cluster_key", None)
+        if isinstance(design_spec, PreassignedFrequentistExperimentSpec)
+        else None
+    )
+    n_arms = len(design_spec.arms) if hasattr(design_spec, "arms") else 2
+    arm_weights = None
+    if hasattr(design_spec, "arms") and design_spec.arms:
+        weights = [
+            arm.arm_weight for arm in design_spec.arms if hasattr(arm, "arm_weight") and arm.arm_weight is not None
+        ]
+        arm_weights = weights or None
+
+    desired_n = getattr(design_spec, "desired_n", None)
+    desired_n_clusters = getattr(design_spec, "desired_n_clusters", None)
+    desired_ns = getattr(design_spec, "desired_ns", None)
+    desired_ns_clusters = getattr(design_spec, "desired_ns_clusters", None)
+
+    defaults = {
+        "table_name": design_spec.table_name,
+        "metrics": design_spec.metrics,
+        "filters": design_spec.filters,
+        "cluster_key": cluster_key,
+        "n_arms": n_arms,
+        "alpha": 0.05,
+        "power": 0.8,
+        "arm_weights": arm_weights,
+        "desired_n": desired_n,
+        "desired_n_clusters": desired_n_clusters,
+        "desired_ns": desired_ns,
+        "desired_ns_clusters": desired_ns_clusters,
+    }
+    defaults.update(kwargs)
+    return PowerRequest(**defaults)
+
+
 def make_bandit_online_experiment(
     aclient: AdminAPIClient,
     datasource_id: str,
@@ -1301,7 +1339,7 @@ def test_power_check_with_unbalanced_arms(testing_datasource, aclient: AdminAPIC
     )
 
     # Call the power check endpoint
-    power_response = aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=design_spec)).data
+    power_response = aclient.power_check(datasource_id=ds_id, body=design_spec_to_power_request(design_spec)).data
     assert len(power_response.analyses) == 1
     metric_analysis = power_response.analyses[0]
     assert metric_analysis.metric_spec.field_name == "current_income"
@@ -1311,7 +1349,7 @@ def test_power_check_with_unbalanced_arms(testing_datasource, aclient: AdminAPIC
     # Now check with unbalanced arms
     design_spec.arms[0].arm_weight = 20.0
     design_spec.arms[1].arm_weight = 80.0
-    power_response2 = aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=design_spec)).data
+    power_response2 = aclient.power_check(datasource_id=ds_id, body=design_spec_to_power_request(design_spec)).data
     assert len(power_response2.analyses) == 1
     metric_analysis2 = power_response2.analyses[0]
     assert metric_analysis2.metric_spec.field_name == "current_income"
@@ -1323,7 +1361,7 @@ def test_power_check_with_unbalanced_arms(testing_datasource, aclient: AdminAPIC
     design_spec.arms[0].arm_weight = 10
     design_spec.arms[1].arm_weight = 50
     design_spec.arms[2].arm_weight = 40
-    power_response3 = aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=design_spec)).data
+    power_response3 = aclient.power_check(datasource_id=ds_id, body=design_spec_to_power_request(design_spec)).data
     assert len(power_response3.analyses) == 1
     metric_analysis3 = power_response3.analyses[0]
     assert metric_analysis3.metric_spec.field_name == "current_income"
@@ -1356,7 +1394,7 @@ def test_power_check_also_sets_pct_change_with_desired_n(testing_datasource, acl
 
     power_response = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=design_spec),
+        body=design_spec_to_power_request(design_spec),
     ).data
     assert len(power_response.analyses) == 1
     analysis = power_response.analyses[0]
@@ -1370,7 +1408,7 @@ def test_power_check_also_sets_pct_change_with_desired_n(testing_datasource, acl
     design_spec_plain = design_spec.model_copy(update={"desired_n": None})
     power_response_plain = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=design_spec_plain),
+        body=design_spec_to_power_request(design_spec_plain),
     ).data
     analysis_plain = power_response_plain.analyses[0]
     assert analysis_plain.pct_change_with_desired_n is None
@@ -1411,7 +1449,7 @@ def test_power_check_when_sample_size_insufficient_and_desired_n_should_otherwis
 
     power_response = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=design_spec),
+        body=design_spec_to_power_request(design_spec),
     ).data
     assert len(power_response.analyses) == 1
     analysis = power_response.analyses[0]
@@ -1452,7 +1490,7 @@ def test_power_check_when_sample_size_insufficient_and_desired_n_has_data_valida
 
     power_response = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=design_spec),
+        body=design_spec_to_power_request(design_spec),
     ).data
     assert len(power_response.analyses) == 1
     analysis = power_response.analyses[0]
@@ -1484,7 +1522,9 @@ def test_power_check_when_sample_size_sufficient_and_desired_n_fails(testing_dat
     )
 
     with expect_status_code(422, detail_contains="Chosen sample size must be positive"):
-        aclient.power_check(datasource_id=testing_datasource.datasource_id, body=PowerRequest(design_spec=design_spec))
+        aclient.power_check(
+            datasource_id=testing_datasource.datasource_id, body=design_spec_to_power_request(design_spec)
+        )
 
 
 def test_power_check_answers_504_when_the_warehouse_stalls(testing_datasource, aclient: AdminAPIClient, mocker):
@@ -1515,7 +1555,7 @@ def test_power_check_answers_504_when_the_warehouse_stalls(testing_datasource, a
     try:
         with expect_status_code(504, message_contains="did not finish inspecting a table"):
             aclient.power_check(
-                datasource_id=testing_datasource.datasource_id, body=PowerRequest(design_spec=design_spec)
+                datasource_id=testing_datasource.datasource_id, body=design_spec_to_power_request(design_spec)
             )
     finally:
         release.set()
@@ -1542,7 +1582,7 @@ def test_power_check_validations(testing_datasource, aclient: AdminAPIClient):
     )
 
     # First check a valid power check
-    power_response = aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=design_spec)).data
+    power_response = aclient.power_check(datasource_id=ds_id, body=design_spec_to_power_request(design_spec)).data
     assert len(power_response.analyses) == 1
     assert power_response.analyses[0].metric_spec.field_name == "current_income"
     assert power_response.analyses[0].target_n is not None
@@ -1551,26 +1591,18 @@ def test_power_check_validations(testing_datasource, aclient: AdminAPIClient):
     with expect_status_code(404, message_contains="The table '' does not exist."):
         bad_design_spec = design_spec.model_copy(deep=True)
         bad_design_spec.table_name = ""
-        aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=bad_design_spec))
+        aclient.power_check(datasource_id=ds_id, body=design_spec_to_power_request(bad_design_spec))
 
-    with expect_status_code(422, detail_contains="columns that do not exist in the table: no_such_primary_key"):
-        bad_design_spec = design_spec.model_copy(deep=True)
-        bad_design_spec.primary_key = "no_such_primary_key"
-        aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=bad_design_spec))
-
-    with expect_status_code(
-        422, detail_contains="columns that do not exist in the table: bad_filter, bad_metric, bad_stratum"
-    ):
+    with expect_status_code(422, detail_contains="columns that do not exist in the table: bad_filter, bad_metric"):
         bad_design_spec = design_spec.model_copy(deep=True)
         bad_design_spec.metrics = [DesignSpecMetricRequest(field_name="bad_metric", metric_pct_change=0.1)]
-        bad_design_spec.strata = [Stratum(field_name="bad_stratum")]
         bad_design_spec.filters = [Filter(field_name="bad_filter", relation=Relation.INCLUDES, value=["value"])]
-        aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=bad_design_spec))
+        aclient.power_check(datasource_id=ds_id, body=design_spec_to_power_request(bad_design_spec))
 
     with expect_status_code(422, detail_contains="Invalid metric field(s): (gender). Only boolean or numeric"):
         bad_design_spec = design_spec.model_copy(deep=True)
         bad_design_spec.metrics = [DesignSpecMetricRequest(field_name="gender", metric_pct_change=0.1)]
-        aclient.power_check(datasource_id=ds_id, body=PowerRequest(design_spec=bad_design_spec))
+        aclient.power_check(datasource_id=ds_id, body=design_spec_to_power_request(bad_design_spec))
 
 
 def test_create_experiment_with_invalid_design_url(testing_datasource, aclient: AdminAPIClient):
@@ -3860,7 +3892,7 @@ def test_power_check_with_missing_cluster_key_raises(testing_datasource, aclient
     with expect_status_code(422, detail_contains="columns that do not exist in the table: missing_key"):
         aclient.power_check(
             datasource_id=testing_datasource.datasource_id,
-            body=PowerRequest(design_spec=design_spec),
+            body=design_spec_to_power_request(design_spec),
         )
 
 
@@ -3891,7 +3923,7 @@ def test_power_check_with_manual_icc_and_nulls_in_cluster_key(testing_datasource
 
     result = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=design_spec),
+        body=design_spec_to_power_request(design_spec),
     )
 
     assert len(result.data.analyses) == 1
@@ -3948,7 +3980,7 @@ def test_power_check_with_desired_n_clusters(testing_datasource, aclient: AdminA
 
     clusters_result = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=make_design_spec(desired_n_clusters=40)),
+        body=design_spec_to_power_request(make_design_spec(desired_n_clusters=40)),
     )
     clusters_analysis = clusters_result.data.analyses[0]
     assert clusters_analysis.pct_change_with_desired_n is not None
@@ -3956,7 +3988,7 @@ def test_power_check_with_desired_n_clusters(testing_datasource, aclient: AdminA
     # 40 clusters of avg_cluster_size 10 should be equivalent to desired_n=400.
     individuals_result = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=make_design_spec(desired_n=400)),
+        body=design_spec_to_power_request(make_design_spec(desired_n=400)),
     )
     individuals_analysis = individuals_result.data.analyses[0]
     assert clusters_analysis.pct_change_with_desired_n == individuals_analysis.pct_change_with_desired_n
@@ -3964,7 +3996,7 @@ def test_power_check_with_desired_n_clusters(testing_datasource, aclient: AdminA
     # When both are set, desired_n_clusters takes precedence.
     both_result = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=make_design_spec(desired_n=900, desired_n_clusters=40)),
+        body=design_spec_to_power_request(make_design_spec(desired_n=900, desired_n_clusters=40)),
     )
     both_analysis = both_result.data.analyses[0]
     assert both_analysis.pct_change_with_desired_n == clusters_analysis.pct_change_with_desired_n
@@ -4010,7 +4042,7 @@ async def test_power_check_reuses_provided_baseline_stats_without_dwh(testing_da
     )
     first_analysis = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=design_spec),
+        body=design_spec_to_power_request(design_spec),
     ).data.analyses[0]
     assert first_analysis.metric_spec.metric_baseline is not None
 
@@ -4024,7 +4056,7 @@ async def test_power_check_reuses_provided_baseline_stats_without_dwh(testing_da
     )
     reuse_analysis = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=reuse_spec),
+        body=design_spec_to_power_request(reuse_spec),
     ).data.analyses[0]
     assert reuse_analysis == first_analysis
 
@@ -4052,8 +4084,8 @@ async def test_power_check_queries_only_metrics_missing_baseline_stats(testing_d
 
     both_queried = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(
-            design_spec=make_design_spec([
+        body=design_spec_to_power_request(
+            make_design_spec([
                 DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1),
                 DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1),
             ])
@@ -4063,8 +4095,8 @@ async def test_power_check_queries_only_metrics_missing_baseline_stats(testing_d
     # Re-issue with stats provided for one metric only; results must match the fully queried run.
     mixed = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(
-            design_spec=make_design_spec([
+        body=design_spec_to_power_request(
+            make_design_spec([
                 echo_metric_request(both_queried[0].metric_spec),
                 DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1),
             ])
@@ -4100,7 +4132,7 @@ async def test_power_check_reuses_provided_cluster_stats_without_dwh(testing_dat
     )
     first_analysis = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=design_spec),
+        body=design_spec_to_power_request(design_spec),
     ).data.analyses[0]
     assert first_analysis.pct_change_with_desired_n is not None
 
@@ -4112,7 +4144,7 @@ async def test_power_check_reuses_provided_cluster_stats_without_dwh(testing_dat
     )
     reuse_analysis = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=reuse_spec),
+        body=design_spec_to_power_request(reuse_spec),
     ).data.analyses[0]
     assert reuse_analysis == first_analysis
 
@@ -4139,7 +4171,7 @@ async def test_power_check_mde_curve(testing_datasource, aclient: AdminAPIClient
     )
     analysis = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=design_spec),
+        body=design_spec_to_power_request(design_spec),
     ).data.analyses[0]
 
     assert analysis.mde_curve is not None
@@ -4162,7 +4194,7 @@ async def test_power_check_mde_curve(testing_datasource, aclient: AdminAPIClient
     )
     reuse_analysis = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=reuse_spec),
+        body=design_spec_to_power_request(reuse_spec),
     ).data.analyses[0]
     assert reuse_analysis.mde_curve == analysis.mde_curve
 
@@ -4195,7 +4227,7 @@ async def test_power_check_mde_curve_clusters(testing_datasource, aclient: Admin
     )
     analysis = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=design_spec),
+        body=design_spec_to_power_request(design_spec),
     ).data.analyses[0]
 
     assert analysis.mde_curve is not None
@@ -4236,7 +4268,7 @@ def test_power_check_with_db_derived_icc_and_nulls_in_cluster_key(testing_dataso
 
     result = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=design_spec),
+        body=design_spec_to_power_request(design_spec),
     )
 
     assert len(result.data.analyses) == 1
@@ -4283,7 +4315,7 @@ def test_power_check_with_calculated_icc(testing_datasource, aclient: AdminAPICl
 
     result = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
-        body=PowerRequest(design_spec=design_spec),
+        body=design_spec_to_power_request(design_spec),
     )
 
     assert len(result.data.analyses) == 1
@@ -4331,7 +4363,7 @@ def test_power_check_cluster_with_manual_and_db_derived_metrics(testing_datasour
     )
 
     result = aclient.power_check(
-        datasource_id=testing_datasource.datasource_id, body=PowerRequest(design_spec=design_spec)
+        datasource_id=testing_datasource.datasource_id, body=design_spec_to_power_request(design_spec)
     )
 
     assert len(result.data.analyses) == 2
