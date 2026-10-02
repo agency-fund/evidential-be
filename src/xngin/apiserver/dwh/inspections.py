@@ -3,6 +3,7 @@
 import sqlalchemy
 
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
+from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.admin.admin_api_types import FieldMetadata, InspectDatasourceTableResponse
 from xngin.apiserver.routers.common_enums import DataType
 
@@ -47,7 +48,20 @@ def create_inspect_table_response_from_table(
     """Creates an InspectDatasourceTableResponse from a sqlalchemy.Table.
 
     This is similar to config_sheet.create_schema_from_table but tailored to use in the API.
+
+    Raises:
+        LateValidationError: When the table has nested columns, which we do not support.
     """
+    # The BigQuery dialect reflects each RECORD sub-field as an extra column named "parent.child".
+    nested_columns = sorted(
+        c.name for c in table.columns.values() if "." in c.name and c.name.partition(".")[0] in table.columns
+    )
+    if nested_columns:
+        raise LateValidationError(
+            f"Table '{table.name}' has nested columns ({', '.join(nested_columns)}), which are not supported. "
+            "Create a view that exposes the fields you need as top-level columns, then select that view."
+        )
+
     possible_id_columns = {
         c.name
         for c in table.columns.values()
