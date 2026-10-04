@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_71a08decc2280a90_openapi_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.16.1">coverage.py v7.16.1</a>,
-            created at 2026-09-30 13:18 +0000
+            created at 2026-10-04 04:12 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -181,7 +181,14 @@
     <p class="mis mis2 show_mis"><span class="n"><a id="t99" href="#t99">99</a></span><span class="t">        <span class="nam">host</span><span class="op">=</span><span class="str">&quot;0.0.0.0&quot;</span><span class="op">,</span>  <span class="com"># noqa: S104</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t100" href="#t100">100</a></span><span class="t">        <span class="nam">port</span><span class="op">=</span><span class="num">8000</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="mis mis2 show_mis"><span class="n"><a id="t101" href="#t101">101</a></span><span class="t">        <span class="nam">log_config</span><span class="op">=</span><span class="op">{</span><span class="str">&quot;version&quot;</span><span class="op">:</span> <span class="num">1</span><span class="op">,</span> <span class="str">&quot;disable_existing_loggers&quot;</span><span class="op">:</span> <span class="key">False</span><span class="op">}</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis mis2 show_mis"><span class="n"><a id="t102" href="#t102">102</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t102" href="#t102">102</a></span><span class="t">        <span class="com"># Retire each worker after a bounded number of requests to cap the damage done by slow leaks. Restarts</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t103" href="#t103">103</a></span><span class="t">        <span class="com"># require the multiprocess supervisor, which only runs when workers &gt; 1, so we honor WEB_CONCURRENCY (as</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t104" href="#t104">104</a></span><span class="t">        <span class="com"># Uvicorn does by default) but never run fewer than 2. The jitter staggers the workers&#x27; restarts so that one</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t105" href="#t105">105</a></span><span class="t">        <span class="com"># is always serving.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t106" href="#t106">106</a></span><span class="t">        <span class="nam">workers</span><span class="op">=</span><span class="nam">max</span><span class="op">(</span><span class="num">2</span><span class="op">,</span> <span class="nam">int</span><span class="op">(</span><span class="nam">os</span><span class="op">.</span><span class="nam">environ</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">&quot;WEB_CONCURRENCY&quot;</span><span class="op">,</span> <span class="str">&quot;2&quot;</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t107" href="#t107">107</a></span><span class="t">        <span class="nam">limit_max_requests</span><span class="op">=</span><span class="num">500</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t108" href="#t108">108</a></span><span class="t">        <span class="nam">limit_max_requests_jitter</span><span class="op">=</span><span class="num">50</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis mis2 show_mis"><span class="n"><a id="t109" href="#t109">109</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -191,7 +198,7 @@
             <a class="nav" href="z_71a08decc2280a90_openapi_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.16.1">coverage.py v7.16.1</a>,
-            created at 2026-09-30 13:18 +0000
+            created at 2026-10-04 04:12 +0000
         </p>
     </div>
 </footer>
