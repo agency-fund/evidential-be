@@ -99,4 +99,11 @@ def main_live():
         host="0.0.0.0",  # noqa: S104
         port=8000,
         log_config={"version": 1, "disable_existing_loggers": False},
+        # Retire each worker after a bounded number of requests to cap the damage done by slow leaks. Restarts
+        # require the multiprocess supervisor, which only runs when workers > 1, so we honor WEB_CONCURRENCY (as
+        # Uvicorn does by default) but never run fewer than 2. The jitter staggers the workers' restarts so that one
+        # is always serving.
+        workers=max(2, int(os.environ.get("WEB_CONCURRENCY", "2"))),
+        limit_max_requests=500,
+        limit_max_requests_jitter=50,
     )
