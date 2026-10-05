@@ -1,4 +1,3 @@
-import inspect
 import json
 import logging
 import sys
@@ -25,18 +24,17 @@ class InterceptHandler(logging.Handler):
         except ValueError:
             level = record.levelno
 
-        # Find caller from where originated the logged message.
-        frame, depth = inspect.currentframe(), 0
-        while frame:
-            filename = frame.f_code.co_filename
-            is_logging = filename == logging.__file__
-            is_frozen = "importlib" in filename and "_bootstrap" in filename
-            if depth > 0 and not (is_logging or is_frozen):
-                break
-            frame = frame.f_back
-            depth += 1
+        # Describe the caller using the LogRecord rather than by walking the stack to the first frame outside the
+        # logging module: Sentry's logging integration wraps Logger.callHandlers, so that frame belongs to Sentry, and
+        # every record would appear to come from sentry_sdk.integrations.logging. The logger name ("uvicorn.access",
+        # "sqlalchemy.engine.Engine.xngin_app") is also more useful than the module name a stack walk would find.
+        def describe_caller(loguru_record: loguru_Record) -> None:
+            loguru_record["name"] = record.name
+            loguru_record["module"] = record.module
+            loguru_record["function"] = record.funcName
+            loguru_record["line"] = record.lineno
 
-        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+        logger.patch(describe_caller).opt(exception=record.exc_info).log(level, record.getMessage())
 
 
 def _customize_loguru():
@@ -139,6 +137,7 @@ def _configure_third_party_levels():
     )
 
     logging.getLogger("httpcore").setLevel(logging.WARN)
+    logging.getLogger("httpcore2").setLevel(logging.WARN)
     logging.getLogger("httpx2").setLevel(logging.WARN)
     logging.getLogger("urllib3").setLevel(logging.WARN)
     logging.getLogger("watchfiles.main").setLevel(logging.WARN)
