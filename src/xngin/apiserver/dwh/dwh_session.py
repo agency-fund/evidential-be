@@ -61,17 +61,18 @@ class InspectTableWithDescriptorsResult:
 
 
 class CannotFindTableError(Exception):
-    """Raised when we cannot find a table in the database."""
+    """Raised when we cannot find a table in the database.
 
-    def __init__(self, table_name, existing_tables):
+    The message names only the missing table. It must never list the other tables in the warehouse:
+    their names are customer data and this message ends up in logs, Sentry titles and API responses.
+    """
+
+    def __init__(self, table_name: str):
         self.table_name = table_name
-        self.alternatives = existing_tables
-        if existing_tables:
-            self.message = (
-                f"The table '{table_name}' does not exist. Known tables: {', '.join(sorted(existing_tables))}"
-            )
-        else:
-            self.message = f"The table '{table_name}' does not exist; the database does not contain any tables."
+        self.message = (
+            f"The table '{table_name}' does not exist. Check the table name, and the tables in the database, "
+            f"and try again."
+        )
 
     def __str__(self):
         return self.message
@@ -201,9 +202,9 @@ class DwhSession:
             logger.exception("Failed to create a Table! use_sa_autoload: {}", use_sa_autoload)
             raise
         except NoSuchTableError as nste:
-            metadata.reflect(self._engine)
-            existing_tables = metadata.tables.keys()
-            raise CannotFindTableError(table_name, existing_tables) from nste
+            # Do not reflect the rest of the warehouse here to suggest alternatives: that fetches every
+            # table's schema and has blown the DWH deadline on datasets with a few hundred tables.
+            raise CannotFindTableError(table_name) from nste
 
     def _inspect_table_from_cursor_blocking(
         self, engine: sqlalchemy.engine.Engine, table_name: str
@@ -263,9 +264,7 @@ class DwhSession:
                     )
                 return sqlalchemy.Table(table_name, metadata, *columns, quote=False)
         except NoSuchTableError as nste:
-            metadata.reflect(engine)
-            existing_tables = metadata.tables.keys()
-            raise CannotFindTableError(table_name, existing_tables) from nste
+            raise CannotFindTableError(table_name) from nste
 
     def inspect_table(self, table_name: str, use_sa_autoload: bool | None = None) -> sqlalchemy.Table:
         """Inspect table structure using a variety of backend-specific workarounds.

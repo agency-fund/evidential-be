@@ -2,10 +2,12 @@ import threading
 import time
 
 import pytest
+import sqlalchemy
 from sqlalchemy import text
 
-from xngin.apiserver.dwh.dwh_session import DwhSession
+from xngin.apiserver.dwh.dwh_session import CannotFindTableError, DwhSession
 from xngin.apiserver.exceptions_common import DwhTimeoutError
+from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
 
 
 @pytest.fixture(name="dwh_config")
@@ -141,3 +143,17 @@ def test_a_later_block_works_after_one_times_out(dwh_config, mocker):
     mocker.stop(patched)
     with DwhSession.open(dwh_config) as dwh:
         assert dwh.inspect_table("dwh") is not None
+
+
+def test_inspecting_a_missing_table_names_only_that_table(dwh_config, mocker):
+    """The error must not list the warehouse's other tables.
+
+    Building that list reflects every table's schema, which puts customer
+    table names into logs and Sentry titles.
+    """
+    reflect = mocker.spy(sqlalchemy.MetaData, "reflect")
+    with DwhSession.open(dwh_config) as dwh, pytest.raises(CannotFindTableError) as excinfo:
+        dwh.inspect_table("no_such_table")
+    assert str(excinfo.value) == "The table 'no_such_table' does not exist."
+    assert TESTING_DWH_TABLE_NAME not in str(excinfo.value)
+    reflect.assert_not_called()
