@@ -85,7 +85,9 @@ filterwarnings = [
     # Workaround for a bug in FastAPI's OpenAPI schema generation.
     "ignore:`example` has been deprecated:DeprecationWarning:xngin.apiserver.dependencies",
     # Performance optimization warning caused by: reflect(dbengine()).
-    "ignore:.+unnest will not make use of SQL compilation caching:sqlalchemy.exc.SAWarning:"
+    "ignore:.+unnest will not make use of SQL compilation caching:sqlalchemy.exc.SAWarning:",
+    # google-cloud-bigquery-storage is an optional dependency: https://github.com/googleapis/python-bigquery/blob/main/pyproject.toml
+    "ignore:Cannot create BigQuery Storage client, the dependency google-cloud-bigquery-storage is not installed:UserWarning:google.cloud.bigquery.client",
 ]
 env = [
     "SENTRY_DSN="  # Disable Sentry in unit tests.
