@@ -1,6 +1,7 @@
 import json
 import logging
 import sys
+import threading
 
 import pytest
 from loguru import logger
@@ -58,3 +59,34 @@ def test_intercepted_records_describe_their_stdlib_origin(records, stdlib_logger
     assert record["module"] == "test_customlogging"
     assert record["line"] == expected_line
     assert record["level"].name == "WARNING"
+
+
+class _RaisesOnDelete:
+    def __del__(self):
+        raise RuntimeError("from __del__")
+
+
+def test_unraisable_exceptions_are_logged(records, monkeypatch):
+    monkeypatch.setattr(sys, "unraisablehook", customlogging._log_unraisable)
+
+    _RaisesOnDelete()
+
+    (record,) = records
+    assert record["level"].name == "ERROR"
+    assert "_RaisesOnDelete.__del__" in record["message"]
+    assert record["exception"].type is RuntimeError
+
+
+def test_thread_exceptions_are_logged(records, monkeypatch):
+    monkeypatch.setattr(threading, "excepthook", customlogging._log_thread_exception)
+
+    def fail():
+        raise ValueError("from thread")
+
+    thread = threading.Thread(target=fail, name="failing-thread")
+    thread.start()
+    thread.join()
+
+    (record,) = records
+    assert record["message"] == "Uncaught exception in thread failing-thread"
+    assert record["exception"].type is ValueError
