@@ -96,7 +96,42 @@ def test_create_inspect_table_response_from_table_success():
     )
 
 
-def test_create_inspect_table_response_from_table_rejects_nested_columns():
+def test_create_schema_from_table_keeps_postgres_dotted_column_names():
+    # Postgres allows dots in column names, and SQLAlchemy quotes them, so these must survive inspection.
+    my_table = Table(
+        "pg_table",
+        MetaData(),
+        Column("id", Integer, primary_key=True),
+        Column("score.total", Integer),
+    )
+
+    schema = create_schema_from_table(my_table, "id")
+    assert sorted(f.field_name for f in schema.fields) == ["id", "score.total"]
+
+
+def test_create_inspect_table_response_from_table_skips_postgres_dotted_columns():
+    # A dotted column whose parent is not a STRUCT is an ordinary (Postgres) column, not a nested
+    # one. FieldName does not allow dots, so it is left out of the response rather than rejected.
+    my_table = Table(
+        "pg_table",
+        MetaData(),
+        Column("id", Integer, primary_key=True),
+        Column("score", Integer),
+        Column("score.total", Integer),
+        Column("score.total_id", Integer),
+    )
+
+    assert create_inspect_table_response_from_table(my_table) == InspectDatasourceTableResponse(
+        primary_key_fields=["id"],
+        detected_unique_id_fields=["id"],
+        fields=[
+            FieldMetadata(field_name="id", data_type=DataType.INTEGER, description=""),
+            FieldMetadata(field_name="score", data_type=DataType.INTEGER, description=""),
+        ],
+    )
+
+
+def test_create_inspect_table_response_from_table_rejects_bigquery_nested_columns():
     # Mirrors how the BigQuery dialect reflects a RECORD column: the parent, then one column per sub-field.
     my_table = Table(
         "replicated_table",
