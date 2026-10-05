@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Coverage for src/xngin/apiserver/dwh/dwh_session.py: 74%</title>
+    <title>Coverage for src/xngin/apiserver/dwh/dwh_session.py: 75%</title>
     <link rel="icon" sizes="32x32" href="favicon_32_cb_c827f16f.png">
     <link rel="stylesheet" href="style_cb_4667309f.css" type="text/css">
     <script src="coverage_html_cb_15cffcd0.js" defer></script>
@@ -12,7 +12,7 @@
     <div class="content">
         <h1>
             <span class="text">Coverage for </span><b>src<span class="sep">/</span>xngin<span class="sep">/</span>apiserver<span class="sep">/</span>dwh<span class="sep">/</span>dwh_session.py</b>:
-            <span class="pc_cov">74%</span>
+            <span class="pc_cov">75%</span>
         </h1>
         <aside id="help_panel_wrapper">
             <input id="help_panel_state" type="checkbox">
@@ -54,8 +54,8 @@
             </div>
         </aside>
         <h2>
-            <span class="text">211 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">157<span class="text"> run</span></button>
+            <span class="text">215 statements &nbsp;</span>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">161<span class="text"> run</span></button>
             <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">54<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_91ef1565bbea7854_dwh_utils_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.16.1">coverage.py v7.16.1</a>,
-            created at 2026-10-05 11:41 +0000
+            created at 2026-10-05 18:11 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -619,18 +619,26 @@
     <p class="run"><span class="n"><a id="t537" href="#t537">537</a></span><span class="t">                <span class="nam">existing_autocommit</span> <span class="op">=</span> <span class="nam">dbapi_connection</span><span class="op">.</span><span class="nam">autocommit</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t538" href="#t538">538</a></span><span class="t">                <span class="nam">dbapi_connection</span><span class="op">.</span><span class="nam">autocommit</span> <span class="op">=</span> <span class="key">True</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t539" href="#t539">539</a></span><span class="t">                <span class="nam">cursor</span> <span class="op">=</span> <span class="nam">dbapi_connection</span><span class="op">.</span><span class="nam">cursor</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t540" href="#t540">540</a></span><span class="t">                <span class="key">try</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t541" href="#t541">541</a></span><span class="t">                    <span class="com"># Postgres-compatible SQL via DBAPI parameterized query to set the search path with</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t542" href="#t542">542</a></span><span class="t">                    <span class="com"># a user-specified, possibly comma-separated string.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t543" href="#t543">543</a></span><span class="t">                    <span class="nam">cursor</span><span class="op">.</span><span class="nam">execute</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t544" href="#t544">544</a></span><span class="t">                        <span class="str">&quot;SELECT set_config(&#x27;search_path&#x27;, %(schemas)s, false)&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t545" href="#t545">545</a></span><span class="t">                        <span class="op">{</span><span class="str">&quot;schemas&quot;</span><span class="op">:</span> <span class="nam">search_path_sql_arg</span><span class="op">}</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t546" href="#t546">546</a></span><span class="t">                    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t547" href="#t547">547</a></span><span class="t">                <span class="key">finally</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t548" href="#t548">548</a></span><span class="t">                    <span class="nam">cursor</span><span class="op">.</span><span class="nam">close</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t549" href="#t549">549</a></span><span class="t">                    <span class="nam">dbapi_connection</span><span class="op">.</span><span class="nam">autocommit</span> <span class="op">=</span> <span class="nam">existing_autocommit</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t550" href="#t550">550</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t551" href="#t551">551</a></span><span class="t">        <span class="nam">dwh_utils</span><span class="op">.</span><span class="nam">extra_engine_setup</span><span class="op">(</span><span class="nam">engine</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t540" href="#t540">540</a></span><span class="t">                <span class="nam">applied</span> <span class="op">=</span> <span class="key">False</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t541" href="#t541">541</a></span><span class="t">                <span class="key">try</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t542" href="#t542">542</a></span><span class="t">                    <span class="com"># Postgres-compatible SQL via DBAPI parameterized query to set the search path with</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t543" href="#t543">543</a></span><span class="t">                    <span class="com"># a user-specified, possibly comma-separated string.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t544" href="#t544">544</a></span><span class="t">                    <span class="com"># May raise an error if the search path syntax is invalid.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t545" href="#t545">545</a></span><span class="t">                    <span class="nam">cursor</span><span class="op">.</span><span class="nam">execute</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t546" href="#t546">546</a></span><span class="t">                        <span class="str">&quot;SELECT set_config(&#x27;search_path&#x27;, %(schemas)s, false)&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t547" href="#t547">547</a></span><span class="t">                        <span class="op">{</span><span class="str">&quot;schemas&quot;</span><span class="op">:</span> <span class="nam">search_path_sql_arg</span><span class="op">}</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t548" href="#t548">548</a></span><span class="t">                    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t549" href="#t549">549</a></span><span class="t">                    <span class="nam">applied</span> <span class="op">=</span> <span class="key">True</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t550" href="#t550">550</a></span><span class="t">                <span class="key">finally</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t551" href="#t551">551</a></span><span class="t">                    <span class="nam">cursor</span><span class="op">.</span><span class="nam">close</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t552" href="#t552">552</a></span><span class="t">                    <span class="key">if</span> <span class="nam">applied</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t553" href="#t553">553</a></span><span class="t">                        <span class="nam">dbapi_connection</span><span class="op">.</span><span class="nam">autocommit</span> <span class="op">=</span> <span class="nam">existing_autocommit</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t554" href="#t554">554</a></span><span class="t">                    <span class="key">else</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t555" href="#t555">555</a></span><span class="t">                        <span class="com"># A connect listener that raises runs inside pool record construction before</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t556" href="#t556">556</a></span><span class="t">                        <span class="com"># SQLAlchemy has a record it can close, so we close the DBAPI connection here.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t557" href="#t557">557</a></span><span class="t">                        <span class="nam">dbapi_connection</span><span class="op">.</span><span class="nam">close</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t558" href="#t558">558</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t559" href="#t559">559</a></span><span class="t">        <span class="nam">dwh_utils</span><span class="op">.</span><span class="nam">extra_engine_setup</span><span class="op">(</span><span class="nam">engine</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -640,7 +648,7 @@
             <a class="nav" href="z_91ef1565bbea7854_dwh_utils_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.16.1">coverage.py v7.16.1</a>,
-            created at 2026-10-05 11:41 +0000
+            created at 2026-10-05 18:11 +0000
         </p>
     </div>
 </footer>
