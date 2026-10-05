@@ -73,7 +73,17 @@ def get_session():
 
 @contextlib.contextmanager
 def setup():
+    """Create the process-wide application database engine.
+
+    Nested calls reuse that engine, since the FastAPI lifespan calls setup()
+    while a test's database fixture already holds one.  (If we replaced the
+    instance, it would dispose an engine whose pooled connections are still
+    referenced, causing psycopg to warn when cyclic GC drops them.)
+    """
     global _GLOBAL_STATE
+    if _GLOBAL_STATE is not None:
+        yield
+        return
 
     database_url = get_server_database_url()
 
@@ -89,4 +99,5 @@ def setup():
     try:
         yield
     finally:
+        _GLOBAL_STATE = None
         engine.dispose()
