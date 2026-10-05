@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, select
+from sqlalchemy import Column, Engine, Integer, MetaData, String, Table, create_engine, select
 
 # ruff: noqa: PLC2701
 from xngin.apiserver.pagination import (
@@ -19,6 +19,15 @@ from xngin.apiserver.pagination import (
     build_next_page_token,
     paginate,
 )
+
+
+@pytest.fixture(name="engine")
+def fixture_engine():
+    engine = create_engine("sqlite:///:memory:")
+    try:
+        yield engine
+    finally:
+        engine.dispose()
 
 
 def test_page_token_round_trip():
@@ -63,8 +72,7 @@ def test_decode_empty_json():
         _decode_page_token(token)
 
 
-def test_paginate_supports_multi_field_cursor_desc():
-    engine = create_engine("sqlite:///:memory:")
+def test_paginate_supports_multi_field_cursor_desc(engine: Engine):
     metadata = MetaData()
     events = Table(
         "events",
@@ -97,8 +105,7 @@ def test_paginate_supports_multi_field_cursor_desc():
     assert rows == [(5, "c"), (4, "z"), (3, "a")]
 
 
-def test_paginate_supports_multi_field_cursor_mixed_directions_with_tiebreaker():
-    engine = create_engine("sqlite:///:memory:")
+def test_paginate_supports_multi_field_cursor_mixed_directions_with_tiebreaker(engine: Engine):
     metadata = MetaData()
     events = Table(
         "events",
@@ -132,8 +139,7 @@ def test_paginate_supports_multi_field_cursor_mixed_directions_with_tiebreaker()
     assert rows == [(5, "d"), (4, "w"), (4, "x")]
 
 
-def test_paginate_applies_skip_after_cursor():
-    engine = create_engine("sqlite:///:memory:")
+def test_paginate_applies_skip_after_cursor(engine: Engine):
     metadata = MetaData()
     events = Table(
         "events",
@@ -166,8 +172,7 @@ def test_paginate_applies_skip_after_cursor():
     assert rows == [(4, "z"), (3, "a")]
 
 
-def test_paginate_rejects_cursor_with_wrong_field_count():
-    engine = create_engine("sqlite:///:memory:")
+def test_paginate_rejects_cursor_with_wrong_field_count(engine: Engine):
     metadata = MetaData()
     events = Table(
         "events",
