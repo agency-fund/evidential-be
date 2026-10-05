@@ -1,6 +1,8 @@
 """Attaches per-request diagnostic context to log lines and Sentry events."""
 
 import contextvars
+import itertools
+import time
 import typing
 
 import sentry_sdk
@@ -21,6 +23,10 @@ REQUEST_ID_HEADER = "x-request-id"
 
 # Bounds what a client that sends its own header can put in our logs.
 _MAX_HEADER_VALUE_LENGTH = 64
+
+# Track the time-since-started and ordering of requests handled by this worker.
+_worker_started_at = time.monotonic()
+_worker_request_seq = itertools.count(1)
 
 # Request fields added to log records.
 #
@@ -53,6 +59,8 @@ class RequestContextMiddleware:
     When X-Railway-Edge is present, its value is added as a railway_edge log field and Sentry tag to identify the
     edge point of presence that handled the request.
 
+    Both also carry the worker's request sequence number and uptime (as worker_request_seq and worker_uptime_seconds
+    log fields, and a "worker" Sentry context).
     """
 
     def __init__(self, app: ASGIApp) -> None:
@@ -63,13 +71,18 @@ class RequestContextMiddleware:
             await self._app(scope, receive, send)
             return
 
-        fields: dict[str, typing.Any] = {}
+        worker = {
+            "worker_request_seq": next(_worker_request_seq),
+            "worker_uptime_seconds": round(time.monotonic() - _worker_started_at),
+        }
+        # Sentry's ASGI integration provides a separate isolation scope for each request.
+        sentry_sdk.set_context("worker", worker)
+        fields: dict[str, typing.Any] = dict(worker)
 
         headers = Headers(scope=scope)
         if request_id := headers.get(RAILWAY_REQUEST_ID_HEADER) or headers.get(REQUEST_ID_HEADER):
             request_id = request_id[:_MAX_HEADER_VALUE_LENGTH]
             fields["request_id"] = request_id
-            # Sentry's ASGI integration provides a separate isolation scope for each request.
             sentry_sdk.set_tag("request_id", request_id)
 
         if railway_edge := headers.get(RAILWAY_EDGE_HEADER):

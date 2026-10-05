@@ -158,7 +158,30 @@ def test_header_values_are_truncated(client, records, sentry_tags, header, field
     assert sentry_tags == {field: "x" * 64}
 
 
-def test_reused_task_does_not_carry_over_request_fields(records, sentry_tags):
+@pytest.fixture
+def sentry_contexts(monkeypatch):
+    contexts: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        request_context_middleware.sentry_sdk, "set_context", lambda key, value: contexts.append((key, value))
+    )
+    return contexts
+
+
+def test_worker_request_seq_increments(client, records, sentry_contexts):
+    client.get("/")
+    client.get("/", headers={RAILWAY_REQUEST_ID_HEADER: "abc"})
+
+    first, second = _handled(records)
+    assert second["extra"]["worker_request_seq"] == first["extra"]["worker_request_seq"] + 1
+    assert second["extra"]["worker_uptime_seconds"] >= first["extra"]["worker_uptime_seconds"] >= 0
+    assert [key for key, _ in sentry_contexts] == ["worker", "worker"]
+    assert sentry_contexts[1][1] == {
+        "worker_request_seq": second["extra"]["worker_request_seq"],
+        "worker_uptime_seconds": second["extra"]["worker_uptime_seconds"],
+    }
+
+
+def test_reused_task_does_not_carry_over_request_fields(records, sentry_tags, sentry_contexts):
     async def app(_scope, _receive, _send):
         logger.info("handled")
 
@@ -173,9 +196,10 @@ def test_reused_task_does_not_carry_over_request_fields(records, sentry_tags):
     first, second = _handled(records)
     assert first["extra"]["request_id"] == "first"
     assert "request_id" not in second["extra"]
+    assert second["extra"]["worker_request_seq"] == first["extra"]["worker_request_seq"] + 1
 
 
-def test_overlapping_requests_keep_their_own_request_ids(records, sentry_tags):
+def test_overlapping_requests_keep_their_own_request_ids(records, sentry_tags, sentry_contexts):
     # Neither request logs until both have set their context.
     both_started = asyncio.Barrier(2)
 
