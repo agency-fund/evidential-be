@@ -81,6 +81,7 @@ addopts = "-m 'not integration and not benchmark'"
 # filtewarnings can be used to silence warnings during tests.
 # format is: action:message:category:module
 filterwarnings = [
+    "error",
     # Workaround for a bug in FastAPI's OpenAPI schema generation.
     "ignore:`example` has been deprecated:DeprecationWarning:xngin.apiserver.dependencies",
     # Performance optimization warning caused by: reflect(dbengine()).
