@@ -1,3 +1,4 @@
+import json
 import logging
 import sys
 
@@ -13,6 +14,20 @@ def records():
     handler_id = logger.add(lambda message: captured.append(message.record), level="INFO")
     yield captured
     logger.remove(handler_id)
+
+
+def test_railway_json_puts_context_at_top_level(records):
+    with logger.contextualize(experiment_id="exp_1"):
+        logger.bind(message="clobbered?").info("hello {name}", name="world")
+
+    (record,) = records
+    structured = json.loads(customlogging._record_to_railway_json(record))
+
+    assert structured["experiment_id"] == "exp_1"
+    assert structured["name"] == "world"
+    # Contextual values do not override the standard fields.
+    assert structured["message"] == "hello world"
+    assert "extra" not in structured
 
 
 @pytest.fixture

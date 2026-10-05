@@ -42,8 +42,23 @@ def _customize_loguru():
     logger.level("DEBUG", icon="D ")
 
 
+# Distinguishes log lines from different replicas and deployments.
+_RAILWAY_IDENTITY = {
+    key: value
+    for key, value in {
+        "replica_id": flags.RAILWAY_REPLICA_ID,
+        "deployment_id": flags.RAILWAY_DEPLOYMENT_ID,
+    }.items()
+    if value
+}
+
+
 def _record_to_railway_json(record: loguru_Record):
-    structured: dict[str, int | str | list[str] | dict[typing.Any, typing.Any] | None] = {
+    structured: dict[str, typing.Any] = {
+        # Railway only lets the Log Explorer filter on top-level fields, so contextual values (from logger.bind(),
+        # logger.contextualize(), and message format arguments) go at the top level. The fields below take precedence
+        # over any of them with the same name.
+        **record["extra"],
         "timestamp": record["time"].isoformat(),
         "message": record["message"],
         "level": record["level"].name,
@@ -51,11 +66,11 @@ def _record_to_railway_json(record: loguru_Record):
         "module": record["module"],
         "function": record["function"],
         "line": record["line"],
-        "extra": record["extra"],
         "process_id": record["process"].id,
         "process_name": record["process"].name,
         "thread_id": record["thread"].id,
         "thread_name": record["thread"].name,
+        **_RAILWAY_IDENTITY,
     }
     if (exc := record["exception"]) is not None:
         structured.update({

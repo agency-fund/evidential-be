@@ -7,7 +7,7 @@ import os
 
 from loguru import logger
 
-from xngin.apiserver import constants
+from xngin.apiserver import constants, flags
 
 
 def setup():
@@ -46,4 +46,9 @@ def setup():
         traces_sample_rate=1.0,
         profile_session_sample_rate=1.0,
         profile_lifecycle="trace",
+        server_name=flags.RAILWAY_REPLICA_ID or None,
     )
+    global_scope = sentry_sdk.get_global_scope()
+    global_scope.set_tag("worker_pid", os.getpid())
+    if flags.RAILWAY_DEPLOYMENT_ID:
+        global_scope.set_tag("railway_deployment_id", flags.RAILWAY_DEPLOYMENT_ID)
