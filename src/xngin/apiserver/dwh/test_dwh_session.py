@@ -151,7 +151,7 @@ def test_inspecting_a_missing_table_names_only_that_table(dwh_config, mocker):
     Building that list reflects every table's schema, which puts customer
     table names into logs and Sentry titles.
     """
-    reflect = mocker.spy(sqlalchemy.MetaData, "reflect")
+    reflect = mocker.patch.object(sqlalchemy.MetaData, "reflect")
     with DwhSession.open(dwh_config) as dwh, pytest.raises(CannotFindTableError) as excinfo:
         dwh.inspect_table("no_such_table")
     assert (
