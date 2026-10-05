@@ -11,6 +11,7 @@ from xngin.apiserver import (
     exceptionhandlers,
     flags,
     middleware,
+    request_context_middleware,
     routes,
 )
 from xngin.apiserver.openapi import custom_openapi, humane_operation_id
@@ -18,7 +19,7 @@ from xngin.apiserver.routers.auth import auth_dependencies
 from xngin.ops import sentry
 from xngin.xsecrets import secretservice
 
-customlogging.setup()
+customlogging.setup(patcher=request_context_middleware.add_request_context)
 sentry.setup()
 
 

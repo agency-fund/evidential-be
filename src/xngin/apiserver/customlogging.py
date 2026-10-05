@@ -4,6 +4,7 @@ import sys
 import threading
 import traceback
 import typing
+from collections.abc import Callable
 
 from xngin.apiserver.flags import LogFormat
 
@@ -107,9 +108,15 @@ def _log_thread_exception(args: threading.ExceptHookArgs) -> None:
     )
 
 
-def setup():
+def setup(*, patcher: Callable[[loguru_Record], None] | None = None) -> None:
+    """
+    Configures logging using loguru.
+
+    If specified, `patcher` will be applied to every record, allowing callers to enrich log records.
+    """
     logging.basicConfig(handlers=[InterceptHandler()], level=logging.NOTSET, force=True)
     _customize_loguru()
+    logger.configure(patcher=patcher)
 
     for name in logging.root.manager.loggerDict:
         existing_logger = logging.getLogger(name)
