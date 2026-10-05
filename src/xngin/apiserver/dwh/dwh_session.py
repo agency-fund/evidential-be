@@ -537,15 +537,23 @@ class DwhSession:
                 existing_autocommit = dbapi_connection.autocommit
                 dbapi_connection.autocommit = True
                 cursor = dbapi_connection.cursor()
+                applied = False
                 try:
                     # Postgres-compatible SQL via DBAPI parameterized query to set the search path with
                     # a user-specified, possibly comma-separated string.
+                    # May raise an error if the search path syntax is invalid.
                     cursor.execute(
                         "SELECT set_config('search_path', %(schemas)s, false)",
                         {"schemas": search_path_sql_arg},
                     )
+                    applied = True
                 finally:
                     cursor.close()
-                    dbapi_connection.autocommit = existing_autocommit
+                    if applied:
+                        dbapi_connection.autocommit = existing_autocommit
+                    else:
+                        # A connect listener that raises runs inside pool record construction before
+                        # SQLAlchemy has a record it can close, so we close the DBAPI connection here.
+                        dbapi_connection.close()
 
         dwh_utils.extra_engine_setup(engine)
