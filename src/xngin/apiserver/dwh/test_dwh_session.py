@@ -154,6 +154,11 @@ def test_inspecting_a_missing_table_names_only_that_table(dwh_config, mocker):
     reflect = mocker.spy(sqlalchemy.MetaData, "reflect")
     with DwhSession.open(dwh_config) as dwh, pytest.raises(CannotFindTableError) as excinfo:
         dwh.inspect_table("no_such_table")
-    assert str(excinfo.value) == "The table 'no_such_table' does not exist."
+    assert (
+        str(excinfo.value)
+        == "The table 'no_such_table' does not exist. Check the table name, and the tables in the database, "
+        "and try again."
+    )
+
     assert TESTING_DWH_TABLE_NAME not in str(excinfo.value)
     reflect.assert_not_called()
