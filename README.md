@@ -17,7 +17,7 @@
 | src/xngin/apiserver/dwh/dwh\_session.py                                            |      211 |       54 |     74% |74, 158-159, 199, 201-202, 213-268, 293-295, 310, 449-456, 460, 467-469, 488, 490-491, 502 |
 | src/xngin/apiserver/dwh/dwh\_utils.py                                              |       17 |        3 |     82% |20, 27, 35 |
 | src/xngin/apiserver/dwh/inspection\_types.py                                       |       55 |        5 |     91% |27, 45, 68, 79, 85 |
-| src/xngin/apiserver/dwh/inspections.py                                             |       29 |        2 |     93% |    59, 87 |
+| src/xngin/apiserver/dwh/inspections.py                                             |       33 |        2 |     94% |   73, 101 |
 | src/xngin/apiserver/dwh/participant\_metrics\_queries.py                           |      144 |        7 |     95% |73-79, 166, 263, 265, 295 |
 | src/xngin/apiserver/dwh/queries.py                                                 |       45 |        3 |     93% |83, 86, 112 |
 | src/xngin/apiserver/dwh/query\_constructors.py                                     |       81 |        4 |     95% |75-76, 95-96 |
@@ -51,7 +51,7 @@
 | src/xngin/apiserver/routers/auth/test\_discovery.py                                |      233 |        1 |     99% |        90 |
 | src/xngin/apiserver/routers/auth/token\_cryptor.py                                 |       43 |        4 |     91% |16-17, 53-54 |
 | src/xngin/apiserver/routers/common\_api\_types.py                                  |      395 |       30 |     92% |188, 190, 484, 486, 488, 545, 821-828, 847, 1126, 1135, 1138-1139, 1149, 1151, 1161, 1163, 1181, 1463, 1465, 1475, 1482, 1672, 1853, 1855-1857 |
-| src/xngin/apiserver/routers/common\_enums.py                                       |      184 |       25 |     86% |67, 69, 92-101, 106, 161-162, 214, 269-272, 281, 320-321, 325, 357 |
+| src/xngin/apiserver/routers/common\_enums.py                                       |      184 |       19 |     90% |67, 69, 93, 95, 97, 99, 106, 161-162, 214, 269-272, 281, 320-321, 325, 357 |
 | src/xngin/apiserver/routers/experiments/experiments\_api.py                        |       97 |        4 |     96% |132-134, 356 |
 | src/xngin/apiserver/routers/experiments/experiments\_common.py                     |      479 |       23 |     95% |372-373, 396, 474, 485, 527-528, 539, 558, 649, 744-745, 770, 902, 906, 928-929, 932, 1061, 1145-1146, 1183, 1319 |
 | src/xngin/apiserver/routers/experiments/experiments\_common\_csv.py                |       89 |        4 |     96% |43, 106, 240-241 |
@@ -104,7 +104,7 @@
 | src/xngin/xsecrets/secretservice.py                                                |       64 |        7 |     89% |37, 45-46, 51-52, 104, 126 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                                     |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                                         |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                                          | **17682** | **1051** | **94%** |           |
+| **TOTAL**                                                                          | **17701** | **1045** | **94%** |           |
 
 89 files skipped due to complete coverage.
 
