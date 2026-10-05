@@ -15,6 +15,7 @@ def setup(app):
         compresslevel=3,
         minimum_size=16384,
     )
+    app.add_middleware(RequestEncapsulationMiddleware, path_prefix="/v1/experiments")
     app.add_middleware(
         CORSMiddleware,
         allow_credentials=False,
@@ -23,5 +24,4 @@ def setup(app):
         allow_origins=flags.CORS_ALLOWED_ORIGINS,
         max_age=7200,  # https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Access-Control-Max-Age
     )
-    app.add_middleware(RequestEncapsulationMiddleware, path_prefix="/v1/experiments")
     app.add_middleware(RequestContextMiddleware)
