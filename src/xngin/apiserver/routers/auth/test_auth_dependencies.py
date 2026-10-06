@@ -153,17 +153,21 @@ def test_session_token_is_rejected_after_idp_configuration_changes(
     assert exc.value.status_code == 401
 
 
-def test_session_token_without_aad_is_still_accepted(session_token_env):
-    """Tokens issued before session_token_aad() was introduced remain valid until they expire."""
+def test_session_token_without_aad_is_rejected(session_token_env):
+    """Tokens encrypted without session_token_aad() are rejected."""
     legacy_cryptor = TokenCryptor(
         ttl=SESSION_TOKEN_LIFETIME,
         keyset_env_var=flags.ENV_SESSION_TOKEN_KEYSET,
         local_keyset_filename="file-does-not-exist",
         prefix=SESSION_TOKEN_PREFIX,
     )
-    legacy_token = legacy_cryptor.encrypt(SESSION_PRINCIPAL.model_dump_json().encode())
+    legacy_token = legacy_cryptor.encrypt(SESSION_PRINCIPAL.model_dump_json().encode(), b"")
 
-    assert SessionTokenCryptor().decode(legacy_token) == SESSION_PRINCIPAL
+    with pytest.raises(HTTPException, match="token invalid") as exc:
+        require_valid_session_token(
+            HTTPAuthorizationCredentials(scheme="Bearer", credentials=legacy_token), SessionTokenCryptor()
+        )
+    assert exc.value.status_code == 401
 
 
 def test_token_cryptor_uses_custom_prefix_and_env_var():
@@ -175,9 +179,9 @@ def test_token_cryptor_uses_custom_prefix_and_env_var():
             local_keyset_filename="file-does-not-exist",
             prefix="xp_",
         )
-        token = cryptor.encrypt(b"payload")
+        token = cryptor.encrypt(b"payload", b"")
         assert token.startswith("xp_")
-        assert cryptor.decrypt(token) == b"payload"
+        assert cryptor.decrypt(token, b"") == b"payload"
 
 
 def test_token_cryptor_reads_configured_local_keyset_file(tmp_path):
@@ -191,8 +195,8 @@ def test_token_cryptor_reads_configured_local_keyset_file(tmp_path):
             local_keyset_filename=str(keyset_file),
             prefix="xp_",
         )
-        token = cryptor.encrypt(b"payload")
-        assert cryptor.decrypt(token) == b"payload"
+        token = cryptor.encrypt(b"payload", b"")
+        assert cryptor.decrypt(token, b"") == b"payload"
 
 
 def test_user_from_token_invite(xngin_session: Session):
