@@ -10,7 +10,7 @@ dependencies = [
     "email-validator>=2.2.0",
     "fastapi[standard-no-fastapi-cloud-cli]>=0.137.1,<0.138",
     "google-cloud-kms>=3.7.0,<4",
-    "httpx2>=2.4.0,<3",
+    "httpx2>=2.12.0,<3",
     "loguru>=0.7.3,<0.8.0",
     "numpy>=2.3,<2.4",
     "orjson>=3.11.7,<4",
@@ -20,7 +20,7 @@ dependencies = [
     "psycopg2>=2.9.11,<3; sys_platform == 'linux'",
     "psycopg[binary]>=3.3.2,<4",
     "pydantic>=2.13.4,<2.14",
-    "pyjwt[crypto]>=2.13.0,<3",
+    "pyjwt[crypto]>=2.15.0,<3",
     "pynacl>=1.6.2",
     "python-jsonpath>=2.0.1",
     "scipy>=1.12.0,<2",
@@ -219,6 +219,12 @@ required-version = ">=0.9.4"
 environments = [
     "sys_platform == 'darwin'",
     "sys_platform == 'linux'",
+]
+constraint-dependencies = [
+    # Minimum versions that clear Dependabot alerts for transitive dependencies.
+    "anyio>=4.14.2",
+    "oauthlib>=4.0.0",
+    "urllib3>=2.8.0",
 ]
 override-dependencies = [
     "clickhouse-sqlalchemy ; sys_platform == 'never'" # Unused heavy dependency
