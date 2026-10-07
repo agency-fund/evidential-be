@@ -159,9 +159,8 @@ def solve_for_sample_size_individual(
     if effective_n <= 0:
         # Only show error when ALL values are null (100%)
         error_msg = (
-            f"Cannot run power calculation. Your column has all null values ({metric.available_n} nulls out of "
-            f"{metric.available_n}). Please populate your column with data or adjust your filters to target "
-            f"units with non-null values."
+            "Cannot estimate the minimum sample size. All participants have null for this metric. "
+            "Adjust your filters to target units with non-null values."
         )
         return power_analysis_error(
             metric,
@@ -245,16 +244,25 @@ def solve_for_sample_size_individual(
     # One-time metric is eligible when power calc succeeds and column has nulls
     if has_nulls:
         analysis.metric_spec = metric.model_copy(update={"is_one_time_eligible": True})
+    else:
+        # No nulls left: one-time mode would match nobody, so turn it off.
+        analysis.metric_spec = metric.model_copy(update={"is_one_time_eligible": False, "use_one_time_metric": False})
 
     msg_base_stats = (
         "There are {available_n} units available. You need at least {target_n} units to satisfy your design specs."
     )
+    # Only meaningful when the column actually has nulls (flags are reset otherwise).
+    one_time_mode = metric.use_one_time_metric and has_nulls
+
     msg_null_warning = (
         (
             "NOTE: Only {available_nonnull_n} of {available_n} units have non-null values. "
-            "Consider using one-time metric mode to assign only these participants."
+            "Consider assigning only participants with nulls to the experiment, or adding a filter to "
+            "explicitly exclude participants with a null value. Otherwise we will sample from all matching "
+            "participants, including those with a null value."
         )
-        if has_nulls
+        # Skip the suggestion when the user already chose one-time mode.
+        if has_nulls and not one_time_mode
         else ""
     )
 

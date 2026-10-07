@@ -39,6 +39,9 @@ def build_metric_stats(
                 available_nonnull_n=raw_stats[f"{field_name}__count"],
                 # This value is the same across all metrics, but we replicate for convenience:
                 available_n=raw_stats["rows__count"],
+                # Carry the user's one-time choice through; the power check re-derives eligibility from the stats.
+                is_one_time_eligible=metric.is_one_time_eligible,
+                use_one_time_metric=metric.use_one_time_metric,
             )
         )
 
