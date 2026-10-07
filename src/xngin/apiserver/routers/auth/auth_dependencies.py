@@ -100,12 +100,7 @@ class SessionTokenCryptor:
         return self._token_cryptor.encrypt(payload, self._aad)
 
     def decode(self, token: str) -> Principal:
-        try:
-            decrypted = self._token_cryptor.decrypt(token, self._aad)
-        except chafernet.InvalidTokenError:
-            # TODO: Remove this fallback 13 hours after deployment. Session tokens issued before they were bound to
-            # session_token_aad() were encrypted with empty associated data and stay valid for SESSION_TOKEN_LIFETIME.
-            decrypted = self._token_cryptor.decrypt(token, b"")
+        decrypted = self._token_cryptor.decrypt(token, self._aad)
         return Principal.model_validate_json(decrypted)
 
 
