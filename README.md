@@ -14,15 +14,15 @@
 | src/xngin/apiserver/dependencies.py                                                |       12 |        1 |     92% |        12 |
 | src/xngin/apiserver/dns/safe\_resolve.py                                           |       68 |       14 |     79% |47-58, 90, 113-114 |
 | src/xngin/apiserver/dns/test\_safe\_resolve.py                                     |       45 |        2 |     96% |    49, 53 |
-| src/xngin/apiserver/dwh/dwh\_session.py                                            |      215 |       54 |     75% |74, 158-159, 199, 201-202, 213-268, 293-295, 310, 449-456, 460, 467-469, 488, 490-491, 502 |
+| src/xngin/apiserver/dwh/dwh\_session.py                                            |      208 |       51 |     75% |159-160, 200, 202-203, 214-267, 292-294, 309, 448-455, 459, 466-468, 487, 489-490, 501 |
 | src/xngin/apiserver/dwh/dwh\_utils.py                                              |       17 |        3 |     82% |20, 27, 35 |
 | src/xngin/apiserver/dwh/inspection\_types.py                                       |       55 |        5 |     91% |27, 45, 68, 79, 85 |
-| src/xngin/apiserver/dwh/inspections.py                                             |       33 |        2 |     94% |   73, 101 |
+| src/xngin/apiserver/dwh/inspections.py                                             |       43 |        2 |     95% |   78, 120 |
 | src/xngin/apiserver/dwh/participant\_metrics\_queries.py                           |      144 |        7 |     95% |73-79, 166, 263, 265, 295 |
 | src/xngin/apiserver/dwh/queries.py                                                 |       45 |        3 |     93% |83, 86, 112 |
 | src/xngin/apiserver/dwh/query\_constructors.py                                     |       81 |        4 |     95% |75-76, 95-96 |
 | src/xngin/apiserver/dwh/test\_dialect\_sql.py                                      |       74 |        6 |     92% |494, 507, 510-513 |
-| src/xngin/apiserver/dwh/test\_dwh\_session.py                                      |       97 |        1 |     99% |       121 |
+| src/xngin/apiserver/dwh/test\_dwh\_session.py                                      |      106 |        1 |     99% |       123 |
 | src/xngin/apiserver/dwh/test\_queries.py                                           |       69 |        1 |     99% |       170 |
 | src/xngin/apiserver/dwh/test\_query\_constructors.py                               |      160 |        2 |     99% |  444, 461 |
 | src/xngin/apiserver/dwhpull/cli.py                                                 |       25 |        7 |     72% |     51-59 |
@@ -37,17 +37,17 @@
 | src/xngin/apiserver/routers/admin/admin\_api\_converters.py                        |       62 |        8 |     87% |29, 73-74, 84, 110-111, 123-124 |
 | src/xngin/apiserver/routers/admin/admin\_api\_types.py                             |      125 |        2 |     98% |    34, 36 |
 | src/xngin/apiserver/routers/admin/generic\_handlers.py                             |       21 |        1 |     95% |        47 |
-| src/xngin/apiserver/routers/admin/test\_admin\_api.py                              |     1775 |        3 |     99% |2711, 2724-2725 |
+| src/xngin/apiserver/routers/admin/test\_admin\_api.py                              |     1775 |        3 |     99% |2718, 2731-2732 |
 | src/xngin/apiserver/routers/admin/test\_admin\_extra.py                            |      111 |        5 |     95% |98, 129-130, 158-159 |
 | src/xngin/apiserver/routers/admin/test\_admin\_users\_api.py                       |      378 |        1 |     99% |        34 |
 | src/xngin/apiserver/routers/admin\_integrations/admin\_integrations\_api.py        |      152 |        2 |     99% |  174, 395 |
 | src/xngin/apiserver/routers/admin\_integrations/admin\_integrations\_api\_types.py |       15 |        1 |     93% |        26 |
 | src/xngin/apiserver/routers/auth/auth\_api.py                                      |      167 |        1 |     99% |       201 |
-| src/xngin/apiserver/routers/auth/auth\_dependencies.py                             |      106 |        3 |     97% |205, 227-229 |
+| src/xngin/apiserver/routers/auth/auth\_dependencies.py                             |      103 |        3 |     97% |200, 222-224 |
 | src/xngin/apiserver/routers/auth/discovery.py                                      |      218 |        6 |     97% |142, 177, 203, 324, 327, 330 |
 | src/xngin/apiserver/routers/auth/oidc\_settings.py                                 |       70 |        3 |     96% |   143-145 |
 | src/xngin/apiserver/routers/auth/test\_auth\_api.py                                |      450 |        1 |     99% |       165 |
-| src/xngin/apiserver/routers/auth/test\_auth\_dependencies.py                       |      172 |        7 |     96% | 50, 57-63 |
+| src/xngin/apiserver/routers/auth/test\_auth\_dependencies.py                       |      174 |        7 |     96% | 50, 57-63 |
 | src/xngin/apiserver/routers/auth/test\_discovery.py                                |      233 |        1 |     99% |        90 |
 | src/xngin/apiserver/routers/auth/token\_cryptor.py                                 |       43 |        4 |     91% |16-17, 53-54 |
 | src/xngin/apiserver/routers/common\_api\_types.py                                  |      395 |       30 |     92% |188, 190, 484, 486, 488, 545, 821-828, 847, 1126, 1135, 1138-1139, 1149, 1151, 1161, 1163, 1181, 1463, 1465, 1475, 1482, 1672, 1853, 1855-1857 |
@@ -104,7 +104,7 @@
 | src/xngin/xsecrets/secretservice.py                                                |       64 |        7 |     89% |37, 45-46, 51-52, 104, 126 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                                     |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                                         |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                                          | **17714** | **1045** | **94%** |           |
+| **TOTAL**                                                                          | **17733** | **1042** | **94%** |           |
 
 89 files skipped due to complete coverage.
 
