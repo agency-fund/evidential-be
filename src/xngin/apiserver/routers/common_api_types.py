@@ -140,7 +140,8 @@ class DesignSpecMetricBase(ApiBaseModel):
         Field(
             description=(
                 "Enable one-time metric mode: only assign participants with null values for this metric. "
-                "Can only be True if is_one_time_eligible is True."
+                "Can only be True if is_one_time_eligible is True. Only allowed on the primary (first) metric "
+                "of an individually-randomized preassigned experiment."
             )
         ),
     ] = False
@@ -251,7 +252,27 @@ class DesignSpecMetricRequest(DesignSpecMetricBase):
             metric_stddev=self.metric_stddev,
             available_nonnull_n=self.available_nonnull_n,
             available_n=self.available_n,
+            # Carry the user's one-time choice through; the power check re-derives eligibility from the stats.
+            is_one_time_eligible=self.is_one_time_eligible,
+            use_one_time_metric=self.use_one_time_metric,
         )
+
+
+def _validate_one_time_metric_scope(metrics: list[DesignSpecMetricRequest], cluster_key: str | None) -> None:
+    """One-time mode is only supported for the primary metric of an individually-randomized design.
+
+    It filters to rows where the metric is null. Enabling it on several metrics would AND those filters
+    together and drop more rows than any single metric's power check reports, so only the primary metric
+    (metrics[0]) may use it. Cluster designs are out of scope: their power math doesn't account for it.
+    """
+    for metric in metrics[1:]:
+        if metric.use_one_time_metric:
+            raise ValueError(
+                "use_one_time_metric can only be set on the primary metric (the first in the list), "
+                f"but it is set on '{metric.field_name}'."
+            )
+    if cluster_key is not None and metrics[0].use_one_time_metric:
+        raise ValueError("use_one_time_metric is not supported for cluster-randomized designs.")
 
 
 class ParticipantProperty(ApiBaseModel):
@@ -1266,6 +1287,11 @@ class PreassignedFrequentistExperimentSpec(BaseFrequentistDesignSpec):
             raise ValueError("desired_ns_clusters can only be set when cluster_key is set.")
         return self
 
+    @model_validator(mode="after")
+    def validate_one_time_metric_scope(self) -> Self:
+        _validate_one_time_metric_scope(self.metrics, self.cluster_key)
+        return self
+
 
 class OnlineFrequentistExperimentSpec(BaseFrequentistDesignSpec):
     """Describes an Online A/B experiment.
@@ -1275,6 +1301,13 @@ class OnlineFrequentistExperimentSpec(BaseFrequentistDesignSpec):
     """
 
     experiment_type: Literal[ExperimentsType.FREQ_ONLINE] = ExperimentsType.FREQ_ONLINE
+
+    @model_validator(mode="after")
+    def validate_no_one_time_metric(self) -> Self:
+        """One-time mode filters the pool at creation time, which only preassigned experiments have."""
+        if any(metric.use_one_time_metric for metric in self.metrics):
+            raise ValueError("use_one_time_metric is only supported for preassigned experiments.")
+        return self
 
 
 class MABExperimentSpec(BaseBanditExperimentSpec):
@@ -1488,6 +1521,11 @@ class PowerRequest(ApiBaseModel):
             raise ValueError("desired_n_clusters can only be set when cluster_key is set.")
         if self.cluster_key is None and self.desired_ns_clusters is not None:
             raise ValueError("desired_ns_clusters can only be set when cluster_key is set.")
+        return self
+
+    @model_validator(mode="after")
+    def validate_one_time_metric_scope(self) -> Self:
+        _validate_one_time_metric_scope(self.metrics, self.cluster_key)
         return self
 
     @model_validator(mode="after")

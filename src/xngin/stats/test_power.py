@@ -221,11 +221,60 @@ def test_analyze_metric_with_zero_available_nonnull_n_returns_insufficient():
 
     assert result.msg is not None
     assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
-    assert "Cannot run power calculation. Your column has all null values" in result.msg.msg
+    assert result.msg.msg == (
+        "Cannot estimate the minimum sample size. All participants have null for this metric. "
+        "Adjust your filters to target units with non-null values."
+    )
     # When returning early error, values is None
     assert result.msg.values is None
     assert result.target_n is None
     assert result.sufficient_n is None
+
+
+def make_metric_with_nulls(*, use_one_time_metric: bool, available_nonnull_n: int = 800):
+    # 1000 units, 800 non-null by default, so the column has 200 nulls and is one-time eligible.
+    return DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=1000,
+        available_nonnull_n=available_nonnull_n,
+        is_one_time_eligible=use_one_time_metric,
+        use_one_time_metric=use_one_time_metric,
+    )
+
+
+def test_analyze_metric_power_null_warning_suggests_handling_nulls():
+    result = analyze_metric_power(make_metric_with_nulls(use_one_time_metric=False), n_arms=2)
+
+    assert result.metric_spec.is_one_time_eligible
+    assert result.msg is not None
+    assert "NOTE: Only 800 of 1000 units have non-null values." in result.msg.msg
+    assert "Consider assigning only participants with nulls to the experiment" in result.msg.msg
+
+
+def test_analyze_metric_power_one_time_mode_skips_null_warning():
+    result = analyze_metric_power(make_metric_with_nulls(use_one_time_metric=True), n_arms=2)
+
+    # The user already opted into one-time mode, so there is nothing to suggest.
+    assert result.metric_spec.use_one_time_metric
+    assert result.msg is not None
+    assert "NOTE" not in result.msg.msg
+    assert "Consider" not in result.msg.msg
+
+
+def test_analyze_metric_power_resets_one_time_flags_when_no_nulls_remain():
+    # The request still carries one-time flags from an earlier check, but the column has since filled up.
+    metric = make_metric_with_nulls(use_one_time_metric=True, available_nonnull_n=1000)
+
+    result = analyze_metric_power(metric, n_arms=2)
+
+    assert not result.metric_spec.is_one_time_eligible
+    assert not result.metric_spec.use_one_time_metric
+    assert result.msg is not None
+    assert "NOTE" not in result.msg.msg
 
 
 def test_analyze_metric_zero_effect_size_returns_friendly_error():

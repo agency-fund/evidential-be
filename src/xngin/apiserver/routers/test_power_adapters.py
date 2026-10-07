@@ -4,15 +4,15 @@ from collections.abc import Mapping, Sequence
 
 import pandas as pd
 import pytest
-from sqlalchemy import MetaData, Table, create_engine
+from sqlalchemy import Column, Float, Integer, MetaData, Table, create_engine
 from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags
 from xngin.apiserver.conftest import get_test_uri_info
 from xngin.apiserver.dwh.queries import get_cluster_sufficient_stats
-from xngin.apiserver.routers.common_api_types import Filter
+from xngin.apiserver.routers.common_api_types import DesignSpecMetricRequest, Filter
 from xngin.apiserver.routers.common_enums import Relation
-from xngin.apiserver.routers.power_adapters import calculate_cluster_stats
+from xngin.apiserver.routers.power_adapters import build_metric_stats, calculate_cluster_stats
 from xngin.stats.stats_errors import StatsPowerError
 
 
@@ -245,3 +245,17 @@ def test_cluster_cvs(clustered_dwh_session):
     print(f"  Equal: {equal_cv:.3f} (range: [{equal_sizes.min()}, {equal_sizes.max()}])")
     print(f"  Moderate: {moderate_cv:.3f} (range: [{moderate_sizes.min()}, {moderate_sizes.max()}])")
     print(f"  Power-law: {powerlaw_cv:.3f} (range: [{powerlaw_sizes.min()}, {powerlaw_sizes.max()}])")
+
+
+def test_build_metric_stats_keeps_one_time_flags():
+    # In-memory table definition only; build_metric_stats never queries it, it just reads column types.
+    sa_table = Table("t", MetaData(), Column("id", Integer, primary_key=True), Column("income", Float))
+    raw_stats = {"income__mean": 50.0, "income__stddev": 10.0, "income__count": 800, "rows__count": 1000}
+    request = DesignSpecMetricRequest(
+        field_name="income", metric_pct_change=0.1, is_one_time_eligible=True, use_one_time_metric=True
+    )
+
+    (metric,) = build_metric_stats(raw_stats, sa_table, [request])
+
+    assert metric.is_one_time_eligible
+    assert metric.use_one_time_metric

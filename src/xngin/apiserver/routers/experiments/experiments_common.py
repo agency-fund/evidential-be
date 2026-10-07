@@ -293,13 +293,14 @@ def create_experiment_impl(
             select_columns = {*stratum_cols, primary_key}
             eligibility_filters = request.design_spec.filters
 
-            # Add filters for one-time metrics: only assign participants with null values for that metric
-            for metric in request.design_spec.metrics:
-                if metric.use_one_time_metric:
-                    eligibility_filters = [
-                        *eligibility_filters,
-                        Filter(field_name=metric.field_name, relation=Relation.INCLUDES, value=[None]),
-                    ]
+            # One-time mode: only assign participants with a null value for the metric. It is validated to be
+            # primary-only, so at most one null filter is added.
+            primary_metric = request.design_spec.metrics[0]
+            if primary_metric.use_one_time_metric:
+                eligibility_filters = [
+                    *eligibility_filters,
+                    Filter(field_name=primary_metric.field_name, relation=Relation.INCLUDES, value=[None]),
+                ]
 
             if cluster_key is not None:
                 select_columns.add(cluster_key)
