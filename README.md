@@ -96,7 +96,7 @@
 | src/xngin/stats/power.py                                                           |       59 |        1 |     98% |       245 |
 | src/xngin/stats/stats\_errors.py                                                   |       25 |        3 |     88% |10, 37, 45 |
 | src/xngin/tq/handlers.py                                                           |       85 |       11 |     87% |82-83, 129, 137-138, 149-158, 187-188 |
-| src/xngin/tq/task\_queue.py                                                        |      100 |        2 |     98% |   241-242 |
+| src/xngin/tq/task\_queue.py                                                        |      100 |        3 |     97% |236, 241-242 |
 | src/xngin/tq/tq\_test\_support.py                                                  |       48 |        5 |     90% |27-28, 46, 48, 70 |
 | src/xngin/xsecrets/chafernet.py                                                    |       52 |        1 |     98% |        92 |
 | src/xngin/xsecrets/gcp\_kms\_provider.py                                           |       70 |       28 |     60% |64-79, 86-87, 104-108, 111, 115-123, 127-134 |
@@ -104,7 +104,7 @@
 | src/xngin/xsecrets/secretservice.py                                                |       64 |        7 |     89% |37, 45-46, 51-52, 104, 126 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                                     |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                                         |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                                          | **17733** | **1042** | **94%** |           |
+| **TOTAL**                                                                          | **17733** | **1043** | **94%** |           |
 
 89 files skipped due to complete coverage.
 
