@@ -540,6 +540,33 @@ def test_one_time_metric_rejected_for_cluster_designs():
         PowerRequest.model_validate({"table_name": "dwh", "n_arms": 2, "cluster_key": "school_id", "metrics": metrics})
 
 
+def test_one_time_metric_rejected_with_filter_on_same_column():
+    metrics = [_one_time_metric("primary", use_one_time_metric=True)]
+    filters = [{"field_name": "primary", "relation": "between", "value": [0, 100]}]
+    expected = 'Cannot filter on "primary" while use_one_time_metric is set'
+
+    with pytest.raises(ValidationError, match=expected):
+        PreassignedFrequentistExperimentSpec.model_validate(_preassigned_spec_payload(metrics=metrics, filters=filters))
+
+    with pytest.raises(ValidationError, match=expected):
+        PowerRequest.model_validate({"table_name": "dwh", "n_arms": 2, "metrics": metrics, "filters": filters})
+
+
+def test_one_time_metric_allows_filters_on_other_columns_and_filters_without_one_time():
+    filters = [{"field_name": "primary", "relation": "between", "value": [0, 100]}]
+    # A filter on the primary metric is fine when one-time mode is off...
+    PreassignedFrequentistExperimentSpec.model_validate(
+        _preassigned_spec_payload(metrics=[_one_time_metric("primary", use_one_time_metric=False)], filters=filters)
+    )
+    # ...and one-time mode is fine with filters on other columns.
+    PreassignedFrequentistExperimentSpec.model_validate(
+        _preassigned_spec_payload(
+            metrics=[_one_time_metric("primary", use_one_time_metric=True)],
+            filters=[{"field_name": "age", "relation": "between", "value": [18, 65]}],
+        )
+    )
+
+
 def test_one_time_metric_rejected_for_online_experiments():
     payload = _preassigned_spec_payload(
         experiment_type="freq_online", metrics=[_one_time_metric("primary", use_one_time_metric=True)]

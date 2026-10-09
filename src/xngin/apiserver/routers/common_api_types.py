@@ -250,12 +250,16 @@ class DesignSpecMetricRequest(DesignSpecMetricBase):
         )
 
 
-def _validate_one_time_metric_scope(metrics: list[DesignSpecMetricRequest], cluster_key: str | None) -> None:
+def _validate_one_time_metric_scope(
+    metrics: list[DesignSpecMetricRequest], cluster_key: str | None, filters: list[Filter]
+) -> None:
     """One-time mode is only supported for the primary metric of an individually-randomized design.
 
     It filters to rows where the metric is null. Enabling it on several metrics would AND those filters
     together and drop more rows than any single metric's power check reports, so only the primary metric
     (metrics[0]) may use it. Cluster designs are out of scope: their power math doesn't account for it.
+    A user filter on the same column is rejected too: ANDed with the null filter it either does nothing or
+    matches nobody, and the resulting "too few participants" error would hide the real cause.
     """
     for metric in metrics[1:]:
         if metric.use_one_time_metric:
@@ -267,6 +271,13 @@ def _validate_one_time_metric_scope(metrics: list[DesignSpecMetricRequest], clus
         raise ValueError(
             "use_one_time_metric is not supported for cluster-randomized designs. "
             "Turn off use_one_time_metric or remove cluster_key."
+        )
+    primary_field_name = metrics[0].field_name
+    if metrics[0].use_one_time_metric and any(f.field_name == primary_field_name for f in filters):
+        raise ValueError(
+            f'Cannot filter on "{primary_field_name}" while use_one_time_metric is set, because one-time mode '
+            "already limits participants to those with no value for it. "
+            f'Remove the filter on "{primary_field_name}" or turn off use_one_time_metric.'
         )
 
 
@@ -1284,7 +1295,7 @@ class PreassignedFrequentistExperimentSpec(BaseFrequentistDesignSpec):
 
     @model_validator(mode="after")
     def validate_one_time_metric_scope(self) -> Self:
-        _validate_one_time_metric_scope(self.metrics, self.cluster_key)
+        _validate_one_time_metric_scope(self.metrics, self.cluster_key, self.filters)
         return self
 
 
@@ -1523,7 +1534,7 @@ class PowerRequest(ApiBaseModel):
 
     @model_validator(mode="after")
     def validate_one_time_metric_scope(self) -> Self:
-        _validate_one_time_metric_scope(self.metrics, self.cluster_key)
+        _validate_one_time_metric_scope(self.metrics, self.cluster_key, self.filters)
         return self
 
     @model_validator(mode="after")
