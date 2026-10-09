@@ -323,7 +323,7 @@ tasks:
       DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
     cmd: uv run xngin-dwh-pull {{.CLI_ARGS}}
   start-worker:
-    desc: "Runs experiment snapshots."
+    desc: "Runs experiment snapshots and autofail updates."
     interactive: true
     env:
       DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
@@ -332,13 +332,8 @@ tasks:
       --poll-interval 30
       -j 2
       --snapshot-interval 300
+      --autofail-batch-size 10
       {{.CLI_ARGS}}
-  start-snapshotter:
-    desc: "Applies autofail updates."
-    interactive: true
-    env:
-      DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
-    cmd: uv run xngin-snapshotter {{.CLI_ARGS}}
   start-tq:
     desc: "Start the task queue."
     interactive: true

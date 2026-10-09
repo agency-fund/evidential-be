@@ -10,25 +10,30 @@ from threading import Event
 from typing import ClassVar
 from unittest.mock import patch
 
-from sqlalchemy import ColumnElement, false, select, text
+from sqlalchemy import ColumnElement, false, select, text, update
 from sqlalchemy.orm import Session
 
 from xngin.apiserver import database
+from xngin.apiserver.routers.common_api_types import Assignment
 from xngin.apiserver.routers.common_enums import ExperimentsType, LikelihoodTypes, PriorTypes
+from xngin.apiserver.routers.experiments.experiments_common import create_assignment_for_participant
 from xngin.apiserver.routers.experiments.test_experiments_common import insert_experiment_and_arms
 from xngin.apiserver.sqla import tables
+from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
 from xngin.apiserver.worker.attempts import (
     AttemptExecutor,
     AttemptResult,
     FinishedAttempt,
     attempt_experiment,
 )
+from xngin.apiserver.worker.jobs.autofail import AutofailJob
 from xngin.apiserver.worker.jobs.base import Backoff, Job, JobSucceeded
 from xngin.apiserver.worker.jobs.snapshots import SnapshotJob
 from xngin.apiserver.worker.scheduler import Pacer, due_experiment_ids, run_worker
 
 BACKOFF = Backoff(delays=(timedelta(minutes=1), timedelta(minutes=5)))
 SNAPSHOT = SnapshotJob(interval=timedelta(hours=3), dwh_timeout=90, backoff=Backoff.constant(timedelta(hours=1)))
+AUTOFAIL = AutofailJob(batch_size=2, backoff=BACKOFF)
 NOW = datetime(2030, 1, 1, tzinfo=UTC)
 
 
@@ -70,6 +75,22 @@ def make_push_experiment(session, datasource, **kwargs):
         reward_type=LikelihoodTypes.BERNOULLI,
         **kwargs,
     )
+
+
+def make_autofail_experiment(session, datasource, participants=("1", "2", "3"), **kwargs):
+    experiment = make_push_experiment(session, datasource, **kwargs)
+    experiment.enable_autofail = True
+    experiment.autofail_window = 1
+    session.commit()
+    for participant in participants:
+        create_assignment_for_participant(session, experiment, participant, None, random_state=66)
+    session.execute(
+        update(tables.Draw)
+        .where(tables.Draw.experiment_id == experiment.id)
+        .values(created_at=datetime.now(UTC) - timedelta(hours=2))
+    )
+    session.commit()
+    return experiment
 
 
 def attempt_due(jobs: Sequence[Job], excluded: Collection[str] = (), *, now: datetime | None = None) -> FinishedAttempt:
@@ -220,3 +241,21 @@ def wait_until_backend_exits(pid: int | None) -> None:
             if time.monotonic() > deadline:
                 raise TimeoutError(f"Backend {pid} did not exit.")
             time.sleep(0.01)
+
+
+def read_assignments(
+    eclient: ExperimentsAPIClient, testing_datasource, experiment_id: str, participant_ids: Sequence[str]
+) -> list[Assignment]:
+    """Read each participant's assignment, including its outcome, through the Experiments API."""
+    assignments = []
+    for participant_id in participant_ids:
+        assignment = eclient.get_assignment(
+            api_key=testing_datasource.key,
+            experiment_id=experiment_id,
+            participant_id=participant_id,
+            create_if_none=False,
+        ).data.assignment
+        if assignment is None:
+            raise LookupError(f"Participant {participant_id} has no assignment.")
+        assignments.append(assignment)
+    return assignments

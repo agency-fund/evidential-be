@@ -8,18 +8,25 @@ from xngin.apiserver.routers.admin.test_admin_api import (
     make_bandit_online_experiment,
 )
 from xngin.apiserver.routers.common_enums import ExperimentState
+from xngin.apiserver.routers.experiments.experiments_common import (
+    create_assignment_for_participant,
+    update_bandit_arm_with_outcome_impl,
+)
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.worker_helpers import (
+    AUTOFAIL,
     NOW,
     SNAPSHOT,
     FakeJob,
     OtherFakeJob,
     Pause,
     attempt_due,
+    make_autofail_experiment,
     make_push_experiment,
     paused_attempt,
     ran_successfully,
+    read_outcomes,
     run_nothing,
     schedule_daily,
     status_for,
@@ -121,14 +128,130 @@ def test_future_activation_and_date_invalidation(xngin_session, testing_datasour
     assert status_for(experiment.id, SNAPSHOT).next_run_at == NOW + timedelta(days=3)
 
 
+def test_autofail_one_batch_and_overdue_work_past_horizon(xngin_session, testing_datasource):
+    experiment = make_autofail_experiment(xngin_session, testing_datasource.ds)
+    experiment.end_date = datetime.now(UTC) - timedelta(days=5)
+    xngin_session.commit()
+    refresh_stale_experiments((AUTOFAIL,))
+    assert ran_successfully(attempt_due((AUTOFAIL,)), AUTOFAIL)
+    assert list(read_outcomes(xngin_session, experiment.id).values()).count(None) == 1
+    assert ran_successfully(attempt_due((AUTOFAIL,)), AUTOFAIL)
+    assert list(read_outcomes(xngin_session, experiment.id).values()).count(None) == 0
+    assert status_for(experiment.id, AUTOFAIL).next_run_at is None
+
+
 def stale_among(jobs, *experiments):
     with database.get_session() as session:
         return set(_stale_experiment_ids(session, jobs)) & {experiment.id for experiment in experiments}
 
 
+def test_refresh_wakes_autofail_for_the_first_pending_draw(xngin_session, testing_datasource):
+    resolved = make_autofail_experiment(xngin_session, testing_datasource.ds, participants=("1",))
+    pending = make_autofail_experiment(xngin_session, testing_datasource.ds, participants=("1",))
+    update_bandit_arm_with_outcome_impl(xngin_session, resolved, "1", 1.0)
+    pending.end_date = datetime.now(UTC) - timedelta(days=5)
+    xngin_session.commit()
+
+    refresh_stale_experiments((AUTOFAIL,))
+
+    # Ended experiments stay scheduled while they have unresolved draws.
+    assert status_for(pending.id, AUTOFAIL).next_run_at is not None
+    assert status_for(resolved.id, AUTOFAIL).next_run_at is None
+    assert stale_among((AUTOFAIL,), resolved, pending) == set()
+
+    # Inserting a draw does not update the experiment, but the first pending one still wakes the refresh.
+    updated_at = resolved.updated_at
+    create_assignment_for_participant(xngin_session, resolved, "2", None, random_state=66)
+    xngin_session.commit()
+    assert resolved.updated_at == updated_at
+    assert stale_among((AUTOFAIL,), resolved, pending) == {resolved.id}
+    refresh_stale_experiments((AUTOFAIL,))
+    assert status_for(resolved.id, AUTOFAIL).next_run_at is not None
+    assert stale_among((AUTOFAIL,), resolved, pending) == set()
+
+
+def test_refresh_ignores_pending_draws_once_autofail_is_disabled(xngin_session, testing_datasource):
+    experiment = make_autofail_experiment(xngin_session, testing_datasource.ds, participants=("1",))
+    refresh_stale_experiments((AUTOFAIL,))
+    experiment.enable_autofail = False
+    xngin_session.commit()
+
+    refresh_stale_experiments((AUTOFAIL,))
+
+    # Its draws are still pending, but compute_next_run_at gives no time, so the refresh must not revisit it forever.
+    assert status_for(experiment.id, AUTOFAIL).next_run_at is None
+    assert stale_among((AUTOFAIL,), experiment) == set()
+
+
+def test_autofail_schedules_exact_expiry_without_early_execution(xngin_session, testing_datasource):
+    experiment = make_autofail_experiment(xngin_session, testing_datasource.ds, participants=("1",))
+    created_at = datetime.now(UTC)
+    xngin_session.execute(
+        update(tables.Draw).where(tables.Draw.experiment_id == experiment.id).values(created_at=created_at)
+    )
+    xngin_session.commit()
+    refresh_stale_experiments((AUTOFAIL,))
+    assert due_experiment_ids((AUTOFAIL,)) == ()
+    assert status_for(experiment.id, AUTOFAIL).next_run_at == created_at + timedelta(hours=1)
+    assert read_outcomes(xngin_session, experiment.id) == {"1": None}
+
+
+def test_locked_autofail_draws_keep_deadline_with_cooldown(xngin_session, testing_datasource):
+    experiment = make_autofail_experiment(xngin_session, testing_datasource.ds, participants=("1",))
+    refresh_stale_experiments((AUTOFAIL,))
+    with database.get_session() as api, api.begin():
+        api.execute(
+            select(tables.Draw).where(tables.Draw.experiment_id == experiment.id).with_for_update(of=tables.Draw)
+        )
+        # The batch was deferred: no success, no failure, and the attempt counts as having run no job.
+        assert attempt_due((AUTOFAIL,)).result is AttemptResult.NOTHING_READY
+        status = status_for(experiment.id, AUTOFAIL)
+        assert status.next_run_at == status.retry_not_before
+        assert status.last_success_at is None
+        assert status.consecutive_failures == 0
+        assert due_experiment_ids((AUTOFAIL,)) == ()
+    assert ran_successfully(attempt_due((AUTOFAIL,), now=status.next_run_at), AUTOFAIL)
+
+
+def test_claim_corrects_a_stale_run_time_without_running_a_job(xngin_session, testing_datasource):
+    experiment = make_autofail_experiment(xngin_session, testing_datasource.ds, participants=("1",))
+    refresh_stale_experiments((AUTOFAIL,))
+    stale = status_for(experiment.id, AUTOFAIL).next_run_at
+    assert stale is not None
+    # An API outcome resolves the only pending draw, changing neither the experiment nor its status row, so
+    # the refresh cannot notice that the stored run time is stale.
+    update_bandit_arm_with_outcome_impl(xngin_session, experiment, "1", 1.0)
+    xngin_session.commit()
+    assert status_for(experiment.id, AUTOFAIL).next_run_at == stale
+
+    # The scheduler hands out the experiment because the stored time is due; the attempt finds nothing ready and
+    # corrects it.
+    assert attempt_due((AUTOFAIL,)) == FinishedAttempt(experiment.id, AttemptResult.NOTHING_READY)
+    status = status_for(experiment.id, AUTOFAIL)
+    assert status.next_run_at is None
+    assert status.last_run_at is None
+    assert due_experiment_ids((AUTOFAIL,)) == ()
+
+
 def test_attempt_that_fails_before_claiming_aborts(xngin_session, mocker):
     mocker.patch("xngin.apiserver.worker.attempts.claim_experiment", side_effect=ConnectionError("unreachable"))
     assert attempt_experiment((FakeJob(),), "e") == FinishedAttempt("e", AttemptResult.ABORTED)
+
+
+def test_api_assignment_commits_during_maintenance(xngin_session, testing_datasource):
+    experiment = make_autofail_experiment(xngin_session, testing_datasource.ds, participants=())
+    pause = Pause()
+    job = FakeJob(run=pause)
+    refresh_stale_experiments((job,))
+    with paused_attempt((job,), pause, experiment.id) as running:
+        # New assignments must commit while maintenance still holds both locks.
+        xngin_session.execute(text("SET LOCAL lock_timeout = '300ms'"))
+        create_assignment_for_participant(xngin_session, experiment, "new", None, random_state=66)
+        xngin_session.commit()
+    assert ran_successfully(running.result(), job)
+    refresh_stale_experiments((AUTOFAIL,))
+    assert status_for(experiment.id, AUTOFAIL).next_run_at is not None
+    assert due_experiment_ids((job,)) == ()
 
 
 def test_failed_snapshots_retry_hourly_until_one_succeeds(testing_datasource, aclient: AdminAPIClient, mocker):
@@ -218,6 +341,20 @@ def test_backend_termination_allows_takeover_but_old_attempt_cannot_write(xngin_
     with database.get_session() as session:
         assert list(session.scalars(select(tables.Snapshot))) == []
     assert status_for(experiment.id, job).last_success_at is not None
+
+
+def test_api_outcome_and_metadata_update_commit_during_worker_read(xngin_session, testing_datasource):
+    experiment = make_autofail_experiment(xngin_session, testing_datasource.ds, participants=("1",))
+    pause = Pause()
+    job = FakeJob(run=pause)
+    refresh_stale_experiments((job,))
+    with paused_attempt((job,), pause, experiment.id) as worker:
+        xngin_session.execute(text("SET LOCAL lock_timeout = '300ms'"))
+        update_bandit_arm_with_outcome_impl(xngin_session, experiment, "1", 1.0)
+        experiment.end_date += timedelta(days=1)
+        xngin_session.commit()
+    assert ran_successfully(worker.result(), job)
+    assert read_outcomes(xngin_session, experiment.id) == {"1": 1.0}
 
 
 def test_refresh_failure_does_not_hide_other_experiments(xngin_session, testing_datasource):

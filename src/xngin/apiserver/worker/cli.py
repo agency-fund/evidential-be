@@ -13,13 +13,18 @@ from loguru import logger
 
 from xngin.apiserver import customlogging, database
 from xngin.apiserver.worker.attempts import AttemptExecutor, SystemClock
+from xngin.apiserver.worker.jobs.autofail import AutofailJob
 from xngin.apiserver.worker.jobs.base import Backoff
 from xngin.apiserver.worker.jobs.snapshots import SnapshotJob
 from xngin.apiserver.worker.scheduler import Pacer, run_worker
 from xngin.ops import sentry
 from xngin.xsecrets import secretservice
 
-app = typer.Typer(help="Runs experiment snapshots.")
+app = typer.Typer(help="Runs experiment snapshots and autofail updates.")
+
+# Autofail failures are quick database errors or bugs that hold nothing external, so they keep retrying every 2
+# minutes.
+AUTOFAIL_BACKOFF = Backoff(delays=(timedelta(minutes=1), timedelta(minutes=2)))
 
 
 def seconds(**kwargs: float) -> int:
@@ -55,6 +60,12 @@ def run(
             envvar="XNGIN_WORKER_SNAPSHOT_DWH_TIMEOUT", min=1, help="Maximum seconds for a snapshot's warehouse read."
         ),
     ] = 90,
+    autofail_batch_size: Annotated[
+        int,
+        typer.Option(
+            envvar="XNGIN_WORKER_AUTOFAIL_BATCH_SIZE", min=1, help="Maximum autofail outcomes per transaction."
+        ),
+    ] = 500,
     exit_after_jobs: Annotated[
         int,
         typer.Option(
@@ -77,6 +88,8 @@ def run(
             dwh_timeout=snapshot_dwh_timeout,
             backoff=Backoff.constant(timedelta(hours=1)),
         ),
+        # AutofailJob computes its next run time from the experiment's pending draws.
+        AutofailJob(batch_size=autofail_batch_size, backoff=AUTOFAIL_BACKOFF),
     )
     # Graceful shutdown: SIGINT and SIGTERM only set this event, so the worker stops starting new jobs
     # and drains active ones instead of dying mid-job.
@@ -99,7 +112,7 @@ def exit_now() -> None:
 
     A warehouse call that outlives its timeout keeps running on a helper thread, possibly forever. A normal
     interpreter exit joins every executor thread and would wait for them, so flush what we can and exit without
-    running exit handlers.
+    running exit handlers. Railway's ALWAYS restart policy (railway.worker.json) then starts a fresh process.
     """
     logger.info("Worker exiting.")
     sentry_sdk.flush()

@@ -8,9 +8,12 @@ import pytest
 from xngin.apiserver import database
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.worker_helpers import (
+    AUTOFAIL,
     FakeClock,
     FakeJob,
+    make_autofail_experiment,
     make_push_experiment,
+    read_outcomes,
     run_worker_on_fake_clock,
     status_for,
 )
@@ -208,6 +211,22 @@ def test_claims_held_elsewhere_do_not_hide_available_work(xngin_session, testing
     assert all(status_for(experiment_id, job).last_run_at is None for experiment_id in held)
     assert set(pacer.cooling_down()) == set(held)
     assert clock.monotonic() == 0
+
+
+def test_autofail_backlog_drains_without_waiting_for_poll(xngin_session, testing_datasource):
+    # A two-draw batch keeps this test small while requiring three independent attempts.
+    experiment = make_autofail_experiment(xngin_session, testing_datasource.ds, participants=("1", "2", "3", "4", "5"))
+    clock, looks = FakeClock(), []
+    run_worker_on_fake_clock(
+        (AUTOFAIL,),
+        Event(),
+        clock,
+        Pacer(poll_interval=60, exit_after_jobs=3),
+        lambda: looks.append(clock.monotonic()),
+    )
+    # Completion wake-ups dispatch every batch at once, without waiting for a poll interval.
+    assert looks == [0, 0, 0]
+    assert read_outcomes(xngin_session, experiment.id) == dict.fromkeys(("1", "2", "3", "4", "5"), 0.0)
 
 
 def make_pacer(**kwargs):
