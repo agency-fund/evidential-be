@@ -187,9 +187,13 @@ def solve_for_sample_size_individual(
     arm_weights: list[float] | None = None,
     power: float = 0.8,
     alpha: float = 0.05,
+    is_primary: bool = True,
 ) -> MetricPowerAnalysis:
     """
     Calculate required sample size for individual randomization.
+
+    is_primary: whether this is the design's primary metric. One-time mode is only allowed there, so only the
+    primary metric is marked one-time eligible or has one-time mode suggested in its message.
     """
 
     # Validate metric type
@@ -299,12 +303,13 @@ def solve_for_sample_size_individual(
         **({"available_null_n": null_n} if one_time_mode else {}),
     }
 
-    # One-time metric is eligible when power calc succeeds and column has nulls
-    if has_nulls:
-        analysis.metric_spec = metric.model_copy(update={"is_one_time_eligible": True})
-    else:
-        # No nulls left: one-time mode would match nobody, so turn it off.
-        analysis.metric_spec = metric.model_copy(update={"is_one_time_eligible": False, "use_one_time_metric": False})
+    # The primary metric is one-time eligible when the power calc succeeds and its column has nulls. With no nulls
+    # left, one-time mode would match nobody, so turn it off.
+    analysis.metric_spec = metric.model_copy(
+        update={"is_one_time_eligible": is_primary}
+        if has_nulls
+        else {"is_one_time_eligible": False, "use_one_time_metric": False}
+    )
 
     msg_base_stats = (
         (
@@ -323,7 +328,14 @@ def solve_for_sample_size_individual(
             "participants, including those with a null value."
         )
         # Skip the suggestion when the user already chose one-time mode.
-        if has_nulls and not one_time_mode
+        if has_nulls and not one_time_mode and is_primary
+        else (
+            # Secondary metrics can't use one-time mode, so only suggest the filter.
+            "NOTE: Only {available_nonnull_n} of {available_n} units have non-null values. "
+            "Consider adding a filter to explicitly exclude participants with a null value. Otherwise we will "
+            "sample from all matching participants, including those with a null value."
+        )
+        if has_nulls and not is_primary
         else ""
     )
 
@@ -394,13 +406,9 @@ def solve_for_mde_individual(
     """
     assert metric.metric_baseline is not None
 
-    # One-time mode assigns only the null rows, so a desired size beyond them can't be reached.
-    if (
-        metric.use_one_time_metric
-        and metric.available_n is not None
-        and metric.available_nonnull_n is not None
-        and metric.available_nonnull_n != metric.available_n
-    ):
+    # One-time mode assigns only the null rows, so a desired size beyond them can't be reached. This includes a
+    # column with no nulls at all (null_n == 0): creation would match nobody, so don't report an MDE for it.
+    if metric.use_one_time_metric and metric.available_n is not None and metric.available_nonnull_n is not None:
         null_n = metric.available_n - metric.available_nonnull_n
         if desired_n > null_n:
             return power_analysis_error(

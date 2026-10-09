@@ -367,6 +367,19 @@ def test_analyze_metric_power_one_time_mode_desired_n_exceeds_null_pool():
     assert "only 200 units have no value for this metric yet" in result.msg.msg
 
 
+def test_analyze_metric_power_one_time_mode_desired_n_with_no_nulls():
+    # Every row has a value, so one-time mode can assign nobody. Report that instead of an MDE that creation
+    # could never use.
+    metric = make_metric_with_nulls(use_one_time_metric=True, available_nonnull_n=1000)
+
+    result = analyze_metric_power(metric, n_arms=2, desired_n=500)
+
+    assert result.pct_change_possible is None
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
+    assert "only 0 units have no value for this metric yet" in result.msg.msg
+
+
 def test_check_power_one_time_mode_desired_ns_beyond_null_pool():
     metric = make_metric_with_nulls(use_one_time_metric=True)  # 200 nulls
 
@@ -903,3 +916,24 @@ def test_check_power_mde_curve_cluster_counts_take_precedence_over_desired_ns():
 
     assert both[0].mde_curve == clusters_only[0].mde_curve
     assert both[0].mde_curve != individuals_only[0].mde_curve
+
+
+def test_check_power_only_primary_metric_is_one_time_eligible():
+    # Both metrics have nulls, but one-time mode is only allowed on the primary (first) metric.
+    primary = make_metric_with_nulls(use_one_time_metric=False)
+    secondary = make_metric_with_nulls(use_one_time_metric=False).model_copy(update={"field_name": "secondary"})
+
+    primary_analysis, secondary_analysis = check_power([primary, secondary], n_arms=2)
+
+    assert primary_analysis.metric_spec.is_one_time_eligible
+    assert primary_analysis.msg is not None
+    assert "Consider assigning only participants with nulls" in primary_analysis.msg.msg
+
+    assert not secondary_analysis.metric_spec.is_one_time_eligible
+    assert secondary_analysis.msg is not None
+    # Still warned about nulls, but not told to use a mode it can't use.
+    assert "NOTE: Only 800 of 1000 units have non-null values." in secondary_analysis.msg.msg
+    assert (
+        "Consider adding a filter to explicitly exclude participants with a null value." in secondary_analysis.msg.msg
+    )
+    assert "assigning only participants with nulls" not in secondary_analysis.msg.msg
