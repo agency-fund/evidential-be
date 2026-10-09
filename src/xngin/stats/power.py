@@ -23,6 +23,7 @@ def analyze_metric_power(
     desired_n: int | None = None,
     power: float = 0.8,
     alpha: float = 0.05,
+    is_primary: bool = True,
 ) -> MetricPowerAnalysis:
     """
     Analyze power for a single metric.
@@ -35,6 +36,7 @@ def analyze_metric_power(
         arm_weights: Optional list of weights (summing to 100) for unbalanced arms, else assumes equal allocation.
         desired_n: Optional desired sample size. If provided, calculates MDE for the desired_n
             instead of the minimum sample size for a desired effect. Applies to all metrics.
+        is_primary: Whether this is the design's primary metric, the only one that may use one-time mode.
 
     Returns:
         MetricPowerAnalysis containing power analysis results
@@ -57,6 +59,7 @@ def analyze_metric_power(
             power=power,
             alpha=alpha,
             arm_weights=arm_weights,
+            is_primary=is_primary,
         )
 
     # else MDE mode:
@@ -199,7 +202,7 @@ def check_power(
         available units. If it fails, `pct_change_with_desired_n` will be None.
     """
     analyses = []
-    for metric in metrics:
+    for index, metric in enumerate(metrics):
         metric_desired_n = desired_n
         if desired_n_clusters is not None:
             if metric.avg_cluster_size is None:
@@ -210,8 +213,9 @@ def check_power(
             metric_desired_n = round(desired_n_clusters * metric.avg_cluster_size)
 
         try:
+            # metrics[0] is the primary metric, the only one that may use one-time mode.
             analysis = analyze_metric_power(
-                metric=metric, n_arms=n_arms, arm_weights=arm_weights, power=power, alpha=alpha
+                metric=metric, n_arms=n_arms, arm_weights=arm_weights, power=power, alpha=alpha, is_primary=index == 0
             )
 
             # Optional desired-size MDE calculation added to the min sample size analysis:
