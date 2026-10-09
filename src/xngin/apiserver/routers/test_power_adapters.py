@@ -247,15 +247,16 @@ def test_cluster_cvs(clustered_dwh_session):
     print(f"  Power-law: {powerlaw_cv:.3f} (range: [{powerlaw_sizes.min()}, {powerlaw_sizes.max()}])")
 
 
-def test_build_metric_stats_keeps_one_time_flags():
+def test_build_metric_stats_keeps_toggle_but_not_eligibility():
     # In-memory table definition only; build_metric_stats never queries it, it just reads column types.
     sa_table = Table("t", MetaData(), Column("id", Integer, primary_key=True), Column("income", Float))
     raw_stats = {"income__mean": 50.0, "income__stddev": 10.0, "income__count": 800, "rows__count": 1000}
+    # A stale or client-supplied eligibility flag must not leak through; the power check derives it.
     request = DesignSpecMetricRequest(
         field_name="income", metric_pct_change=0.1, is_one_time_eligible=True, use_one_time_metric=True
     )
 
     (metric,) = build_metric_stats(raw_stats, sa_table, [request])
 
-    assert metric.is_one_time_eligible
+    assert not metric.is_one_time_eligible
     assert metric.use_one_time_metric
