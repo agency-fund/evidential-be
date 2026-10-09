@@ -190,6 +190,8 @@ tasks:
       DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
       PYTHONUNBUFFERED: "1"
       RAILWAY_SERVICE_NAME: "local"  # detected by flags.is_railway
+      RAILWAY_REPLICA_ID: "local-replica"
+      RAILWAY_DEPLOYMENT_ID: "local-deployment"
       XNGIN_SESSION_TOKEN_KEYSET: "local"
     cmds:
       - uv run --no-dev xngin-apiserver-live

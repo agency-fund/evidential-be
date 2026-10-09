@@ -124,3 +124,8 @@ class LogFormat(enum.StrEnum):
 
 
 LOG_FORMAT = LogFormat.from_env()
+
+# Identify the Railway replica and deployment that produced a log line or Sentry event. Railway sets these on
+# every deployment; they are empty elsewhere.
+RAILWAY_REPLICA_ID = os.environ.get("RAILWAY_REPLICA_ID", "")
+RAILWAY_DEPLOYMENT_ID = os.environ.get("RAILWAY_DEPLOYMENT_ID", "")

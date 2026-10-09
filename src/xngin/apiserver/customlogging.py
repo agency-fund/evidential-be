@@ -1,9 +1,9 @@
-import inspect
 import json
 import logging
 import sys
 import traceback
 import typing
+from collections.abc import Callable
 
 from xngin.apiserver.flags import LogFormat
 
@@ -25,18 +25,17 @@ class InterceptHandler(logging.Handler):
         except ValueError:
             level = record.levelno
 
-        # Find caller from where originated the logged message.
-        frame, depth = inspect.currentframe(), 0
-        while frame:
-            filename = frame.f_code.co_filename
-            is_logging = filename == logging.__file__
-            is_frozen = "importlib" in filename and "_bootstrap" in filename
-            if depth > 0 and not (is_logging or is_frozen):
-                break
-            frame = frame.f_back
-            depth += 1
+        # Describe the caller using the LogRecord rather than by walking the stack to the first frame outside the
+        # logging module: Sentry's logging integration wraps Logger.callHandlers, so that frame belongs to Sentry, and
+        # every record would appear to come from sentry_sdk.integrations.logging. The logger name ("uvicorn.access",
+        # "sqlalchemy.engine.Engine.xngin_app") is also more useful than the module name a stack walk would find.
+        def describe_caller(loguru_record: loguru_Record) -> None:
+            loguru_record["name"] = record.name
+            loguru_record["module"] = record.module
+            loguru_record["function"] = record.funcName
+            loguru_record["line"] = record.lineno
 
-        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+        logger.patch(describe_caller).opt(exception=record.exc_info).log(level, record.getMessage())
 
 
 def _customize_loguru():
@@ -44,8 +43,23 @@ def _customize_loguru():
     logger.level("DEBUG", icon="D ")
 
 
+# Distinguishes log lines from different replicas and deployments.
+_RAILWAY_IDENTITY = {
+    key: value
+    for key, value in {
+        "replica_id": flags.RAILWAY_REPLICA_ID,
+        "deployment_id": flags.RAILWAY_DEPLOYMENT_ID,
+    }.items()
+    if value
+}
+
+
 def _record_to_railway_json(record: loguru_Record):
-    structured: dict[str, int | str | list[str] | dict[typing.Any, typing.Any] | None] = {
+    structured: dict[str, typing.Any] = {
+        # Railway only lets the Log Explorer filter on top-level fields, so contextual values (from logger.bind(),
+        # logger.contextualize(), and message format arguments) go at the top level. The fields below take precedence
+        # over any of them with the same name.
+        **record["extra"],
         "timestamp": record["time"].isoformat(),
         "message": record["message"],
         "level": record["level"].name,
@@ -53,11 +67,11 @@ def _record_to_railway_json(record: loguru_Record):
         "module": record["module"],
         "function": record["function"],
         "line": record["line"],
-        "extra": record["extra"],
         "process_id": record["process"].id,
         "process_name": record["process"].name,
         "thread_id": record["thread"].id,
         "thread_name": record["thread"].name,
+        **_RAILWAY_IDENTITY,
     }
     if (exc := record["exception"]) is not None:
         structured.update({
@@ -74,9 +88,23 @@ def _stdout_railway_sink(message: loguru_Message):
     print(serialized)
 
 
-def setup():
+def _log_unraisable(unraisable: sys.UnraisableHookArgs) -> None:
+    """Logs exceptions that Python cannot raise, such as those from __del__ methods and weakref callbacks."""
+    message = unraisable.err_msg or "Exception ignored in"
+    if unraisable.object is not None:
+        message = f"{message}: {unraisable.object!r}"
+    logger.opt(exception=(unraisable.exc_type, unraisable.exc_value, unraisable.exc_traceback)).error(message)
+
+
+def setup(*, patcher: Callable[[loguru_Record], None] | None = None) -> None:
+    """
+    Configures logging using loguru.
+
+    If specified, `patcher` will be applied to every record, allowing callers to enrich log records.
+    """
     logging.basicConfig(handlers=[InterceptHandler()], level=logging.NOTSET, force=True)
     _customize_loguru()
+    logger.configure(patcher=patcher)
 
     for name in logging.root.manager.loggerDict:
         existing_logger = logging.getLogger(name)
@@ -102,6 +130,10 @@ def setup():
         case LogFormat.STRUCTURED_RAILWAY:
             logger.remove()
             logger.add(_stdout_railway_sink)
+            # Replace the default unraisablehook behavior (stderr) with structured output.
+            # We do not override threading.excepthook because doing so is brittle, and Sentry will already capture
+            # those exceptions.
+            sys.unraisablehook = _log_unraisable
         case _:
             # allow loguru default behavior
             pass
@@ -139,6 +171,7 @@ def _configure_third_party_levels():
     )
 
     logging.getLogger("httpcore").setLevel(logging.WARN)
+    logging.getLogger("httpcore2").setLevel(logging.WARN)
     logging.getLogger("httpx2").setLevel(logging.WARN)
     logging.getLogger("urllib3").setLevel(logging.WARN)
     logging.getLogger("watchfiles.main").setLevel(logging.WARN)

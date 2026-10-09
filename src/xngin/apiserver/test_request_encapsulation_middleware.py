@@ -13,6 +13,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
+from xngin.apiserver import flags, middleware
 from xngin.apiserver.request_encapsulation_middleware import RequestEncapsulationMiddleware
 
 
@@ -202,6 +203,23 @@ def test_handles_empty_request_body(client):
 
     assert response.status_code == 400
     assert "empty request body" in response.json()["message"]
+
+
+def test_encapsulation_errors_include_cors_headers(monkeypatch):
+    origin = "https://app.example.com"
+    monkeypatch.setattr(flags, "CORS_ALLOWED_ORIGINS", [origin])
+    app = Starlette(routes=[Route("/v1/experiments/echo", echo_handler, methods=["POST"])])
+    middleware.setup(app)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/experiments/echo?_unwrap=/data",
+            json={},
+            headers={"Origin": origin, "Content-Type": "application/json"},
+        )
+
+    assert response.status_code == 400
+    assert response.headers["access-control-allow-origin"] == origin
 
 
 @pytest.mark.parametrize(
