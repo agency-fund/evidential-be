@@ -330,6 +330,16 @@ def create_experiment_impl(
                     )
                 sa_table, participants = result.sa_table, result.participants
 
+            # One-time mode can only assign the rows where the primary metric is still null. Block creation when
+            # there are fewer of those than requested rather than silently running a smaller experiment.
+            if primary_metric.use_one_time_metric and desired_n is not None and len(participants) < desired_n:
+                raise LateValidationError(
+                    f"Cannot create the experiment because only {len(participants)} participants have no value "
+                    f'for "{primary_metric.field_name}", fewer than the desired sample size of {desired_n}. '
+                    "Turn off one-time mode to sample from all participants, or adjust your filters to include "
+                    "more participants with no value."
+                )
+
             if not participants:
                 raise LateValidationError("Preassigned experiments must have eligible participants data")
 

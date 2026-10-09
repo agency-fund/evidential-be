@@ -130,8 +130,8 @@ class DesignSpecMetricBase(ApiBaseModel):
         bool,
         Field(
             description=(
-                "True if metric is eligible for one-time mode (has both null and non-null values). "
-                "When enabled, only participants with null values are assigned to the experiment."
+                "Set by the power check: True if the metric is eligible for one-time mode (has both null and "
+                "non-null values). Clients do not need to send this; the server derives it from the data."
             )
         ),
     ] = False
@@ -140,18 +140,10 @@ class DesignSpecMetricBase(ApiBaseModel):
         Field(
             description=(
                 "Enable one-time metric mode: only assign participants with null values for this metric. "
-                "Can only be True if is_one_time_eligible is True. Only allowed on the primary (first) metric "
-                "of an individually-randomized preassigned experiment."
+                "Only allowed on the primary (first) metric of an individually-randomized preassigned experiment."
             )
         ),
     ] = False
-
-    @model_validator(mode="after")
-    def validate_one_time_metric(self) -> Self:
-        """Enforce that use_one_time_metric can only be True if is_one_time_eligible is True."""
-        if self.use_one_time_metric and not self.is_one_time_eligible:
-            raise ValueError("use_one_time_metric can only be set to True when is_one_time_eligible is True")
-        return self
 
     @model_validator(mode="after")
     def cluster_fields_check(self) -> Self:
@@ -252,8 +244,8 @@ class DesignSpecMetricRequest(DesignSpecMetricBase):
             metric_stddev=self.metric_stddev,
             available_nonnull_n=self.available_nonnull_n,
             available_n=self.available_n,
-            # Carry the user's one-time choice through; the power check re-derives eligibility from the stats.
-            is_one_time_eligible=self.is_one_time_eligible,
+            # Carry the user's one-time choice through. Eligibility is not taken from the client: the power
+            # check derives it from the stats (same as build_metric_stats).
             use_one_time_metric=self.use_one_time_metric,
         )
 
@@ -269,10 +261,13 @@ def _validate_one_time_metric_scope(metrics: list[DesignSpecMetricRequest], clus
         if metric.use_one_time_metric:
             raise ValueError(
                 "use_one_time_metric can only be set on the primary metric (the first in the list), "
-                f"but it is set on '{metric.field_name}'."
+                f'but it is set on "{metric.field_name}".'
             )
     if cluster_key is not None and metrics[0].use_one_time_metric:
-        raise ValueError("use_one_time_metric is not supported for cluster-randomized designs.")
+        raise ValueError(
+            "use_one_time_metric is not supported for cluster-randomized designs. "
+            "Turn off use_one_time_metric or remove cluster_key."
+        )
 
 
 class ParticipantProperty(ApiBaseModel):
@@ -1306,7 +1301,10 @@ class OnlineFrequentistExperimentSpec(BaseFrequentistDesignSpec):
     def validate_no_one_time_metric(self) -> Self:
         """One-time mode filters the pool at creation time, which only preassigned experiments have."""
         if any(metric.use_one_time_metric for metric in self.metrics):
-            raise ValueError("use_one_time_metric is only supported for preassigned experiments.")
+            raise ValueError(
+                "use_one_time_metric is only supported for preassigned experiments. "
+                "Turn off use_one_time_metric for online experiments."
+            )
         return self
 
 
