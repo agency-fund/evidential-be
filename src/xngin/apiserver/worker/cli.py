@@ -124,27 +124,34 @@ def run(
     # and drains active ones instead of dying mid-job.
     stop = Event()
     previous = {sig: signal.signal(sig, lambda *_: stop.set()) for sig in (signal.SIGINT, signal.SIGTERM)}
+    exit_code = 1
     try:
         clock = SystemClock()
         # Each worker will get its own connection, plus one for scheduling. Leaving the executor's context drains
         # the running attempts, before the database is torn down.
         with database.setup(pool_size=parallelism + 1), AttemptExecutor(parallelism, clock) as executor:
             run_worker(jobs, stop, clock, Pacer(poll_interval=poll_interval, exit_after_jobs=exit_after_jobs), executor)
+        exit_code = 0
+    except BaseException as exc:
+        # exit_now discards the exception, so report it here.
+        logger.opt(exception=exc).error("Worker stopped unexpectedly.")
+        sentry_sdk.capture_exception(exc)
     finally:
         for sig, handler in previous.items():
             signal.signal(sig, handler)
-    exit_now()
+        exit_now(exit_code)
 
 
-def exit_now() -> None:
+def exit_now(exit_code: int) -> None:
     """Exit at once, killing threads left behind by abandoned warehouse calls.
 
     A warehouse call that outlives its timeout keeps running on a helper thread, possibly forever. A normal
     interpreter exit joins every executor thread and would wait for them, so flush what we can and exit without
-    running exit handlers. Railway's ALWAYS restart policy (railway.worker.json) then starts a fresh process.
+    running exit handlers, even when an exception is propagating. Railway's ALWAYS restart policy
+    (railway.worker.json) then starts a fresh process.
     """
-    logger.info("Worker exiting.")
+    logger.info(f"Worker exiting with status {exit_code}.")
     sentry_sdk.flush()
     sys.stdout.flush()
     sys.stderr.flush()
-    os._exit(0)
+    os._exit(exit_code)
