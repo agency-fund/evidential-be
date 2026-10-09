@@ -1,7 +1,6 @@
 import json
 import logging
 import sys
-import threading
 import traceback
 import typing
 from collections.abc import Callable
@@ -97,17 +96,6 @@ def _log_unraisable(unraisable: sys.UnraisableHookArgs) -> None:
     logger.opt(exception=(unraisable.exc_type, unraisable.exc_value, unraisable.exc_traceback)).error(message)
 
 
-def _log_thread_exception(args: threading.ExceptHookArgs) -> None:
-    """Logs exceptions that escape a thread's run() method."""
-    if args.exc_type is SystemExit:
-        # Matches threading's default hook, which ignores SystemExit.
-        return
-    thread_name = args.thread.name if args.thread is not None else "unknown"
-    logger.opt(exception=(args.exc_type, args.exc_value, args.exc_traceback)).error(
-        f"Uncaught exception in thread {thread_name}"
-    )
-
-
 def setup(*, patcher: Callable[[loguru_Record], None] | None = None) -> None:
     """
     Configures logging using loguru.
@@ -142,11 +130,10 @@ def setup(*, patcher: Callable[[loguru_Record], None] | None = None) -> None:
         case LogFormat.STRUCTURED_RAILWAY:
             logger.remove()
             logger.add(_stdout_railway_sink)
-            # Python's default hooks print these tracebacks straight to stderr, which Railway records as one
-            # unstructured log entry per line. Development environments keep the defaults, which are readable there
-            # and which pytest relies on to report unraisable exceptions.
+            # Replace the default unraisablehook behavior (stderr) with structured output.
+            # We do not override threading.excepthook because doing so is brittle, and Sentry will already capture
+            # those exceptions.
             sys.unraisablehook = _log_unraisable
-            threading.excepthook = _log_thread_exception
         case _:
             # allow loguru default behavior
             pass
