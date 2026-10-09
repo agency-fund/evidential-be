@@ -40,7 +40,7 @@ webhook_id_factory = unique_id_factory("wh")
 context_id_factory = unique_id_factory("ctx")
 
 # Describes the status of a snapshot. SQLAlchemy will represent this Literal type as a string type.
-type SnapshotStatus = Literal["pending", "success", "failed"]
+type SnapshotStatus = Literal["success", "failed"]
 
 
 class Base(DeclarativeBase):
@@ -737,6 +737,7 @@ class Snapshot(Base):
     """Snapshots of experiment data."""
 
     __tablename__ = "snapshots"
+    __table_args__ = (CheckConstraint("status IN ('success', 'failed')", name="ck_snapshots_status"),)
 
     experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True)
     id: Mapped[str] = mapped_column(primary_key=True, default=snapshot_id_factory, unique=True)
@@ -744,7 +745,7 @@ class Snapshot(Base):
     updated_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now()
     )
-    status: Mapped[SnapshotStatus] = mapped_column(server_default="pending")
+    status: Mapped[SnapshotStatus] = mapped_column()
     # An optional informative message about the state of this task (for example, if a snapshot fails, it might contain
     # an informative error message).
     message: Mapped[str | None] = mapped_column()

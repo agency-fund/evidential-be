@@ -331,7 +331,11 @@ def test_due_jobs_and_experiments_get_fair_turns(xngin_session, testing_datasour
 
 def test_backend_termination_allows_takeover_but_old_attempt_cannot_write(xngin_session, testing_datasource):
     experiment = make_push_experiment(xngin_session, testing_datasource.ds)
-    pause = Pause(after=lambda session, experiment: session.add(tables.Snapshot(experiment_id=experiment.id, data={})))
+    pause = Pause(
+        after=lambda session, experiment: session.add(
+            tables.Snapshot(experiment_id=experiment.id, status="success", data={})
+        )
+    )
     job = FakeJob(run=pause)
     with paused_attempt((job,), pause, experiment.id) as old:
         with database.get_engine().begin() as connection:
