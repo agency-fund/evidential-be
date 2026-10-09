@@ -274,6 +274,16 @@ def test_analysis_with_all_identical_outcomes_in_one_arm():
 @pytest.mark.filterwarnings("ignore:divide by zero encountered in scalar divide:RuntimeWarning")
 # That non-finite covariance makes the predicted-mean variance dot product warn.
 @pytest.mark.filterwarnings("ignore:invalid value encountered in dot:RuntimeWarning")
+# This one fires on some CI runners but never on macOS, so it is easy to miss locally. The chain:
+#   1. Two participants, two parameters: the fit is exact and df_resid is 0.
+#   2. HC1 multiplies the squared residuals by nobs / df_resid, which is 2 / 0 = inf (we ignore this)
+#   3. The residuals are mathematically 0, but BLAS returns either exactly 0.0 or a rounding
+#      crumb like 1e-16, depending on the build and CPU.
+#   4. inf * 0.0 is NaN and numpy warns "invalid value encountered in multiply".
+#      inf * 1e-16 is inf and nothing warns.
+# macOS produces the 1e-16; some GitHub runners land on 0. Either way the NaN this test checks
+# for arrives later, so the warning is part of the expected path.
+@pytest.mark.filterwarnings("ignore:invalid value encountered in multiply:RuntimeWarning")
 def test_analysis_with_inestimable_variance_keeps_nan_mean_cis():
     """NaN mean CI bounds from causes other than identical outcomes are surfaced, not collapsed.
 
