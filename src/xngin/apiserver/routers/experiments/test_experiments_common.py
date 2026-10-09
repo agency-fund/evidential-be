@@ -1,17 +1,21 @@
+import threading
+import time
 from collections import defaultdict
 from contextlib import AbstractContextManager
 from contextlib import nullcontext as does_not_raise
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import cast
+from unittest.mock import patch
 
 import numpy as np
 import pytest
 from deepdiff import DeepDiff
 from pydantic import HttpUrl, TypeAdapter
-from sqlalchemy import Boolean, Column, MetaData, String, Table, select
+from sqlalchemy import Boolean, Column, MetaData, String, Table, insert, select
 from sqlalchemy.orm import Session, selectinload
 
+from xngin.apiserver import database
 from xngin.apiserver.conftest import RowProtocolMixin
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.exceptions_common import LateValidationError
@@ -41,6 +45,7 @@ from xngin.apiserver.routers.common_api_types import (
     Stratum,
 )
 from xngin.apiserver.routers.common_enums import DataType, ExperimentState, Relation, StopAssignmentReason
+from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.routers.experiments.experiments_common import (
     ExperimentsAssignmentError,
     analyze_experiment_freq_impl,
@@ -2660,6 +2665,94 @@ def test_update_bandit_arm_with_outcome_multiple_times_in_one_transaction(xngin_
     ).one()
     assert persisted_alpha == initial_alpha + 1
     assert persisted_beta == initial_beta + 1
+
+
+def test_concurrent_outcomes_on_same_bandit_arm_do_not_race(xngin_session, testing_datasource):
+    """Two participants reporting an outcome for the same arm at the same time must not race i.e. one
+    should not overwrite the other.
+
+    update_bandit_arm_with_outcome_impl locks the Arm row with SELECT ... FOR UPDATE before reading its
+    parameters, so a second concurrent writer blocks until the first writer commits, then recomputes from
+    the post-commit value. This test exercises that lock to check that concurrent updates are not lost.
+    """
+    bandit_experiment = insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.MAB_ONLINE,
+        prior_type=PriorTypes.BETA,
+        reward_type=LikelihoodTypes.BERNOULLI,
+    )
+    chosen_arm_id = bandit_experiment.arms[0].id
+    participant_ids = ("participant-1", "participant-2")
+
+    for participant_id in participant_ids:
+        xngin_session.execute(
+            insert(tables.Draw)
+            .values(
+                experiment_id=bandit_experiment.id,
+                participant_id=participant_id,
+                arm_id=chosen_arm_id,
+                context_vals=None,
+            )
+            .returning(tables.Draw.created_at)
+        )
+
+    initial_alpha, initial_beta = (
+        xngin_session.execute(select(tables.Arm.alpha, tables.Arm.beta).where(tables.Arm.id == chosen_arm_id))
+    ).one()
+    xngin_session.commit()
+
+    # Make first update reach and lock the Arm
+    first_writer_has_locked_the_arm = threading.Event()
+    first_caller_lock = threading.Lock()
+    first_caller_claimed = False
+    real_update_bandit_arm = experiments_common.update_bandit_arm
+
+    def delayed_update_bandit_arm(*args, **kwargs):
+        nonlocal first_caller_claimed
+        with first_caller_lock:
+            is_first = not first_caller_claimed
+            first_caller_claimed = True
+        if is_first:
+            first_writer_has_locked_the_arm.set()
+            time.sleep(0.3)
+        return real_update_bandit_arm(*args, **kwargs)
+
+    errors: list[BaseException] = []
+
+    def worker(participant_id: str, outcome: float) -> None:
+        try:
+            with database.get_session() as session:
+                experiment = get_experiment_preloaded(session, bandit_experiment.id)
+                update_bandit_arm_with_outcome_impl(
+                    xngin_session=session,
+                    experiment=experiment,
+                    participant_id=participant_id,
+                    outcome=outcome,
+                )
+                session.commit()
+        except BaseException as exc:
+            errors.append(exc)
+
+    with patch.object(experiments_common, "update_bandit_arm", side_effect=delayed_update_bandit_arm):
+        thread_a = threading.Thread(target=worker, args=(participant_ids[0], 1.0))
+        thread_b = threading.Thread(target=worker, args=(participant_ids[1], 1.0))
+        thread_a.start()
+        assert first_writer_has_locked_the_arm.wait(timeout=5)
+        thread_b.start()
+        thread_a.join(timeout=10)
+        thread_b.join(timeout=10)
+
+    assert not thread_a.is_alive()
+    assert not thread_b.is_alive()
+    assert not errors
+
+    persisted_alpha, persisted_beta = (
+        xngin_session.execute(select(tables.Arm.alpha, tables.Arm.beta).where(tables.Arm.id == chosen_arm_id))
+    ).one()
+
+    assert persisted_alpha == initial_alpha + 2
+    assert persisted_beta == initial_beta
 
 
 def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_session, testing_datasource):

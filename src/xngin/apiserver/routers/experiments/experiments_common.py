@@ -1112,20 +1112,6 @@ class PartialUpdateDrawNormal(TypedDict):
     current_covariance: list[list[float]] | None
 
 
-class PartialUpdateArmBeta(TypedDict):
-    """Subset of fields on tables.Arm, used for type-safe partial updates."""
-
-    alpha: float | None
-    beta: float | None
-
-
-class PartialUpdateArmNormal(TypedDict):
-    """Subset of fields on tables.Arm, used for type-safe partial updates."""
-
-    mu: list[float] | None
-    covariance: list[list[float]] | None
-
-
 def update_bandit_arm_with_outcome_impl(
     xngin_session: Session,
     experiment: tables.Experiment,
@@ -1184,7 +1170,16 @@ def update_bandit_arm_with_outcome_impl(
             f"Participant '{participant_id}' already has a recorded outcome for this experiment.",
         )
 
-    arm_to_update = next(arm for arm in experiment.arms if arm.id == draw_record.arm_id)
+    arm_to_update = xngin_session.execute(
+        select(tables.Arm)
+        .where(tables.Arm.id == draw_record.arm_id, tables.Arm.experiment_id == experiment.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+    if arm_to_update is None:
+        raise ExperimentsAssignmentError(
+            f"Arm '{draw_record.arm_id}' not found for experiment '{experiment.id}'.",
+        )
 
     # Get all prior draws for this arm, sorted by observation date
     outcomes, context_vals = _fetch_outcomes_and_context_for_arm(
@@ -1203,20 +1198,20 @@ def update_bandit_arm_with_outcome_impl(
 
     # Update the draw record and arm with the new parameters
     update_draw_params: PartialUpdateDrawBeta | PartialUpdateDrawNormal
-    update_arm_params: PartialUpdateArmBeta | PartialUpdateArmNormal
     match updated_parameters:
         case UpdateTypeBeta():
             update_draw_params = PartialUpdateDrawBeta(
                 current_alpha=updated_parameters.alpha, current_beta=updated_parameters.beta
             )
-            update_arm_params = PartialUpdateArmBeta(alpha=updated_parameters.alpha, beta=updated_parameters.beta)
+            arm_to_update.alpha = updated_parameters.alpha
+            arm_to_update.beta = updated_parameters.beta
+
         case UpdateTypeNormal():
             update_draw_params = PartialUpdateDrawNormal(
                 current_mu=updated_parameters.mu, current_covariance=updated_parameters.covariance
             )
-            update_arm_params = PartialUpdateArmNormal(
-                mu=updated_parameters.mu, covariance=updated_parameters.covariance
-            )
+            arm_to_update.mu = updated_parameters.mu
+            arm_to_update.covariance = updated_parameters.covariance
 
     xngin_session.execute(
         update(tables.Draw)
@@ -1226,14 +1221,6 @@ def update_bandit_arm_with_outcome_impl(
             tables.Draw.arm_id == arm_to_update.id,
         )
         .values(**update_draw_params)
-    )
-    xngin_session.execute(
-        update(tables.Arm)
-        .where(
-            tables.Arm.id == arm_to_update.id,
-            tables.Arm.experiment_id == experiment.id,
-        )
-        .values(**update_arm_params)
     )
 
     return arm_to_update
