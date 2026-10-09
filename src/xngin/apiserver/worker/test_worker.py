@@ -1,12 +1,18 @@
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from threading import Event
 
 from sqlalchemy import select, text, update
 
 from xngin.apiserver import database
+from xngin.apiserver.routers.admin.test_admin_api import (
+    make_bandit_online_experiment,
+)
+from xngin.apiserver.routers.common_enums import ExperimentState
 from xngin.apiserver.sqla import tables
+from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.worker_helpers import (
     NOW,
+    SNAPSHOT,
     FakeJob,
     OtherFakeJob,
     Pause,
@@ -100,6 +106,21 @@ def test_connection_loss_rolls_back_claim_status_and_effects(xngin_session, test
     assert ran_successfully(attempt_due((job,)), job)
 
 
+def test_future_activation_and_date_invalidation(xngin_session, testing_datasource):
+    experiment = make_push_experiment(xngin_session, testing_datasource.ds)
+    experiment.start_date = NOW + timedelta(days=3)
+    experiment.end_date = NOW + timedelta(days=10)
+    xngin_session.commit()
+    refresh_stale_experiments((SNAPSHOT,))
+    assert due_experiment_ids((SNAPSHOT,), now=NOW) == ()
+    assert status_for(experiment.id, SNAPSHOT).next_run_at == NOW + timedelta(days=2)
+    experiment.start_date = NOW + timedelta(days=4)
+    xngin_session.commit()
+    refresh_stale_experiments((SNAPSHOT,))
+    assert due_experiment_ids((SNAPSHOT,), now=NOW) == ()
+    assert status_for(experiment.id, SNAPSHOT).next_run_at == NOW + timedelta(days=3)
+
+
 def stale_among(jobs, *experiments):
     with database.get_session() as session:
         return set(_stale_experiment_ids(session, jobs)) & {experiment.id for experiment in experiments}
@@ -108,6 +129,47 @@ def stale_among(jobs, *experiments):
 def test_attempt_that_fails_before_claiming_aborts(xngin_session, mocker):
     mocker.patch("xngin.apiserver.worker.attempts.claim_experiment", side_effect=ConnectionError("unreachable"))
     assert attempt_experiment((FakeJob(),), "e") == FinishedAttempt("e", AttemptResult.ABORTED)
+
+
+def test_failed_snapshots_retry_hourly_until_one_succeeds(testing_datasource, aclient: AdminAPIClient, mocker):
+    experiment_id = make_bandit_online_experiment(aclient, testing_datasource.datasource_id).config.experiment_id
+
+    def fail(session, *args):
+        session.execute(update(tables.Experiment).where(tables.Experiment.id == experiment_id).values(name="partial"))
+        session.execute(text("SELECT 1 / 0"))
+
+    analysis = mocker.patch("xngin.apiserver.snapshots.snapshotter._compute_snapshot_data", side_effect=fail)
+    refresh_stale_experiments((SNAPSHOT,))
+    started = datetime.now(UTC)
+    assert attempt_due((SNAPSHOT,), now=started).result is AttemptResult.JOB_RAN
+    with database.get_session() as session:
+        # The failed analysis's writes roll back, but its failed snapshot commits.
+        assert session.get(tables.Experiment, experiment_id).name != "partial"
+        snapshot = session.scalars(select(tables.Snapshot).where(tables.Snapshot.experiment_id == experiment_id)).one()
+    assert snapshot.status == "failed"
+    status = status_for(experiment_id, SNAPSHOT)
+    # The status row carries the snapshot's own diagnostic.
+    assert status.last_error == snapshot.message
+    assert "division by zero" in status.last_error
+    assert status.last_success_at is None
+    retry = SNAPSHOT.backoff.delay_after(1)
+    assert retry < SNAPSHOT.interval
+    assert status.next_run_at == started + retry
+    # Refreshes and repeated failures cannot accelerate or lengthen the hourly retries.
+    refresh_stale_experiments((SNAPSHOT,))
+    assert due_experiment_ids((SNAPSHOT,), now=started + timedelta(minutes=1)) == ()
+    second_run = started + retry
+    assert attempt_due((SNAPSHOT,), now=second_run).result is AttemptResult.JOB_RAN
+    assert status_for(experiment_id, SNAPSHOT).next_run_at == second_run + retry
+    assert status_for(experiment_id, SNAPSHOT).consecutive_failures == 2
+
+    mocker.stop(analysis)
+    third_run = second_run + retry
+    assert attempt_due((SNAPSHOT,), now=third_run).result is AttemptResult.JOB_RAN
+    status = status_for(experiment_id, SNAPSHOT)
+    assert status.last_success_at == third_run
+    assert status.next_run_at == third_run + SNAPSHOT.interval
+    assert status.consecutive_failures == 0
 
 
 def test_parent_lock_delays_maintenance_without_claiming_work(xngin_session, testing_datasource):
@@ -174,6 +236,43 @@ def test_refresh_failure_does_not_hide_other_experiments(xngin_session, testing_
     result = attempt_due((job,))
     assert ran_successfully(result, job)
     assert result.experiment_id == healthy.id
+
+
+def test_snapshot_connection_loss_does_not_commit_failure_or_schedule(
+    testing_datasource, aclient: AdminAPIClient, mocker
+):
+    experiment_id = make_bandit_online_experiment(aclient, testing_datasource.datasource_id).config.experiment_id
+
+    def disconnect(session, *args):
+        session.connection().invalidate()
+        raise ConnectionError("Lost attempt transaction")
+
+    mocker.patch("xngin.apiserver.snapshots.snapshotter._compute_snapshot_data", side_effect=disconnect)
+    refresh_stale_experiments((SNAPSHOT,))
+    assert attempt_due((SNAPSHOT,)).result is AttemptResult.ABORTED
+    with database.get_session() as session:
+        assert session.scalar(select(tables.Snapshot).where(tables.Snapshot.experiment_id == experiment_id)) is None
+    assert status_for(experiment_id, SNAPSHOT).last_run_at is None
+
+
+def test_refresh_revisits_only_new_and_edited_experiments(xngin_session, testing_datasource):
+    current = make_push_experiment(xngin_session, testing_datasource.ds)
+    ended = make_push_experiment(xngin_session, testing_datasource.ds, end_date=datetime.now(UTC) - timedelta(days=2))
+    draft = make_push_experiment(xngin_session, testing_datasource.ds, state=ExperimentState.ASSIGNED)
+    assert stale_among((SNAPSHOT,), current, ended, draft) == {current.id, ended.id, draft.id}
+
+    refresh_stale_experiments((SNAPSHOT,))
+
+    assert stale_among((SNAPSHOT,), current, ended, draft) == set()
+    assert status_for(current.id, SNAPSHOT).next_run_at is not None
+    assert status_for(ended.id, SNAPSHOT).next_run_at is None
+    assert status_for(draft.id, SNAPSHOT).next_run_at is None
+
+    draft.state = ExperimentState.COMMITTED
+    xngin_session.commit()
+    assert stale_among((SNAPSHOT,), current, ended, draft) == {draft.id}
+    refresh_stale_experiments((SNAPSHOT,))
+    assert status_for(draft.id, SNAPSHOT).next_run_at is not None
 
 
 def test_refresh_ends_early_once_stop_is_set(xngin_session, testing_datasource):

@@ -24,9 +24,11 @@ from xngin.apiserver.worker.attempts import (
     attempt_experiment,
 )
 from xngin.apiserver.worker.jobs.base import Backoff, Job, JobSucceeded
+from xngin.apiserver.worker.jobs.snapshots import SnapshotJob
 from xngin.apiserver.worker.scheduler import Pacer, due_experiment_ids, run_worker
 
 BACKOFF = Backoff(delays=(timedelta(minutes=1), timedelta(minutes=5)))
+SNAPSHOT = SnapshotJob(interval=timedelta(hours=3), dwh_timeout=90, backoff=Backoff.constant(timedelta(hours=1)))
 NOW = datetime(2030, 1, 1, tzinfo=UTC)
 
 

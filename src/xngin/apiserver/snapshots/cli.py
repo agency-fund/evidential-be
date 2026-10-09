@@ -1,10 +1,8 @@
-"""snapshotter collects snapshots."""
+"""snapshotter applies autofail updates."""
 
 import os
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import AbstractContextManager
-from datetime import timedelta
 from typing import Annotated
 
 import typer
@@ -12,8 +10,7 @@ from loguru import logger
 from sentry_sdk.crons import monitor
 
 from xngin.apiserver import customlogging, database
-from xngin.apiserver.flags import NPROC
-from xngin.apiserver.snapshots import autofail, snapshotter
+from xngin.apiserver.snapshots import autofail
 from xngin.ops import sentry
 from xngin.xsecrets import secretservice
 
@@ -22,19 +19,7 @@ ENV_CRONJOB_MONITOR_SLUG = "CRONJOB_MONITOR_SLUG"
 customlogging.setup()
 sentry.setup()
 
-app = typer.Typer(help="Collects snapshots and autofail updates as needed.")
-
-
-def snapshot_collect(snapshot_interval: int, snapshot_timeout: int, parallelism: int):
-    """Collects snapshots within the application database lifespan."""
-    with database.setup():
-        snapshotter.create_pending_snapshots(snapshot_interval)
-        with ThreadPoolExecutor(max_workers=parallelism, thread_name_prefix="snapshot") as executor:
-            futures = [
-                executor.submit(snapshotter.process_pending_snapshots, snapshot_timeout) for _ in range(parallelism)
-            ]
-            for future in futures:
-                future.result()
+app = typer.Typer(help="Applies autofail updates as needed.")
 
 
 def autofail_collect(
@@ -52,15 +37,6 @@ def autofail_collect(
 
 @app.command()
 def collect(
-    snapshot_timeout: Annotated[
-        int,
-        typer.Option(
-            "--max-time",
-            min=1,
-            help="Maximum time to wait for a snapshot's data warehouse read (in seconds). "
-            "Snapshots whose warehouse read takes longer are marked as failures.",
-        ),
-    ] = snapshotter.SNAPSHOT_TIMEOUT_SECS,
     autofail_timeout: Annotated[
         int,
         typer.Option(
@@ -85,37 +61,14 @@ def collect(
             help="Maximum number of autofail updates to commit in one transaction.",
         ),
     ] = autofail.DEFAULT_AUTOFAIL_BATCH_SIZE,
-    snapshot_interval: Annotated[
-        int, typer.Option("--interval", min=60, help="The target interval between snapshots (in seconds).")
-    ] = timedelta(hours=6).seconds,
-    parallelism: Annotated[
-        int,
-        typer.Option(
-            "-j",
-            min=1,
-            help="Number of snapshotting tasks to spawn. This controls the number of potential blocking DWH operations "
-            "that may occur simultaneously.",
-        ),
-    ] = NPROC,
 ):
-    """Collect snapshots from the experiments that need them.
-
-    Experiments with successful snapshots will not be snapshot again before --snapshot-interval has elapsed between
-    the latest successful snapshot and the current time.
-
-    To enable automatic retries of failed jobs, and to allow for clock variances, the duration between invocations of
-    this job should be some fraction of --snapshot-interval. For example, if --snapshot-interval is set to 6 hours,
-    consider running this job every hour. This effectively enables hourly retries, allows for non-monotonic clock
-    behaviors, and some tolerance for unpredictable cron scheduling or missed invocations.
-    """
+    """Apply autofail outcomes to the draws whose autofail windows have expired."""
     secretservice.setup()
 
     cronjob_monitor_slug = os.environ.get(ENV_CRONJOB_MONITOR_SLUG, "")
     if cronjob_monitor_slug:
         with monitor(monitor_slug=cronjob_monitor_slug):
-            snapshot_collect(snapshot_interval, snapshot_timeout, parallelism)
             autofail_collect(autofail_timeout, autofail_batch_sleep, autofail_batch_size)
     else:
-        snapshot_collect(snapshot_interval, snapshot_timeout, parallelism)
         autofail_collect(autofail_timeout, autofail_batch_sleep, autofail_batch_size)
     logger.info("collect() finished successfully.")

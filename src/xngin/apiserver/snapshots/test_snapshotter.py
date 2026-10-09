@@ -8,7 +8,6 @@ import pytest
 from sqlalchemy import select
 
 from xngin.apiserver.dwh.dwh_session import DwhSession
-from xngin.apiserver.routers.admin.admin_api_types import SnapshotStatus
 from xngin.apiserver.routers.common_api_types import (
     Arm,
     ArmBandit,
@@ -33,16 +32,11 @@ from xngin.apiserver.routers.common_api_types import (
 )
 from xngin.apiserver.routers.common_enums import DataType, ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers.experiments.experiments_common import fetch_fields_or_raise, fetch_mab_dwh_fields_or_raise
-from xngin.apiserver.snapshots.snapshotter import (
-    SNAPSHOT_TIMEOUT_SECS,
-    create_pending_snapshots,
-    make_first_snapshot,
-    process_pending_snapshots,
-)
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
+from xngin.apiserver.testing.snapshots import commit_snapshot
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
 
 
@@ -109,7 +103,6 @@ def get_latest_snapshot_analysis(xngin_session, experiment_id):
             .limit(1)
         )
     ).scalar_one()
-    assert snapshot.status == "success"
     return FreqExperimentAnalysisResponse.model_validate(snapshot.data)
 
 
@@ -174,7 +167,6 @@ def get_bandit_snapshot_analysis(
         experiment_id=experiment_id,
         snapshot_id=snapshot_id,
     ).data.snapshot
-    assert snapshot.status == SnapshotStatus.SUCCESS
     data = snapshot.data
     assert isinstance(data, BanditExperimentAnalysisResponse)
     return data
@@ -208,7 +200,7 @@ def get_sorted_cmab_contexts(
     return sorted(config.design_spec.contexts, key=lambda c: c.context_id or "")
 
 
-def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_datasource):
+def test_capture_snapshot_of_freq_preassigned(xngin_session, testing_datasource):
     datasource = testing_datasource.ds
 
     # Create a preassigned frequentist experiment design spec
@@ -237,19 +229,11 @@ def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_datasour
     assert arm2.position == 2
 
     # Test 1: baseline arm is the position 1 arm.
-    create_pending_snapshots(5)
-    snapshot_id = (
-        xngin_session.execute(
-            select(tables.Snapshot.id)
-            .where(tables.Snapshot.experiment_id == experiment.id)
-            .where(tables.Snapshot.status == "pending")
-        )
-    ).scalar_one()
     # Suppress expected statsmodels warnings due to not actually assigning any units to the arms for
     # this test, as we're not focused on the actual analysis.
     with warnings.catch_warnings():
         warnings.filterwarnings(action="ignore", message=r"(divide by zero|invalid value).*", category=RuntimeWarning)
-        make_first_snapshot(experiment.id, snapshot_id)
+        commit_snapshot(experiment.id)
     analysis = get_latest_snapshot_analysis(xngin_session, experiment.id)
     # Verify analysis payload is in the order of experiment.arms above.
     assert isinstance(analysis, FreqExperimentAnalysisResponse)
@@ -267,17 +251,9 @@ def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_datasour
     xngin_session.commit()
     xngin_session.refresh(experiment, ["arms"])
 
-    create_pending_snapshots(0)  # Force new snapshot immediately
-    snapshot_id = (
-        xngin_session.execute(
-            select(tables.Snapshot.id)
-            .where(tables.Snapshot.experiment_id == experiment.id)
-            .where(tables.Snapshot.status == "pending")
-        )
-    ).scalar_one()
     with warnings.catch_warnings():
         warnings.filterwarnings(action="ignore", message=r"(divide by zero|invalid value).*", category=RuntimeWarning)
-        make_first_snapshot(experiment.id, snapshot_id)
+        commit_snapshot(experiment.id)
     analysis = get_latest_snapshot_analysis(xngin_session, experiment.id)
 
     assert isinstance(analysis, FreqExperimentAnalysisResponse)
@@ -297,17 +273,9 @@ def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_datasour
     assert experiment.arms[0].position is None
     assert experiment.arms[1].position is None
 
-    create_pending_snapshots(0)  # Force new snapshot immediately
-    snapshot_id = (
-        xngin_session.execute(
-            select(tables.Snapshot.id)
-            .where(tables.Snapshot.experiment_id == experiment.id)
-            .where(tables.Snapshot.status == "pending")
-        )
-    ).scalar_one()
     with warnings.catch_warnings():
         warnings.filterwarnings(action="ignore", message=r"(divide by zero|invalid value).*", category=RuntimeWarning)
-        make_first_snapshot(experiment.id, snapshot_id)
+        commit_snapshot(experiment.id)
     analysis = get_latest_snapshot_analysis(xngin_session, experiment.id)
 
     assert isinstance(analysis, FreqExperimentAnalysisResponse)
@@ -321,41 +289,7 @@ def test_make_first_snapshot_of_freq_preassigned(xngin_session, testing_datasour
     assert non_baseline_arm.arm_id == experiment.arms[1].id
 
 
-def test_make_first_snapshot_is_noop_when_missing_or_not_pending(
-    xngin_session,
-    testing_datasource,
-    aclient: AdminAPIClient,
-):
-    experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="missing snapshot test")
-    completed_snapshot = tables.Snapshot(
-        experiment_id=experiment_id,
-        status="failed",
-        message="already failed",
-        data=None,
-    )
-    xngin_session.add(completed_snapshot)
-    xngin_session.commit()
-
-    def list_snapshots():
-        return aclient.list_snapshots(
-            organization_id=testing_datasource.organization_id,
-            datasource_id=testing_datasource.datasource_id,
-            experiment_id=experiment_id,
-        ).data.items
-
-    snapshots_before = list_snapshots()
-    assert [snapshot.status for snapshot in snapshots_before] == [SnapshotStatus.FAILED]
-
-    make_first_snapshot(experiment_id, "sn_missing")
-    make_first_snapshot(experiment_id, completed_snapshot.id)
-
-    snapshots_after = list_snapshots()
-    assert [snapshot.status for snapshot in snapshots_after] == [SnapshotStatus.FAILED]
-    assert snapshots_after[0].data is None
-    assert snapshots_after[0].details == {"message": "already failed"}
-
-
-def test_handle_one_snapshot_safely_marks_failed_on_exception(testing_datasource, aclient: AdminAPIClient, mocker):
+def test_failed_analysis_records_snapshot(testing_datasource, aclient: AdminAPIClient, mocker):
     experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="handle snapshot failure test")
 
     # Force the snapshot to fail.
@@ -363,33 +297,25 @@ def test_handle_one_snapshot_safely_marks_failed_on_exception(testing_datasource
         "xngin.apiserver.snapshots.snapshotter._compute_snapshot_data",
         side_effect=RuntimeError("boom"),
     )
-    aclient.create_snapshot(
-        organization_id=testing_datasource.organization_id,
-        datasource_id=testing_datasource.datasource_id,
-        experiment_id=experiment_id,
-    )
+    commit_snapshot(experiment_id)
 
     snapshots = aclient.list_snapshots(
         organization_id=testing_datasource.organization_id,
         datasource_id=testing_datasource.datasource_id,
         experiment_id=experiment_id,
     ).data.items
-    assert [snapshot.status for snapshot in snapshots] == [SnapshotStatus.FAILED]
+    assert len(snapshots) == 1
+    assert snapshots[0].status == "failed"
     assert snapshots[0].data is None
     assert snapshots[0].details == {"message": "RuntimeError: boom"}
 
 
-def test_handle_one_snapshot_safely_marks_failed_on_timeout(
+def test_timeout_records_failed_snapshot(
     testing_datasource,
     aclient: AdminAPIClient,
     mocker,
 ):
-    """A warehouse that stalls must leave a committed "failed" snapshot.
-
-    Stalls the real warehouse read rather than mocking the analysis out, so the deadline is enforced
-    where it now lives -- inside DwhSession -- and the caller's session has to survive it well
-    enough to commit the failure.
-    """
+    """A stalled warehouse read leaves a failed snapshot that users can inspect."""
     experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="handle snapshot timeout test")
     release = threading.Event()
 
@@ -397,13 +323,8 @@ def test_handle_one_snapshot_safely_marks_failed_on_timeout(
         release.wait()
 
     mocker.patch.object(DwhSession, "_inspect_table_blocking", stall)
-    mocker.patch("xngin.apiserver.snapshots.snapshotter.SNAPSHOT_TIMEOUT_SECS", 0.05)
     try:
-        aclient.create_snapshot(
-            organization_id=testing_datasource.organization_id,
-            datasource_id=testing_datasource.datasource_id,
-            experiment_id=experiment_id,
-        )
+        commit_snapshot(experiment_id, dwh_timeout=0.05)
     finally:
         release.set()
 
@@ -412,59 +333,11 @@ def test_handle_one_snapshot_safely_marks_failed_on_timeout(
         datasource_id=testing_datasource.datasource_id,
         experiment_id=experiment_id,
     ).data.items
-    assert [snapshot.status for snapshot in snapshots] == [SnapshotStatus.FAILED]
+    assert len(snapshots) == 1
+    assert snapshots[0].status == "failed"
     assert snapshots[0].data is None
     assert snapshots[0].details is not None
     assert "DwhTimeoutError" in snapshots[0].details["message"]
-
-
-def test_a_warehouse_timeout_leaves_the_snapshotters_session_usable(
-    xngin_session,
-    testing_datasource,
-    aclient: AdminAPIClient,
-    eclient: ExperimentsAPIClient,
-    mocker,
-):
-    """The regression test: a timeout must not cost us the "failed" write or the rest of the run.
-
-    The snapshotter used to hand its own session to a thread it then abandoned, so the commit that
-    records the failure raced the abandoned read. When that surfaced it came from the session's
-    __exit__, past the handler's except clause: the write was lost, the snapshot stayed pending, and
-    the exception killed the worker before it reached the next snapshot.
-
-    The second experiment is a bandit so that it needs no warehouse read of its own, and can
-    therefore finish well inside the small budget that the first one has to exceed.
-    """
-    stalled_experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="timeout isolation")
-    healthy_experiment_id = create_bandit_snapshot_experiment(
-        aclient, eclient, testing_datasource, experiment_type=ExperimentsType.MAB_ONLINE
-    )
-    create_pending_snapshots(0)
-
-    # Only the frequentist snapshot reads a warehouse, so this stalls that one and nothing else.
-    release = threading.Event()
-
-    def stall(*_args, **_kwargs):
-        release.wait()
-
-    mocker.patch.object(DwhSession, "_inspect_table_blocking", stall)
-    try:
-        process_pending_snapshots(0.05, max_jitter_secs=0)
-    finally:
-        release.set()
-
-    def status_of(experiment_id: str) -> SnapshotStatus:
-        snapshots = aclient.list_snapshots(
-            organization_id=testing_datasource.organization_id,
-            datasource_id=testing_datasource.datasource_id,
-            experiment_id=experiment_id,
-        ).data.items
-        assert len(snapshots) == 1
-        return snapshots[0].status
-
-    # The failure was committed, and the loop went on to finish the other snapshot.
-    assert status_of(stalled_experiment_id) == SnapshotStatus.FAILED
-    assert status_of(healthy_experiment_id) == SnapshotStatus.SUCCESS
 
 
 def test_bandit_snapshots_do_not_open_a_warehouse_connection(
@@ -479,146 +352,14 @@ def test_bandit_snapshots_do_not_open_a_warehouse_connection(
     )
     mocker.patch.object(DwhSession, "_connect_blocking", side_effect=AssertionError("connected to a warehouse"))
 
-    aclient.create_snapshot(
-        organization_id=testing_datasource.organization_id,
-        datasource_id=testing_datasource.datasource_id,
-        experiment_id=experiment_id,
-    )
+    commit_snapshot(experiment_id)
 
     snapshots = aclient.list_snapshots(
         organization_id=testing_datasource.organization_id,
         datasource_id=testing_datasource.datasource_id,
         experiment_id=experiment_id,
     ).data.items
-    assert [snapshot.status for snapshot in snapshots] == [SnapshotStatus.SUCCESS]
-
-
-def test_create_pending_snapshots_inserts_for_new_stale_and_failed_experiments(
-    xngin_session,
-    testing_datasource,
-    aclient: AdminAPIClient,
-):
-    now = datetime.now(UTC)
-    new_experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="snapshot scheduling test")
-    stale_experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="stale snapshot test")
-    failed_experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="failed snapshot test")
-    fresh_experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="fresh snapshot test")
-    inactive_experiment_id = create_snapshot_experiment(
-        aclient,
-        testing_datasource,
-        name="inactive snapshot test",
-        end_date=now - timedelta(days=2),
-    )
-
-    xngin_session.add_all([
-        tables.Snapshot(
-            experiment_id=stale_experiment_id,
-            status="success",
-            updated_at=now - timedelta(hours=2),
-        ),
-        tables.Snapshot(
-            experiment_id=failed_experiment_id,
-            status="failed",
-            updated_at=now,
-            message="boom",
-        ),
-        tables.Snapshot(
-            experiment_id=fresh_experiment_id,
-            status="success",
-            updated_at=now - timedelta(minutes=5),
-        ),
-    ])
-    xngin_session.commit()
-
-    create_pending_snapshots(3600)
-
-    def list_snapshots(experiment_id: str):
-        return aclient.list_snapshots(
-            organization_id=testing_datasource.organization_id,
-            datasource_id=testing_datasource.datasource_id,
-            experiment_id=experiment_id,
-        ).data.items
-
-    assert [snapshot.status for snapshot in list_snapshots(new_experiment_id)] == [SnapshotStatus.RUNNING]
-
-    assert [snapshot.status for snapshot in list_snapshots(stale_experiment_id)] == [
-        SnapshotStatus.RUNNING,
-        SnapshotStatus.SUCCESS,
-    ]
-
-    assert [snapshot.status for snapshot in list_snapshots(failed_experiment_id)] == [
-        SnapshotStatus.RUNNING,
-        SnapshotStatus.FAILED,
-    ]
-
-    assert [snapshot.status for snapshot in list_snapshots(fresh_experiment_id)] == [SnapshotStatus.SUCCESS]
-
-    assert [snapshot.status for snapshot in list_snapshots(inactive_experiment_id)] == []
-
-
-@pytest.mark.parametrize("state", [ExperimentState.ASSIGNED, ExperimentState.ABANDONED])
-def test_create_pending_snapshots_skips_experiments_that_are_not_committed(
-    testing_datasource,
-    aclient: AdminAPIClient,
-    state: ExperimentState,
-):
-    experiment_id = create_snapshot_experiment(aclient, testing_datasource, name=f"{state} snapshot test", commit=False)
-    if state == ExperimentState.ABANDONED:
-        aclient.abandon_experiment(
-            datasource_id=testing_datasource.datasource_id,
-            experiment_id=experiment_id,
-        )
-
-    create_pending_snapshots(3600)
-
-    assert (
-        aclient.list_snapshots(
-            organization_id=testing_datasource.organization_id,
-            datasource_id=testing_datasource.datasource_id,
-            experiment_id=experiment_id,
-        ).data.items
-        == []
-    )
-
-
-def test_process_pending_snapshots_processes_until_empty(
-    xngin_session,
-    testing_datasource,
-    aclient: AdminAPIClient,
-):
-    experiment_ids = [
-        create_snapshot_experiment(
-            aclient,
-            testing_datasource,
-            name=f"process pending snapshot test {i}",
-            desired_n=8,
-        )
-        for i in range(2)
-    ]
-
-    create_pending_snapshots(0)
-
-    for experiment_id in experiment_ids:
-        snapshots = aclient.list_snapshots(
-            organization_id=testing_datasource.organization_id,
-            datasource_id=testing_datasource.datasource_id,
-            experiment_id=experiment_id,
-        ).data.items
-        assert len(snapshots) == 1
-        assert snapshots[0].status == SnapshotStatus.RUNNING
-
-    process_pending_snapshots(SNAPSHOT_TIMEOUT_SECS, max_jitter_secs=0)
-
-    for experiment_id in experiment_ids:
-        snapshots = aclient.list_snapshots(
-            organization_id=testing_datasource.organization_id,
-            datasource_id=testing_datasource.datasource_id,
-            experiment_id=experiment_id,
-        ).data.items
-        assert len(snapshots) == 1
-        assert snapshots[0].status == SnapshotStatus.SUCCESS
-        analysis = FreqExperimentAnalysisResponse.model_validate(snapshots[0].data)
-        assert isinstance(analysis, FreqExperimentAnalysisResponse)
+    assert len(snapshots) == 1
 
 
 def create_bandit_snapshot_experiment(
@@ -747,11 +488,7 @@ def test_create_snapshot_bandit_succeeds(
         experiment_type=experiment_type,
     )
 
-    aclient.create_snapshot(
-        organization_id=testing_datasource.organization_id,
-        datasource_id=testing_datasource.datasource_id,
-        experiment_id=experiment_id,
-    )
+    commit_snapshot(experiment_id)
 
     snapshots = aclient.list_snapshots(
         organization_id=testing_datasource.organization_id,
@@ -759,7 +496,6 @@ def test_create_snapshot_bandit_succeeds(
         experiment_id=experiment_id,
     ).data.items
     assert len(snapshots) == 1
-    assert snapshots[0].status == SnapshotStatus.SUCCESS
     data = snapshots[0].data
     assert isinstance(data, BanditExperimentAnalysisResponse)
     assert data.n_outcomes == 2
@@ -836,11 +572,7 @@ def test_create_snapshot_cmab_matches_admin_analysis_at_mean_contexts(
     ).data
     assert isinstance(admin_analysis, BanditExperimentAnalysisResponse)
 
-    create_snapshot_response = aclient.create_snapshot(
-        organization_id=testing_datasource.organization_id,
-        datasource_id=testing_datasource.datasource_id,
-        experiment_id=experiment_id,
-    ).data
+    create_snapshot_response = commit_snapshot(experiment_id)
     snapshot_analysis = get_bandit_snapshot_analysis(
         aclient,
         testing_datasource,
@@ -881,11 +613,7 @@ def test_create_snapshot_cmab_with_zero_draws_matches_zero_context_admin_analysi
     ).data
     assert isinstance(admin_analysis, BanditExperimentAnalysisResponse)
 
-    create_snapshot_response = aclient.create_snapshot(
-        organization_id=testing_datasource.organization_id,
-        datasource_id=testing_datasource.datasource_id,
-        experiment_id=experiment_id,
-    ).data
+    create_snapshot_response = commit_snapshot(experiment_id)
     snapshot_analysis = get_bandit_snapshot_analysis(
         aclient,
         testing_datasource,

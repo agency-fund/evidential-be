@@ -1,171 +1,61 @@
-import random
-import time
-
 import numpy as np
-import sentry_sdk
 from loguru import logger
-from sqlalchemy import func, insert, or_, select, text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session, selectinload
 
-from xngin.apiserver import database
 from xngin.apiserver.routers.common_api_types import ExperimentAnalysisResponse
-from xngin.apiserver.routers.common_enums import ContextType, ExperimentState, ExperimentsType
+from xngin.apiserver.routers.common_enums import ContextType, ExperimentsType
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 
-# How long the API server waits for a snapshot's data warehouse read when a snapshot is requested by a user.
-# The snapshotter cron job can specify a different budget via command line flags.
-SNAPSHOT_TIMEOUT_SECS = 90
 
+def capture_snapshot(session: Session, experiment_id: str, *, dwh_timeout: float) -> tables.Snapshot:
+    """Record a successful or failed analysis in the caller's transaction.
 
-def create_pending_snapshots(snapshot_interval: int) -> None:
+    dwh_timeout bounds the analysis's data warehouse read.
     """
-    Identify experiments that are due for fresh snapshots, or whose most recent snapshot failed, and insert snapshots
-    with status=pending for them.
-
-    This method establishes its own database connection.
-    """
-    freshness_threshold = text(f"interval '{snapshot_interval} seconds'")
-
-    with database.get_session() as session, session.begin():
-        # All active experiments will be snapshot by this method. We also include experiments
-        # that start tomorrow, or ended yesterday, to collect +/- 1 day on both sides of the experiment.
-        buffer = text("interval '1 day'")
-
-        # Find all experiments that are active, and their latest snapshot.
-        experiments_snapshot_status = (
-            select(tables.Experiment.id, tables.Snapshot.updated_at, tables.Snapshot.status)
-            .join(tables.Snapshot, isouter=True)
-            .distinct(tables.Experiment.id)  # generates a PostgreSQL "DISTINCT ON"
-            .where(
-                func.now().between(
-                    func.date_trunc("minute", tables.Experiment.start_date - buffer),
-                    func.date_trunc("minute", tables.Experiment.end_date + buffer),
-                ),
-                tables.Experiment.state == ExperimentState.COMMITTED.value,
-            )
-            .order_by(tables.Experiment.id, tables.Snapshot.updated_at.desc())
-            .cte()
-        )
-        # Filter for snapshots that are late or failed.
-        candidate_experiments = select(experiments_snapshot_status.c.id).where(
-            or_(
-                # latest snapshot is too old
-                func.date_trunc("minute", experiments_snapshot_status.c.updated_at)
-                <= func.date_trunc("minute", func.now() + text("interval '1 minute'") - freshness_threshold),
-                # latest snapshot failed
-                experiments_snapshot_status.c.status == "failed",
-                # no snapshots exist for experiment
-                experiments_snapshot_status.c.status.is_(None),
-            )
-        )
-
-        # Create a new snapshot with status=pending for each experiment that needs one.
-        for experiment_id in session.scalars(candidate_experiments):
-            session.execute(insert(tables.Snapshot).values(experiment_id=experiment_id))
-
-
-def make_first_snapshot(experiment_id: str, snapshot_id: str) -> None:
-    """Process a specific snapshot with status=pending.
-
-    This method is intended to be invoked immediately after a snapshot is created in response to user request.
-    """
-    with database.get_session() as session, session.begin():
-        snapshot = (
-            session.execute(
-                select(tables.Snapshot)
-                .where(
-                    tables.Snapshot.experiment_id == experiment_id,
-                    tables.Snapshot.id == snapshot_id,
-                    tables.Snapshot.status == "pending",
-                )
-                .with_for_update(skip_locked=True)
+    try:
+        # Analysis is best-effort. A savepoint also recovers from SQL errors so the failure record
+        # can commit in the owning transaction without releasing the experiment's maintenance locks.
+        with session.begin_nested():
+            experiment = session.scalars(
+                select(tables.Experiment)
+                .where(tables.Experiment.id == experiment_id)
                 .options(
-                    selectinload(tables.Snapshot.experiment),
-                    selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.arms),
-                    selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.contexts),
-                    selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.datasource),
-                    selectinload(tables.Snapshot.experiment)
-                    .selectinload(tables.Experiment.experiment_fields)
-                    .selectinload(tables.ExperimentField.experiment_filters),
+                    selectinload(tables.Experiment.arms),
+                    selectinload(tables.Experiment.contexts),
+                    selectinload(tables.Experiment.datasource),
+                    selectinload(tables.Experiment.experiment_fields).selectinload(
+                        tables.ExperimentField.experiment_filters
+                    ),
                 )
-            )
-        ).scalar_one_or_none()
-        if snapshot is None:
-            logger.info(f"{experiment_id}.{snapshot_id} is missing or is already being processed.")
-            return
-        _handle_one_snapshot_safely(session, snapshot, SNAPSHOT_TIMEOUT_SECS)
-
-
-def process_pending_snapshots(snapshot_timeout: float, *, max_jitter_secs: float = 2) -> None:
-    """Processes pending snapshots, one at a time, until there are no more available.
-
-    snapshot_timeout bounds how long a snapshot may spend reading a customer data warehouse; a snapshot that
-    exceeds it is marked status="failed". It does not bound the snapshot as a whole: reading assignments,
-    computing the analysis, and writing the result are application-database and CPU work, which we deliberately
-    leave unbounded.
-    """
-    one_pending_snapshot = (
-        select(tables.Snapshot)
-        .where(tables.Snapshot.status == "pending")
-        .limit(1)
-        .with_for_update(skip_locked=True)
-        .options(
-            selectinload(tables.Snapshot.experiment),
-            selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.arms),
-            selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.contexts),
-            selectinload(tables.Snapshot.experiment).selectinload(tables.Experiment.datasource),
-            selectinload(tables.Snapshot.experiment)
-            .selectinload(tables.Experiment.experiment_fields)
-            .selectinload(tables.ExperimentField.experiment_filters),
-        )
-    )
-
-    while True:
-        time.sleep(random.uniform(0, max_jitter_secs))  # jitter  # noqa: S311
-        with database.get_session() as session, session.begin():
-            snapshot = session.execute(one_pending_snapshot).scalar_one_or_none()
-            if snapshot is None:
-                logger.info("No pending snapshots available.")
-                return
-            _handle_one_snapshot_safely(session, snapshot, snapshot_timeout)
-
-
-def _handle_one_snapshot_safely(session: Session, snapshot: tables.Snapshot, snapshot_timeout: float) -> None:
-    sentry_sdk.metrics.count("snapshots.started", 1, attributes={"experiment_id": snapshot.experiment_id})
-    experiment = snapshot.experiment
-    datasource = experiment.datasource
-    with logger.contextualize(experiment_id=experiment.id):
-        logger.info(f"{experiment.id}.{snapshot.id}: processing")
-        try:
-            result = _compute_snapshot_data(session, datasource, experiment, snapshot_timeout)
-            snapshot.data = result.model_dump(mode="json")
-            snapshot.status = "success"
-        except Exception as exc:
-            sentry_sdk.metrics.count("snapshots.failed", 1, attributes={"experiment_id": snapshot.experiment_id})
-            logger.opt(exception=exc).info(f"{experiment.id}.{snapshot.id}: exception")
-            snapshot.status = "failed"
-            snapshot.message = f"{type(exc).__name__}: {exc}"
-        sentry_sdk.metrics.count("snapshots.finished", 1, attributes={"experiment_id": snapshot.experiment_id})
-        logger.info(f"{experiment.id}.{snapshot.id}: done")
+            ).one()
+            analysis = _compute_snapshot_data(session, experiment, dwh_timeout)
+            data = analysis.model_dump(mode="json")
+    except Exception as exc:
+        # Snapshot task boundary: report an analysis failure to users, but never reconnect and write
+        # after losing the transaction that owns this experiment.
+        if not session.is_active or session.connection().invalidated:
+            raise
+        logger.opt(exception=exc).info("Snapshot analysis failed.")
+        snapshot = tables.Snapshot(experiment_id=experiment_id, status="failed", message=f"{type(exc).__name__}: {exc}")
+    else:
+        snapshot = tables.Snapshot(experiment_id=experiment_id, status="success", data=data)
+    session.add(snapshot)
+    session.flush()
+    return snapshot
 
 
 def _compute_snapshot_data(
-    session: Session, datasource: tables.Datasource, experiment: tables.Experiment, dwh_timeout: float
+    session: Session, experiment: tables.Experiment, dwh_timeout: float
 ) -> ExperimentAnalysisResponse:
-    """Analyze one experiment for its snapshot.
-
-    Runs on the caller's thread and uses the caller's session throughout: nothing here may be moved
-    onto a helper thread, because a call the caller gave up on would keep using a Session the caller
-    has since committed and closed. The only work that crosses a thread boundary is the warehouse
-    read inside DwhSession, which is handed nothing but plain values.
-    """
+    """Analyze one experiment for its snapshot. dwh_timeout bounds any data warehouse read."""
     experiment_type = ExperimentsType(experiment.experiment_type)
     if experiment_type.is_bandit():
         # Bandit analysis reads only the application database, so dwh_timeout has no warehouse
         # interaction here to bound. That covers MAB_ONLINE_DWH too: its warehouse read happens in
-        # the separate dwh-pull job.
+        # the worker's DWH pull job.
         context_vals = None
 
         # TODO: If the experiment is a CMAB, we need to pass in context values.
@@ -192,7 +82,7 @@ def _compute_snapshot_data(
         baseline_arm = next((arm for arm in experiment.arms if arm.position == 1), experiment.arms[0])
         return experiments_common.analyze_experiment_freq_impl(
             xngin_session=session,
-            dsconfig=datasource.get_config(),
+            dsconfig=experiment.datasource.get_config(),
             experiment=experiment,
             baseline_arm_id=baseline_arm.id,
             metrics=ExperimentStorageConverter(experiment).get_design_spec_metrics(),
