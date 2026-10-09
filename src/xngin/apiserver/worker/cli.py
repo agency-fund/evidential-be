@@ -15,13 +15,27 @@ from xngin.apiserver import customlogging, database
 from xngin.apiserver.worker.attempts import AttemptExecutor, SystemClock
 from xngin.apiserver.worker.jobs.autofail import AutofailJob
 from xngin.apiserver.worker.jobs.base import Backoff
+from xngin.apiserver.worker.jobs.dwh_pull import DwhPullJob
 from xngin.apiserver.worker.jobs.snapshots import SnapshotJob
 from xngin.apiserver.worker.scheduler import Pacer, run_worker
 from xngin.ops import sentry
 from xngin.xsecrets import secretservice
 
-app = typer.Typer(help="Runs experiment snapshots and autofail updates.")
+app = typer.Typer(help="Runs experiment snapshots, autofail updates, and data warehouse pulls.")
 
+# A warehouse that is briefly unavailable is retried within minutes. One that stays broken, such as with revoked
+# credentials or a dropped table, settles at hourly pulls, since each failing pull holds the experiment's draw locks
+# and a worker slot for up to the pull timeout, and leaves a thread stuck on the warehouse call.
+DWH_PULL_BACKOFF = Backoff(
+    delays=(
+        timedelta(minutes=1),
+        timedelta(minutes=2),
+        timedelta(minutes=5),
+        timedelta(minutes=15),
+        timedelta(minutes=30),
+        timedelta(hours=1),
+    )
+)
 # Autofail failures are quick database errors or bugs that hold nothing external, so they keep retrying every 2
 # minutes.
 AUTOFAIL_BACKOFF = Backoff(delays=(timedelta(minutes=1), timedelta(minutes=2)))
@@ -60,6 +74,18 @@ def run(
             envvar="XNGIN_WORKER_SNAPSHOT_DWH_TIMEOUT", min=1, help="Maximum seconds for a snapshot's warehouse read."
         ),
     ] = 90,
+    dwh_pull_interval: Annotated[
+        float,
+        typer.Option(
+            envvar="XNGIN_WORKER_DWH_PULL_INTERVAL", min=1, help="Seconds between successful data warehouse pulls."
+        ),
+    ] = seconds(hours=4),
+    dwh_pull_timeout: Annotated[
+        float,
+        typer.Option(
+            envvar="XNGIN_WORKER_DWH_PULL_TIMEOUT", min=1, help="Maximum seconds for a pull's warehouse read."
+        ),
+    ] = 90,
     autofail_batch_size: Annotated[
         int,
         typer.Option(
@@ -87,6 +113,9 @@ def run(
             interval=timedelta(seconds=snapshot_interval),
             dwh_timeout=snapshot_dwh_timeout,
             backoff=Backoff.constant(timedelta(hours=1)),
+        ),
+        DwhPullJob(
+            interval=timedelta(seconds=dwh_pull_interval), dwh_timeout=dwh_pull_timeout, backoff=DWH_PULL_BACKOFF
         ),
         # AutofailJob computes its next run time from the experiment's pending draws.
         AutofailJob(batch_size=autofail_batch_size, backoff=AUTOFAIL_BACKOFF),

@@ -2424,7 +2424,7 @@ def test_create_and_assign_mab_dwh_rejects_pushed_outcome(
 ):
     """End-to-end path for a MAB-DWH experiment through the public APIs: create it via the admin
     client and assign a participant. Outcomes arrive from the organization's data warehouse via
-    xngin-dwh-pull, so the push endpoint rejects them and the draw stays unresolved."""
+    xngin-worker, so the push endpoint rejects them and the draw stays unresolved."""
     experiment = make_bandit_online_experiment(
         aclient,
         testing_datasource.datasource_id,

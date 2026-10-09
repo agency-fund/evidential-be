@@ -28,11 +28,13 @@ from xngin.apiserver.worker.attempts import (
 )
 from xngin.apiserver.worker.jobs.autofail import AutofailJob
 from xngin.apiserver.worker.jobs.base import Backoff, Job, JobSucceeded
+from xngin.apiserver.worker.jobs.dwh_pull import DwhPullJob
 from xngin.apiserver.worker.jobs.snapshots import SnapshotJob
 from xngin.apiserver.worker.scheduler import Pacer, due_experiment_ids, run_worker
 
 BACKOFF = Backoff(delays=(timedelta(minutes=1), timedelta(minutes=5)))
 SNAPSHOT = SnapshotJob(interval=timedelta(hours=3), dwh_timeout=90, backoff=Backoff.constant(timedelta(hours=1)))
+PULL = DwhPullJob(interval=timedelta(hours=4), dwh_timeout=90, backoff=BACKOFF)
 AUTOFAIL = AutofailJob(batch_size=2, backoff=BACKOFF)
 NOW = datetime(2030, 1, 1, tzinfo=UTC)
 
@@ -75,6 +77,20 @@ def make_push_experiment(session, datasource, **kwargs):
         reward_type=LikelihoodTypes.BERNOULLI,
         **kwargs,
     )
+
+
+def make_dwh_experiment(session, datasource, participants=("1",)):
+    experiment = insert_experiment_and_arms(
+        session,
+        datasource,
+        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
+        prior_type=PriorTypes.BETA,
+        reward_type=LikelihoodTypes.BERNOULLI,
+    )
+    for participant in participants:
+        create_assignment_for_participant(session, experiment, participant, None, random_state=66)
+    session.commit()
+    return experiment
 
 
 def make_autofail_experiment(session, datasource, participants=("1", "2", "3"), **kwargs):

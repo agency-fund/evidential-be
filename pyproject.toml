@@ -64,7 +64,6 @@ build-backend = "uv_build"
 xngin-apiserver-dev = "xngin.apiserver.main:main_dev"
 xngin-apiserver-live = "xngin.apiserver.main:main_live"
 xngin-cli = "xngin.cli.main:app"
-xngin-dwh-pull = "xngin.apiserver.dwhpull.cli:app"
 xngin-worker = "xngin.apiserver.worker.cli:app"
 xngin-tq = "xngin.tq.cli:app"
 
