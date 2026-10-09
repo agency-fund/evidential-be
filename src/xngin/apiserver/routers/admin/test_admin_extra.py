@@ -224,5 +224,6 @@ def test_first_user_default_experiment_templates_created(xngin_session: Session,
         ExperimentsType.FREQ_PREASSIGNED,
         ExperimentsType.FREQ_ONLINE,
         ExperimentsType.MAB_ONLINE,
+        ExperimentsType.MAB_ONLINE_DWH,
         ExperimentsType.CMAB_ONLINE,
     }

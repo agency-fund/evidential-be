@@ -2,6 +2,7 @@
 
 import datetime
 
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.routers.admin import admin_common
@@ -14,6 +15,7 @@ from xngin.apiserver.routers.common_api_types import (
     CreateExperimentRequest,
     DesignSpecMetricRequest,
     Filter,
+    MABDwhExperimentSpec,
     MABExperimentSpec,
     OnlineFrequentistExperimentSpec,
     PreassignedFrequentistExperimentSpec,
@@ -53,6 +55,24 @@ def _create_and_commit_experiment(
     return experiment
 
 
+def _create_draws(
+    session: Session,
+    experiment: tables.Experiment,
+    participant_ids: list[str],
+    *,
+    created_at: datetime.datetime | None = None,
+):
+    """Assigns each participant to an arm. created_at backdates the draws, e.g. past the autofail window."""
+    for i, participant_id in enumerate(participant_ids):
+        experiments_common.create_assignment_for_participant(session, experiment, participant_id, random_state=i)
+    if created_at is not None:
+        session.execute(
+            update(tables.Draw)
+            .where(tables.Draw.experiment_id == experiment.id, tables.Draw.participant_id.in_(participant_ids))
+            .values(created_at=created_at)
+        )
+
+
 def _maybe_create_developer_samples(session: Session, organization: tables.Organization, testing_dwh_dsn: str | None):
     if not testing_dwh_dsn:
         return
@@ -86,6 +106,7 @@ def _maybe_create_developer_samples(session: Session, organization: tables.Organ
     )
     session.flush()
 
+    now = datetime.datetime.now(datetime.UTC)
     preassigned = _create_and_commit_experiment(
         session,
         datasource,
@@ -95,8 +116,8 @@ def _maybe_create_developer_samples(session: Session, organization: tables.Organ
                 description="Hypothesis",
                 table_name=TESTING_DWH_TABLE_NAME,
                 primary_key="id",
-                start_date=datetime.datetime.now() - datetime.timedelta(days=7),
-                end_date=datetime.datetime.now() + datetime.timedelta(days=7),
+                start_date=now - datetime.timedelta(days=7),
+                end_date=now + datetime.timedelta(days=7),
                 arms=[
                     Arm(arm_name="Control", arm_description="First arm"),
                     Arm(arm_name="Treatment", arm_description="Second arm"),
@@ -119,8 +140,8 @@ def _maybe_create_developer_samples(session: Session, organization: tables.Organ
                 description="Hypothesis",
                 table_name=TESTING_DWH_TABLE_NAME,
                 primary_key="id",
-                start_date=datetime.datetime.now() - datetime.timedelta(days=7),
-                end_date=datetime.datetime.now() + datetime.timedelta(days=7),
+                start_date=now - datetime.timedelta(days=7),
+                end_date=now + datetime.timedelta(days=7),
                 arms=[
                     Arm(arm_name="Control", arm_description="First arm"),
                     Arm(arm_name="Treatment", arm_description="Second arm"),
@@ -143,8 +164,8 @@ def _maybe_create_developer_samples(session: Session, organization: tables.Organ
                 description="Hypothesis",
                 table_name=TESTING_DWH_TABLE_NAME,
                 primary_key="id",
-                start_date=datetime.datetime.now() - datetime.timedelta(days=7),
-                end_date=datetime.datetime.now() + datetime.timedelta(days=7),
+                start_date=now - datetime.timedelta(days=7),
+                end_date=now + datetime.timedelta(days=7),
                 arms=[
                     Arm(arm_name="Control", arm_description="First arm"),
                     Arm(arm_name="Treatment", arm_description="Second arm"),
@@ -156,17 +177,20 @@ def _maybe_create_developer_samples(session: Session, organization: tables.Organ
         ),
     )
 
-    _create_and_commit_experiment(
+    mab = _create_and_commit_experiment(
         session,
         datasource,
         CreateExperimentRequest(
             design_spec=MABExperimentSpec(
                 experiment_name="MAB",
                 description="Hypothesis",
-                start_date=datetime.datetime.now() - datetime.timedelta(days=7),
-                end_date=datetime.datetime.now() + datetime.timedelta(days=7),
+                start_date=now - datetime.timedelta(days=7),
+                end_date=now + datetime.timedelta(days=7),
                 prior_type=PriorTypes.BETA,
                 reward_type=LikelihoodTypes.BERNOULLI,
+                enable_autofail=True,
+                autofail_window=24,
+                autofail_outcome_value=0.0,
                 arms=[
                     ArmBandit(arm_name="Control", arm_description="First arm", alpha_init=1.0, beta_init=1.0),
                     ArmBandit(arm_name="Treatment", arm_description="Second arm", alpha_init=2.0, beta_init=2.0),
@@ -174,6 +198,14 @@ def _maybe_create_developer_samples(session: Session, organization: tables.Organ
             )
         ),
     )
+    # Draws past the autofail window are resolved by the first autofail run; the fresh ones wait out the window.
+    _create_draws(
+        session,
+        mab,
+        ["stale-1", "stale-2", "stale-3"],
+        created_at=now - datetime.timedelta(days=2),
+    )
+    _create_draws(session, mab, ["fresh-1", "fresh-2"])
 
     _create_and_commit_experiment(
         session,
@@ -182,8 +214,8 @@ def _maybe_create_developer_samples(session: Session, organization: tables.Organ
             design_spec=CMABExperimentSpec(
                 experiment_name="CMAB",
                 description="Hypothesis",
-                start_date=datetime.datetime.now() - datetime.timedelta(days=7),
-                end_date=datetime.datetime.now() + datetime.timedelta(days=7),
+                start_date=now - datetime.timedelta(days=7),
+                end_date=now + datetime.timedelta(days=7),
                 prior_type=PriorTypes.NORMAL,
                 reward_type=LikelihoodTypes.NORMAL,
                 arms=[
@@ -213,8 +245,8 @@ def _maybe_create_developer_samples(session: Session, organization: tables.Organ
                 description="Hypothesis",
                 table_name=WIDE_DWH_TABLE_NAME,
                 primary_key="id",
-                start_date=datetime.datetime.now() - datetime.timedelta(days=7),
-                end_date=datetime.datetime.now() + datetime.timedelta(days=7),
+                start_date=now - datetime.timedelta(days=7),
+                end_date=now + datetime.timedelta(days=7),
                 arms=[
                     Arm(arm_name="Control", arm_description="First arm"),
                     Arm(arm_name="Treatment", arm_description="Second arm"),
@@ -226,6 +258,31 @@ def _maybe_create_developer_samples(session: Session, organization: tables.Organ
             ),
         ),
     )
+
+    mab_dwh = _create_and_commit_experiment(
+        session,
+        alt_datasource,
+        CreateExperimentRequest(
+            design_spec=MABDwhExperimentSpec(
+                experiment_name="MAB - wide DWH",
+                description="Hypothesis",
+                table_name=WIDE_DWH_TABLE_NAME,
+                primary_key="id",
+                target_field_name="converted",
+                start_date=now - datetime.timedelta(days=7),
+                end_date=now + datetime.timedelta(days=7),
+                prior_type=PriorTypes.BETA,
+                reward_type=LikelihoodTypes.BERNOULLI,
+                arms=[
+                    ArmBandit(arm_name="Control", arm_description="First arm", alpha_init=1.0, beta_init=1.0),
+                    ArmBandit(arm_name="Treatment", arm_description="Second arm", alpha_init=2.0, beta_init=2.0),
+                ],
+            )
+        ),
+    )
+    # The first DWH pull ingests outcomes for participants 1-10, whose converted column is set in the wide DWH.
+    # Participant 61's converted column is NULL, so its draw stays pending across pulls.
+    _create_draws(session, mab_dwh, [str(i) for i in range(1, 11)] + ["61"])
 
 
 def create_entities_for_first_time_user(
