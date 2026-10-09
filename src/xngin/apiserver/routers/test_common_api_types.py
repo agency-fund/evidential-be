@@ -472,11 +472,10 @@ def test_desired_ns_clusters_requires_cluster_key():
 
 
 def _one_time_metric(field_name: str, *, use_one_time_metric: bool) -> dict:
-    # use_one_time_metric requires is_one_time_eligible, so set them together.
+    # Clients send only the toggle; the server derives is_one_time_eligible during the power check.
     return {
         "field_name": field_name,
         "metric_pct_change": 0.1,
-        "is_one_time_eligible": use_one_time_metric,
         "use_one_time_metric": use_one_time_metric,
     }
 
@@ -499,7 +498,7 @@ def test_one_time_metric_rejected_on_secondary_metric():
         _one_time_metric("primary", use_one_time_metric=False),
         _one_time_metric("second", use_one_time_metric=True),
     ]
-    expected = "use_one_time_metric can only be set on the primary metric .* 'second'"
+    expected = 'use_one_time_metric can only be set on the primary metric .* "second"'
 
     with pytest.raises(ValidationError, match=expected):
         PreassignedFrequentistExperimentSpec.model_validate(_preassigned_spec_payload(metrics=metrics))
@@ -508,7 +507,7 @@ def test_one_time_metric_rejected_on_secondary_metric():
         PowerRequest.model_validate({"table_name": "dwh", "n_arms": 2, "metrics": metrics})
 
 
-def test_design_spec_metric_request_to_design_spec_metric_keeps_one_time_flags():
+def test_design_spec_metric_request_to_design_spec_metric_keeps_toggle_but_not_eligibility():
     request = DesignSpecMetricRequest(
         field_name="metric1",
         metric_pct_change=0.1,
@@ -523,7 +522,8 @@ def test_design_spec_metric_request_to_design_spec_metric_keeps_one_time_flags()
 
     metric = request.to_design_spec_metric()
 
-    assert metric.is_one_time_eligible
+    # Same rule as build_metric_stats: a client-supplied eligibility flag is ignored; the power check derives it.
+    assert not metric.is_one_time_eligible
     assert metric.use_one_time_metric
 
 
@@ -547,3 +547,10 @@ def test_one_time_metric_rejected_for_online_experiments():
 
     with pytest.raises(ValidationError, match="use_one_time_metric is only supported for preassigned experiments"):
         OnlineFrequentistExperimentSpec.model_validate(payload)
+
+
+def test_one_time_metric_accepted_without_eligibility_flag():
+    # The frontend only sends the toggle; it must not have to echo is_one_time_eligible back.
+    metric = DesignSpecMetricRequest(field_name="metric1", metric_pct_change=0.1, use_one_time_metric=True)
+    assert metric.use_one_time_metric
+    assert not metric.is_one_time_eligible
