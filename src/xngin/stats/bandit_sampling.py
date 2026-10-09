@@ -119,9 +119,9 @@ def _update_arm_normal(
     llhood_sigma : The standard deviation of the likelihood.
     context : The context vector.
     """
+    context = context.reshape(-1, 1)
     # Likelihood covariance matrix inverse
-    llhood_covariance_inv = np.eye(len(current_mu)) / llhood_sigma**2
-    llhood_covariance_inv *= context.T @ context
+    llhood_covariance_inv = context @ context.T / llhood_sigma**2
 
     # Prior covariance matrix inverse
     prior_covariance_inv = np.linalg.inv(current_covariance)

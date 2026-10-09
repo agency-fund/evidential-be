@@ -1383,7 +1383,7 @@ def test_update_bandit_arm_with_outcome(
         if reward_type == LikelihoodTypes.NORMAL:
             assert updated_arm_after.mu == pytest.approx([1 / 3, 1 / 3])
             assert updated_arm_after.covariance is not None
-            expected_covariance = [[1 / 3, 0.0], [0.0, 1 / 3]]
+            expected_covariance = [[2 / 3, -1 / 3], [-1 / 3, 2 / 3]]
             for actual_row, expected_row in zip(
                 updated_arm_after.covariance,
                 expected_covariance,
