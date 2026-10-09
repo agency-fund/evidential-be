@@ -128,6 +128,58 @@ def solve_for_mde_individual_impl(
     return target_possible, pct_change_possible
 
 
+def _one_time_insufficient_msg_body(
+    analysis: MetricPowerAnalysis,
+    values_map: dict[str, float | int],
+    *,
+    metric: DesignSpecMetric,
+    null_n: int,
+    n_arms: int,
+    arm_weights: list[float] | None,
+    alpha: float,
+    power: float,
+) -> str:
+    """Builds the insufficient message for one-time mode, where only the null rows will be assigned.
+
+    Computes the MDE for that null pool, filling in analysis.target_possible / pct_change_possible and the
+    message placeholders in values_map. Returns the message body (a format string over values_map).
+    """
+    assert analysis.target_n is not None
+    assert metric.metric_baseline is not None
+    assert metric.metric_target is not None
+
+    values_map["additional_n_needed"] = analysis.target_n - null_n
+    values_map["metric_baseline"] = round(metric.metric_baseline, 4)
+    values_map["metric_target"] = round(metric.metric_target, 4)
+    msg_body = (
+        "There are not enough units without a value for this metric. "
+        "You need {additional_n_needed} more to meet your specified metric target of {metric_target}. "
+    )
+
+    # MDE for the pool that will actually be assigned: the null rows only.
+    try:
+        target_possible, pct_change_possible = solve_for_mde_individual_impl(
+            metric=metric,
+            desired_n=null_n,
+            n_arms=n_arms,
+            arm_weights=arm_weights,
+            alpha=alpha,
+            power=power,
+        )
+    except ValueError, ZeroDivisionError:
+        # Too few null rows for the solver (e.g. under 2 per arm); report without an MDE.
+        return msg_body + "There are too few units to estimate a detectable effect. Adjust your filters."
+
+    analysis.target_possible = target_possible
+    analysis.pct_change_possible = pct_change_possible
+    values_map["target_possible"] = round(target_possible, 4)
+    return msg_body + (
+        "Alternatively, with the {available_null_n} units without a value "
+        "and a metric baseline of {metric_baseline}, your metric target should be "
+        "{target_possible} or further from the baseline. "  # noqa: RUF027
+    )
+
+
 def solve_for_sample_size_individual(
     metric: DesignSpecMetric,
     *,
@@ -225,21 +277,27 @@ def solve_for_sample_size_individual(
     )
     target_n = int(np.ceil(control_n / control_prob))
 
+    # Check for nulls only if nonnull_n is provided
+    has_nulls = metric.available_nonnull_n is not None and metric.available_nonnull_n != metric.available_n
+    # Only meaningful when the column actually has nulls (flags are reset otherwise).
+    one_time_mode = metric.use_one_time_metric and has_nulls
+    # The baseline and stddev always come from the non-null rows, but the pool that will actually be
+    # assigned differs: one-time mode assigns only the null rows; otherwise we compare against the
+    # non-null rows (only units with data count toward power).
+    null_n = metric.available_n - effective_n
+
     # Prep the response object
     analysis = MetricPowerAnalysis(metric_spec=metric)
     analysis.target_n = int(target_n)
-    # Use nonnull count for power check (only users with data count toward power)
-    analysis.sufficient_n = bool(target_n <= effective_n)
+    analysis.sufficient_n = bool(target_n <= (null_n if one_time_mode else effective_n))
 
     # Construct potential components of the MetricPowerAnalysisMessage
     values_map: dict[str, float | int] = {
         "available_n": metric.available_n,
         "target_n": analysis.target_n,
         "available_nonnull_n": effective_n,
+        **({"available_null_n": null_n} if one_time_mode else {}),
     }
-
-    # Check for nulls only if nonnull_n is provided
-    has_nulls = metric.available_nonnull_n is not None and metric.available_nonnull_n != metric.available_n
 
     # One-time metric is eligible when power calc succeeds and column has nulls
     if has_nulls:
@@ -249,10 +307,13 @@ def solve_for_sample_size_individual(
         analysis.metric_spec = metric.model_copy(update={"is_one_time_eligible": False, "use_one_time_metric": False})
 
     msg_base_stats = (
-        "There are {available_n} units available. You need at least {target_n} units to satisfy your design specs."
+        (
+            "One-time mode: {available_null_n} of {available_n} units have no value for this metric yet and can be "
+            "assigned. You need at least {target_n} units to satisfy your design specs."  # noqa: RUF027
+        )
+        if one_time_mode
+        else "There are {available_n} units available. You need at least {target_n} units to satisfy your design specs."
     )
-    # Only meaningful when the column actually has nulls (flags are reset otherwise).
-    one_time_mode = metric.use_one_time_metric and has_nulls
 
     msg_null_warning = (
         (
@@ -269,6 +330,18 @@ def solve_for_sample_size_individual(
     if analysis.sufficient_n:
         msg_type = MetricPowerAnalysisMessageType.SUFFICIENT
         msg_body = "There are enough units available."
+    elif one_time_mode:
+        msg_type = MetricPowerAnalysisMessageType.INSUFFICIENT
+        msg_body = _one_time_insufficient_msg_body(
+            analysis,
+            values_map,
+            metric=metric,
+            null_n=null_n,
+            n_arms=n_arms,
+            arm_weights=arm_weights,
+            alpha=alpha,
+            power=power,
+        )
     else:
         msg_type = MetricPowerAnalysisMessageType.INSUFFICIENT
         # Calculate the Minimum Detectable Effect that meets the power spec with the available subjects.
@@ -320,6 +393,25 @@ def solve_for_mde_individual(
     Calculate MDE given desired sample size for individual randomization.
     """
     assert metric.metric_baseline is not None
+
+    # One-time mode assigns only the null rows, so a desired size beyond them can't be reached.
+    if (
+        metric.use_one_time_metric
+        and metric.available_n is not None
+        and metric.available_nonnull_n is not None
+        and metric.available_nonnull_n != metric.available_n
+    ):
+        null_n = metric.available_n - metric.available_nonnull_n
+        if desired_n > null_n:
+            return power_analysis_error(
+                metric,
+                MetricPowerAnalysisMessageType.INSUFFICIENT,
+                (
+                    f"One-time mode: only {null_n} units have no value for this metric yet, which is fewer "
+                    f"than the desired sample size of {desired_n}. Lower the desired sample size or adjust "
+                    "your filters."
+                ),
+            )
 
     target_possible, pct_change_possible = solve_for_mde_individual_impl(
         desired_n=desired_n,
