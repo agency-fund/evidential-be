@@ -320,7 +320,18 @@ def test_initial_user_setup_matches_testing_dwh(xngin_session: Session):
         .select_from(tables.Experiment)
         .where(tables.Experiment.datasource_id.in_([datasource.id for datasource in datasources]))
     )
-    assert experiment_count == 6
+    assert experiment_count == 7
+
+    # The bandit samples carry draws so the autofail and DWH pull jobs have work on their first run.
+    experiments_with_draws = set(
+        xngin_session.scalars(
+            select(tables.Experiment.name)
+            .join(tables.Draw, tables.Draw.experiment_id == tables.Experiment.id)
+            .where(tables.Experiment.datasource_id.in_([datasource.id for datasource in datasources]))
+            .distinct()
+        )
+    )
+    assert experiments_with_draws == {"MAB", "MAB - wide DWH"}
 
     snapshot_count_rows = (
         xngin_session.execute(
