@@ -25,6 +25,7 @@ from xngin.apiserver.routers.common_api_types import (
 )
 from xngin.apiserver.routers.common_enums import MetricPowerAnalysisMessageType, Relation
 from xngin.apiserver.settings import GoogleSheetsDsn, RemoteDatabaseConfig
+from xngin.apiserver.sqla import tables
 
 URL = "https://docs.google.com/spreadsheets/d/demo_sheet/edit#gid=42"
 TAB = PUBLIC_SHEET_TABLE
@@ -42,6 +43,7 @@ def sheets_http(mocker):
         ["003", "north", 30, True],
     ]
     http.csv_tabs = {"42": values}
+    http.csv_headers = {"Content-Type": "text/csv"}
 
     def download(url, **kwargs):
         assert url == "https://docs.google.com/spreadsheets/d/demo_sheet/export"
@@ -51,7 +53,7 @@ def sheets_http(mocker):
         assert "Authorization" not in kwargs["headers"]
         content = io.StringIO(newline="")
         csv.writer(content).writerows(tab_values)
-        response = mocker.MagicMock(ok=True, headers={"Content-Type": "text/csv"})
+        response = mocker.MagicMock(ok=True, headers=http.csv_headers)
         response.__enter__.return_value = response
         response.iter_content.return_value = [content.getvalue().encode()]
         return response
@@ -134,6 +136,44 @@ def test_queries_use_typed_cells_and_refresh_each_session(sheets_http):
     assert (
         http.get.call_args_list[0].kwargs["params"]["_evidential"] != http.get.call_args.kwargs["params"]["_evidential"]
     )
+
+
+@pytest.mark.parametrize(
+    ("disposition", "display_name"),
+    [
+        ('attachment; filename="My spreadsheet - Raw data.csv"', "My spreadsheet - Raw data"),
+        (
+            "attachment; filename=\"Cafe-Raw.csv\"; filename*=UTF-8''Caf%C3%A9%20-%20Raw%20data.csv",
+            "Café - Raw data",
+        ),
+        (None, None),
+    ],
+)
+def test_source_name_is_inspected_without_changing_table_identity(
+    sheets_http, aclient, xngin_session, disposition, display_name
+):
+    http, _ = sheets_http
+    if disposition is not None:
+        http.csv_headers["Content-Disposition"] = disposition
+    organization = aclient.create_organizations(body=aapi.CreateOrganizationRequest(name="Named sheet")).data
+    datasource = aclient.create_datasource(
+        body=aapi.CreateDatasourceRequest(
+            organization_id=organization.id, name="Connector", dsn=aapi.GoogleSheetsDsn(spreadsheet_url=URL)
+        ),
+        connectivity_check=True,
+    ).data
+
+    assert aclient.inspect_datasource(datasource_id=datasource.id).data.tables == [TAB]
+    inspection = aclient.inspect_table_in_datasource(datasource_id=datasource.id, table_name=TAB).data
+    assert inspection.display_name == display_name
+    cached = xngin_session.get_one(tables.DatasourceTablesInspected, (datasource.id, TAB))
+    assert cached.response is not None
+    cached.response = {key: value for key, value in cached.response.items() if key != "display_name"}
+    xngin_session.commit()
+    http.csv_headers["Content-Disposition"] = 'attachment; filename="Renamed spreadsheet - Raw data.csv"'
+    refreshed = aclient.inspect_table_in_datasource(datasource_id=datasource.id, table_name=TAB).data
+    assert refreshed.display_name == "Renamed spreadsheet - Raw data"
+    assert aclient.inspect_datasource(datasource_id=datasource.id).data.tables == [TAB]
 
 
 def test_empty_metric_is_numeric_and_zero_is_observed(sheets_http):

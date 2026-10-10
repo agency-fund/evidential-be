@@ -519,6 +519,8 @@ class FieldMetadata(ApiBaseModel):
 class InspectDatasourceTableResponse(ApiBaseModel):
     """Describes a table in the datasource."""
 
+    display_name: Annotated[str | None, Field(description="Human-readable source name, when provided.")] = None
+
     primary_key_fields: Annotated[list[str], Field(description="Fields that are primary keys.")]
     detected_unique_id_fields: Annotated[
         list[str],

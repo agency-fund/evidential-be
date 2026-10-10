@@ -6,7 +6,9 @@ import math
 import re
 import time
 from dataclasses import dataclass
-from typing import Self
+from email.message import Message
+from email.utils import collapse_rfc2231_value
+from typing import Self, cast
 
 import requests
 import sqlalchemy as sa
@@ -71,6 +73,7 @@ class SheetData:
     headers: list[str]
     # Retain source row gaps in the assignment CSV imported into a separate outcome tab.
     rows: list[tuple[int, list]]
+    display_name: str | None = None
 
     @classmethod
     def from_values(cls, values: list[list]) -> Self:
@@ -123,7 +126,7 @@ class SheetData:
             for row, value in zip(typed_rows, values, strict=True):
                 row[i] = value
             columns.append(sa.Column(header, column_type, nullable=True))
-        table = sa.Table(table_name, sa.MetaData(), *columns)
+        table = sa.Table(table_name, sa.MetaData(), *columns, info={"display_name": self.display_name})
         table.create(engine)
         records = [
             {
@@ -242,7 +245,24 @@ class GoogleSheetsClient:
                             "Google Sheets returned a sign-in page. Set sharing to 'Anyone with the link: Viewer'."
                         )
                     )
-                return SheetData.from_values(list(csv.reader(io.StringIO(content), strict=True)))
+                data = SheetData.from_values(list(csv.reader(io.StringIO(content), strict=True)))
+                disposition = Message()
+                disposition["Content-Disposition"] = response.headers.get("Content-Disposition", "")
+                # email's stubs omit the RFC 2231 tuples returned for filename*.
+                parameters = cast(
+                    list[tuple[str, str | tuple[str, str, str]]],
+                    disposition.get_params(header="content-disposition") or [],
+                )
+                filename = next(
+                    (
+                        collapse_rfc2231_value(value)
+                        for key, value in parameters
+                        if key == "filename" and isinstance(value, tuple)
+                    ),
+                    disposition.get_filename(),
+                )
+                data.display_name = filename.removesuffix(".csv") if filename else None
+                return data
         except requests.RequestException as exc:
             raise DwhConnectionError(ValueError("Google Sheets did not respond. Please try again.")) from exc
         except (UnicodeError, csv.Error) as exc:

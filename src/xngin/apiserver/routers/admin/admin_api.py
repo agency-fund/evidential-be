@@ -1195,6 +1195,7 @@ def inspect_table_in_datasource(
         and (cached := session.get(tables.DatasourceTablesInspected, (datasource_id, table_name)))
         and cache_is_fresh(cached.response_last_updated)
         and cached.response is not None
+        and "display_name" in cached.response
     ):
         return InspectDatasourceTableResponse.model_validate(cached.response)
 
