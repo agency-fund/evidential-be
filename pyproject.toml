@@ -23,6 +23,7 @@ dependencies = [
     "pyjwt[crypto]>=2.15.0,<3",
     "pynacl>=1.6.2",
     "python-jsonpath>=2.0.1",
+    "requests>=2.31.0,<3",
     "scipy>=1.12.0,<2",
     "sentry-sdk[fastapi,loguru,sqlalchemy]>=2.63.0,<3",
     "sqlalchemy-bigquery>=1.16.0,<2",

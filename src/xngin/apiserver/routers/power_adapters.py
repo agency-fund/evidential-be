@@ -5,7 +5,7 @@ database session, so callers can run them after the DwhSession block has closed.
 """
 
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, TypedDict
 
 import numpy as np
 from sqlalchemy import Table
@@ -16,6 +16,12 @@ from xngin.apiserver.routers.common_api_types import DesignSpecMetric, DesignSpe
 from xngin.apiserver.routers.common_enums import MetricType
 from xngin.stats.cluster_icc import calculate_icc_from_sufficient_stats
 from xngin.stats.stats_errors import StatsPowerError
+
+
+class ClusterStats(TypedDict):
+    icc: float | None
+    avg_cluster_size: float
+    cv: float
 
 
 def build_metric_stats(
@@ -49,7 +55,7 @@ def calculate_cluster_stats(
     cluster_rows: Sequence[Mapping[str, Any] | RowMapping],
     cluster_column: str,
     outcome_columns: Sequence[str],
-) -> dict[str, dict[str, float]]:
+) -> dict[str, ClusterStats]:
     """
     Calculate ICC and cluster statistics for one or more metrics from per-cluster
     sufficient statistics, as returned by get_cluster_sufficient_stats.
@@ -62,8 +68,10 @@ def calculate_cluster_stats(
 
     Returns:
         dict keyed by outcome column name, each value a dict with keys:
-        icc, avg_cluster_size, cv
+        icc, avg_cluster_size, cv. ICC is None if an outcome has no observed values.
     """
+    if not cluster_rows:
+        raise LateValidationError(f"No clusters found in column '{cluster_column}'")
     # Cluster sizes and CV are computed over every row with a cluster key, including rows
     # whose outcome values are null: metrics are outcomes that may be filled in as the
     # experiment runs, so the analysis-time cluster size is the full-population size.
@@ -73,26 +81,26 @@ def calculate_cluster_stats(
     # np.std defaults to the population stddev, matching the SQL stddev_pop this replaced.
     cv = float(sizes.std() / sizes.mean())
 
-    stats_by_outcome: dict[str, dict[str, float]] = {}
+    stats_by_outcome: dict[str, ClusterStats] = {}
     for outcome_column in outcome_columns:
         # ICC uses only clusters with values for this outcome, mirroring the per-metric
         # "outcome IS NOT NULL" filter used when each metric was queried separately.
         counts = np.array([row[f"{outcome_column}__count"] for row in cluster_rows], dtype=np.float64)
         has_values = counts > 0
-        if not has_values.any():
-            raise LateValidationError(
-                f"No data found for cluster column '{cluster_column}' and outcome '{outcome_column}'"
-            )
-        try:
-            icc = calculate_icc_from_sufficient_stats(
-                counts=counts[has_values],
-                sums=np.array([row[f"{outcome_column}__sum"] for row in cluster_rows], dtype=np.float64)[has_values],
-                sumsqs=np.array([row[f"{outcome_column}__sumsq"] for row in cluster_rows], dtype=np.float64)[
-                    has_values
-                ],
-            )
-        except ValueError as verr:
-            raise StatsPowerError.from_error(verr, outcome_column) from verr
+        icc = None
+        if has_values.any():
+            try:
+                icc = calculate_icc_from_sufficient_stats(
+                    counts=counts[has_values],
+                    sums=np.array([row[f"{outcome_column}__sum"] for row in cluster_rows], dtype=np.float64)[
+                        has_values
+                    ],
+                    sumsqs=np.array([row[f"{outcome_column}__sumsq"] for row in cluster_rows], dtype=np.float64)[
+                        has_values
+                    ],
+                )
+            except ValueError as verr:
+                raise StatsPowerError.from_error(verr, outcome_column) from verr
         stats_by_outcome[outcome_column] = {
             "icc": icc,
             "avg_cluster_size": avg_cluster_size,

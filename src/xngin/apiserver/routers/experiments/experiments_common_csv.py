@@ -3,11 +3,14 @@ from collections.abc import Generator
 
 from fastapi.responses import StreamingResponse
 from psycopg import sql
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import AssignmentTypedDict, StrataTypedDict
 from xngin.apiserver.routers.common_enums import ExperimentsType
+from xngin.apiserver.settings import GoogleSheetsDsn
 from xngin.apiserver.sql.queries import select_as_csv, stream
 from xngin.apiserver.sqla import tables
 
@@ -147,6 +150,32 @@ def get_experiment_assignments_as_csv_impl(
     xngin_session: Session,
     experiment: tables.Experiment,
 ) -> CsvStreamingResponse:
+    filename = f"experiment_{experiment.id}_assignments.csv"
+    dwh_config = experiment.datasource.get_config().dwh
+    if isinstance(dwh_config, GoogleSheetsDsn):
+        uid = experiment.unique_id_field()
+        if uid is None or experiment.datasource_table is None:
+            raise LateValidationError("A Google Sheets experiment needs a participant ID and spreadsheet tab.")
+        assignments = {
+            pid: arm_name
+            for pid, arm_name in xngin_session.execute(
+                select(tables.ArmAssignment.participant_id, tables.Arm.name)
+                .join(tables.Arm, tables.Arm.id == tables.ArmAssignment.arm_id)
+                .where(tables.ArmAssignment.experiment_id == experiment.id)
+            ).all()
+        }
+        with DwhSession.open(dwh_config) as dwh:
+            csv_data = dwh.export_sheet_assignments(
+                experiment.datasource_table,
+                uid.field_name,
+                experiment.id,
+                assignments,
+                field_names={field.field_name for field in experiment.experiment_fields},
+            )
+        return CsvStreamingResponse(
+            iter([csv_data]), headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+
     strata_names = _get_assignment_csv_strata_names_from_experiment(experiment)
     cluster_key_name = _get_assignment_cluster_key_name_from_experiment(experiment)
     if experiment.experiment_type in {ExperimentsType.FREQ_ONLINE.value, ExperimentsType.FREQ_PREASSIGNED.value}:
@@ -159,7 +188,6 @@ def get_experiment_assignments_as_csv_impl(
             experiment.experiment_type,
             include_context_vals=experiment.experiment_type == ExperimentsType.CMAB_ONLINE.value,
         )
-    filename = f"experiment_{experiment.id}_assignments.csv"
     return CsvStreamingResponse(
         select_as_csv(xngin_session, select_query, buffer_size_bytes=CSV_STREAM_CHUNK_SIZE_BYTES, include_header=True),
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
