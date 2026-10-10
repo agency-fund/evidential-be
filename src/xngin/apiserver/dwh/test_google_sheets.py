@@ -85,6 +85,8 @@ def test_only_spreadsheet_urls_are_accepted(url):
         aapi.GoogleSheetsDsn(spreadsheet_url=url)
     with pytest.raises(ValueError):
         GoogleSheetsDsn(spreadsheet_url=url)
+    with pytest.raises(ValueError):
+        aapi.UpdateExperimentRequest(google_sheets_experiment_url=url)
 
 
 @pytest.mark.parametrize(
@@ -388,7 +390,7 @@ def test_create_launch_export_import_and_analyze_a_sheet_experiment(sheets_http,
     download = aclient.get_experiment_assignments_as_csv_for_ui(
         datasource_id=datasource_id, experiment_id=experiment_id
     )
-    # Import into a separate tab, preserving the source tab and reconnecting by its new gid.
+    # Import into a separate outcome tab without repointing the shared raw datasource.
     imported = list(csv.reader(io.StringIO(b"".join(download.data).decode())))
     expected_fields = {"participant_id", *(metric.field_name for metric in metrics)}
     if cluster_key is not None:
@@ -398,9 +400,10 @@ def test_create_launch_export_import_and_analyze_a_sheet_experiment(sheets_http,
     assert values[0] == headers
     source_tab = [row.copy() for row in values]
     http.csv_tabs["99"] = imported
-    aclient.update_datasource(
+    aclient.update_experiment(
         datasource_id=datasource_id,
-        body=aapi.UpdateDatasourceRequest(dsn=aapi.GoogleSheetsDsn(spreadsheet_url=URL.replace("gid=42", "gid=99"))),
+        experiment_id=experiment_id,
+        body=aapi.UpdateExperimentRequest(google_sheets_experiment_url=URL.replace("gid=42", "gid=99")),
     )
     values = imported
     header = f"evidential_{experiment_id.replace('-', '_')}_arm"
@@ -506,3 +509,195 @@ def test_create_launch_export_import_and_analyze_a_sheet_experiment(sheets_http,
     http.post.assert_not_called()
     assert http.csv_tabs["42"] == source_tab
     assert http.get.call_args.kwargs["params"]["gid"] == "99"
+
+
+def test_shared_raw_sheet_has_isolated_experiment_outcomes(sheets_http, aclient, xngin_session):
+    from xngin.apiserver.snapshots.snapshotter import (  # noqa: PLC0415
+        create_pending_snapshots,
+        process_pending_snapshots,
+    )
+    from xngin.apiserver.sqla import tables  # noqa: PLC0415
+
+    http, raw = sheets_http
+    raw[:] = [["participant_id", "outcome"], *[[f"{i:03}", i] for i in range(1, 21)]]
+    original_raw = [row.copy() for row in raw]
+    org_id = aclient.create_organizations(body=aapi.CreateOrganizationRequest(name="Shared sheet")).data.id
+    ds_id = aclient.create_datasource(
+        body=aapi.CreateDatasourceRequest(
+            organization_id=org_id, name="Raw participants", dsn=aapi.GoogleSheetsDsn(spreadsheet_url=URL)
+        ),
+        connectivity_check=True,
+    ).data.id
+    now = datetime.now(UTC)
+
+    def create(name):
+        response = aclient.create_experiment(
+            datasource_id=ds_id,
+            random_state=42,
+            body=CreateExperimentRequest(
+                design_spec=PreassignedFrequentistExperimentSpec(
+                    experiment_type="freq_preassigned",
+                    experiment_name=name,
+                    description="Shared raw source, independent outcomes",
+                    table_name=TAB,
+                    primary_key="participant_id",
+                    start_date=now - timedelta(days=1),
+                    end_date=now + timedelta(days=1),
+                    desired_n=20,
+                    metrics=[DesignSpecMetricRequest(field_name="outcome", metric_pct_change=0.1)],
+                    strata=[],
+                    filters=[],
+                    arms=[
+                        Arm(arm_name="Control", arm_description="Control"),
+                        Arm(arm_name="Treatment", arm_description="Treatment"),
+                    ],
+                )
+            ),
+        ).data
+        assert response.google_sheets_experiment_url is None
+        aclient.commit_experiment(datasource_id=ds_id, experiment_id=response.experiment_id)
+        return response.experiment_id
+
+    first, second = create("First"), create("Second")
+
+    def export(experiment_id):
+        download = aclient.get_experiment_assignments_as_csv_for_ui(datasource_id=ds_id, experiment_id=experiment_id)
+        return list(csv.reader(io.StringIO(b"".join(download.data).decode())))
+
+    exports = {experiment_id: export(experiment_id) for experiment_id in (first, second)}
+    initial_assignments = list(
+        xngin_session.execute(
+            sa
+            .select(
+                tables.ArmAssignment.experiment_id, tables.ArmAssignment.participant_id, tables.ArmAssignment.arm_id
+            )
+            .where(tables.ArmAssignment.experiment_id.in_([first, second]))
+            .order_by(tables.ArmAssignment.experiment_id, tables.ArmAssignment.participant_id)
+        )
+    )
+    reads = http.get.call_count
+    missing = aclient.analyze_experiment(datasource_id=ds_id, experiment_id=first, raise_if_not_default_status=False)
+    assert missing.status == 422
+    assert http.get.call_count == reads
+    create_pending_snapshots(3600)
+    assert not list(
+        xngin_session.scalars(sa.select(tables.Snapshot.id).where(tables.Snapshot.experiment_id.in_([first, second])))
+    )
+
+    def connect(experiment_id, gid):
+        aclient.update_experiment(
+            datasource_id=ds_id,
+            experiment_id=experiment_id,
+            body=aapi.UpdateExperimentRequest(
+                google_sheets_experiment_url=None if gid is None else URL.replace("gid=42", f"gid={gid}")
+            ),
+        )
+        xngin_session.expire_all()
+        assert xngin_session.get_one(tables.Experiment, experiment_id).google_sheets_experiment_url == (
+            None if gid is None else URL.replace("gid=42", f"gid={gid}")
+        )
+        config = aclient.get_experiment_for_ui(datasource_id=ds_id, experiment_id=experiment_id).data.config
+        assert config.google_sheets_experiment_url == (None if gid is None else URL.replace("gid=42", f"gid={gid}"))
+
+    for experiment_id, gid, effect in [(first, "99", 100), (second, "100", 200)]:
+        tab = [row.copy() for row in exports[experiment_id]]
+        for i, row in enumerate(tab[1:]):
+            row[1] = str(i + (effect if row[-1] == "Treatment" else 0))
+        http.csv_tabs[gid] = tab
+        connect(experiment_id, gid)
+
+    def treatment(experiment_id):
+        analysis = aclient.analyze_experiment(datasource_id=ds_id, experiment_id=experiment_id).data
+        assert isinstance(analysis, FreqExperimentAnalysisResponse)
+        return next(arm.estimate for arm in analysis.metric_analyses[0].arm_analyses if not arm.is_baseline)
+
+    first_result, second_result = treatment(first), treatment(second)
+    assert second_result == pytest.approx(first_result + 100)
+    create_pending_snapshots(3600)
+    process_pending_snapshots(90, max_jitter_secs=0)
+    xngin_session.expire_all()
+    saved_snapshots = list(
+        xngin_session.scalars(sa.select(tables.Snapshot).where(tables.Snapshot.experiment_id.in_([first, second])))
+    )
+    assert {snapshot.experiment_id for snapshot in saved_snapshots} == {first, second}
+    for snapshot in saved_snapshots:
+        assert snapshot.status == "success", snapshot.message
+        analysis = FreqExperimentAnalysisResponse.model_validate(snapshot.data)
+        estimate = next(arm.estimate for arm in analysis.metric_analyses[0].arm_analyses if not arm.is_baseline)
+        assert estimate == pytest.approx(first_result if snapshot.experiment_id == first else second_result)
+    saved_data = {(snapshot.experiment_id, snapshot.id): snapshot.data for snapshot in saved_snapshots}
+    aclient.update_experiment(
+        datasource_id=ds_id, experiment_id=first, body=aapi.UpdateExperimentRequest(name="Renamed")
+    )
+    assert treatment(first) == pytest.approx(first_result)  # Omitted URL is unchanged.
+    invalid = aclient.update_experiment(
+        datasource_id=ds_id,
+        experiment_id=first,
+        body=aapi.UpdateExperimentRequest.model_construct(google_sheets_experiment_url="https://example.com"),
+        raise_if_not_default_status=False,
+    )
+    assert invalid.status == 422
+    assert treatment(first) == pytest.approx(first_result)
+    connect(first, "100")
+    assert treatment(first) == pytest.approx(second_result)
+    connect(first, None)
+    assert (
+        aclient.analyze_experiment(datasource_id=ds_id, experiment_id=first, raise_if_not_default_status=False).status
+        == 422
+    )
+    assert treatment(second) == pytest.approx(second_result)
+    for experiment_id in (first, second):
+        assert export(experiment_id) == exports[experiment_id]
+    assert raw == original_raw
+    assert xngin_session.get_one(tables.Datasource, ds_id).get_config().dwh.spreadsheet_url == URL
+    assert aclient.inspect_datasource(datasource_id=ds_id).data.tables == [TAB]
+    with DwhSession.open(xngin_session.get_one(tables.Datasource, ds_id).get_config().dwh) as dwh:
+        stats = dwh.run(
+            get_raw_metric_stats,
+            dwh.inspect_table(TAB),
+            [DesignSpecMetricRequest(field_name="outcome", metric_pct_change=0.1)],
+            [],
+        )
+    assert stats["outcome__count"] == 20
+    assert stats["outcome__mean"] == pytest.approx(10.5)
+    assert initial_assignments == list(
+        xngin_session.execute(
+            sa
+            .select(
+                tables.ArmAssignment.experiment_id, tables.ArmAssignment.participant_id, tables.ArmAssignment.arm_id
+            )
+            .where(tables.ArmAssignment.experiment_id.in_([first, second]))
+            .order_by(tables.ArmAssignment.experiment_id, tables.ArmAssignment.participant_id)
+        )
+    )
+    xngin_session.expire_all()
+    for snapshot_key, data in saved_data.items():
+        assert xngin_session.get_one(tables.Snapshot, snapshot_key).data == data
+    http.post.assert_not_called()
+
+
+@pytest.mark.parametrize("url", [None, URL])
+@pytest.mark.parametrize(
+    ("experiment_type", "dwh"),
+    [
+        ("freq_preassigned", aapi.ApiOnlyDsn()),
+        ("freq_online", aapi.GoogleSheetsDsn(spreadsheet_url=URL)),
+        ("mab", aapi.GoogleSheetsDsn(spreadsheet_url=URL)),
+    ],
+)
+def test_outcome_connection_rejects_unsupported_experiments(mocker, url, experiment_type, dwh):
+    from xngin.apiserver.routers.admin.admin_api import update_experiment  # noqa: PLC0415
+    from xngin.apiserver.routers.common_enums import ExperimentState  # noqa: PLC0415
+
+    experiment = mocker.Mock(state=ExperimentState.COMMITTED, experiment_type=experiment_type)
+    experiment.datasource.get_config.return_value = RemoteDatabaseConfig(
+        type="remote", dwh=api_dsn_to_settings_dwh(dwh)
+    )
+    session = mocker.Mock()
+    with pytest.raises(LateValidationError):
+        update_experiment(
+            experiment=experiment,
+            session=session,
+            body=aapi.UpdateExperimentRequest(google_sheets_experiment_url=url),
+        )
+    session.commit.assert_not_called()

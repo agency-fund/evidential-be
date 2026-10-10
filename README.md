@@ -21,8 +21,9 @@ public CSV export; assignment uploads are done manually by the presenter.
    planning and an immediate analysis; `onboarded_within_1_week` starts entirely blank so you can fill it live.
 1. Set sharing to **Anyone with the link → Viewer** (Editor also works) and allow viewers to download. Copy the intended
    tab's normal URL, including `gid`. Without `gid`, the first tab is used. Public access must be allowed by your Workspace.
-1. In Evidential, add a **Google Sheets (demo)** datasource. Paste the URL and select `linked_sheet`, which represents
-   the single tab in that URL. Row 1 must have unique column names starting with a letter or underscore and containing
+1. In Evidential, add a **Google Sheets (demo)** datasource. Paste the **Raw tab URL** and select `linked_sheet`,
+   which represents that tab. Setup, power analysis, enrollment, and CSV exports keep using this raw source.
+   Row 1 must have unique column names starting with a letter or underscore and containing
    only letters, numbers, and underscores. Use `participant_id` as the ID, choose a primary metric below, and optionally
    select secondary outcomes.
    Leave **Cluster key** empty for individual assignment; use `region` under **Strata** to balance regions across arms.
@@ -34,15 +35,21 @@ public CSV export; assignment uploads are done manually by the presenter.
    Use **File → Import → Upload → Insert new sheet(s)** to import the CSV, then rename the new tab **Experiment**.
    Disable **Convert text to numbers, dates, and formulas** to preserve participant IDs, including leading zeroes.
    [Google's import instructions](https://support.google.com/docs/answer/40608?hl=en) describe importing CSVs.
-1. Open the **Experiment** tab, copy its URL including `gid`, and click **Connect Experiment tab** on the experiment
-   page. Paste this URL into **Spreadsheet URL** and save. Each demo datasource reads one linked tab; updating its
-   URL affects all experiments on that datasource. Use separate datasources for independent demos.
+1. Open the new **Experiment** tab and copy its URL including `gid`. Click **Connect Experiment tab** on the
+   experiment page, paste it into **Experiment tab URL (outcomes)**, and save. The dialog shows the raw-tab URL
+   read-only. Each experiment has its own outcomes connection; connecting or reconnecting it leaves the
+   datasource and other experiments unchanged. Refresh and live polling stay disabled until connected.
 1. Edit your selected metric columns in the **Experiment** tab, then click **Refresh** to save and display an analysis
    snapshot. The arm comparison and time-series chart update; saved history remains after reloading.
    Demo chart points retain their exact timestamps rather than grouping by day.
    Click **Start live demo** for refreshes about every 10 seconds. They stop after 15 minutes, when the page is closed,
    or on an error; **Stop live demo** stops them immediately. Google may briefly cache CSV exports.
    Edit cells after connecting. Replacing or deleting a tab can change its `gid`; reconnect its current URL if this happens.
+
+The experiment's `google_sheets_experiment_url` is returned in its config and updated through the experiment PATCH
+endpoint. Omitting it leaves the connection unchanged; explicit `null` disconnects it. Analysis requires a connection,
+and scheduled snapshots skip unconnected Sheets experiments. Assignment CSVs always retain raw-tab values, not later
+outcome edits.
 
 Each row represents one participant. Pick the metric that matches the organization you're demonstrating to:
 

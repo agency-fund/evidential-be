@@ -69,7 +69,7 @@ class PopulationStddev:
 @dataclass
 class SheetData:
     headers: list[str]
-    # Retain row gaps when generating a CSV for import into the same tab.
+    # Retain source row gaps in the assignment CSV imported into a separate outcome tab.
     rows: list[tuple[int, list]]
 
     @classmethod
@@ -217,8 +217,8 @@ class GoogleSheetsClient:
                     if response.status_code == 400 and "gid" in params:
                         message = (
                             "Google Sheets could not open the linked tab. Importing a CSV can replace a tab and "
-                            "change its ID. Open the intended tab, copy its current URL, and use "
-                            "'Connect Experiment tab' to update the datasource."
+                            "change its ID. Open the intended tab, copy its current URL, and update "
+                            "its connection in Evidential."
                         )
                     elif response.status_code in {401, 403, 404}:
                         message = (
