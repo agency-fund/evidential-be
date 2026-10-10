@@ -304,6 +304,24 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
         return self
 
 
+class GoogleSheetsDsn(ConfigBaseModel, BaseDsn):
+    """A public demo spreadsheet read anonymously through its CSV export."""
+
+    driver: Literal["google_sheets"] = "google_sheets"
+    spreadsheet_url: str
+
+    @field_validator("spreadsheet_url")
+    @classmethod
+    def validate_spreadsheet_url(cls, value: str) -> str:
+        from xngin.apiserver.sheets_url import parse_spreadsheet_url  # noqa: PLC0415
+
+        parse_spreadsheet_url(value)
+        return value
+
+    def to_sqlalchemy_url(self) -> sqlalchemy.URL:
+        return sqlalchemy.URL.create("sqlite", database=":memory:")
+
+
 class NoDwh(ConfigBaseModel):
     """NoDwh is used to indicate that no data warehouse is configured."""
 
@@ -316,7 +334,7 @@ class NoDwh(ConfigBaseModel):
         return False
 
 
-type Dwh = Annotated[Dsn | BqDsn | NoDwh, Field(discriminator="driver")]
+type Dwh = Annotated[Dsn | BqDsn | GoogleSheetsDsn | NoDwh, Field(discriminator="driver")]
 
 
 class RemoteDatabaseConfig(ConfigBaseModel):

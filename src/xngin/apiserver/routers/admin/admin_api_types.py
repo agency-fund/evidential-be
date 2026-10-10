@@ -457,13 +457,28 @@ class BqDsn(AdminApiBaseModel):
     ]
 
 
+class GoogleSheetsDsn(AdminApiBaseModel):
+    """Read-only demo connector for a publicly viewable Google Sheets tab; no Google credentials needed."""
+
+    type: Literal["google_sheets"] = "google_sheets"
+    spreadsheet_url: Annotated[str, Field(max_length=MAX_LENGTH_OF_URL_VALUE)]
+
+    @field_validator("spreadsheet_url")
+    @classmethod
+    def validate_spreadsheet_url(cls, value: str) -> str:
+        from xngin.apiserver.sheets_url import parse_spreadsheet_url  # noqa: PLC0415
+
+        parse_spreadsheet_url(value)
+        return value
+
+
 class ApiOnlyDsn(AdminApiBaseModel):
     """ApiOnlyDsn describes a datasource where data is included in Evidential API requests."""
 
     type: Literal["api_only"] = "api_only"
 
 
-type Dsn = Annotated[ApiOnlyDsn | PostgresDsn | BqDsn | RedshiftDsn, Field(discriminator="type")]
+type Dsn = Annotated[ApiOnlyDsn | PostgresDsn | BqDsn | RedshiftDsn | GoogleSheetsDsn, Field(discriminator="type")]
 
 
 class CreateDatasourceRequest(AdminApiBaseModel):

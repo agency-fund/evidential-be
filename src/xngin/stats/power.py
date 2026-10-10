@@ -39,7 +39,16 @@ def analyze_metric_power(
     Returns:
         MetricPowerAnalysis containing power analysis results
     """
-    is_cluster = metric.icc is not None and metric.avg_cluster_size is not None and metric.cv is not None
+    if metric.avg_cluster_size is not None and metric.icc is None:
+        return power_analysis_error(
+            metric,
+            MetricPowerAnalysisMessageType.INSUFFICIENT,
+            (
+                "Clustered power estimates need observed outcomes to estimate within-cluster correlation. "
+                "Choose a maximum or custom cluster count to continue, or provide baseline observations."
+            ),
+        )
+    is_cluster = metric.has_cluster_stats
 
     # Sample size mode:
     if desired_n is None:

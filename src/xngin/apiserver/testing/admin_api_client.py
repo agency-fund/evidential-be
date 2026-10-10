@@ -3469,7 +3469,9 @@ class AdminAPIClient:
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
     ): ...
     def get_experiment_assignments_as_csv_for_ui(
         self,
@@ -3484,7 +3486,9 @@ class AdminAPIClient:
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
     ):
         return cast(
             (
@@ -3493,7 +3497,9 @@ class AdminAPIClient:
                 | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
                 | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
                 | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
+                | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
             ),
             self._route_handler(
                 path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/assignments/csv",
@@ -3505,7 +3511,9 @@ class AdminAPIClient:
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
                     HTTPStatus.NOT_FOUND: HTTPExceptionError,
-                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: XHTTPValidationError,
+                    HTTPStatus.BAD_GATEWAY: MessageError,
+                    HTTPStatus.GATEWAY_TIMEOUT: MessageError,
                 },
                 path_params={
                     "datasource_id": datasource_id,

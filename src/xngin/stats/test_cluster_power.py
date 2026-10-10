@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 from pydantic import ValidationError
 
-from xngin.apiserver.routers.common_api_types import DesignSpecMetric
+from xngin.apiserver.routers.common_api_types import DesignSpecMetric, DesignSpecMetricRequest
 from xngin.apiserver.routers.common_enums import MetricPowerAnalysisMessageType, MetricType
 from xngin.stats.cluster_power import (
     calculate_design_effect,
@@ -153,6 +153,17 @@ class TestCalculateDesignEffect:
     def test_calculate_design_effect_invalid_params(self, icc, avg_cluster_size, cv, expected_error):
         with pytest.raises(ValueError, match=expected_error):
             calculate_design_effect(icc=icc, avg_cluster_size=avg_cluster_size, cv=cv)
+
+
+def test_cluster_sizes_without_icc_roundtrip_but_cannot_be_echoed_as_full_stats():
+    metric = DesignSpecMetric(field_name="onboarded_within_1_week", avg_cluster_size=250, cv=0)
+    reloaded = DesignSpecMetric.model_validate_json(metric.model_dump_json())
+    assert reloaded.icc is None
+    assert reloaded.avg_cluster_size == 250
+    assert reloaded.cv == 0
+    assert not reloaded.has_cluster_stats
+    with pytest.raises(ValidationError, match="icc, avg_cluster_size, and cv must all be set together"):
+        DesignSpecMetricRequest(field_name="onboarded_within_1_week", metric_pct_change=0.1, avg_cluster_size=250, cv=0)
 
 
 def test_partial_cluster_params_are_rejected():
