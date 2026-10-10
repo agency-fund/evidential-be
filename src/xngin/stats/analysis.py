@@ -114,7 +114,13 @@ def analyze_experiment(
         if sum(nan_counts_df[metric_name]) == len(merged_df):
             continue
 
-        merged_df_dropna = merged_df.dropna(subset=[metric_name])
+        # Remove empty arms before fitting so OLS cannot assign them arbitrary coefficients.
+        # Without baseline observations, no treatment-v-control comparisons are available.
+        merged_df_dropna = merged_df.dropna(subset=[metric_name]).copy()
+        merged_df_dropna[arm_col] = merged_df_dropna[arm_col].cat.remove_unused_categories()
+        baseline_id = baseline_arm_id if baseline_arm_id is not None else merged_df[arm_col].cat.categories[0]
+        if baseline_id not in merged_df_dropna[arm_col].cat.categories:
+            continue
         # Disjoint arm indicators avoid covariance cancellation for zero-variance arm means.
         model = smf.ols(f"{metric_name} ~ 0 + {arm_col}", data=merged_df_dropna).fit(
             cov_type="HC1" if cluster_col is None else "cluster",

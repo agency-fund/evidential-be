@@ -22,12 +22,12 @@ public CSV export; assignment uploads are done manually by the presenter.
 1. Set sharing to **Anyone with the link → Viewer** (Editor also works) and allow viewers to download. Copy the intended
    tab's normal URL, including `gid`. Without `gid`, the first tab is used. Public access must be allowed by your Workspace.
 1. In Evidential, add a **Google Sheets (demo)** datasource. Paste the URL and select `linked_sheet`, which represents
-   the single tab in that URL. Row 1 must contain
-   unique column names using letters, numbers, and underscores. Use `participant_id` as the ID and choose a primary
-   metric from the options below. Additional metrics can be selected as secondary outcomes.
+   the single tab in that URL. Row 1 must have unique column names starting with a letter or underscore and containing
+   only letters, numbers, and underscores. Use `participant_id` as the ID, choose a primary metric below, and optionally
+   select secondary outcomes.
    Leave **Cluster key** empty for individual assignment; use `region` under **Strata** to balance regions across arms.
    Choosing `region` as the cluster key instead assigns entire regions together (four clusters in this example).
-1. Create and save a preassigned A/B experiment. Click **Download Experiment CSV** on the experiment page. It includes
+1. Create and save a preassigned A/B experiment. Click **Download Experiment CSV** immediately before importing it. It includes
    the participant ID, selected metrics, any fields used for filters, strata, or clustering, and
    `evidential_<experiment_id>_arm`, with arm names matched by participant ID. Values in these columns are retained;
    pending outcomes stay blank. Unassigned participants are retained with a blank arm. Keep the original setup tab.
@@ -37,12 +37,11 @@ public CSV export; assignment uploads are done manually by the presenter.
 1. Open the **Experiment** tab, copy its URL including `gid`, and click **Connect Experiment tab** on the experiment
    page. Paste this URL into **Spreadsheet URL** and save. Each demo datasource reads one linked tab; updating its
    URL affects all experiments on that datasource. Use separate datasources for independent demos.
-1. Fill or edit your selected metric columns in the **Experiment** tab, then click **Refresh** to update the live arm comparison.
-   Each demo refresh saves an analysis snapshot and updates the live comparison and time-series chart. Saved history
-   remains after reloading; demo chart points retain their exact timestamps rather than grouping by day.
-   The button shows progress while saving and displays the last successful refresh time. For automatic updates,
-   click **Start live demo**. Refreshes run about every 10 seconds, stop after 15 minutes, and stop when the page is closed or on an error.
-   **Stop live demo** ends refreshes immediately. Google may briefly cache CSV exports, so edits can take longer to appear.
+1. Edit your selected metric columns in the **Experiment** tab, then click **Refresh** to save and display an analysis
+   snapshot. The arm comparison and time-series chart update; saved history remains after reloading.
+   Demo chart points retain their exact timestamps rather than grouping by day.
+   Click **Start live demo** for refreshes about every 10 seconds. They stop after 15 minutes, when the page is closed,
+   or on an error; **Stop live demo** stops them immediately. Google may briefly cache CSV exports.
    Edit cells after connecting. Replacing or deleting a tab can change its `gid`; reconnect its current URL if this happens.
 
 Each row represents one participant. Pick the metric that matches the organization you're demonstrating to:
@@ -69,10 +68,10 @@ group. Filled demo values are synthetic examples, not measurements of a real int
 
 **Starting with blank outcomes:** keep participant IDs and metric headers populated, and leave the outcome cells empty.
 Select your metric, click **Estimate Sample Size**, then choose **Use the maximum available sample size** (1,000 for the
-starter) or a custom size. You can continue with unavailable power estimates for this POC; empty outcomes cannot provide
-a meaningful power or minimum-detectable-effect estimate. Results appear as you add observed values to the assigned
-participants; an arm comparison needs observations in both arms. Do not replace blanks with zero unless zero is the
-actual observed outcome. The filled starter is easier if you want to demonstrate power analysis too.
+starter) or a custom size. Empty outcomes cannot provide meaningful power or minimum-detectable-effect estimates,
+but you can continue the demo without them. Results appear as you add observations to assigned participants;
+comparisons need observations in both the baseline and treatment arms. Keep pending outcomes blank, not zero.
+The filled starter is easier if you want to demonstrate power analysis too.
 
 For clustered assignment, a blank outcome still allows the connector to count participants and calculate cluster
 sizes, but ICC and power estimates remain unavailable. Choose a maximum or custom cluster count to continue the demo.
@@ -84,6 +83,3 @@ missing outcomes, while zero and FALSE are observed outcomes. Entirely blank met
 are inferred as numeric. Format participant IDs
 as plain text to preserve leading zeroes. Keep IDs unique and unchanged after assignment. Sorting rows between refreshes
 is supported; newly added participants are not automatically enrolled in a preassigned experiment.
-
-Live demo refreshes run while the experiment page is open and update the analysis on screen; historical snapshots keep
-their existing schedule. Download the CSV immediately before importing it, since it contains a snapshot of the sheet.

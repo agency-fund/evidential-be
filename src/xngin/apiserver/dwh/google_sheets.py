@@ -93,34 +93,35 @@ class SheetData:
                 rows.append((row_number, [None if v == "" else v for v in row] + [None] * (len(headers) - len(row))))
         return cls(headers=headers, rows=rows)
 
+    def _column_values(self, index: int) -> tuple[sa.types.TypeEngine, list]:
+        header = self.headers[index]
+        original = [row[index] for _, row in self.rows]
+        # Keep identifier and assignment columns textual, including entirely empty ones.
+        if (
+            header.lower() in {"id", "hash"}
+            or header.lower().endswith(("_id", "_hash"))
+            or header.startswith("evidential_")
+        ):
+            return sa.String(), original
+        parsed = [parse_csv_cell(value) for value in original]
+        values = [value for value in parsed if value is not None]
+        if values and all(isinstance(value, bool) for value in values):
+            return sa.Boolean(), parsed
+        if values and all(isinstance(value, int) and not isinstance(value, bool) for value in values):
+            return sa.BigInteger(), parsed
+        if all(isinstance(value, (float, int)) and not isinstance(value, bool) for value in values):
+            # Empty outcome columns are numeric so they can be selected as metrics during setup.
+            return sa.Double(), parsed
+        # Keep mixed-type text columns intact rather than partially parsing their cells.
+        return sa.String(), original
+
     def to_table(self, table_name: str, engine: sa.Engine) -> sa.Table:
         columns = []
         typed_rows = [list(row) for _, row in self.rows]
         for i, header in enumerate(self.headers):
-            column_type: sa.types.TypeEngine
-            # Keep identifier and assignment columns textual, including entirely empty ones.
-            if (
-                header.lower() in {"id", "hash"}
-                or header.lower().endswith(("_id", "_hash"))
-                or header.startswith("evidential_")
-            ):
-                column_type = sa.String()
-            else:
-                for row in typed_rows:
-                    row[i] = parse_csv_cell(row[i])
-                values = [row[i] for row in typed_rows if row[i] is not None]
-                if values and all(isinstance(v, bool) for v in values):
-                    column_type = sa.Boolean()
-                elif values and all(isinstance(v, int) and not isinstance(v, bool) for v in values):
-                    column_type = sa.BigInteger()
-                elif all(isinstance(v, (float, int)) and not isinstance(v, bool) for v in values):
-                    # Empty outcome columns are numeric so they can be selected as metrics during setup.
-                    column_type = sa.Double()
-                else:
-                    column_type = sa.String()
-                    # Keep mixed-type text columns intact rather than partially parsing their cells.
-                    for row, (_, original) in zip(typed_rows, self.rows, strict=True):
-                        row[i] = original[i]
+            column_type, values = self._column_values(i)
+            for row, value in zip(typed_rows, values, strict=True):
+                row[i] = value
             columns.append(sa.Column(header, column_type, nullable=True))
         table = sa.Table(table_name, sa.MetaData(), *columns)
         table.create(engine)
@@ -147,13 +148,14 @@ class SheetData:
         if unique_id_field not in self.headers:
             raise LateValidationError("The participant ID column is missing from the sheet.")
         id_col = self.headers.index(unique_id_field)
+        _, id_values = self._column_values(id_col)
         ids = set()
-        for _, row in self.rows:
-            if row[id_col] is None:
+        for value in id_values:
+            if value is None:
                 raise LateValidationError(
                     "Every populated sheet row needs a participant ID before downloading the CSV."
                 )
-            pid = participant_id(row[id_col])
+            pid = participant_id(value)
             if pid in ids:
                 raise LateValidationError("Participant IDs in the sheet must be unique before downloading the CSV.")
             ids.add(pid)
@@ -176,12 +178,12 @@ class SheetData:
         writer = csv.writer(output)
         writer.writerow(headers)
         next_row = 2
-        for row_number, original in self.rows:
+        for (row_number, original), value in zip(self.rows, id_values, strict=True):
             while next_row < row_number:
                 writer.writerow([None] * len(headers))
                 next_row += 1
             row = [original[index] if index is not None else None for index in source_indices]
-            row[arm_col] = assignments.get(participant_id(original[id_col]))
+            row[arm_col] = assignments.get(participant_id(value))
             writer.writerow(row)
             next_row = row_number + 1
         return output.getvalue()

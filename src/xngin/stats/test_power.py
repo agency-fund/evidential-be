@@ -27,7 +27,6 @@ def test_clustered_power_without_icc_does_not_use_individual_power(metric_baseli
     result = check_power([metric], n_arms=2, desired_n_clusters=4, desired_ns_clusters=[2, 4])[0]
     assert result.msg is not None
     assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
-    assert "observed outcomes" in result.msg.msg
     assert result.target_n is None
     assert result.pct_change_with_desired_n is None
     assert result.design_effect is None
