@@ -44,6 +44,12 @@ def create_pending_snapshots(snapshot_interval: int) -> None:
                     func.date_trunc("minute", tables.Experiment.end_date + buffer),
                 ),
                 tables.Experiment.state == ExperimentState.COMMITTED.value,
+                or_(
+                    tables.Experiment.google_sheets_experiment_url.is_not(None),
+                    ~tables.Experiment.datasource.has(
+                        tables.Datasource.config["dwh"]["driver"].astext == "google_sheets"
+                    ),
+                ),
             )
             .order_by(tables.Experiment.id, tables.Snapshot.updated_at.desc())
             .cte()

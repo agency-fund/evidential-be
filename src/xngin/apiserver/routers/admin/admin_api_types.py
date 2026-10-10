@@ -3,7 +3,7 @@ from typing import Annotated, Literal
 from urllib.parse import urlparse
 
 from annotated_types import Ge, Le
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, field_validator, model_serializer
 
 from xngin.apiserver.common_field_types import FieldName
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
@@ -563,11 +563,26 @@ class UpdateExperimentRequest(AdminApiBaseModel):
     name: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)] = None
     description: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)] = None
     design_url: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_URL_VALUE)] = None
+    google_sheets_experiment_url: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_URL_VALUE)] = None
     start_date: Annotated[datetime | None, Field()] = None
     end_date: Annotated[datetime | None, Field()] = None
 
     impact: Annotated[Impact | None, Field()] = None
     decision: Annotated[str | None, Field()] = None
+
+    @model_serializer(mode="wrap")
+    def serialize_updates(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
+        # Preserve PATCH semantics when a client serializes this model without exclude_unset.
+        return {name: value for name, value in handler(self).items() if name in self.model_fields_set}
+
+    @field_validator("google_sheets_experiment_url")
+    @classmethod
+    def validate_google_sheets_experiment_url(cls, value: str | None) -> str | None:
+        if value is not None:
+            from xngin.apiserver.sheets_url import parse_spreadsheet_url  # noqa: PLC0415
+
+            parse_spreadsheet_url(value)
+        return value
 
     @field_validator("design_url")
     @classmethod
