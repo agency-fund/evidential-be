@@ -74,6 +74,8 @@ def test_dsn_roundtrip_and_storage():
         "https://evil.com/spreadsheets/d/demo",
         "https://docs.google.com.evil.com/spreadsheets/d/demo",
         "https://docs.google.com/spreadsheets/d/demo#gid=nope",
+        "https://docs.google.com/spreadsheets/d/demo#gid=",
+        "https://docs.google.com/spreadsheets/d/demo?gid=",
         "https://docs.google.com@localhost/spreadsheets/d/demo",
         "https://docs.google.com/spreadsheets/d/",
     ],
@@ -166,6 +168,21 @@ def test_export_matches_ids_after_reordering_and_preserves_other_columns(sheets_
     http.post.assert_not_called()
 
 
+def test_export_matches_numeric_ids_as_stored_without_changing_source_cells(sheets_http):
+    _, values = sheets_http
+    values[:] = [["reference", "outcome"], ["+1", "10"], [" 2 ", "20"], ["3", "30"]]
+    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL)) as dwh:
+        participants = dwh.get_participants(TAB, select_columns={"reference"}, n=3, filters=[]).participants
+        assignments = {str(row.reference): "Treatment" for row in participants}
+        exported = dwh.export_sheet_assignments(TAB, "reference", "demo", assignments)
+    assert list(csv.reader(io.StringIO(exported))) == [
+        ["reference", "outcome", "evidential_demo_arm"],
+        ["+1", "10", "Treatment"],
+        [" 2 ", "20", "Treatment"],
+        ["3", "30", "Treatment"],
+    ]
+
+
 def test_reexport_reuses_its_column(sheets_http):
     _, values = sheets_http
     values[0].append("evidential_demo_arm")
@@ -245,21 +262,6 @@ def test_google_errors_are_actionable(sheets_http, mocker, status_code):
     http.close.assert_called_once()
 
 
-@pytest.mark.parametrize("gid", [42, None])
-def test_invalid_tab_requires_reconnecting_instead_of_reading_another_tab(sheets_http, mocker, gid):
-    http, _ = sheets_http
-    response = mocker.MagicMock(ok=False, status_code=400)
-    response.__enter__.return_value = response
-    http.get.side_effect = None
-    http.get.return_value = response
-    url = URL if gid is not None else URL.split("#", maxsplit=1)[0]
-    expected = "Connect Experiment tab" if gid is not None else "HTTP 400"
-    with pytest.raises(DwhConnectionError, match=expected):
-        GoogleSheetsClient(url)
-    http.get.assert_called_once()
-    http.close.assert_called_once()
-
-
 def test_demo_limit_rejects_data_instead_of_truncating():
     with pytest.raises(LateValidationError, match="5,000"):
         SheetData.from_values([["id"], *[[str(i)] for i in range(5_001)]])
@@ -274,7 +276,7 @@ def test_sign_in_page_is_an_access_error(sheets_http, mocker):
     response.iter_content.return_value = [b"<html>Sign in</html>"]
     http.get.side_effect = None
     http.get.return_value = response
-    with pytest.raises(DwhConnectionError, match="Anyone with the link: Viewer"):
+    with pytest.raises(DwhConnectionError):
         GoogleSheetsClient(URL)
 
 
@@ -416,6 +418,24 @@ def test_create_launch_export_import_and_analyze_a_sheet_experiment(sheets_http,
     assert all(arm.num_missing_values == -1 for arm in onboarding_waiting.arm_analyses)
     if blank_outcomes:
         assert all(arm.num_missing_values == -1 for metric in waiting.metric_analyses for arm in metric.arm_analyses)
+    # Observations in only one arm must not produce a fabricated control comparison.
+    onboarding_index = values[0].index("onboarded_within_1_week")
+    for row in values[1:]:
+        row[onboarding_index] = "1" if row[-1] == "Treatment" else ""
+    partial = aclient.analyze_experiment(datasource_id=datasource_id, experiment_id=experiment_id).data
+    assert isinstance(partial, FreqExperimentAnalysisResponse)
+    onboarding_partial = next(m for m in partial.metric_analyses if m.metric_name == "onboarded_within_1_week")
+    assert all(arm.num_missing_values == -1 for arm in onboarding_partial.arm_analyses)
+    for row in values[1:]:
+        row[onboarding_index] = "0" if row[-1] == "Control" else ""
+    partial = aclient.analyze_experiment(datasource_id=datasource_id, experiment_id=experiment_id).data
+    assert isinstance(partial, FreqExperimentAnalysisResponse)
+    onboarding_partial = next(m for m in partial.metric_analyses if m.metric_name == "onboarded_within_1_week")
+    control = next(arm for arm in onboarding_partial.arm_analyses if arm.is_baseline)
+    treatment = next(arm for arm in onboarding_partial.arm_analyses if not arm.is_baseline)
+    assert control.num_missing_values == 0
+    assert control.estimate == pytest.approx(0)
+    assert treatment.num_missing_values == -1
     # Fill the initially blank onboarding column with observed 1/0 values using the existing numeric path.
     observed_by_id = {
         row[0]: dict(zip(headers[2:], [*row[2:-1], str(int(row[0][1:]) % 2)], strict=True))

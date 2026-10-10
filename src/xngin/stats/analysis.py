@@ -110,16 +110,20 @@ def analyze_experiment(
         if sum(nan_counts_df[metric_name]) == len(merged_df):
             continue
 
-        # smf.ols internally actually drops missing values by default (see Model.from_formula),
-        # but make it explicit here for developer clarity.
+        # Remove empty arms before fitting so OLS cannot assign them arbitrary coefficients.
+        # Without baseline observations, no treatment-v-control comparisons are available.
+        merged_df_dropna = merged_df.dropna(subset=[metric_name]).copy()
+        merged_df_dropna[arm_col] = merged_df_dropna[arm_col].cat.remove_unused_categories()
+        baseline_id = baseline_arm_id if baseline_arm_id is not None else merged_df[arm_col].cat.categories[0]
+        if baseline_id not in merged_df_dropna[arm_col].cat.categories:
+            continue
         if cluster_col is not None:
-            merged_df_dropna = merged_df.dropna(subset=[metric_name])
             model = smf.ols(f"{metric_name} ~ {arm_col}", data=merged_df_dropna).fit(
                 cov_type="cluster",
                 cov_kwds={"groups": merged_df_dropna[cluster_col]},
             )
         else:
-            model = smf.ols(f"{metric_name} ~ {arm_col}", data=merged_df, missing="drop").fit(cov_type="HC1")
+            model = smf.ols(f"{metric_name} ~ {arm_col}", data=merged_df_dropna).fit(cov_type="HC1")
         arm_ids = model.model.data.design_info.factor_infos[EvalFactor(arm_col)].categories
 
         # Calculate CIs for coefficients
@@ -136,7 +140,7 @@ def analyze_experiment(
         # yet carries no variance information); NaNs from any other cause (e.g. zero residual
         # degrees of freedom) pass through so callers see them as null rather than a spuriously
         # confident zero-width CI.
-        arm_outcomes = merged_df.dropna(subset=[metric_name]).groupby(arm_col, observed=False)[metric_name]
+        arm_outcomes = merged_df_dropna.groupby(arm_col, observed=False)[metric_name]
         identical_arms = (arm_outcomes.nunique() == 1) & (arm_outcomes.count() >= 2)
         for ci_col in ("mean_ci_lower", "mean_ci_upper"):
             degenerate = pred_summary[ci_col].isna() & identical_arms.reindex(arm_ids).to_numpy()
