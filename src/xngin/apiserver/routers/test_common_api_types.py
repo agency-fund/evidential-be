@@ -7,6 +7,8 @@ from xngin.apiserver.routers.common_api_types import (
     DesignSpecMetricRequest,
     Filter,
     MABDwhExperimentSpec,
+    OnlineFrequentistExperimentSpec,
+    PowerRequest,
     PreassignedFrequentistExperimentSpec,
     SampleCall,
     SampleCalls,
@@ -467,3 +469,115 @@ def test_desired_ns_clusters_requires_cluster_key():
 
     with pytest.raises(ValidationError, match="desired_ns_clusters can only be set when cluster_key is set"):
         PreassignedFrequentistExperimentSpec.model_validate(invalid_spec)
+
+
+def _one_time_metric(field_name: str, *, use_one_time_metric: bool) -> dict:
+    # Clients send only the toggle; the server derives is_one_time_eligible during the power check.
+    return {
+        "field_name": field_name,
+        "metric_pct_change": 0.1,
+        "use_one_time_metric": use_one_time_metric,
+    }
+
+
+def test_one_time_metric_allowed_on_primary_metric():
+    metrics = [
+        _one_time_metric("primary", use_one_time_metric=True),
+        _one_time_metric("second", use_one_time_metric=False),
+    ]
+
+    spec = PreassignedFrequentistExperimentSpec.model_validate(_preassigned_spec_payload(metrics=metrics))
+    assert spec.metrics[0].use_one_time_metric
+
+    power_request = PowerRequest.model_validate({"table_name": "dwh", "n_arms": 2, "metrics": metrics})
+    assert power_request.metrics[0].use_one_time_metric
+
+
+def test_one_time_metric_rejected_on_secondary_metric():
+    metrics = [
+        _one_time_metric("primary", use_one_time_metric=False),
+        _one_time_metric("second", use_one_time_metric=True),
+    ]
+    expected = 'use_one_time_metric can only be set on the primary metric .* "second"'
+
+    with pytest.raises(ValidationError, match=expected):
+        PreassignedFrequentistExperimentSpec.model_validate(_preassigned_spec_payload(metrics=metrics))
+
+    with pytest.raises(ValidationError, match=expected):
+        PowerRequest.model_validate({"table_name": "dwh", "n_arms": 2, "metrics": metrics})
+
+
+def test_design_spec_metric_request_to_design_spec_metric_keeps_toggle_but_not_eligibility():
+    request = DesignSpecMetricRequest(
+        field_name="metric1",
+        metric_pct_change=0.1,
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100.0,
+        metric_stddev=15.0,
+        available_nonnull_n=900,
+        available_n=1000,
+        is_one_time_eligible=True,
+        use_one_time_metric=True,
+    )
+
+    metric = request.to_design_spec_metric()
+
+    # Same rule as build_metric_stats: a client-supplied eligibility flag is ignored; the power check derives it.
+    assert not metric.is_one_time_eligible
+    assert metric.use_one_time_metric
+
+
+def test_one_time_metric_rejected_for_cluster_designs():
+    metrics = [_one_time_metric("primary", use_one_time_metric=True)]
+    expected = "use_one_time_metric is not supported for cluster-randomized designs"
+
+    with pytest.raises(ValidationError, match=expected):
+        PreassignedFrequentistExperimentSpec.model_validate(
+            _preassigned_spec_payload(metrics=metrics, cluster_key="school_id")
+        )
+
+    with pytest.raises(ValidationError, match=expected):
+        PowerRequest.model_validate({"table_name": "dwh", "n_arms": 2, "cluster_key": "school_id", "metrics": metrics})
+
+
+def test_one_time_metric_rejected_with_filter_on_same_column():
+    metrics = [_one_time_metric("primary", use_one_time_metric=True)]
+    filters = [{"field_name": "primary", "relation": "between", "value": [0, 100]}]
+    expected = 'Cannot filter on "primary" while use_one_time_metric is set'
+
+    with pytest.raises(ValidationError, match=expected):
+        PreassignedFrequentistExperimentSpec.model_validate(_preassigned_spec_payload(metrics=metrics, filters=filters))
+
+    with pytest.raises(ValidationError, match=expected):
+        PowerRequest.model_validate({"table_name": "dwh", "n_arms": 2, "metrics": metrics, "filters": filters})
+
+
+def test_one_time_metric_allows_filters_on_other_columns_and_filters_without_one_time():
+    filters = [{"field_name": "primary", "relation": "between", "value": [0, 100]}]
+    # A filter on the primary metric is fine when one-time mode is off...
+    PreassignedFrequentistExperimentSpec.model_validate(
+        _preassigned_spec_payload(metrics=[_one_time_metric("primary", use_one_time_metric=False)], filters=filters)
+    )
+    # ...and one-time mode is fine with filters on other columns.
+    PreassignedFrequentistExperimentSpec.model_validate(
+        _preassigned_spec_payload(
+            metrics=[_one_time_metric("primary", use_one_time_metric=True)],
+            filters=[{"field_name": "age", "relation": "between", "value": [18, 65]}],
+        )
+    )
+
+
+def test_one_time_metric_rejected_for_online_experiments():
+    payload = _preassigned_spec_payload(
+        experiment_type="freq_online", metrics=[_one_time_metric("primary", use_one_time_metric=True)]
+    )
+
+    with pytest.raises(ValidationError, match="use_one_time_metric is only supported for preassigned experiments"):
+        OnlineFrequentistExperimentSpec.model_validate(payload)
+
+
+def test_one_time_metric_accepted_without_eligibility_flag():
+    # The frontend only sends the toggle; it must not have to echo is_one_time_eligible back.
+    metric = DesignSpecMetricRequest(field_name="metric1", metric_pct_change=0.1, use_one_time_metric=True)
+    assert metric.use_one_time_metric
+    assert not metric.is_one_time_eligible
