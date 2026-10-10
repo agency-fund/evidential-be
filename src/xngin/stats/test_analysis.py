@@ -267,15 +267,8 @@ def test_analysis_counts_participants_absent_from_outcomes(test_assignments, tes
     assert sum(r.num_missing_values for r in bool_field_results.values()) == len(absent_ids)
 
 
-# sqrt() warns when cancellation makes a mathematically zero mean variance slightly negative.
-@pytest.mark.filterwarnings("ignore:invalid value encountered in sqrt:RuntimeWarning")
 def test_analysis_with_all_identical_outcomes_in_one_arm():
-    """A treatment arm whose outcomes are all identical still gets finite mean CIs.
-
-    Its predicted-mean variance is mathematically zero, but floating-point cancellation in
-    statsmodels (Var(Intercept) + Var(coef) + 2Cov) makes it slightly negative for this data,
-    which turned the mean CI bounds into NaN before analyze_experiment collapsed them.
-    """
+    """Identical treatment outcomes retain finite, zero-width mean confidence intervals."""
     arm_a, arm_b = "a" * 32, "b" * 32
     assignments = pd.DataFrame([{"participant_id": str(i), "arm_id": arm_a if i < 3 else arm_b} for i in range(7)])
     # Baseline arm a: [1, 0, 0]; treatment arm b: all zeros.
@@ -297,27 +290,47 @@ def test_analysis_with_all_identical_outcomes_in_one_arm():
     assert math.isfinite(degenerate_results.mean_ci_upper)
 
 
+def test_clustered_analysis_with_equal_control_cluster_means():
+    assignments = pd.DataFrame({
+        "participant_id": [str(i) for i in range(8)],
+        "arm_id": ["control"] * 4 + ["treatment"] * 4,
+        "cluster_id": ["a", "a", "b", "b", "c", "c", "d", "d"],
+    })
+    # Control clusters both average 2 despite within-cluster variation; treatment averages 4 and 6.
+    outcomes = [
+        ParticipantOutcome(
+            participant_id=str(i),
+            metric_values=[MetricValue(metric_name="outcome", metric_value=value)],
+        )
+        for i, value in enumerate([1, 3, 0, 4, 3, 5, 5, 7])
+    ]
+    result = analyze_experiment(assignments, outcomes, cluster_col="cluster_id", baseline_arm_id="control")["outcome"]
+
+    control, treatment = result["control"], result["treatment"]
+    assert control.estimate == pytest.approx(2)
+    assert control.std_error == pytest.approx(0, abs=1e-12)
+    assert control.ci_lower == pytest.approx(2)
+    assert control.ci_upper == pytest.approx(2)
+    assert control.mean_ci_lower == pytest.approx(2)
+    assert control.mean_ci_upper == pytest.approx(2)
+    # Cluster-robust small-sample correction: (4/3) * (7/6); variance before correction is 1/2.
+    standard_error = math.sqrt(7 / 9)
+    assert treatment.estimate == pytest.approx(3)
+    assert treatment.std_error == pytest.approx(standard_error)
+    half_width = 1.959963984540054 * standard_error
+    assert treatment.ci_lower == pytest.approx(3 - half_width)
+    assert treatment.ci_upper == pytest.approx(3 + half_width)
+    assert treatment.mean_ci_lower == pytest.approx(5 - half_width)
+    assert treatment.mean_ci_upper == pytest.approx(5 + half_width)
+
+
 # HC1 and the residual scale divide by df_resid, which is 0 with one observation per arm.
 @pytest.mark.filterwarnings("ignore:divide by zero encountered in scalar divide:RuntimeWarning")
-# That non-finite covariance makes the predicted-mean variance dot product warn.
-@pytest.mark.filterwarnings("ignore:invalid value encountered in dot:RuntimeWarning")
-# This one fires on some CI runners but never on macOS, so it is easy to miss locally. The chain:
-#   1. Two participants, two parameters: the fit is exact and df_resid is 0.
-#   2. HC1 multiplies the squared residuals by nobs / df_resid, which is 2 / 0 = inf (we ignore this)
-#   3. The residuals are mathematically 0, but BLAS returns either exactly 0.0 or a rounding
-#      crumb like 1e-16, depending on the build and CPU.
-#   4. inf * 0.0 is NaN and numpy warns "invalid value encountered in multiply".
-#      inf * 1e-16 is inf and nothing warns.
-# macOS produces the 1e-16; some GitHub runners land on 0. Either way the NaN this test checks
-# for arrives later, so the warning is part of the expected path.
 @pytest.mark.filterwarnings("ignore:invalid value encountered in multiply:RuntimeWarning")
 def test_analysis_with_inestimable_variance_keeps_nan_mean_cis():
-    """NaN mean CI bounds from causes other than identical outcomes are surfaced, not collapsed.
+    """With one observation per arm, HC1 variance and mean confidence intervals remain undefined.
 
-    With one participant per arm there are zero residual degrees of freedom, so the HC1
-    covariance is inestimable and the mean CI bounds are NaN. Each arm's single outcome is
-    trivially "all identical", but a lone observation carries no variance information, so the
-    zero-width-CI collapse must not apply and the NaNs must reach the caller.
+    Constant observed outcomes alone cannot supply the missing residual degrees of freedom.
     """
     arm_a, arm_b = "a" * 32, "b" * 32
     assignments = pd.DataFrame([{"participant_id": "0", "arm_id": arm_a}, {"participant_id": "1", "arm_id": arm_b}])
