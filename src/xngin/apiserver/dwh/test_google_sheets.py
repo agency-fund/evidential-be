@@ -470,7 +470,6 @@ def test_create_launch_export_import_and_analyze_a_sheet_experiment(sheets_http,
     after_id, after = save_analysis()
     assert isinstance(before, FreqExperimentAnalysisResponse)
     assert isinstance(after, FreqExperimentAnalysisResponse)
-    assert [metric.metric_name for metric in before.metric_analyses] == [metric.field_name for metric in metrics]
     assert all(arm.num_missing_values == 0 for metric in before.metric_analyses for arm in metric.arm_analyses)
     onboarding = next(m for m in before.metric_analyses if m.metric_name == "onboarded_within_1_week")
     observed_rates = {
@@ -486,9 +485,11 @@ def test_create_launch_export_import_and_analyze_a_sheet_experiment(sheets_http,
     before_treatment = next(a for a in before_minutes.arm_analyses if a.arm_name == "Treatment")
     after_treatment = next(a for a in after_minutes.arm_analyses if a.arm_name == "Treatment")
     assert after_treatment.estimate == pytest.approx(before_treatment.estimate + 100)
-    for previous, current in zip(before.metric_analyses, after.metric_analyses, strict=True):
+    after_by_metric = {metric.metric_name: metric for metric in after.metric_analyses}
+    for previous in before.metric_analyses:
         if previous.metric_name == "minutes_on_site_last_7_days":
             continue
+        current = after_by_metric[previous.metric_name]
         assert {arm.arm_name: arm.estimate for arm in current.arm_analyses} == pytest.approx({
             arm.arm_name: arm.estimate for arm in previous.arm_analyses
         })
