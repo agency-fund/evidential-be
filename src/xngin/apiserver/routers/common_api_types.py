@@ -150,12 +150,16 @@ class DesignSpecMetricBase(ApiBaseModel):
 
 
 class DesignSpecMetric(DesignSpecMetricBase):
-    """Defines a metric to measure in an experiment with its baseline stats.
+    """Server-derived metric statistics, including estimates that are not yet available."""
 
-    Same fields and validation as the base; kept as a distinct class so request and response
-    metrics stay separate types (and separate OpenAPI schemas) even though only
-    DesignSpecMetricRequest adds request-specific validation.
-    """
+    @model_validator(mode="after")
+    def cluster_fields_check(self) -> Self:
+        """Cluster sizes can be known before there are outcomes from which to estimate ICC."""
+        if (self.avg_cluster_size is None) != (self.cv is None) or (
+            self.icc is not None and self.avg_cluster_size is None
+        ):
+            raise ValueError("icc, avg_cluster_size, and cv must all be set together or all be None")
+        return self
 
 
 class DesignSpecMetricRequest(DesignSpecMetricBase):
@@ -1710,6 +1714,10 @@ class ExperimentConfig(ApiBaseModel):
 
     experiment_id: Annotated[str, Field(description="Server-generated ID of the experiment.")]
     datasource_id: str
+    google_sheets_experiment_url: Annotated[
+        str | None,
+        Field(description="Public Google Sheets outcome tab for this experiment, independent of its raw datasource."),
+    ] = None
     state: Annotated[ExperimentState, Field(description="Current state of this experiment.")]
     stopped_assignments_at: Annotated[
         datetime.datetime | None,

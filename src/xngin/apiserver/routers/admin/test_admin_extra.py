@@ -14,6 +14,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     CreateDatasourceRequest,
     CreateOrganizationRequest,
     GcpServiceAccount,
+    GoogleSheetsDsn,
     Hidden,
     PostgresDsn,
     RedshiftDsn,
@@ -94,7 +95,7 @@ def test_datasources_hide_credentials(
 
     datasource_response = aclient.get_datasource(datasource_id=datasource_id).data
     match datasource_response.dsn:
-        case ApiOnlyDsn():
+        case ApiOnlyDsn() | GoogleSheetsDsn():
             raise TypeError("unexpected dsn type")
         case PostgresDsn() | RedshiftDsn():
             assert isinstance(datasource_response.dsn.password, Hidden)

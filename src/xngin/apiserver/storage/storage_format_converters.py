@@ -378,6 +378,7 @@ class ExperimentStorageConverter:
         return capi.GetExperimentResponse(
             experiment_id=self.experiment.id,
             datasource_id=self.experiment.datasource_id,
+            google_sheets_experiment_url=self.experiment.google_sheets_experiment_url,
             state=ExperimentState(self.experiment.state),
             stopped_assignments_at=self.experiment.stopped_assignments_at,
             stopped_assignments_reason=StopAssignmentReason.from_str(self.experiment.stopped_assignments_reason),

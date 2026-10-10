@@ -131,7 +131,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
 from xngin.apiserver.routers.power_adapters import build_metric_stats, calculate_cluster_stats
-from xngin.apiserver.settings import NoDwh, RemoteDatabaseConfig
+from xngin.apiserver.settings import GoogleSheetsDsn, NoDwh, RemoteDatabaseConfig
 from xngin.apiserver.snapshots import snapshotter
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
@@ -1495,10 +1495,11 @@ def get_experiment_for_ui(
 @router.get(
     "/datasources/{datasource_id}/experiments/{experiment_id}/assignments/csv",
     summary=(
-        "Export experiment assignments as CSV file; BalanceCheck not included. "
-        "csv header form: participant_id,[cluster_key,]arm_id,arm_name,strata_name1,strata_name2,..."
+        "Export experiment assignments as CSV. Google Sheets demos include the source columns and an arm column. "
+        "Other datasource exports include participant_id,[cluster_key,]arm_id,arm_name,created_at,strata columns."
     ),
     response_class=CsvStreamingResponse,
+    responses=DWH_CONNECTION_RESPONSES,
 )
 def get_experiment_assignments_as_csv_for_ui(
     experiment: Annotated[tables.Experiment, Depends(adeps.experiment_for_csv_export)],
@@ -1516,6 +1517,13 @@ def update_experiment(
 ):
     if experiment.state != ExperimentState.COMMITTED:
         raise LateValidationError("Experiment must have been committed to be updated.")
+
+    if "google_sheets_experiment_url" in body.model_fields_set:
+        if experiment.experiment_type != ExperimentsType.FREQ_PREASSIGNED.value or not isinstance(
+            experiment.datasource.get_config().dwh, GoogleSheetsDsn
+        ):
+            raise LateValidationError("Only preassigned Google Sheets experiments support an experiment outcome tab.")
+        experiment.google_sheets_experiment_url = body.google_sheets_experiment_url
 
     if body.name is not None:
         experiment.name = body.name
