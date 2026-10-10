@@ -9,7 +9,3 @@ This repository contains the backend API server.
 ## Getting Started
 
 See https://docs.evidential.dev/development/getting-started-dev/ for how to get started building and contributing.
-
-## Google Sheets demos
-
-See the [Google Sheets demo guide](https://docs.evidential.dev/integration/google-sheets/) for setup, sheet requirements, and the two-tab workflow.
