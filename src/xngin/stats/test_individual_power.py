@@ -1,4 +1,6 @@
+import numpy as np
 import pytest
+import statsmodels.stats.api as sms
 
 from xngin.apiserver.routers.common_api_types import DesignSpecMetric, MetricPowerAnalysis
 from xngin.apiserver.routers.common_enums import MetricType
@@ -76,11 +78,13 @@ def test_solve_for_mde_individual_impl_binary_asymmetric_bounds():
     result = solve_for_mde_individual_impl(metric, desired_n=1000, n_arms=2)
     # The MDE is symmetric in Cohen's h space but not in probability space, so the
     # detectable lift is larger in magnitude than the detectable decrease.
+    assert result.target_possible is not None
+    assert result.target_possible_lower is not None
     assert result.target_possible - 0.05 == pytest.approx(0.0455, abs=1e-4)
     assert 0.05 - result.target_possible_lower == pytest.approx(0.0314, abs=1e-4)
 
 
-def test_solve_for_mde_individual_impl_binary_clamps_to_valid_proportions():
+def test_solve_for_mde_individual_impl_binary_unreachable_bound_is_none():
     metric = DesignSpecMetric(
         field_name="test_metric",
         metric_type=MetricType.BINARY,
@@ -90,10 +94,18 @@ def test_solve_for_mde_individual_impl_binary_clamps_to_valid_proportions():
     )
 
     # With such a small sample, the needed Cohen's h exceeds what any proportion <= 1.0
-    # can produce in the positive direction, so the bound is clamped to 1.0.
+    # can produce in the positive direction, so no upward target reaches the requested power.
     result = solve_for_mde_individual_impl(metric, desired_n=40, n_arms=2)
-    assert result.target_possible == 1.0
+    assert result.target_possible is None
+    assert result.pct_change_possible is None
+    assert result.target_possible_lower is not None
     assert 0.0 <= result.target_possible_lower < 0.95
+
+    # Even the largest possible upward change (to a proportion of 1.0) achieves less than the
+    # requested power, which is why the bound is None rather than a value clamped to 1.0.
+    h_to_one = float(np.pi - 2 * np.arcsin(np.sqrt(0.95)))
+    achieved_power = sms.NormalIndPower().power(effect_size=h_to_one, nobs1=20, alpha=0.05, ratio=1.0)
+    assert achieved_power < 0.8
 
 
 def test_requested_direction_is_down():
