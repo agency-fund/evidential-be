@@ -703,7 +703,9 @@ class MetricPowerAnalysis(ApiBaseModel):
                 "When the sample size is too small to reach the desired metric_target, this is the target "
                 "that is possible given available_n, in the improvement (positive) direction from the "
                 "baseline. It is the absolute counterpart of pct_change_possible. "
-                "None when the sample size is large enough to detect the desired change."
+                "None when the sample size is large enough to detect the desired change, or (for BINARY "
+                "metrics) when no value above the baseline is a large enough change to reach the "
+                "requested power."
             )
         ),
     ] = None
@@ -714,7 +716,7 @@ class MetricPowerAnalysis(ApiBaseModel):
             description=(
                 "When the sample size is too small to reach the desired metric_pct_change, this is the percent "
                 "change that is possible given available_n. It is the relative counterpart of target_possible. "
-                "None when the sample size is large enough to detect the desired change."
+                "None whenever target_possible is None."
             )
         ),
     ] = None
@@ -723,11 +725,15 @@ class MetricPowerAnalysis(ApiBaseModel):
         float | None,
         Field(
             description=(
-                "The counterpart of target_possible in the direction of a decrease from the baseline. The test "
-                "is two-sided, so a change to this value is detectable too. For BINARY metrics the minimum "
-                "detectable effect is symmetric in Cohen's h space but its conversion back to probability space "
-                "is not, so this bound can differ in magnitude from target_possible. "
-                "None whenever target_possible is None."
+                "The detectable metric value below the baseline. (target_possible is the metric value above the "
+                "baseline.) Both detectable metric values above and below the baseline use the chosen confidence "
+                "and power, and are always reported together, regardless of the direction of the requested "
+                "change. For numeric metrics, this is the same distance below the baseline as target_possible is "
+                "above it. However, for binary metrics, an "
+                "increase and a decrease that are equally detectable can sit at different distances from the "
+                "baseline. None when the sample size is large enough to detect the desired change, or (for "
+                "BINARY metrics) when no value below the baseline is a large enough change to reach the "
+                "requested power."
             )
         ),
     ] = None
@@ -737,7 +743,8 @@ class MetricPowerAnalysis(ApiBaseModel):
         Field(
             description=(
                 "The relative counterpart of target_possible_lower, as a percent change from the baseline "
-                "(negative for a decrease). None whenever pct_change_possible is None."
+                "(negative for a decrease). A value of -0.10 means a 10% decrease. "
+                "None whenever target_possible_lower is None."
             )
         ),
     ] = None

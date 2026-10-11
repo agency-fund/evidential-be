@@ -12,6 +12,7 @@ from xngin.apiserver.routers.common_api_types import (
 )
 from xngin.apiserver.routers.common_enums import MetricPowerAnalysisMessageType
 from xngin.stats.individual_power import (
+    MdeIndividualResult,
     requested_direction_is_down,
     solve_for_mde_individual_impl,
     solve_for_sample_size_individual,
@@ -31,21 +32,13 @@ def _normalize_arm_weights(arm_weights: list[float] | None, n_arms: int) -> list
 
 
 @dataclasses.dataclass(slots=True, kw_only=True, frozen=True)
-class MdeClusterResult:
+class MdeClusterResult(MdeIndividualResult):
     """Result of an MDE-mode cluster-power calculation.
 
-    Returned by solve_for_mde_cluster_impl so callers can both use the MDE
-    values and surface the design-effect inputs without recomputing them.
+    Extends MdeIndividualResult (both MDE bounds) with the design-effect inputs used to
+    compute them, so callers can surface those without recomputing.
     """
 
-    # The minimum detectable effect in absolute terms, in the improvement (positive) direction
-    target_possible: float
-    # The minimum detectable effect as percent change from baseline
-    pct_change_possible: float
-    # The detectable bound below the baseline (differs in magnitude for BINARY metrics)
-    target_possible_lower: float
-    # The relative counterpart of target_possible_lower
-    pct_change_possible_lower: float
     # The design effect (DEFF)
     deff: float
     # The effective sample size when accounting for clustering
@@ -199,21 +192,29 @@ def _build_cluster_sample_size_message(
     else:
         assert metric.metric_baseline is not None
         assert metric.metric_target is not None
-        assert target_possible is not None
 
         msg_type = MetricPowerAnalysisMessageType.INSUFFICIENT
         values_map["additional_n_needed"] = target_n - available_nonnull_n
         values_map["metric_baseline"] = round(metric.metric_baseline, 4)
-        values_map["target_possible"] = round(target_possible, 4)
         values_map["metric_target"] = round(metric.metric_target, 4)
-        msg_body = (
-            "There are not enough non-null valued units available after accounting for clustering. "
-            "You need {additional_n_needed} more units to meet your specified "
-            "metric target of {metric_target}. "
-            "Alternatively, with the available {available_nonnull_n} non-null units "  # noqa: RUF027
-            "and a metric baseline of {metric_baseline}, your metric target should be "
-            "{target_possible} or further from the baseline. "  # noqa: RUF027
-        )
+        if target_possible is None:
+            msg_body = (
+                "There are not enough non-null valued units available after accounting for clustering. "
+                "You need {additional_n_needed} more units to meet your specified "
+                "metric target of {metric_target}. "
+                "With the available {available_nonnull_n} non-null units, no metric target "  # noqa: RUF027
+                "in the direction of your specified change can reach the requested power. "
+            )
+        else:
+            values_map["target_possible"] = round(target_possible, 4)
+            msg_body = (
+                "There are not enough non-null valued units available after accounting for clustering. "
+                "You need {additional_n_needed} more units to meet your specified "
+                "metric target of {metric_target}. "
+                "Alternatively, with the available {available_nonnull_n} non-null units "  # noqa: RUF027
+                "and a metric baseline of {metric_baseline}, your metric target should be "
+                "{target_possible} or further from the baseline. "  # noqa: RUF027
+            )
 
     source_msg = " ".join(part for part in [msg_base_stats, msg_body, msg_null_warning, msg_cv_warning] if part)
     return MetricPowerAnalysisMessage(
@@ -346,15 +347,22 @@ def solve_for_mde_cluster(
     values_map: dict[str, float | int] = {
         "desired_n": desired_n,
         "metric_baseline": round(metric.metric_baseline, 4),
-        "target_possible": round(reported_target_possible, 4),
         "num_clusters_total": clusters_total,
     }
     msg_type = MetricPowerAnalysisMessageType.SUFFICIENT
-    msg_body = (
-        "With a desired sample size of {desired_n} units across {num_clusters_total} "
-        "clusters and a metric baseline of {metric_baseline}, the minimum detectable "
-        "effect (MDE) is {target_possible}."
-    )
+    if reported_target_possible is None:
+        msg_body = (
+            "With a desired sample size of {desired_n} units across {num_clusters_total} "
+            "clusters and a metric baseline of {metric_baseline}, no metric target in the "
+            "direction of your specified change can reach the requested power."
+        )
+    else:
+        values_map["target_possible"] = round(reported_target_possible, 4)
+        msg_body = (
+            "With a desired sample size of {desired_n} units across {num_clusters_total} "
+            "clusters and a metric baseline of {metric_baseline}, the minimum detectable "
+            "effect (MDE) is {target_possible}."
+        )
     analysis.msg = MetricPowerAnalysisMessage(
         type=msg_type,
         msg=msg_body.format_map(values_map),

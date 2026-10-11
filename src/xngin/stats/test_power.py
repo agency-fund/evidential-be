@@ -177,6 +177,28 @@ def test_analyze_metric_power_mde_decrease_direction():
     assert result.msg.values["target_possible"] == pytest.approx(0.0186, abs=1e-4)
 
 
+def test_analyze_metric_power_mde_unreachable_direction_message():
+    """MDE mode: when no target in the requested direction reaches the power, the message says so."""
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.BINARY,
+        metric_baseline=0.95,
+        metric_pct_change=0.04,
+        available_n=10000,
+        available_nonnull_n=10000,
+    )
+
+    result = analyze_metric_power(metric, n_arms=2, desired_n=40)
+
+    assert result.target_possible is None
+    assert result.pct_change_possible is None
+    assert result.target_possible_lower is not None
+    assert result.msg is not None
+    assert "no metric target in the direction of your specified change" in result.msg.msg
+    assert result.msg.values is not None
+    assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
+
+
 def test_check_power_with_desired_n_decrease_target():
     """pct_change_with_desired_n follows the requested direction (negative for a decrease)."""
     metrics = [

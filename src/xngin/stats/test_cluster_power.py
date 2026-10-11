@@ -330,6 +330,10 @@ def test_solve_for_mde_cluster_impl_with_cv():
     result_high_cv = solve_for_mde_cluster_impl(desired_n=720, metric=metric_high_cv, n_arms=2)
 
     # CV increases DEFF, which increases MDE
+    assert result_no_cv.target_possible is not None
+    assert result_high_cv.target_possible is not None
+    assert result_no_cv.pct_change_possible is not None
+    assert result_high_cv.pct_change_possible is not None
     assert result_high_cv.target_possible > result_no_cv.target_possible
     assert result_no_cv.target_possible == pytest.approx(110.3, rel=0.01)
     assert result_high_cv.target_possible == pytest.approx(116.89, rel=0.01)
@@ -599,6 +603,8 @@ def test_solve_for_sample_size_cluster_uses_cluster_target_for_sufficiency():
     assert result.target_possible == pytest.approx(expected_result.target_possible)
     assert result.pct_change_possible == pytest.approx(expected_result.pct_change_possible)
     assert result.target_possible is not None
+    assert individual_target_possible is not None
+    assert expected_result.target_possible is not None
     assert result.target_possible > individual_target_possible
 
     assert result.msg is not None
@@ -675,6 +681,7 @@ def test_solve_for_sample_size_cluster_possible_target_uses_cluster_mde():
     assert result.target_possible == pytest.approx(expected_result.target_possible)
     assert result.pct_change_possible == pytest.approx(expected_result.pct_change_possible)
     assert result.target_possible is not None
+    assert individual_target_possible is not None
     assert result.target_possible > individual_target_possible
     assert result.msg is not None
     assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
