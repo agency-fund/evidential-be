@@ -73,6 +73,15 @@ def setup(app):
         cause = getattr(exc, "orig", None) or exc.__cause__
         if isinstance(cause, psycopg.errors.ConnectionTimeout):
             status = 504
+        elif isinstance(cause, psycopg.errors.DeadlockDetected):
+            # Postgres aborted this request's transaction to break a deadlock with another transaction. The
+            # request did nothing, and the same request may succeed if repeated. The database's own message names
+            # the processes and locks involved, so log it and answer with a stable one.
+            logger.warning(f"Request rolled back by a deadlock: {cause}")
+            return JSONResponse(
+                status_code=409,
+                content={"message": "The request conflicted with a concurrent transaction and was rolled back."},
+            )
         # Return a minimal error message
         return JSONResponse(status_code=status, content={"message": str(cause) or str(exc)})
 
