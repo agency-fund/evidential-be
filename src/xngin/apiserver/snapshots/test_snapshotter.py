@@ -585,6 +585,7 @@ def test_process_pending_snapshots_processes_until_empty(
     xngin_session,
     testing_datasource,
     aclient: AdminAPIClient,
+    use_deterministic_random,
 ):
     experiment_ids = [
         create_snapshot_experiment(
@@ -616,7 +617,7 @@ def test_process_pending_snapshots_processes_until_empty(
             experiment_id=experiment_id,
         ).data.items
         assert len(snapshots) == 1
-        assert snapshots[0].status == SnapshotStatus.SUCCESS
+        assert snapshots[0].status == SnapshotStatus.SUCCESS, snapshots[0].details
         analysis = FreqExperimentAnalysisResponse.model_validate(snapshots[0].data)
         assert isinstance(analysis, FreqExperimentAnalysisResponse)
 
