@@ -29,6 +29,7 @@ from xngin.apiserver.snapshots.fake_data import (
     seed_historical_snapshots,
 )
 from xngin.apiserver.sqla import tables
+from xngin.apiserver.storage import demo_seed
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
 from xngin.apiserver.testing.wide_dwh_def import WIDE_DWH_TABLE_NAME
 
@@ -296,8 +297,12 @@ def create_entities_for_first_time_user(
 
     When testing_dwh_dsn is None or empty, we create only the minimum entities necessary for the application to
     function: a NoDWH datasource, and an Organization. This is the standard production deployment configuration.
+
+    When the testing DWH also has the Project Wellbeing demo table loaded, the user additionally gets the Project
+    Wellbeing demo organization (see demo_seed).
     """
     organization = admin_common.create_organization_impl(session, user, DEFAULT_ORGANIZATION_NAME)
     session.flush()
     _maybe_create_developer_samples(session, organization, testing_dwh_dsn)
+    demo_seed.maybe_create_project_wellbeing(session, user, testing_dwh_dsn)
     return user
