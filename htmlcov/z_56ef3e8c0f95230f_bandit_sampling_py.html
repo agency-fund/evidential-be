@@ -64,8 +64,8 @@
             <a id="indexLink" class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a id="nextFileLink" class="nav" href="z_56ef3e8c0f95230f_bandit_weights_to_prior_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
-            <a class="nav" href="https://coverage.readthedocs.io/en/7.16.1">coverage.py v7.16.1</a>,
-            created at 2026-10-09 18:57 +0000
+            <a class="nav" href="https://coverage.readthedocs.io/en/7.16.2">coverage.py v7.16.2</a>,
+            created at 2026-10-12 09:12 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -201,9 +201,9 @@
     <p class="pln"><span class="n"><a id="t119" href="#t119">119</a></span><span class="t"><span class="str">    llhood_sigma : The standard deviation of the likelihood.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t120" href="#t120">120</a></span><span class="t"><span class="str">    context : The context vector.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t121" href="#t121">121</a></span><span class="t"><span class="str">    &quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t122" href="#t122">122</a></span><span class="t">    <span class="com"># Likelihood covariance matrix inverse</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t123" href="#t123">123</a></span><span class="t">    <span class="nam">llhood_covariance_inv</span> <span class="op">=</span> <span class="nam">np</span><span class="op">.</span><span class="nam">eye</span><span class="op">(</span><span class="nam">len</span><span class="op">(</span><span class="nam">current_mu</span><span class="op">)</span><span class="op">)</span> <span class="op">/</span> <span class="nam">llhood_sigma</span><span class="op">**</span><span class="num">2</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t124" href="#t124">124</a></span><span class="t">    <span class="nam">llhood_covariance_inv</span> <span class="op">*=</span> <span class="nam">context</span><span class="op">.</span><span class="nam">T</span> <span class="op">@</span> <span class="nam">context</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t122" href="#t122">122</a></span><span class="t">    <span class="nam">context</span> <span class="op">=</span> <span class="nam">context</span><span class="op">.</span><span class="nam">reshape</span><span class="op">(</span><span class="op">-</span><span class="num">1</span><span class="op">,</span> <span class="num">1</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t123" href="#t123">123</a></span><span class="t">    <span class="com"># Likelihood covariance matrix inverse</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t124" href="#t124">124</a></span><span class="t">    <span class="nam">llhood_covariance_inv</span> <span class="op">=</span> <span class="nam">context</span> <span class="op">@</span> <span class="nam">context</span><span class="op">.</span><span class="nam">T</span> <span class="op">/</span> <span class="nam">llhood_sigma</span><span class="op">**</span><span class="num">2</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t125" href="#t125">125</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t126" href="#t126">126</a></span><span class="t">    <span class="com"># Prior covariance matrix inverse</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t127" href="#t127">127</a></span><span class="t">    <span class="nam">prior_covariance_inv</span> <span class="op">=</span> <span class="nam">np</span><span class="op">.</span><span class="nam">linalg</span><span class="op">.</span><span class="nam">inv</span><span class="op">(</span><span class="nam">current_covariance</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
@@ -404,8 +404,8 @@
             <a class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a class="nav" href="z_56ef3e8c0f95230f_bandit_weights_to_prior_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
-            <a class="nav" href="https://coverage.readthedocs.io/en/7.16.1">coverage.py v7.16.1</a>,
-            created at 2026-10-09 18:57 +0000
+            <a class="nav" href="https://coverage.readthedocs.io/en/7.16.2">coverage.py v7.16.2</a>,
+            created at 2026-10-12 09:12 +0000
         </p>
     </div>
 </footer>
