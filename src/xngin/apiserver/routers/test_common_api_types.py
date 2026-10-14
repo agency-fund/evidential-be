@@ -507,7 +507,7 @@ def test_one_time_metric_rejected_on_secondary_metric():
         PowerRequest.model_validate({"table_name": "dwh", "n_arms": 2, "metrics": metrics})
 
 
-def test_design_spec_metric_request_to_design_spec_metric_keeps_toggle_but_not_eligibility():
+def test_design_spec_metric_request_to_design_spec_metric_keeps_toggle():
     request = DesignSpecMetricRequest(
         field_name="metric1",
         metric_pct_change=0.1,
@@ -516,15 +516,24 @@ def test_design_spec_metric_request_to_design_spec_metric_keeps_toggle_but_not_e
         metric_stddev=15.0,
         available_nonnull_n=900,
         available_n=1000,
-        is_one_time_eligible=True,
         use_one_time_metric=True,
     )
 
     metric = request.to_design_spec_metric()
 
-    # Same rule as build_metric_stats: a client-supplied eligibility flag is ignored; the power check derives it.
-    assert not metric.is_one_time_eligible
     assert metric.use_one_time_metric
+    # Eligibility starts unset; only the power check derives it.
+    assert not metric.is_one_time_eligible
+
+
+def test_design_spec_metric_request_rejects_eligibility_flag():
+    # Eligibility is response-only: the power check derives it from the data, so requests cannot carry it.
+    with pytest.raises(ValidationError, match="is_one_time_eligible"):
+        DesignSpecMetricRequest.model_validate({
+            "field_name": "metric1",
+            "metric_pct_change": 0.1,
+            "is_one_time_eligible": True,
+        })
 
 
 def test_one_time_metric_rejected_for_cluster_designs():
@@ -577,7 +586,6 @@ def test_one_time_metric_rejected_for_online_experiments():
 
 
 def test_one_time_metric_accepted_without_eligibility_flag():
-    # The frontend only sends the toggle; it must not have to echo is_one_time_eligible back.
+    # The frontend sends only the toggle; is_one_time_eligible is response-only.
     metric = DesignSpecMetricRequest(field_name="metric1", metric_pct_change=0.1, use_one_time_metric=True)
     assert metric.use_one_time_metric
-    assert not metric.is_one_time_eligible
