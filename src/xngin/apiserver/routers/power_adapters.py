@@ -33,15 +33,13 @@ def build_metric_stats(
                 field_name=field_name,
                 metric_pct_change=metric.metric_pct_change,
                 metric_target=metric.metric_target,
+                use_one_time_metric=metric.use_one_time_metric,
                 metric_type=metric_type,
                 metric_baseline=raw_stats[f"{field_name}__mean"],
                 metric_stddev=raw_stats[f"{field_name}__stddev"] if metric_type is MetricType.NUMERIC else None,
                 available_nonnull_n=raw_stats[f"{field_name}__count"],
                 # This value is the same across all metrics, but we replicate for convenience:
                 available_n=raw_stats["rows__count"],
-                # Carry the user's one-time choice through. Eligibility is not taken from the client: the power
-                # check derives it from the stats.
-                use_one_time_metric=metric.use_one_time_metric,
             )
         )
 
