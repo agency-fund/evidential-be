@@ -21,6 +21,7 @@ from xngin.apiserver import flags
 from xngin.apiserver.conftest import convert_dwh_to_create_api_dsn, expect_status_code
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.dwh.dwh_session import DwhSession
+from xngin.apiserver.limits import MAX_NUMBER_OF_POWER_CURVE_POINTS
 from xngin.apiserver.routers.admin.admin_api_converters import CREDENTIALS_UNAVAILABLE_MESSAGE
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddExperimentCreatedWebhookRequest,
@@ -4688,3 +4689,35 @@ def test_org_scoped_routes_reject_datasource_from_another_organization(
         experiment_id=experiment_id,
     ).data
     assert listed.items == []
+
+
+def test_power_check_on_no_dwh_datasource_returns_400(aclient: AdminAPIClient):
+    """A datasource without a warehouse rejects power checks with a 400 instead of failing to connect (a 500)."""
+    org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="test_power_check_no_dwh")).data.id
+    no_dwh = aclient.get_organization(organization_id=org_id).data.datasources[0]
+    assert no_dwh.driver == "none"
+
+    request = PowerRequest(
+        table_name="dwh",
+        metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
+        filters=[],
+        n_arms=2,
+    )
+    with expect_status_code(400, text="datasources without a data warehouse"):
+        aclient.power_check(datasource_id=no_dwh.id, body=request)
+
+
+@pytest.mark.parametrize("field", ["desired_ns", "desired_ns_clusters"])
+def test_power_request_bounds_curve_sizes(field: str):
+    """Power curve sizes must be positive and are capped, so one request cannot run the MDE solver unboundedly."""
+    base = {
+        "table_name": "dwh",
+        "metrics": [DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
+        "n_arms": 2,
+        "cluster_key": "cluster_id",
+    }
+    PowerRequest(**base, **{field: [1] * MAX_NUMBER_OF_POWER_CURVE_POINTS})  # At the limit is fine.
+    with pytest.raises(ValueError, match="at most"):
+        PowerRequest(**base, **{field: [1] * (MAX_NUMBER_OF_POWER_CURVE_POINTS + 1)})
+    with pytest.raises(ValueError, match="greater than or equal to 1"):
+        PowerRequest(**base, **{field: [100, 0]})
