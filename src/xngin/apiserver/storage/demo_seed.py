@@ -4,8 +4,12 @@ Project Wellbeing is a fictional school-health program used to demo Evidential. 
 setup (see bootstrap.create_entities_for_first_time_user) next to the generic developer samples, whenever a dev data
 warehouse with the demo table (tools/generate_project_wellbeing_dwh.py) is configured.
 
-Demo creation is isolated: it runs in a savepoint and never commits, so a failure rolls back only the demo and the
-caller's login or user creation still succeeds.
+Shared environments (staging, production) get the demo through `xngin-cli seed-demo` instead, which seeds an allowlist
+of existing users against a dedicated demo warehouse on every deploy (see seed_for_emails).
+
+Demo creation is isolated in the application database: it runs in a savepoint, so a failure rolls back only the demo
+and the caller's login or user creation still succeeds. Outcome writes to the warehouse are committed as they happen
+and are not rolled back, but they are deterministic, so a retry rewrites the same values.
 
 Every demo is identical. Participants are chosen deterministically from generator-owned columns (not with the
 warehouse's unseeded random sampling), assignment uses fixed random states, and outcomes written back to the
@@ -131,23 +135,63 @@ def maybe_create_project_wellbeing(session: Session, user: tables.User, dwh_dsn:
         return
 
     dsn = Dsn.from_url(dwh_dsn)
+    if not _demo_table_loaded(dsn):
+        return
+    _create_demo_isolated(session, user, dsn)
+
+
+def seed_for_emails(session: Session, dwh_dsn: str, emails: Sequence[str]) -> dict[str, str]:
+    """Creates the Project Wellbeing demo organization for each listed user who does not already have one.
+
+    Used to deploy the demo to shared environments (see `xngin-cli seed-demo`), where users already exist and first-time
+    setup never runs. Safe to re-run: users who are already members of an organization named DEMO_ORGANIZATION_NAME are
+    skipped. Commits after each user so one failure does not undo demos created for earlier users.
+
+    Returns the outcome per email: "created", "exists", "no such user", or "failed".
+    """
+    dsn = Dsn.from_url(dwh_dsn)
+    if not _demo_table_loaded(dsn):
+        return dict.fromkeys(emails, "failed")
+
+    results: dict[str, str] = {}
+    for email in emails:
+        # Emails are stored normalized by the auth flow, but allowlists are typed by hand; compare case-insensitively.
+        user = session.scalars(select(tables.User).where(func.lower(tables.User.email) == email.lower())).one_or_none()
+        if user is None:
+            results[email] = "no such user"
+        elif any(org.name == DEMO_ORGANIZATION_NAME for org in user.organizations):
+            results[email] = "exists"
+        else:
+            results[email] = "created" if _create_demo_isolated(session, user, dsn) else "failed"
+            session.commit()
+    return results
+
+
+def _demo_table_loaded(dsn: Dsn) -> bool:
+    """Returns whether the demo warehouse has the demo table, logging why not when it does not."""
     try:
         with DwhSession.open(dsn) as dwh:
             table_loaded = TABLE in dwh.list_tables()
     except Exception:
-        logger.exception("Skipping Project Wellbeing demo: could not list tables in the dev warehouse.")
-        return
+        logger.exception("Skipping Project Wellbeing demo: could not list tables in the demo warehouse.")
+        return False
     if not table_loaded:
         logger.info(
-            f"Skipping Project Wellbeing demo: table {TABLE} is not loaded (run `task bootstrap-dwh-database`)."
+            f"Skipping Project Wellbeing demo: table {TABLE} is not loaded (run `task bootstrap-dwh-database`, or "
+            "`xngin-cli create-testing-dwh` against the demo warehouse)."
         )
-        return
+    return table_loaded
 
+
+def _create_demo_isolated(session: Session, user: tables.User, dsn: Dsn) -> bool:
+    """Creates the demo in a savepoint; on error rolls back only the savepoint, logs, and returns False."""
     try:
         with session.begin_nested():
             _create_demo(session, user, dsn)
     except Exception:
-        logger.exception("Project Wellbeing demo creation failed; continuing without it.")
+        logger.exception(f"Project Wellbeing demo creation failed for user {user.id}; continuing without it.")
+        return False
+    return True
 
 
 def _create_demo(session: Session, user: tables.User, dsn: Dsn) -> None:

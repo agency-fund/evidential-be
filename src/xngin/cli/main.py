@@ -255,6 +255,55 @@ def add_user(
 
 
 @app.command()
+def seed_demo(
+    database_url: Annotated[
+        str,
+        typer.Option(
+            help="The application database whose users should get the demo organization.",
+            envvar="DATABASE_URL",
+        ),
+    ],
+    dwh: Annotated[
+        str,
+        typer.Option(
+            help="The SQLAlchemy URI of the demo data warehouse. It must already have the project_wellbeing_dwh table.",
+            envvar="XNGIN_DEMO_DWH_DSN",
+        ),
+    ] = "",
+    emails: Annotated[
+        str,
+        typer.Option(
+            help="Comma-separated emails of existing users who should get the Project Wellbeing demo organization.",
+            envvar="XNGIN_DEMO_ORG_EMAILS",
+        ),
+    ] = "",
+):
+    """Creates the Project Wellbeing demo organization for an allowlist of existing users.
+
+    Runs on every Railway deploy (see railway.json). Does nothing unless both --dwh and --emails are set, and skips
+    users who already have the demo, so it is safe to re-run. Always exits 0 so a demo problem never blocks a deploy;
+    check the output for per-user results.
+    """
+    from xngin.apiserver.storage import demo_seed  # noqa: PLC0415
+
+    allowlist = [e.strip() for e in emails.split(",") if e.strip()]
+    if not dwh or not allowlist:
+        console.print("seed-demo: XNGIN_DEMO_DWH_DSN or XNGIN_DEMO_ORG_EMAILS is not set; nothing to do.")
+        return
+
+    try:
+        with Session(cli_engine(database_url)) as session:
+            results = demo_seed.seed_for_emails(session, dwh, allowlist)
+    except Exception:
+        # Deliberately swallowed: a demo failure must not fail Railway's preDeployCommand and block the release.
+        console.print("[bold red]seed-demo failed:[/bold red]")
+        console.print_exception()
+        return
+    for email, outcome in results.items():
+        console.print(f"seed-demo: {email}: {outcome}")
+
+
+@app.command()
 def create_nacl_keyset(
     output_format: Annotated[
         Base64OrJson,
