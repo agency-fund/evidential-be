@@ -1637,12 +1637,12 @@ def power_check(
     metric has baseline stats, and cluster stats for cluster-randomized designs — the warehouse is
     not contacted at all, so the request is not validated against the participants table.
     """
-    dsconfig = datasource.get_config()
-    if isinstance(dsconfig.dwh, NoDwh):
+    if isinstance(datasource.get_config(), NoDwh):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Power checks are not supported for datasources without a data warehouse.",
         )
+    dsconfig = datasource.get_config()
 
     filters = body.filters
     cluster_key = body.cluster_key
