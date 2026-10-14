@@ -269,7 +269,7 @@ def test_failed_snapshots_retry_hourly_until_one_succeeds(testing_datasource, ac
         session.execute(update(tables.Experiment).where(tables.Experiment.id == experiment_id).values(name="partial"))
         session.execute(text("SELECT 1 / 0"))
 
-    analysis = mocker.patch("xngin.apiserver.snapshots.snapshotter._compute_snapshot_data", side_effect=fail)
+    analysis = mocker.patch("xngin.apiserver.worker.jobs.snapshot_analysis._compute_snapshot_data", side_effect=fail)
     refresh_stale_experiments((SNAPSHOT,))
     started = datetime.now(UTC)
     assert attempt_due((SNAPSHOT,), now=started).result is AttemptResult.JOB_RAN
@@ -491,7 +491,7 @@ def test_snapshot_connection_loss_does_not_commit_failure_or_schedule(
         session.connection().invalidate()
         raise ConnectionError("Lost attempt transaction")
 
-    mocker.patch("xngin.apiserver.snapshots.snapshotter._compute_snapshot_data", side_effect=disconnect)
+    mocker.patch("xngin.apiserver.worker.jobs.snapshot_analysis._compute_snapshot_data", side_effect=disconnect)
     refresh_stale_experiments((SNAPSHOT,))
     assert attempt_due((SNAPSHOT,)).result is AttemptResult.ABORTED
     with database.get_session() as session:

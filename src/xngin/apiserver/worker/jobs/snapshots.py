@@ -7,7 +7,6 @@ from typing import ClassVar
 from sqlalchemy import ColumnElement, false, func, select
 from sqlalchemy.orm import Session
 
-from xngin.apiserver.snapshots.snapshotter import capture_snapshot
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.worker.jobs.base import (
     Backoff,
@@ -16,6 +15,7 @@ from xngin.apiserver.worker.jobs.base import (
     JobSucceeded,
     periodic_next_run_at,
 )
+from xngin.apiserver.worker.jobs.snapshot_analysis import capture_snapshot
 
 
 @dataclass(slots=True)

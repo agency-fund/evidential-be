@@ -32,10 +32,10 @@ from xngin.apiserver.routers.common_api_types import (
     PriorTypes,
     UpdateBanditArmOutcomeRequest,
 )
-from xngin.apiserver.snapshots.snapshotter import capture_snapshot
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
+from xngin.apiserver.worker.jobs.snapshot_analysis import capture_snapshot
 
 pytestmark = pytest.mark.benchmark
 

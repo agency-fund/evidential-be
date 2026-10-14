@@ -294,7 +294,7 @@ def test_failed_analysis_records_snapshot(testing_datasource, aclient: AdminAPIC
 
     # Force the snapshot to fail.
     mocker.patch(
-        "xngin.apiserver.snapshots.snapshotter._compute_snapshot_data",
+        "xngin.apiserver.worker.jobs.snapshot_analysis._compute_snapshot_data",
         side_effect=RuntimeError("boom"),
     )
     commit_snapshot(experiment_id)
@@ -552,7 +552,7 @@ def test_create_snapshot_cmab_matches_admin_analysis_at_mean_contexts(
     mean_binary_context = sum(
         participant_context_values[ContextType.BINARY] for _, participant_context_values, _ in participant_specs
     ) / len(participant_specs)
-    # See snapshotter for details on thresholding behavior.
+    # See snapshot_analysis for details on thresholding behavior.
     expected_binary_context = abs(float(math.ceil(mean_binary_context - 0.5)))
     expected_contexts = [
         expected_binary_context if context.value_type == ContextType.BINARY else expected_real_context
