@@ -126,15 +126,6 @@ class DesignSpecMetricBase(ApiBaseModel):
             )
         ),
     ] = None
-    is_one_time_eligible: Annotated[
-        bool,
-        Field(
-            description=(
-                "Set by the power check: True if the metric is eligible for one-time mode (has both null and "
-                "non-null values). Clients do not need to send this; the server derives it from the data."
-            )
-        ),
-    ] = False
     use_one_time_metric: Annotated[
         bool,
         Field(
@@ -170,10 +161,19 @@ class DesignSpecMetricBase(ApiBaseModel):
 class DesignSpecMetric(DesignSpecMetricBase):
     """Defines a metric to measure in an experiment with its baseline stats.
 
-    Same fields and validation as the base; kept as a distinct class so request and response
-    metrics stay separate types (and separate OpenAPI schemas) even though only
-    DesignSpecMetricRequest adds request-specific validation.
+    Adds the fields only the server can derive from the data, so request and response metrics stay
+    separate types (and separate OpenAPI schemas).
     """
+
+    is_one_time_eligible: Annotated[
+        bool,
+        Field(
+            description=(
+                "Set by the power check: True if the metric is eligible for one-time mode (it is the primary metric "
+                "and its column has both null and non-null values)."
+            )
+        ),
+    ] = False
 
 
 class DesignSpecMetricRequest(DesignSpecMetricBase):
@@ -236,6 +236,7 @@ class DesignSpecMetricRequest(DesignSpecMetricBase):
             field_name=self.field_name,
             metric_pct_change=self.metric_pct_change,
             metric_target=self.metric_target,
+            use_one_time_metric=self.use_one_time_metric,
             icc=self.icc,
             avg_cluster_size=self.avg_cluster_size,
             cv=self.cv,
@@ -244,9 +245,6 @@ class DesignSpecMetricRequest(DesignSpecMetricBase):
             metric_stddev=self.metric_stddev,
             available_nonnull_n=self.available_nonnull_n,
             available_n=self.available_n,
-            # Carry the user's one-time choice through. Eligibility is not taken from the client: the power
-            # check derives it from the stats (same as build_metric_stats).
-            use_one_time_metric=self.use_one_time_metric,
         )
 
 
