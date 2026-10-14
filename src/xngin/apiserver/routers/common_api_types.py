@@ -1498,9 +1498,8 @@ class PowerRequest(ApiBaseModel):
         ),
     ] = None
     desired_ns: Annotated[
-        list[Annotated[int, Field(ge=1)]] | None,
+        list[int] | None,
         Field(
-            max_length=MAX_NUMBER_OF_POWER_CURVE_POINTS,
             description=(
                 "Optional list of desired individual participant sample sizes. When set, returns MDE curve: "
                 "the minimum detectable effect for each requested sample size. "
@@ -1509,9 +1508,8 @@ class PowerRequest(ApiBaseModel):
         ),
     ] = None
     desired_ns_clusters: Annotated[
-        list[Annotated[int, Field(ge=1)]] | None,
+        list[int] | None,
         Field(
-            max_length=MAX_NUMBER_OF_POWER_CURVE_POINTS,
             description=(
                 "Optional list of desired cluster counts for a cluster-randomized design. "
                 "Only valid when cluster_key is set. "
