@@ -79,7 +79,7 @@ from xngin.stats.assignment import AssignmentResult
 from xngin.stats.bandit_analysis import analyze_experiment as analyze_bandit_experiment
 from xngin.stats.bandit_sampling import choose_arm as choose_bandit_arm
 from xngin.stats.bandit_sampling import update_arm as update_bandit_arm
-from xngin.stats.stats_errors import StatsAnalysisError
+from xngin.stats.stats_errors import StatsAnalysisError, StatsNoParticipantsError
 from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
 
 CSV_PARSE_CHUNK_SIZE_BYTES = 5 << 20
@@ -1310,7 +1310,7 @@ def analyze_experiment_freq_impl(
         xngin_session, experiment.id, include_cluster_key=include_cluster
     )
     if assignments_df.empty:
-        raise StatsAnalysisError("No participants found for experiment.")
+        raise StatsNoParticipantsError()
 
     with DwhSession.open(dsconfig.dwh, timeout=dwh_timeout) as dwh:
         sa_table = dwh.inspect_table(experiment.datasource_table)

@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 import numpy as np
 from loguru import logger
 from sqlalchemy import select, text
@@ -10,7 +12,15 @@ from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 
 
-def capture_snapshot(session: Session, experiment_id: str, *, dwh_timeout: float) -> tables.Snapshot:
+@dataclass(slots=True, frozen=True)
+class SnapshotCapture:
+    """The snapshot recorded for one analysis, and the exception that failed it, if any."""
+
+    snapshot: tables.Snapshot
+    error: Exception | None = None
+
+
+def capture_snapshot(session: Session, experiment_id: str, *, dwh_timeout: float) -> SnapshotCapture:
     """Record a successful or failed analysis in the caller's transaction.
 
     dwh_timeout bounds the analysis's data warehouse read.
@@ -40,11 +50,13 @@ def capture_snapshot(session: Session, experiment_id: str, *, dwh_timeout: float
             raise
         logger.opt(exception=exc).info("Snapshot analysis failed.")
         snapshot = tables.Snapshot(experiment_id=experiment_id, status="failed", message=f"{type(exc).__name__}: {exc}")
+        error: Exception | None = exc
     else:
         snapshot = tables.Snapshot(experiment_id=experiment_id, status="success", data=data)
+        error = None
     session.add(snapshot)
     session.flush()
-    return snapshot
+    return SnapshotCapture(snapshot, error)
 
 
 def _compute_snapshot_data(

@@ -48,6 +48,7 @@ from xngin.apiserver.worker.scheduler import (
     due_experiment_ids,
     refresh_stale_experiments,
 )
+from xngin.stats.stats_errors import StatsNoParticipantsError
 
 
 def test_cross_job_exclusion_and_parallel_experiments(xngin_session, testing_datasource):
@@ -260,6 +261,27 @@ def test_api_assignment_commits_during_maintenance(xngin_session, testing_dataso
     refresh_stale_experiments((AUTOFAIL,))
     assert status_for(experiment.id, AUTOFAIL).next_run_at is not None
     assert due_experiment_ids((job,)) == ()
+
+
+def test_snapshot_without_participants_succeeds_without_backoff(testing_datasource, aclient: AdminAPIClient, mocker):
+    experiment_id = make_bandit_online_experiment(aclient, testing_datasource.datasource_id).config.experiment_id
+    mocker.patch(
+        "xngin.apiserver.worker.jobs.snapshot_analysis._compute_snapshot_data",
+        side_effect=StatsNoParticipantsError(),
+    )
+    refresh_stale_experiments((SNAPSHOT,))
+    started = datetime.now(UTC)
+    assert attempt_due((SNAPSHOT,), now=started).result is AttemptResult.JOB_RAN
+    with database.get_session() as session:
+        snapshot = session.scalars(select(tables.Snapshot).where(tables.Snapshot.experiment_id == experiment_id)).one()
+    # The snapshot still records why there is no data, but the job counts it as a success.
+    assert snapshot.status == "failed"
+    assert "No participants" in (snapshot.message or "")
+    status = status_for(experiment_id, SNAPSHOT)
+    assert status.last_success_at == started
+    assert status.consecutive_failures == 0
+    assert status.last_error is None
+    assert status.next_run_at == started + SNAPSHOT.interval
 
 
 def test_failed_snapshots_retry_hourly_until_one_succeeds(testing_datasource, aclient: AdminAPIClient, mocker):

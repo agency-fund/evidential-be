@@ -16,6 +16,7 @@ from xngin.apiserver.worker.jobs.base import (
     periodic_next_run_at,
 )
 from xngin.apiserver.worker.jobs.snapshot_analysis import capture_snapshot
+from xngin.stats.stats_errors import StatsNoParticipantsError
 
 
 @dataclass(slots=True)
@@ -46,7 +47,9 @@ class SnapshotJob:
         return periodic_next_run_at(experiment, last_success_at, now, self.interval)
 
     def execute(self, session: Session, experiment_id: str) -> JobResult:
-        snapshot = capture_snapshot(session, experiment_id, dwh_timeout=self.dwh_timeout)
-        if snapshot.status == "failed":
-            return JobFailed(error=snapshot.message or "The snapshot failed without a message.")
+        capture = capture_snapshot(session, experiment_id, dwh_timeout=self.dwh_timeout)
+        # A new experiment has no participants yet. The failed snapshot still tells users why there is no data,
+        # but the job did what it could, so it succeeds and waits a full interval rather than backing off.
+        if capture.snapshot.status == "failed" and not isinstance(capture.error, StatsNoParticipantsError):
+            return JobFailed(error=capture.snapshot.message or "The snapshot failed without a message.")
         return JobSucceeded()
