@@ -60,6 +60,10 @@ PUBLISH_ALL_DOCS = truthy_env("XNGIN_PUBLISH_ALL_DOCS")
 
 XNGIN_DEVDWH_DSN = os.environ.get("XNGIN_DEVDWH_DSN", "")
 
+# Whether the first-time-user setup also creates the Project Wellbeing demo organization when the dev warehouse has the
+# demo table loaded. On by default; the unit test suite turns it off (see pyproject.toml).
+XNGIN_CREATE_DEMO_ORG = os.environ.get("XNGIN_CREATE_DEMO_ORG", "true").lower() in {"true", "1"}
+
 # How long one block of interactions with a customer data warehouse may run in total before we stop waiting for it.
 # This defends against remote warehouses, not against our own application database, which we assume does not stall.
 DWH_TIMEOUT_SECS = float(os.environ.get("XNGIN_DWH_TIMEOUT_SECS", "120"))

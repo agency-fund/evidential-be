@@ -892,78 +892,98 @@ def create_assignment_for_participant(
         return None
 
     try:
-        # Create and save the new assignment. The insert() API allows us to read the
-        # database-generated created_at value without needing to refresh the object in the
-        # SQLAlchemy cache.
-        experiment_type = ExperimentsType(experiment.experiment_type)
-        match experiment_type:
-            case ExperimentsType.FREQ_PREASSIGNED:
-                # Preassigned experiments are not allowed to have new assignments added.
-                return None
-            case ExperimentsType.FREQ_ONLINE:
-                # For online frequentist, create a new assignment
-                # with simple random assignment or weighted random assignment if arm_weights are specified.
-                chosen_arm = choose_online_arm(experiment=experiment, random_state=random_state)
-                result = (
-                    xngin_session.execute(
-                        insert(tables.ArmAssignment)
-                        .values(
-                            experiment_id=experiment.id,
-                            participant_id=participant_id,
-                            arm_id=chosen_arm.id,
-                            strata=[],
-                        )
-                        .returning(tables.ArmAssignment.created_at)
-                    )
-                ).fetchone()
-            case ExperimentsType.MAB_ONLINE | ExperimentsType.MAB_ONLINE_DWH | ExperimentsType.CMAB_ONLINE:
-                if experiment_type == ExperimentsType.CMAB_ONLINE:
-                    if not sorted_context_vals:
-                        raise ExperimentsAssignmentError(
-                            "Context values are required for contextual multi-armed bandit experiments"
-                        )
-                    if len(sorted_context_vals) != len(experiment.contexts):
-                        raise ExperimentsAssignmentError(
-                            f"Expected {len(experiment.contexts)} context values, got {len(sorted_context_vals)}"
-                        )
-
-                chosen_arm = choose_bandit_arm(
-                    experiment=experiment,
-                    sorted_context_vals=sorted_context_vals,
-                    random_state=random_state,
-                )
-                result = (
-                    xngin_session.execute(
-                        insert(tables.Draw)
-                        .values(
-                            experiment_id=experiment.id,
-                            participant_id=participant_id,
-                            arm_id=chosen_arm.id,
-                            context_vals=sorted_context_vals,
-                            enable_autofail=experiment.enable_autofail,
-                        )
-                        .returning(tables.Draw.created_at)
-                    )
-                ).fetchone()
-            case _:
-                raise ExperimentsAssignmentError(f"Invalid experiment type: {experiment_type}")
-
-        if result is None:
-            raise ExperimentsAssignmentError(f"Failed to create assignment for participant '{participant_id}'")
-        created_at = result[0]
-        stmt = (
-            pg_insert(tables.ArmStats)
-            .values(arm_id=chosen_arm.id, population=1)
-            .on_conflict_do_update(
-                index_elements=[tables.ArmStats.arm_id],
-                set_={"population": tables.ArmStats.population + 1},
-            )
+        assignment = insert_assignment_no_commit(
+            xngin_session, experiment, participant_id, sorted_context_vals, random_state
         )
-        xngin_session.execute(stmt)
-        xngin_session.commit()
+        if assignment is not None:
+            xngin_session.commit()
     except IntegrityError as e:
         xngin_session.rollback()
         raise ExperimentsAssignmentError(f"Failed to assign participant '{participant_id}': {e}") from e
+
+    return assignment
+
+
+def insert_assignment_no_commit(
+    xngin_session: Session,
+    experiment: tables.Experiment,
+    participant_id: str,
+    sorted_context_vals: list[float] | None = None,
+    random_state: int | None = None,
+) -> Assignment | None:
+    """Chooses an arm and inserts the assignment (or bandit draw) and arm population update, without committing.
+
+    Callers own the transaction and must already have checked that the experiment is committed, has arms, and is
+    still accepting assignments; create_assignment_for_participant does this for API requests. Returns None for
+    preassigned experiments, which cannot take new assignments.
+    """
+    # The insert() API allows us to read the database-generated created_at value without needing to refresh the
+    # object in the SQLAlchemy cache.
+    experiment_type = ExperimentsType(experiment.experiment_type)
+    match experiment_type:
+        case ExperimentsType.FREQ_PREASSIGNED:
+            # Preassigned experiments are not allowed to have new assignments added.
+            return None
+        case ExperimentsType.FREQ_ONLINE:
+            # For online frequentist, create a new assignment
+            # with simple random assignment or weighted random assignment if arm_weights are specified.
+            chosen_arm = choose_online_arm(experiment=experiment, random_state=random_state)
+            result = (
+                xngin_session.execute(
+                    insert(tables.ArmAssignment)
+                    .values(
+                        experiment_id=experiment.id,
+                        participant_id=participant_id,
+                        arm_id=chosen_arm.id,
+                        strata=[],
+                    )
+                    .returning(tables.ArmAssignment.created_at)
+                )
+            ).fetchone()
+        case ExperimentsType.MAB_ONLINE | ExperimentsType.MAB_ONLINE_DWH | ExperimentsType.CMAB_ONLINE:
+            if experiment_type == ExperimentsType.CMAB_ONLINE:
+                if not sorted_context_vals:
+                    raise ExperimentsAssignmentError(
+                        "Context values are required for contextual multi-armed bandit experiments"
+                    )
+                if len(sorted_context_vals) != len(experiment.contexts):
+                    raise ExperimentsAssignmentError(
+                        f"Expected {len(experiment.contexts)} context values, got {len(sorted_context_vals)}"
+                    )
+
+            chosen_arm = choose_bandit_arm(
+                experiment=experiment,
+                sorted_context_vals=sorted_context_vals,
+                random_state=random_state,
+            )
+            result = (
+                xngin_session.execute(
+                    insert(tables.Draw)
+                    .values(
+                        experiment_id=experiment.id,
+                        participant_id=participant_id,
+                        arm_id=chosen_arm.id,
+                        context_vals=sorted_context_vals,
+                        enable_autofail=experiment.enable_autofail,
+                    )
+                    .returning(tables.Draw.created_at)
+                )
+            ).fetchone()
+        case _:
+            raise ExperimentsAssignmentError(f"Invalid experiment type: {experiment_type}")
+
+    if result is None:
+        raise ExperimentsAssignmentError(f"Failed to create assignment for participant '{participant_id}'")
+    created_at = result[0]
+    stmt = (
+        pg_insert(tables.ArmStats)
+        .values(arm_id=chosen_arm.id, population=1)
+        .on_conflict_do_update(
+            index_elements=[tables.ArmStats.arm_id],
+            set_={"population": tables.ArmStats.population + 1},
+        )
+    )
+    xngin_session.execute(stmt)
 
     return Assignment(
         participant_id=participant_id,

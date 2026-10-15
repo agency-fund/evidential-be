@@ -149,6 +149,12 @@ tasks:
         --src src/xngin/apiserver/testdata/clustered_dwh.csv.zst
         --table-name clustered_dwh
         --allow-existing
+      - >-
+        uv run xngin-cli create-testing-dwh
+        --dsn "$XNGIN_DEVDWH_DSN"
+        --src src/xngin/apiserver/testdata/project_wellbeing_dwh.csv.zst
+        --table-name project_wellbeing_dwh
+        --allow-existing
   bootstrap-app-database:
     interactive: true
     desc: >-

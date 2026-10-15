@@ -90,7 +90,8 @@ filterwarnings = [
     "ignore:Cannot create BigQuery Storage client, the dependency google-cloud-bigquery-storage is not installed:UserWarning:google.cloud.bigquery.client",
 ]
 env = [
-    "SENTRY_DSN="  # Disable Sentry in unit tests.
+    "SENTRY_DSN=",  # Disable Sentry in unit tests.
+    "XNGIN_CREATE_DEMO_ORG=false",  # Keep first-user setup tests from building the Project Wellbeing demo.
 ]
 
 [tool.ruff]
