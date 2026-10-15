@@ -17,11 +17,18 @@ from sqlalchemy.orm import Session
 from xngin.apiserver import flags
 from xngin.apiserver.dns.safe_resolve import safe_resolve
 from xngin.apiserver.dwh import dwh_utils, query_constructors
+from xngin.apiserver.dwh.google_sheets import GoogleSheetsClient
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor
 from xngin.apiserver.dwh.inspections import generate_field_descriptors
 from xngin.apiserver.exceptions_common import DwhConnectionError, DwhDatabaseDoesNotExistError, DwhTimeoutError
 from xngin.apiserver.routers.common_api_types import Filter
-from xngin.apiserver.settings import SA_LOGGER_NAME_FOR_DWH, TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES, Dsn, Dwh
+from xngin.apiserver.settings import (
+    SA_LOGGER_NAME_FOR_DWH,
+    TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES,
+    Dsn,
+    Dwh,
+    GoogleSheetsDsn,
+)
 from xngin.ops.threads import ThreadTimeout, timeout_thread
 
 
@@ -139,7 +146,12 @@ class DwhSession:
         self._timeout_secs = timeout_secs
 
     def _connect_blocking(self) -> None:
-        self._engine = self._create_engine()
+        if isinstance(self._dwh_config, GoogleSheetsDsn):
+            self._sheets = GoogleSheetsClient(self._dwh_config.spreadsheet_url)
+            self._sheet_tables: dict[str, sqlalchemy.Table] = {}
+            self._engine = self._sheets.create_engine()
+        else:
+            self._engine = self._create_engine()
         self._session = Session(self._engine)
 
     def _close_blocking(self) -> None:
@@ -151,6 +163,9 @@ class DwhSession:
             engine = getattr(self, "_engine", None)
             if engine is not None:
                 engine.dispose()
+            sheets = getattr(self, "_sheets", None)
+            if sheets is not None:
+                sheets.close()
 
     @staticmethod
     def _log_close_failure(future: Future[None]) -> None:
@@ -190,6 +205,10 @@ class DwhSession:
         return self._on_worker(getattr(fn, "__name__", "a query"), fn, self._session, *args, **kwargs)
 
     def _inspect_table_blocking(self, table_name: str, *, use_sa_autoload: bool | None = None) -> sqlalchemy.Table:
+        if isinstance(self._dwh_config, GoogleSheetsDsn):
+            if table_name not in self._sheet_tables:
+                self._sheet_tables[table_name] = self._sheets.read(table_name).to_table(table_name, self._engine)
+            return self._sheet_tables[table_name]
         if use_sa_autoload is None:
             use_sa_autoload = self._dwh_config.supports_sa_autoload()
         metadata = sqlalchemy.MetaData()
@@ -442,6 +461,8 @@ class DwhSession:
         )
 
     def _list_tables_blocking(self) -> list[str]:
+        if isinstance(self._dwh_config, GoogleSheetsDsn):
+            return sorted(self._sheets.sheets)
         try:
             # Hack for redshift's lack of reflection support.
             if isinstance(self._dwh_config, Dsn) and self._dwh_config.is_redshift():
@@ -492,6 +513,24 @@ class DwhSession:
     def connectivity_check(self) -> None:
         """Validate that the configured warehouse is reachable and credentials are valid."""
         self._on_worker("a connectivity check", self._connectivity_check_blocking)
+
+    def export_sheet_assignments(
+        self,
+        table_name: str,
+        unique_id_field: str,
+        experiment_id: str,
+        assignments: dict[str, str],
+        field_names: set[str] | None = None,
+    ) -> str:
+        return self._on_worker(
+            "exporting spreadsheet assignments",
+            self._sheets.export_assignments,
+            table_name,
+            unique_id_field,
+            experiment_id,
+            assignments,
+            field_names,
+        )
 
     def _create_engine(self) -> Engine:
         """Create a SQLAlchemy Engine for the customer database."""

@@ -1,5 +1,6 @@
 import dataclasses
 
+import numpy as np
 import pandas as pd
 import statsmodels.formula.api as smf
 from patsy.eval import EvalFactor
@@ -110,53 +111,49 @@ def analyze_experiment(
         if sum(nan_counts_df[metric_name]) == len(merged_df):
             continue
 
-        # smf.ols internally actually drops missing values by default (see Model.from_formula),
-        # but make it explicit here for developer clarity.
-        if cluster_col is not None:
-            merged_df_dropna = merged_df.dropna(subset=[metric_name])
-            model = smf.ols(f"{metric_name} ~ {arm_col}", data=merged_df_dropna).fit(
-                cov_type="cluster",
-                cov_kwds={"groups": merged_df_dropna[cluster_col]},
-            )
-        else:
-            model = smf.ols(f"{metric_name} ~ {arm_col}", data=merged_df, missing="drop").fit(cov_type="HC1")
+        # Remove empty arms before fitting so OLS cannot assign them arbitrary coefficients.
+        # Without baseline observations, no treatment-v-control comparisons are available.
+        merged_df_dropna = merged_df.dropna(subset=[metric_name]).copy()
+        merged_df_dropna[arm_col] = merged_df_dropna[arm_col].cat.remove_unused_categories()
+        baseline_id = baseline_arm_id if baseline_arm_id is not None else merged_df[arm_col].cat.categories[0]
+        if baseline_id not in merged_df_dropna[arm_col].cat.categories:
+            continue
+        # Fit separate arm means: disjoint indicator columns avoid covariance cancellation
+        # when an arm has zero individual or between-cluster variation.
+        formula = f"{metric_name} ~ 0 + {arm_col}"
+        model = smf.ols(formula, data=merged_df_dropna).fit(
+            cov_type="HC1" if cluster_col is None else "cluster",
+            cov_kwds=None if cluster_col is None else {"groups": merged_df_dropna[cluster_col]},
+        )
         arm_ids = model.model.data.design_info.factor_infos[EvalFactor(arm_col)].categories
 
-        # Calculate CIs for coefficients
-        confidence_intervals = model.conf_int(alpha=alpha)
-        # Calculate predicted means and their CIs (will be extracted from the summary frame)
-        pred_input = pd.DataFrame({arm_col: arm_ids})
-        predictions = model.get_prediction(pred_input)
-        pred_summary = predictions.summary_frame(alpha=alpha)
-        # When all outcomes in an arm are identical, the predicted-mean variance is mathematically
-        # zero, but floating-point cancellation can make statsmodels compute it as slightly
-        # negative, so sqrt() turns the CI bounds into NaN. The true CI is zero-width, so collapse
-        # NaN bounds to the predicted mean, but only for arms whose outcomes are verifiably all
-        # identical, with at least two observations (a single observation is trivially identical
-        # yet carries no variance information); NaNs from any other cause (e.g. zero residual
-        # degrees of freedom) pass through so callers see them as null rather than a spuriously
-        # confident zero-width CI.
-        arm_outcomes = merged_df.dropna(subset=[metric_name]).groupby(arm_col, observed=False)[metric_name]
-        identical_arms = (arm_outcomes.nunique() == 1) & (arm_outcomes.count() >= 2)
-        for ci_col in ("mean_ci_lower", "mean_ci_upper"):
-            degenerate = pred_summary[ci_col].isna() & identical_arms.reindex(arm_ids).to_numpy()
-            pred_summary.loc[degenerate, ci_col] = pred_summary.loc[degenerate, "mean"]
+        # Preserve the API's baseline mean and treatment-minus-baseline estimates.
+        contrasts = np.eye(len(arm_ids))
+        contrasts[1:, 0] = -1
+        comparisons = model.t_test(contrasts)
+        p_values = np.asarray(comparisons.pvalue).reshape(-1)
+        t_stats = np.asarray(comparisons.tvalue).reshape(-1)
+        standard_errors = np.asarray(comparisons.sd).reshape(-1)
+        # statsmodels t_test maps zero standard errors to a zero statistic; retain
+        # infinite statistics for nonzero effects and undefined 0/0 inference.
+        zero_error = standard_errors == 0
+        zero_effect = comparisons.effect[zero_error] == 0
+        t_stats[zero_error] = np.where(zero_effect, np.nan, np.copysign(np.inf, comparisons.effect[zero_error]))
+        p_values[zero_error] = np.where(zero_effect, np.nan, 0)
+        confidence_intervals = comparisons.conf_int(alpha=alpha)
+        mean_confidence_intervals = model.conf_int(alpha=alpha)
 
         for i, arm_id in enumerate(arm_ids):
-            # Determine parameter name to use for lookingup the coefficient CIs
-            param_name = "Intercept" if i == 0 else f"{arm_col}[T.{arm_id}]"
-
             arm_analyses[arm_id] = ArmAnalysisResult(
                 is_baseline=i == 0 if baseline_arm_id is None else arm_id == baseline_arm_id,
-                estimate=float(model.params.iloc[i]),
-                p_value=float(model.pvalues.iloc[i]),
-                t_stat=float(model.tvalues.iloc[i]),
-                std_error=float(list(model.bse)[i]),
-                ci_lower=float(confidence_intervals.loc[param_name, 0]),
-                ci_upper=float(confidence_intervals.loc[param_name, 1]),
-                mean_ci_lower=float(pred_summary.iloc[i]["mean_ci_lower"]),
-                mean_ci_upper=float(pred_summary.iloc[i]["mean_ci_upper"]),
+                estimate=float(comparisons.effect[i]),
+                p_value=float(p_values[i]),
+                t_stat=float(t_stats[i]),
+                std_error=float(standard_errors[i]),
+                ci_lower=float(confidence_intervals[i, 0]),
+                ci_upper=float(confidence_intervals[i, 1]),
+                mean_ci_lower=float(mean_confidence_intervals.iloc[i, 0]),
+                mean_ci_upper=float(mean_confidence_intervals.iloc[i, 1]),
                 num_missing_values=nan_counts_df.loc[arm_id, metric_name],
             )
-        metric_analyses[metric_name] = arm_analyses
     return metric_analyses
