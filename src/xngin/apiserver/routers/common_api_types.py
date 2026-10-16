@@ -701,8 +701,11 @@ class MetricPowerAnalysis(ApiBaseModel):
         Field(
             description=(
                 "When the sample size is too small to reach the desired metric_target, this is the target "
-                "that is possible given available_n. It is the absolute counterpart of pct_change_possible. "
-                "None when the sample size is large enough to detect the desired change."
+                "that is possible given available_n, in the improvement (positive) direction from the "
+                "baseline. It is the absolute counterpart of pct_change_possible. "
+                "None when the sample size is large enough to detect the desired change, or (for BINARY "
+                "metrics) when no value above the baseline is a large enough change to reach the "
+                "requested power."
             )
         ),
     ] = None
@@ -713,7 +716,35 @@ class MetricPowerAnalysis(ApiBaseModel):
             description=(
                 "When the sample size is too small to reach the desired metric_pct_change, this is the percent "
                 "change that is possible given available_n. It is the relative counterpart of target_possible. "
-                "None when the sample size is large enough to detect the desired change."
+                "None whenever target_possible is None."
+            )
+        ),
+    ] = None
+
+    target_possible_lower: Annotated[
+        float | None,
+        Field(
+            description=(
+                "The detectable metric value below the baseline. (target_possible is the metric value above the "
+                "baseline.) Both detectable metric values above and below the baseline use the chosen confidence "
+                "and power, and are always reported together, regardless of the direction of the requested "
+                "change. For numeric metrics, this is the same distance below the baseline as target_possible is "
+                "above it. However, for binary metrics, an "
+                "increase and a decrease that are equally detectable can sit at different distances from the "
+                "baseline. None when the sample size is large enough to detect the desired change, or (for "
+                "BINARY metrics) when no value below the baseline is a large enough change to reach the "
+                "requested power."
+            )
+        ),
+    ] = None
+
+    pct_change_possible_lower: Annotated[
+        float | None,
+        Field(
+            description=(
+                "The relative counterpart of target_possible_lower, as a percent change from the baseline "
+                "(negative for a decrease). A value of -0.10 means a 10% decrease. "
+                "None whenever target_possible_lower is None."
             )
         ),
     ] = None
@@ -723,9 +754,10 @@ class MetricPowerAnalysis(ApiBaseModel):
         Field(
             description=(
                 "The minimum detectable effect (MDE) achievable for the desired sample size at the chosen "
-                "confidence and power. Present only when design_spec.desired_n or design_spec.desired_n_clusters "
-                "is set (frequentist design specs). When desired_n_clusters is set, the desired sample size is "
-                "desired_n_clusters times this metric's avg_cluster_size."
+                "confidence and power, reported in the direction of the requested change (negative when the "
+                "requested change is a decrease from the baseline). Present only when design_spec.desired_n or "
+                "design_spec.desired_n_clusters is set (frequentist design specs). When desired_n_clusters is "
+                "set, the desired sample size is desired_n_clusters times this metric's avg_cluster_size."
             )
         ),
     ] = None
