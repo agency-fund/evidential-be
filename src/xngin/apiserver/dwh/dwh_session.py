@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from xngin.apiserver import flags
 from xngin.apiserver.dns.safe_resolve import safe_resolve
 from xngin.apiserver.dwh import dwh_utils, query_constructors
-from xngin.apiserver.dwh.google_sheets import GoogleSheetsClient, raise_unless_google_sheets_enabled
+from xngin.apiserver.dwh.google_sheets import GoogleSheetsClient
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor
 from xngin.apiserver.dwh.inspections import generate_field_descriptors
 from xngin.apiserver.exceptions_common import DwhConnectionError, DwhDatabaseDoesNotExistError, DwhTimeoutError
@@ -128,8 +128,6 @@ class DwhSession:
                 Defaults to flags.DWH_TIMEOUT_SECS, read here rather than bound as a default so
                 that the deployment-wide budget stays adjustable.
         """
-        if isinstance(dwh_config, GoogleSheetsDsn):
-            raise_unless_google_sheets_enabled()
         seconds = flags.DWH_TIMEOUT_SECS if timeout is None else timeout
         with timeout_thread(seconds=seconds, name="dwh") as deadline:
             dwh = cls(dwh_config, deadline, seconds)

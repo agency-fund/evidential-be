@@ -655,7 +655,7 @@ def list_organization_or_datasource_experiments_impl(
             "Either datasource_id or organization_id must be provided",
         )
 
-    if not (include_google_sheets and flags.GOOGLE_SHEETS_ENABLED):
+    if not include_google_sheets:
         stmt = stmt.where(
             ~tables.Experiment.datasource.has(tables.Datasource.config["dwh"]["driver"].astext == "google_sheets")
         )

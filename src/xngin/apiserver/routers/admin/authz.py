@@ -1,13 +1,12 @@
 import sqlalchemy
 from sqlalchemy import func, or_, select, true
 
-from xngin.apiserver import flags
 from xngin.apiserver.sqla import tables
 
 
 def can_access_google_sheets(user: tables.User) -> bool:
-    """Google Sheets requires both deployment enablement and a privileged user."""
-    return flags.GOOGLE_SHEETS_ENABLED and user.is_privileged
+    """Google Sheets is available only to privileged users."""
+    return user.is_privileged
 
 
 def event_is_visible(user: tables.User) -> sqlalchemy.ColumnElement[bool]:

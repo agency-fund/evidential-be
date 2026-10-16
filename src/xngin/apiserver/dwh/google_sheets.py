@@ -14,7 +14,6 @@ import requests
 import sqlalchemy as sa
 from sqlalchemy import event
 
-from xngin.apiserver import flags
 from xngin.apiserver.common_field_types import VALID_SQL_COLUMN_REGEX
 from xngin.apiserver.exceptions_common import DwhConnectionError, LateValidationError
 from xngin.apiserver.sheets_url import parse_spreadsheet_url
@@ -23,12 +22,6 @@ MAX_SHEET_ROWS = 5_000
 MAX_SHEET_COLUMNS = 100
 MAX_SHEET_BYTES = 8 * 1024 * 1024
 PUBLIC_SHEET_TABLE = "linked_sheet"
-
-
-def raise_unless_google_sheets_enabled() -> None:
-    """Prevent all Sheets reads when deployment support is disabled, including internal workers."""
-    if not flags.GOOGLE_SHEETS_ENABLED:
-        raise LateValidationError("Google Sheets is disabled.")
 
 
 def participant_id(value) -> str:
@@ -201,7 +194,6 @@ class SheetData:
 
 class GoogleSheetsClient:
     def __init__(self, spreadsheet_url: str):
-        raise_unless_google_sheets_enabled()
         spreadsheet_id, gid = parse_spreadsheet_url(spreadsheet_url)
         self.http = requests.Session()
         # Public downloads must never pick up server credentials from .netrc.
@@ -220,7 +212,6 @@ class GoogleSheetsClient:
         self.http.close()
 
     def _download(self, url: str, params: dict[str, str]) -> SheetData:
-        raise_unless_google_sheets_enabled()
         try:
             with self.http.get(
                 url, params=params, timeout=10, stream=True, headers={"Cache-Control": "no-cache"}
@@ -278,7 +269,6 @@ class GoogleSheetsClient:
             raise DwhConnectionError(ValueError("Google Sheets returned an unreadable CSV download.")) from exc
 
     def read(self, table_name: str) -> SheetData:
-        raise_unless_google_sheets_enabled()
         if table_name != PUBLIC_SHEET_TABLE:
             raise LateValidationError("Select linked_sheet to use the tab in the spreadsheet URL.")
         return self.data

@@ -26,7 +26,7 @@ from sqlalchemy import delete, func, literal, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, selectinload
 
-from xngin.apiserver import constants, flags
+from xngin.apiserver import constants
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_sync_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
@@ -452,10 +452,6 @@ def get_user(
             select(tables.Datasource.organization_id, func.count(tables.Experiment.id))
             .join(tables.Experiment, tables.Experiment.datasource_id == tables.Datasource.id)
             .where(tables.Datasource.organization_id.in_(org_ids))
-            .where(
-                flags.GOOGLE_SHEETS_ENABLED
-                or tables.Datasource.config["dwh"]["driver"].astext.is_distinct_from("google_sheets")
-            )
             .group_by(tables.Datasource.organization_id)
         )
         experiment_counts = {org_id: count for org_id, count in experiment_count_rows}
@@ -1112,7 +1108,7 @@ def create_datasource(
     """Creates a new datasource for the specified organization."""
     org = adeps.load_organization_or_raise(session, user, body.organization_id)
     if body.dsn.type == "google_sheets":
-        adeps.raise_unless_google_sheets_allowed(user)
+        adeps.raise_unless_privileged(user)
 
     raise_unless_safe_hostname(body.dsn)
 
@@ -1135,7 +1131,7 @@ def update_datasource(
     body: UpdateDatasourceRequest,
 ):
     if body.dsn is not None and body.dsn.type == "google_sheets":
-        adeps.raise_unless_google_sheets_allowed(user)
+        adeps.raise_unless_privileged(user)
     if body.name is not None:
         datasource.name = body.name
     if body.dsn is not None:

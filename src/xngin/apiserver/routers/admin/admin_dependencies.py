@@ -22,7 +22,6 @@ from fastapi import Depends, HTTPException, Path, status
 from sqlalchemy import select
 from sqlalchemy.orm import QueryableAttribute, Session, selectinload
 
-from xngin.apiserver import flags
 from xngin.apiserver.dependencies import xngin_sync_db_session
 from xngin.apiserver.routers.admin import authz
 from xngin.apiserver.routers.auth.auth_dependencies import require_user_from_token
@@ -41,13 +40,6 @@ def raise_unless_privileged(user: tables.User) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only privileged users can perform this action.",
         )
-
-
-def raise_unless_google_sheets_allowed(user: tables.User) -> None:
-    """Require deployment enablement and user privilege before accepting a Sheets connection."""
-    if not flags.GOOGLE_SHEETS_ENABLED:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Google Sheets is disabled.")
-    raise_unless_privileged(user)
 
 
 def privileged_caller(

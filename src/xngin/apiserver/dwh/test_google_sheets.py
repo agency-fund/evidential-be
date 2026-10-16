@@ -33,7 +33,6 @@ TAB = PUBLIC_SHEET_TABLE
 
 @pytest.fixture
 def sheets_http(mocker):
-    mocker.patch("xngin.apiserver.flags.GOOGLE_SHEETS_ENABLED", True)
     mocker.patch("google.auth.default", side_effect=AssertionError("Public sheets need no credentials"))
     http = mocker.patch("xngin.apiserver.dwh.google_sheets.requests.Session").return_value
     values: list[list] = [
