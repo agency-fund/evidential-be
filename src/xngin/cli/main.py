@@ -399,7 +399,7 @@ def snapshots_create_fake(
     echo: Annotated[bool, typer.Option("--echo", help="Echo SQL queries")] = False,
 ) -> None:
     """Create fake snapshots for a frequentist experiment."""
-    from xngin.apiserver.snapshots.fake_data import (  # noqa: PLC0415
+    from xngin.apiserver.storage.bootstrap_snapshots import (  # noqa: PLC0415
         VALID_SNAPSHOT_FIELDS,
         create_fake_snapshots,
         get_arm_ids,

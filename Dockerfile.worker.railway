@@ -1,4 +1,4 @@
-# Defines a production runtime environment for the snapshotter cronjob hosted on Railway.
+# Defines a production runtime environment for the experiment maintenance worker hosted on Railway.
 # This is not for development uses.
 FROM ghcr.io/astral-sh/uv:python3.14-bookworm
 ENV ATLAS_NO_ANON_TELEMETRY=true
@@ -15,4 +15,4 @@ RUN --mount=type=cache,id=s/2beeade6-094a-4c7b-b3b0-7853103c0bd3-/root/.cache/uv
 COPY ./src /code/src
 RUN --mount=type=cache,id=s/2beeade6-094a-4c7b-b3b0-7853103c0bd3-/root/.cache/uv,target=/root/.cache/uv \
     /usr/local/bin/uv sync --locked --no-dev
-CMD ["./.venv/bin/xngin-snapshotter"]
+CMD ["./.venv/bin/xngin-worker"]

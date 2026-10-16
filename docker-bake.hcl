@@ -1,7 +1,7 @@
 // This file defines Docker build targets that can be built with:
 // docker buildx bake [target]
 //
-// The Dockerfiles that define xngin-railway, xngin-snapshots-railway, and xngin-tq-railway are all very similar. Using
+// The Dockerfiles that define xngin-railway, xngin-worker-railway, and xngin-tq-railway are all very similar. Using
 // a multi-stage build would reduce the boilerplate, but we use Railway's deployment system and it does not support
 // selecting a single target in a Dockerfile. Also, Railway's Docker cache mounts require embedding the service's ID
 // in the cache mount paths, and this cannot be parameterized. Railway's builders also do not support type=bind mounts.
@@ -11,7 +11,7 @@ group "default" {
   targets = [
     "xngin",
     "xngin-railway",
-    "xngin-snapshots-railway",
+    "xngin-worker-railway",
     "xngin-tq-railway",
   ]
 }
@@ -35,11 +35,11 @@ target "xngin-railway" {
   tags = ["xngin-railway:latest"]
 }
 
-// Railway-specific image (equivalent to `docker build -t xngin-snapshots-railway -f Dockerfile.snapshots.railway .`)
-target "xngin-snapshots-railway" {
+// Railway-specific image (equivalent to `docker build -t xngin-worker-railway -f Dockerfile.worker.railway .`)
+target "xngin-worker-railway" {
   inherits = ["common"]
-  dockerfile = "Dockerfile.snapshots.railway"
-  tags = ["xngin-snapshots-railway:latest"]
+  dockerfile = "Dockerfile.worker.railway"
+  tags = ["xngin-worker-railway:latest"]
 }
 
 // Railway-specific image (equivalent to `docker build -t xngin-tq-railway -f Dockerfile.tq.railway .`)

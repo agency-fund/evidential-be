@@ -758,3 +758,38 @@ class Snapshot(Base):
     data: Mapped[dict | None] = mapped_column(postgresql.JSONB(none_as_null=True))
 
     experiment: Mapped[Experiment] = relationship(back_populates="snapshots", viewonly=True)
+
+
+class JobStatus(Base):
+    """The schedule and most recent outcomes of one worker job for one experiment.
+
+    There is one row for each (experiment_id, job_name) pair, updated in place after each run, so it records only the
+    latest run, success, and error rather than a full history. Only workers update existing rows.
+    """
+
+    __tablename__ = "job_statuses"
+
+    experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True)
+    # Corresponds to Job.name.
+    job_name: Mapped[str] = mapped_column(String(32), primary_key=True)
+    # When the attempt that last ran this job started; attempts that run no job leave it unchanged.
+    last_run_at: Mapped[datetime | None] = mapped_column()
+    # When the job last successfully completed. This may be different from last_run_at if there was an error.
+    last_success_at: Mapped[datetime | None] = mapped_column()
+    # Crashes roll back the attempt along with its effects; only recorded failures count here.
+    consecutive_failures: Mapped[int] = mapped_column(server_default="0")
+    # The Python exception type and message from the last failed run, or the explicit error text the job returned.
+    # Cleared when the job succeeds.
+    last_error: Mapped[str | None] = mapped_column(String(2048))
+    # When the job is next due. Recomputed after each run and on each discovery from the job's compute_next_run_at,
+    # then delayed to retry_not_before if that is later. NULL means the job has no next run.
+    next_run_at: Mapped[datetime | None] = mapped_column()
+    # The earliest time the job may run again. After a failure, this is the run's finish time plus the job's backoff
+    # delay for its consecutive_failures; after a deferred run, it is the finish time plus the run's retry_after;
+    # after a success, NULL.
+    retry_not_before: Mapped[datetime | None] = mapped_column()
+    # The experiments.updated_at value that next_run_at was last computed from. Discovery recomputes run times
+    # when the experiment's updated_at no longer matches.
+    experiment_updated_at: Mapped[datetime | None] = mapped_column()
+
+    __table_args__ = (Index("ix_job_statuses_next_run", next_run_at, experiment_id),)
