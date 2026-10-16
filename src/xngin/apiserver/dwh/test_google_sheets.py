@@ -33,6 +33,7 @@ TAB = PUBLIC_SHEET_TABLE
 
 @pytest.fixture
 def sheets_http(mocker):
+    mocker.patch("xngin.apiserver.flags.GOOGLE_SHEETS_ENABLED", True)
     mocker.patch("google.auth.default", side_effect=AssertionError("Public sheets need no credentials"))
     http = mocker.patch("xngin.apiserver.dwh.google_sheets.requests.Session").return_value
     values: list[list] = [
@@ -304,7 +305,7 @@ def test_google_errors_are_actionable(sheets_http, mocker, status_code):
     http.close.assert_called_once()
 
 
-def test_demo_limit_rejects_data_instead_of_truncating():
+def test_sheet_limits_reject_data_instead_of_truncating():
     with pytest.raises(LateValidationError, match="5,000"):
         SheetData.from_values([["id"], *[[str(i)] for i in range(5_001)]])
     with pytest.raises(LateValidationError, match="100"):
@@ -327,7 +328,7 @@ def test_sign_in_page_is_an_access_error(sheets_http, mocker):
 def test_create_launch_export_import_and_analyze_a_sheet_experiment(sheets_http, aclient, blank_outcomes, cluster_key):
     http, values = sheets_http
     examples = Path(__file__).parents[4] / "tools"
-    with (examples / "google_sheets_demo.csv").open(newline="") as source:
+    with (examples / "google_sheets_example.csv").open(newline="") as source:
         observed_values = list(csv.reader(source))
     if blank_outcomes:
         values[:] = [observed_values[0].copy(), *[row[:2] + [""] * (len(row) - 2) for row in observed_values[1:]]]

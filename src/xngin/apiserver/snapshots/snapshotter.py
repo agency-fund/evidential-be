@@ -4,10 +4,10 @@ import time
 import numpy as np
 import sentry_sdk
 from loguru import logger
-from sqlalchemy import func, insert, or_, select, text
+from sqlalchemy import and_, func, insert, or_, select, text
 from sqlalchemy.orm import Session, selectinload
 
-from xngin.apiserver import database
+from xngin.apiserver import database, flags
 from xngin.apiserver.routers.common_api_types import ExperimentAnalysisResponse
 from xngin.apiserver.routers.common_enums import ContextType, ExperimentState, ExperimentsType
 from xngin.apiserver.routers.experiments import experiments_common
@@ -45,7 +45,10 @@ def create_pending_snapshots(snapshot_interval: int) -> None:
                 ),
                 tables.Experiment.state == ExperimentState.COMMITTED.value,
                 or_(
-                    tables.Experiment.google_sheets_experiment_url.is_not(None),
+                    and_(
+                        flags.GOOGLE_SHEETS_ENABLED,
+                        tables.Experiment.google_sheets_experiment_url.is_not(None),
+                    ),
                     ~tables.Experiment.datasource.has(
                         tables.Datasource.config["dwh"]["driver"].astext == "google_sheets"
                     ),
@@ -127,6 +130,12 @@ def process_pending_snapshots(snapshot_timeout: float, *, max_jitter_secs: float
             .selectinload(tables.ExperimentField.experiment_filters),
         )
     )
+    if not flags.GOOGLE_SHEETS_ENABLED:
+        one_pending_snapshot = one_pending_snapshot.where(
+            ~tables.Snapshot.experiment.has(
+                tables.Experiment.datasource.has(tables.Datasource.config["dwh"]["driver"].astext == "google_sheets")
+            )
+        )
 
     while True:
         time.sleep(random.uniform(0, max_jitter_secs))  # jitter  # noqa: S311
@@ -139,9 +148,11 @@ def process_pending_snapshots(snapshot_timeout: float, *, max_jitter_secs: float
 
 
 def _handle_one_snapshot_safely(session: Session, snapshot: tables.Snapshot, snapshot_timeout: float) -> None:
-    sentry_sdk.metrics.count("snapshots.started", 1, attributes={"experiment_id": snapshot.experiment_id})
     experiment = snapshot.experiment
     datasource = experiment.datasource
+    if not flags.GOOGLE_SHEETS_ENABLED and datasource.config["dwh"]["driver"] == "google_sheets":
+        return
+    sentry_sdk.metrics.count("snapshots.started", 1, attributes={"experiment_id": snapshot.experiment_id})
     with logger.contextualize(experiment_id=experiment.id):
         logger.info(f"{experiment.id}.{snapshot.id}: processing")
         try:

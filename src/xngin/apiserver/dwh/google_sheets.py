@@ -14,14 +14,21 @@ import requests
 import sqlalchemy as sa
 from sqlalchemy import event
 
+from xngin.apiserver import flags
 from xngin.apiserver.common_field_types import VALID_SQL_COLUMN_REGEX
 from xngin.apiserver.exceptions_common import DwhConnectionError, LateValidationError
 from xngin.apiserver.sheets_url import parse_spreadsheet_url
 
-MAX_DEMO_ROWS = 5_000
-MAX_DEMO_COLUMNS = 100
-MAX_DEMO_BYTES = 8 * 1024 * 1024
+MAX_SHEET_ROWS = 5_000
+MAX_SHEET_COLUMNS = 100
+MAX_SHEET_BYTES = 8 * 1024 * 1024
 PUBLIC_SHEET_TABLE = "linked_sheet"
+
+
+def raise_unless_google_sheets_enabled() -> None:
+    """Prevent all Sheets reads when deployment support is disabled, including internal workers."""
+    if not flags.GOOGLE_SHEETS_ENABLED:
+        raise LateValidationError("Google Sheets is disabled.")
 
 
 def participant_id(value) -> str:
@@ -80,8 +87,8 @@ class SheetData:
         if not values or not values[0]:
             raise LateValidationError("The sheet needs a header row in row 1.")
         headers = values[0]
-        if len(headers) > MAX_DEMO_COLUMNS or len(values) > MAX_DEMO_ROWS + 1:
-            raise LateValidationError("Demo sheets support up to 5,000 rows and 100 columns.")
+        if len(headers) > MAX_SHEET_COLUMNS or len(values) > MAX_SHEET_ROWS + 1:
+            raise LateValidationError("Google Sheets supports up to 5,000 rows and 100 columns.")
         if any(not isinstance(h, str) or not re.fullmatch(VALID_SQL_COLUMN_REGEX, h) for h in headers):
             raise LateValidationError(
                 "Sheet headers must start with a letter or underscore and contain only letters, numbers, underscores."
@@ -173,8 +180,8 @@ class SheetData:
         ]
         if header not in headers:
             headers.append(header)
-        if len(headers) > MAX_DEMO_COLUMNS:
-            raise LateValidationError("Leave space for an assignment column within the demo's 100-column limit.")
+        if len(headers) > MAX_SHEET_COLUMNS:
+            raise LateValidationError("Leave space for an assignment column within the 100-column limit.")
         arm_col = headers.index(header)
         source_indices = [self.headers.index(name) if name in self.headers else None for name in headers]
         output = io.StringIO(newline="")
@@ -194,6 +201,7 @@ class SheetData:
 
 class GoogleSheetsClient:
     def __init__(self, spreadsheet_url: str):
+        raise_unless_google_sheets_enabled()
         spreadsheet_id, gid = parse_spreadsheet_url(spreadsheet_url)
         self.http = requests.Session()
         # Public downloads must never pick up server credentials from .netrc.
@@ -212,6 +220,7 @@ class GoogleSheetsClient:
         self.http.close()
 
     def _download(self, url: str, params: dict[str, str]) -> SheetData:
+        raise_unless_google_sheets_enabled()
         try:
             with self.http.get(
                 url, params=params, timeout=10, stream=True, headers={"Cache-Control": "no-cache"}
@@ -229,15 +238,15 @@ class GoogleSheetsClient:
                             "allow viewers to download, and copy the tab's URL again."
                         )
                     elif response.status_code == 429:
-                        message = "Google Sheets rate limit reached. Stop the live demo and try again in a minute."
+                        message = "Google Sheets rate limit reached. Try again in a minute."
                     else:
                         message = f"Google Sheets request failed (HTTP {response.status_code})."
                     raise DwhConnectionError(ValueError(message))
                 payload = bytearray()
                 for chunk in response.iter_content(chunk_size=64 * 1024):
                     payload.extend(chunk)
-                    if len(payload) > MAX_DEMO_BYTES:
-                        raise LateValidationError("Demo sheet CSV downloads must be smaller than 8 MB.")
+                    if len(payload) > MAX_SHEET_BYTES:
+                        raise LateValidationError("Google Sheets CSV downloads must be smaller than 8 MB.")
                 content = payload.decode("utf-8-sig")
                 if "text/html" in response.headers.get("Content-Type", "").lower():
                     raise DwhConnectionError(
@@ -269,6 +278,7 @@ class GoogleSheetsClient:
             raise DwhConnectionError(ValueError("Google Sheets returned an unreadable CSV download.")) from exc
 
     def read(self, table_name: str) -> SheetData:
+        raise_unless_google_sheets_enabled()
         if table_name != PUBLIC_SHEET_TABLE:
             raise LateValidationError("Select linked_sheet to use the tab in the spreadsheet URL.")
         return self.data

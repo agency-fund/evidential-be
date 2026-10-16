@@ -458,7 +458,7 @@ class BqDsn(AdminApiBaseModel):
 
 
 class GoogleSheetsDsn(AdminApiBaseModel):
-    """Read-only demo connector for a publicly viewable Google Sheets tab; no Google credentials needed."""
+    """Read-only connector for a publicly viewable Google Sheets tab; no Google credentials needed."""
 
     type: Literal["google_sheets"] = "google_sheets"
     spreadsheet_url: Annotated[str, Field(max_length=MAX_LENGTH_OF_URL_VALUE)]

@@ -26,7 +26,7 @@ from sqlalchemy import delete, func, literal, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, selectinload
 
-from xngin.apiserver import constants
+from xngin.apiserver import constants, flags
 from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_sync_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
@@ -452,6 +452,10 @@ def get_user(
             select(tables.Datasource.organization_id, func.count(tables.Experiment.id))
             .join(tables.Experiment, tables.Experiment.datasource_id == tables.Datasource.id)
             .where(tables.Datasource.organization_id.in_(org_ids))
+            .where(
+                flags.GOOGLE_SHEETS_ENABLED
+                or tables.Datasource.config["dwh"]["driver"].astext.is_distinct_from("google_sheets")
+            )
             .group_by(tables.Datasource.organization_id)
         )
         experiment_counts = {org_id: count for org_id, count in experiment_count_rows}
@@ -706,6 +710,10 @@ def list_organizations(
             select(tables.Datasource.organization_id, func.count(tables.Experiment.id))
             .join(tables.Experiment, tables.Experiment.datasource_id == tables.Datasource.id)
             .where(tables.Datasource.organization_id.in_(org_ids))
+            .where(
+                authz.can_access_google_sheets(user)
+                or tables.Datasource.config["dwh"]["driver"].astext.is_distinct_from("google_sheets")
+            )
             .group_by(tables.Datasource.organization_id)
         )
         experiment_counts = {org_id: count for org_id, count in experiment_count_rows}
@@ -859,9 +867,12 @@ def list_organization_events(
     organization: Annotated[tables.Organization, Depends(adeps.organization)],
     session: Annotated[Session, Depends(xngin_sync_db_session)],
     pagination: Annotated[PaginationQuery, Depends(pagination_query_params)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> ListOrganizationEventsResponse:
     """Returns events in an organization, newest first."""
-    stmt = select(tables.Event).where(tables.Event.organization_id == organization.id)
+    stmt = select(tables.Event).where(
+        tables.Event.organization_id == organization.id, authz.event_is_visible(user)
+    )
     ordering = [
         SortField.timestamp(
             column=tables.Event.created_at,
@@ -1000,6 +1011,7 @@ def update_organization(
 def get_organization(
     organization: Annotated[tables.Organization, Depends(adeps.organization)],
     session: Annotated[Session, Depends(xngin_sync_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> GetOrganizationResponse:
     """Returns detailed information about a specific organization.
 
@@ -1013,6 +1025,10 @@ def get_organization(
     users = session.scalars(users_stmt)
 
     datasources_stmt = select(tables.Datasource).filter(tables.Datasource.organization_id == organization.id)
+    if not authz.can_access_google_sheets(user):
+        datasources_stmt = datasources_stmt.where(
+            tables.Datasource.config["dwh"]["driver"].astext.is_distinct_from("google_sheets")
+        )
     datasources = session.scalars(datasources_stmt)
 
     return GetOrganizationResponse(
@@ -1061,6 +1077,8 @@ def list_organization_datasources(
             tables.Datasource.name.asc(),
         )
     )
+    if not authz.can_access_google_sheets(user):
+        stmt = stmt.where(tables.Datasource.config["dwh"]["driver"].astext.is_distinct_from("google_sheets"))
 
     datasources = session.scalars(stmt)
 
@@ -1093,6 +1111,8 @@ def create_datasource(
 ) -> CreateDatasourceResponse:
     """Creates a new datasource for the specified organization."""
     org = adeps.load_organization_or_raise(session, user, body.organization_id)
+    if body.dsn.type == "google_sheets":
+        adeps.raise_unless_google_sheets_allowed(user)
 
     raise_unless_safe_hostname(body.dsn)
 
@@ -1111,8 +1131,11 @@ def create_datasource(
 def update_datasource(
     datasource: Annotated[tables.Datasource, Depends(adeps.datasource)],
     session: Annotated[Session, Depends(xngin_sync_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     body: UpdateDatasourceRequest,
 ):
+    if body.dsn is not None and body.dsn.type == "google_sheets":
+        adeps.raise_unless_google_sheets_allowed(user)
     if body.name is not None:
         datasource.name = body.name
     if body.dsn is not None:
@@ -1250,11 +1273,21 @@ def delete_datasource(
         tables.Datasource.organization_id == organization_id,
         tables.Datasource.id == datasource_id,
     )
+    authorization_query = authz.is_user_authorized_on_organization(user, organization_id)
+    if not authz.can_access_google_sheets(user):
+        authorization_query = authorization_query.where(
+            ~select(tables.Datasource.id)
+            .where(
+                tables.Datasource.id == datasource_id,
+                tables.Datasource.config["dwh"]["driver"].astext == "google_sheets",
+            )
+            .exists()
+        )
 
     response = handle_delete(
         session,
         allow_missing,
-        authz.is_user_authorized_on_organization(user, organization_id),
+        authorization_query,
         resource_query,
     )
     session.commit()
@@ -1474,10 +1507,13 @@ def abandon_experiment(
 def list_organization_experiments(
     organization: Annotated[tables.Organization, Depends(adeps.organization)],
     session: Annotated[Session, Depends(xngin_sync_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> ListExperimentsResponse:
     """Returns a list of experiments in the organization."""
     return experiments_common.list_organization_or_datasource_experiments_impl(
-        xngin_session=session, organization_id=organization.id
+        xngin_session=session,
+        organization_id=organization.id,
+        include_google_sheets=authz.can_access_google_sheets(user),
     )
 
 
@@ -1496,7 +1532,7 @@ def get_experiment_for_ui(
 @router.get(
     "/datasources/{datasource_id}/experiments/{experiment_id}/assignments/csv",
     summary=(
-        "Export experiment assignments as CSV. Google Sheets demos include the source columns and an arm column. "
+        "Export experiment assignments as CSV. Google Sheets exports include the source columns and an arm column. "
         "Other datasource exports include participant_id,[cluster_key,]arm_id,arm_name,created_at,strata columns."
     ),
     response_class=CsvStreamingResponse,

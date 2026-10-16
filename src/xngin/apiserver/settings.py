@@ -305,7 +305,7 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
 
 
 class GoogleSheetsDsn(ConfigBaseModel, BaseDsn):
-    """A public demo spreadsheet read anonymously through its CSV export."""
+    """A public spreadsheet read anonymously through its CSV export."""
 
     driver: Literal["google_sheets"] = "google_sheets"
     spreadsheet_url: str
