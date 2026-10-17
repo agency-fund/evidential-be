@@ -217,9 +217,7 @@ class Event(Base):
         self.data = json.loads(as_json)
         return self
 
-    def get_data(self) -> EventDataTypes | None:
-        if self.data is None:
-            return None
+    def get_data(self) -> EventDataTypes:
         return TypeAdapter(EventDataTypes).validate_python(self.data)
 
     __table_args__ = (Index("event_stream", "organization_id", created_at),)

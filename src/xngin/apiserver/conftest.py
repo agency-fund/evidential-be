@@ -67,7 +67,7 @@ class RowProtocolMixin:
     @property
     def _mapping(self) -> Mapping[str, Any]:
         if dataclasses.is_dataclass(self):
-            return dataclasses.asdict(self)
+            return dataclasses.asdict(self)  # type: ignore[unreachable]
         raise RuntimeError("RowProtocolMixin is only defined for use with dataclasses.")
 
 
