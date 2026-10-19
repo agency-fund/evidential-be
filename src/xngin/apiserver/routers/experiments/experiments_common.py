@@ -18,7 +18,6 @@ from sqlalchemy.orm import Session, selectinload
 from xngin.apiserver import constants, flags
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
-from xngin.apiserver.dwh.participant_metrics_queries import get_participant_metrics
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.assignment_adapters import (
     RowProtocol,
@@ -1313,16 +1312,13 @@ def analyze_experiment_freq_impl(
         raise StatsAnalysisError("No participants found for experiment.")
 
     with DwhSession.open(dsconfig.dwh, timeout=dwh_timeout) as dwh:
-        sa_table = dwh.inspect_table(experiment.datasource_table)
-
         # Mark the start of the analysis as when we begin pulling outcomes.
         created_at = datetime.now(UTC)
-        participant_outcomes = dwh.run(
-            get_participant_metrics,
-            sa_table,
-            metrics,
-            unique_id_field.field_name,
-            participant_ids,
+        participant_outcomes = dwh.get_participant_metrics(
+            experiment.datasource_table,
+            metric_names=[metric.field_name for metric in metrics],
+            unique_id_field=unique_id_field.field_name,
+            participant_ids=participant_ids,
         )
 
     if len(participant_outcomes) == 0:

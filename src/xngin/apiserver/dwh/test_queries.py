@@ -193,7 +193,7 @@ def _pg_dsn(search_path: str) -> Dsn:
 def test_search_path_is_set_on_session(search_path):
     """Verify that DwhSession sets search_path for every new PostgreSQL connection."""
     with DwhSession.open(_pg_dsn(search_path)) as dwh:
-        result = dwh.run(lambda session: session.execute(text("SELECT current_setting('search_path')")).scalar())
+        result = dwh._run(lambda session: session.execute(text("SELECT current_setting('search_path')")).scalar())
     assert result == search_path
 
 
@@ -204,4 +204,4 @@ def test_search_path_injection_attempt_is_rejected():
         pytest.raises(DataError, match="invalid value for parameter"),
         DwhSession.open(_pg_dsn('public"; DROP TABLE users; --')) as dwh,
     ):
-        dwh.run(lambda session: session.execute(text("SELECT 1")))
+        dwh._run(lambda session: session.execute(text("SELECT 1")))

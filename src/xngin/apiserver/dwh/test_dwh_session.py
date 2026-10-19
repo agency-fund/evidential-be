@@ -17,13 +17,13 @@ def fixture_dwh_config(testing_datasource):
 
 def test_run_hands_fn_the_warehouse_session(dwh_config):
     with DwhSession.open(dwh_config) as dwh:
-        assert dwh.run(lambda session: session.execute(text("SELECT 1")).scalar_one()) == 1
+        assert dwh._run(lambda session: session.execute(text("SELECT 1")).scalar_one()) == 1
 
 
 def test_all_warehouse_calls_run_on_one_helper_thread(dwh_config):
     """The block reuses one warehouse Session, which is only safe if every call shares one thread."""
     with DwhSession.open(dwh_config) as dwh:
-        idents = {dwh.run(lambda _session: threading.get_ident()) for _ in range(3)}
+        idents = {dwh._run(lambda _session: threading.get_ident()) for _ in range(3)}
     assert len(idents) == 1
     assert idents != {threading.get_ident()}
 

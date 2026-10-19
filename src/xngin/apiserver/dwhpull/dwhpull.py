@@ -18,10 +18,8 @@ from sqlalchemy.orm import selectinload
 
 from xngin.apiserver import database
 from xngin.apiserver.dwh.dwh_session import DwhSession
-from xngin.apiserver.dwh.participant_metrics_queries import get_participant_metrics
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.flags import NPROC
-from xngin.apiserver.routers.common_api_types import DesignSpecMetricRequest
 from xngin.apiserver.routers.common_enums import ExperimentState, ExperimentsType
 from xngin.apiserver.routers.experiments.experiments_common import (
     MismatchedExperimentTypeError,
@@ -140,16 +138,11 @@ def pull_one_experiment(experiment_id: str, *, dwh_timeout: float = PULL_TIMEOUT
         # 2. Read the external DWH, under a deadline so a wedged warehouse cannot hold the locks
         # taken above indefinitely.
         with DwhSession.open(dsconfig.dwh, timeout=dwh_timeout) as dwh:
-            sa_table = dwh.inspect_table(table_name)
-            # model_construct: get_participant_metrics only reads field_name; the power-analysis
-            # fields the validator demands (metric_pct_change/metric_target) don't apply here.
-            target_metric = DesignSpecMetricRequest.model_construct(field_name=target_field_name)
-            participant_outcomes = dwh.run(
-                get_participant_metrics,
-                sa_table,
-                [target_metric],
-                unique_id_field_name,
-                pending_ids,
+            participant_outcomes = dwh.get_participant_metrics(
+                table_name,
+                metric_names=[target_field_name],
+                unique_id_field=unique_id_field_name,
+                participant_ids=pending_ids,
             )
 
         # 3. Compute the value per participant, then apply them.
