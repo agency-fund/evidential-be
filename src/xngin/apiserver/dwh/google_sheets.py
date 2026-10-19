@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from email.message import Message
 from email.utils import collapse_rfc2231_value
 from typing import Self, cast
+from urllib.parse import urljoin, urlsplit
 
 import requests
 import sqlalchemy as sa
@@ -211,11 +212,34 @@ class GoogleSheetsClient:
     def close(self):
         self.http.close()
 
+    def _get_response(self, url: str, params: dict[str, str]) -> requests.Response:
+        for _ in range(31):
+            response = self.http.get(
+                url,
+                params=params,
+                timeout=10,
+                stream=True,
+                headers={"Cache-Control": "no-cache"},
+                allow_redirects=False,
+            )
+            if response.status_code not in {301, 302, 303, 307, 308} or "Location" not in response.headers:
+                return response
+            redirect_url = urljoin(url, response.headers["Location"])
+            response.close()
+            parsed = urlsplit(redirect_url)
+            host = parsed.hostname or ""
+            if (
+                parsed.scheme != "https"
+                or parsed.netloc != host
+                or not (host == "docs.google.com" or host.endswith(".googleusercontent.com"))
+            ):
+                raise DwhConnectionError(ValueError("Google Sheets redirected outside its public download hosts."))
+            url, params = redirect_url, {}
+        raise requests.TooManyRedirects("Google Sheets returned too many redirects.")
+
     def _download(self, url: str, params: dict[str, str]) -> SheetData:
         try:
-            with self.http.get(
-                url, params=params, timeout=10, stream=True, headers={"Cache-Control": "no-cache"}
-            ) as response:
+            with self._get_response(url, params) as response:
                 if not response.ok:
                     if response.status_code == 400 and "gid" in params:
                         message = (

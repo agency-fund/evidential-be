@@ -322,6 +322,49 @@ def test_sign_in_page_is_an_access_error(sheets_http, mocker):
         GoogleSheetsClient(URL)
 
 
+@pytest.mark.parametrize(
+    "location",
+    [
+        "https://example.com/private",
+        "http://docs.google.com/spreadsheets/d/demo_sheet/export",
+        "https://docs.google.com.evil.com/export",
+        "https://user@docs.google.com/export",
+        "https://docs.google.com:443/export",
+    ],
+)
+def test_download_rejects_redirects_outside_public_google_hosts(sheets_http, mocker, location):
+    http, _ = sheets_http
+    response = mocker.MagicMock(status_code=302, headers={"Location": location})
+    http.get.side_effect = None
+    http.get.return_value = response
+    with pytest.raises(DwhConnectionError, match="redirected outside"):
+        GoogleSheetsClient(URL)
+    http.get.assert_called_once()
+    assert http.get.call_args.kwargs["allow_redirects"] is False
+    response.close.assert_called_once()
+    http.close.assert_called_once()
+
+
+def test_download_follows_public_google_download_redirect(sheets_http, mocker):
+    http, _ = sheets_http
+    location = "https://doc-abc-sheets.googleusercontent.com/export/download.csv?token=public"
+    redirect = mocker.MagicMock(status_code=302, headers={"Location": location})
+    response = mocker.MagicMock(status_code=200, ok=True, headers={"Content-Type": "text/csv"})
+    response.__enter__.return_value = response
+    response.iter_content.return_value = [b"participant_id,outcome\n001,0\n"]
+    http.get.side_effect = [redirect, response]
+    client = GoogleSheetsClient(URL)
+    try:
+        assert client.read(TAB).rows == [(2, ["001", "0"])]
+        assert http.get.call_count == 2
+        assert http.get.call_args.args == (location,)
+        assert http.get.call_args.kwargs["params"] == {}
+        assert all(call.kwargs["allow_redirects"] is False for call in http.get.call_args_list)
+        redirect.close.assert_called_once()
+    finally:
+        client.close()
+
+
 @pytest.mark.parametrize("blank_outcomes", [False, True])
 @pytest.mark.parametrize("cluster_key", [None, "region"])
 def test_create_launch_export_import_and_analyze_a_sheet_experiment(sheets_http, aclient, blank_outcomes, cluster_key):
