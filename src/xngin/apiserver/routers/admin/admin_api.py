@@ -131,7 +131,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
 from xngin.apiserver.routers.power_adapters import build_metric_stats, calculate_cluster_stats
-from xngin.apiserver.settings import NoDwh, RemoteDatabaseConfig
+from xngin.apiserver.settings import GoogleSheetsDsn, NoDwh, RemoteDatabaseConfig
 from xngin.apiserver.snapshots import snapshotter
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
@@ -702,13 +702,17 @@ def list_organizations(
         )
         user_counts = {org_id: count for org_id, count in user_count_rows}
 
-        experiment_count_rows = session.execute(
+        experiment_count_stmt = (
             select(tables.Datasource.organization_id, func.count(tables.Experiment.id))
             .join(tables.Experiment, tables.Experiment.datasource_id == tables.Datasource.id)
             .where(tables.Datasource.organization_id.in_(org_ids))
             .group_by(tables.Datasource.organization_id)
         )
-        experiment_counts = {org_id: count for org_id, count in experiment_count_rows}
+        if not authz.can_access_google_sheets(user):
+            experiment_count_stmt = experiment_count_stmt.where(
+                tables.Datasource.config["dwh"]["driver"].astext.is_distinct_from("google_sheets")
+            )
+        experiment_counts = {org_id: count for org_id, count in session.execute(experiment_count_stmt)}
 
     return ListOrganizationsResponse(
         items=[
@@ -859,9 +863,10 @@ def list_organization_events(
     organization: Annotated[tables.Organization, Depends(adeps.organization)],
     session: Annotated[Session, Depends(xngin_sync_db_session)],
     pagination: Annotated[PaginationQuery, Depends(pagination_query_params)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> ListOrganizationEventsResponse:
     """Returns events in an organization, newest first."""
-    stmt = select(tables.Event).where(tables.Event.organization_id == organization.id)
+    stmt = select(tables.Event).where(tables.Event.organization_id == organization.id, authz.event_is_visible(user))
     ordering = [
         SortField.timestamp(
             column=tables.Event.created_at,
@@ -1000,6 +1005,7 @@ def update_organization(
 def get_organization(
     organization: Annotated[tables.Organization, Depends(adeps.organization)],
     session: Annotated[Session, Depends(xngin_sync_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> GetOrganizationResponse:
     """Returns detailed information about a specific organization.
 
@@ -1013,6 +1019,10 @@ def get_organization(
     users = session.scalars(users_stmt)
 
     datasources_stmt = select(tables.Datasource).filter(tables.Datasource.organization_id == organization.id)
+    if not authz.can_access_google_sheets(user):
+        datasources_stmt = datasources_stmt.where(
+            tables.Datasource.config["dwh"]["driver"].astext.is_distinct_from("google_sheets")
+        )
     datasources = session.scalars(datasources_stmt)
 
     return GetOrganizationResponse(
@@ -1061,6 +1071,8 @@ def list_organization_datasources(
             tables.Datasource.name.asc(),
         )
     )
+    if not authz.can_access_google_sheets(user):
+        stmt = stmt.where(tables.Datasource.config["dwh"]["driver"].astext.is_distinct_from("google_sheets"))
 
     datasources = session.scalars(stmt)
 
@@ -1093,15 +1105,26 @@ def create_datasource(
 ) -> CreateDatasourceResponse:
     """Creates a new datasource for the specified organization."""
     org = adeps.load_organization_or_raise(session, user, body.organization_id)
+    if body.dsn.type == "google_sheets":
+        adeps.raise_unless_privileged(user)
 
     raise_unless_safe_hostname(body.dsn)
 
     config = RemoteDatabaseConfig(type="remote", dwh=api_dsn_to_settings_dwh(body.dsn))
-    if connectivity_check and config.dwh.driver != "none":
+    sheet_tables = None
+    if isinstance(config.dwh, GoogleSheetsDsn):
+        # Capturing the name is required even when the optional connectivity check is disabled.
+        with DwhSession.open(config.dwh) as dwh:
+            sheet_tables = dwh.list_tables()
+            config.dwh.table_name = sheet_tables[0]
+            if connectivity_check:
+                dwh.connectivity_check()
+    elif connectivity_check and config.dwh.driver != "none":
         with DwhSession.open(config.dwh) as dwh:
             dwh.connectivity_check()
-
     datasource = admin_common.create_datasource_impl(session, org, body.name, config)
+    if sheet_tables is not None:
+        datasource.set_table_list(sheet_tables)
     session.commit()
 
     return CreateDatasourceResponse(id=datasource.id)
@@ -1111,17 +1134,29 @@ def create_datasource(
 def update_datasource(
     datasource: Annotated[tables.Datasource, Depends(adeps.datasource)],
     session: Annotated[Session, Depends(xngin_sync_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     body: UpdateDatasourceRequest,
 ):
+    if body.dsn is not None and body.dsn.type == "google_sheets":
+        adeps.raise_unless_privileged(user)
     if body.name is not None:
         datasource.name = body.name
+    cfg = datasource.get_config()
     if body.dsn is not None:
         raise_unless_safe_hostname(body.dsn)
-        cfg = datasource.get_config()
-        cfg.dwh = api_dsn_to_settings_dwh(body.dsn, cfg.dwh)
+        current_dwh = cfg.dwh
+        cfg.dwh = api_dsn_to_settings_dwh(body.dsn, current_dwh)
+        if isinstance(cfg.dwh, GoogleSheetsDsn) and not isinstance(current_dwh, GoogleSheetsDsn):
+            with DwhSession.open(cfg.dwh) as dwh:
+                cfg.dwh.table_name = dwh.list_tables()[0]
         datasource.set_config(cfg)
 
-    datasource.clear_table_list()
+    if isinstance(cfg.dwh, GoogleSheetsDsn):
+        if cfg.dwh.table_name is None:
+            raise LateValidationError("The Google Sheets connection is missing its saved table name. Reconnect it.")
+        datasource.set_table_list([cfg.dwh.table_name])
+    else:
+        datasource.clear_table_list()
     invalidate_inspect_tables = delete(tables.DatasourceTablesInspected).where(
         tables.DatasourceTablesInspected.datasource_id == datasource.id
     )
@@ -1155,15 +1190,19 @@ def inspect_datasource(
     session: Annotated[Session, Depends(xngin_sync_db_session)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> InspectDatasourceResponse:
-    """Verifies connectivity to a datasource and returns a list of readable tables."""
-    if datasource.get_config().dwh.driver == "none":
+    """Returns readable tables; saved Google Sheets names do not require a new download."""
+    config = datasource.get_config()
+    if config.dwh.driver == "none":
         return InspectDatasourceResponse(tables=[])
+    if isinstance(config.dwh, GoogleSheetsDsn):
+        if config.dwh.table_name is None:
+            raise LateValidationError("The Google Sheets connection is missing its saved table name. Reconnect it.")
+        return InspectDatasourceResponse(tables=[config.dwh.table_name])
 
     if not refresh and cache_is_fresh(datasource.table_list_updated) and datasource.table_list is not None:
         return InspectDatasourceResponse(tables=datasource.table_list)
 
     with clear_db_table_cache_on_error(session, datasource):
-        config = datasource.get_config()
         with DwhSession.open(config.dwh) as dwh:
             tablenames = dwh.list_tables()
         datasource.set_table_list(tablenames)
@@ -1179,7 +1218,7 @@ def invalidate_inspect_table_cache(session: Session, datasource_id: str) -> None
 
 
 @router.get(
-    "/datasources/{datasource_id}/inspect/{table_name}",
+    "/datasources/{datasource_id}/inspect/{table_name:path}",
     responses=DWH_CONNECTION_AND_NOT_FOUND_RESPONSES,
 )
 def inspect_table_in_datasource(
@@ -1249,11 +1288,21 @@ def delete_datasource(
         tables.Datasource.organization_id == organization_id,
         tables.Datasource.id == datasource_id,
     )
+    authorization_query = authz.is_user_authorized_on_organization(user, organization_id)
+    if not authz.can_access_google_sheets(user):
+        authorization_query = authorization_query.where(
+            ~select(tables.Datasource.id)
+            .where(
+                tables.Datasource.id == datasource_id,
+                tables.Datasource.config["dwh"]["driver"].astext == "google_sheets",
+            )
+            .exists()
+        )
 
     response = handle_delete(
         session,
         allow_missing,
-        authz.is_user_authorized_on_organization(user, organization_id),
+        authorization_query,
         resource_query,
     )
     session.commit()
@@ -1473,10 +1522,13 @@ def abandon_experiment(
 def list_organization_experiments(
     organization: Annotated[tables.Organization, Depends(adeps.organization)],
     session: Annotated[Session, Depends(xngin_sync_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> ListExperimentsResponse:
     """Returns a list of experiments in the organization."""
     return experiments_common.list_organization_or_datasource_experiments_impl(
-        xngin_session=session, organization_id=organization.id
+        xngin_session=session,
+        organization_id=organization.id,
+        include_google_sheets=authz.can_access_google_sheets(user),
     )
 
 
@@ -1495,10 +1547,11 @@ def get_experiment_for_ui(
 @router.get(
     "/datasources/{datasource_id}/experiments/{experiment_id}/assignments/csv",
     summary=(
-        "Export experiment assignments as CSV file; BalanceCheck not included. "
-        "csv header form: participant_id,[cluster_key,]arm_id,arm_name,strata_name1,strata_name2,..."
+        "Export experiment assignments as CSV. Google Sheets exports include the source columns and an arm column. "
+        "Other datasource exports include participant_id,[cluster_key,]arm_id,arm_name,created_at,strata columns."
     ),
     response_class=CsvStreamingResponse,
+    responses=DWH_CONNECTION_RESPONSES,
 )
 def get_experiment_assignments_as_csv_for_ui(
     experiment: Annotated[tables.Experiment, Depends(adeps.experiment_for_csv_export)],
@@ -1516,6 +1569,13 @@ def update_experiment(
 ):
     if experiment.state != ExperimentState.COMMITTED:
         raise LateValidationError("Experiment must have been committed to be updated.")
+
+    if "google_sheets_experiment_url" in body.model_fields_set:
+        if experiment.experiment_type != ExperimentsType.FREQ_PREASSIGNED.value or not isinstance(
+            experiment.datasource.get_config().dwh, GoogleSheetsDsn
+        ):
+            raise LateValidationError("Only preassigned Google Sheets experiments support an experiment outcome tab.")
+        experiment.google_sheets_experiment_url = body.google_sheets_experiment_url
 
     if body.name is not None:
         experiment.name = body.name

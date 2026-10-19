@@ -12,7 +12,7 @@ from xngin.apiserver.conftest import get_test_uri_info
 from xngin.apiserver.dwh.queries import get_cluster_sufficient_stats
 from xngin.apiserver.routers.common_api_types import Filter
 from xngin.apiserver.routers.common_enums import Relation
-from xngin.apiserver.routers.power_adapters import calculate_cluster_stats
+from xngin.apiserver.routers.power_adapters import ClusterStats, calculate_cluster_stats
 from xngin.stats.stats_errors import StatsPowerError
 
 
@@ -23,7 +23,7 @@ def calculate_cluster_stats_from_database(
     outcome_columns: Sequence[str],
     filters: list[Filter],
     outcome_shifts: Mapping[str, float] | None = None,
-) -> dict[str, dict[str, float]]:
+) -> dict[str, ClusterStats]:
     """Compose the query and the pure computation, as power_check does."""
     rows = get_cluster_sufficient_stats(session, sa_table, cluster_column, outcome_columns, filters, outcome_shifts)
     return calculate_cluster_stats(rows, cluster_column, outcome_columns)
@@ -94,6 +94,7 @@ def test_converted_low_icc_moderate_clusters(clustered_dwh_session, sa_table):
         filters=[],
     )["converted"]
 
+    assert result["icc"] is not None
     assert result["icc"] < 0.05
     print(f"\nconverted with moderate: ICC={result['icc']:.6f} (target was 0.03, hard for binary)")
 
@@ -110,6 +111,7 @@ def test_test_score_high_icc_moderate_clusters(clustered_dwh_session, sa_table):
 
     # With moderate clusters, should achieve higher ICC
     # Note: We generated with powerlaw, so this tests cross-cluster ICC
+    assert result["icc"] is not None
     print(f"\ntest_score with moderate clusters: ICC={result['icc']:.4f}, CV={result['cv']:.4f}")
     # Just verify it calculates without error - actual ICC may vary
     assert 0.0 <= result["icc"] <= 1.0
@@ -125,6 +127,7 @@ def test_engaged_high_icc_moderate_clusters(clustered_dwh_session, sa_table):
         filters=[],
     )["engaged"]
 
+    assert result["icc"] is not None
     print(f"\nengaged with moderate clusters: ICC={result['icc']:.4f}, CV={result['cv']:.4f}")
     assert 0.0 <= result["icc"] <= 1.0
 
@@ -146,6 +149,8 @@ def test_power_law_clusters_lower_icc(clustered_dwh_session, sa_table):
     )
     result_score = results["test_score"]
     result_engaged = results["engaged"]
+    assert result_score["icc"] is not None
+    assert result_engaged["icc"] is not None
 
     print(f"\nPower-law clusters (extreme variation, CV={result_score['cv']:.2f}):")
     print(f"  test_score: ICC={result_score['icc']:.4f} (target was 0.20)")
@@ -197,8 +202,9 @@ def test_outcome_shifts_do_not_change_results(clustered_dwh_session, sa_table):
     shifted = calculate_cluster_stats_from_database(**kwargs, outcome_shifts={"income": 50000.0, "converted": 0.5})
 
     for outcome_column, stats in unshifted.items():
+        shifted_stats = dict(shifted[outcome_column])
         for key, value in stats.items():
-            assert shifted[outcome_column][key] == pytest.approx(value), f"{outcome_column}.{key}"
+            assert shifted_stats[key] == pytest.approx(value), f"{outcome_column}.{key}"
 
 
 def test_null_outcomes_dropped_per_metric_but_counted_in_cluster_sizes(clustered_dwh_session, wide_dwh_sa_table):

@@ -68,7 +68,7 @@ from xngin.apiserver.routers.common_enums import (
     UpdateTypeNormal,
 )
 from xngin.apiserver.routers.experiments.property_filters import passes_filters, validate_filter_value
-from xngin.apiserver.settings import DatasourceConfig
+from xngin.apiserver.settings import DatasourceConfig, GoogleSheetsDsn
 from xngin.apiserver.sql.queries import select_as_csv
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
@@ -274,6 +274,10 @@ def create_experiment_impl(
     random_state: int | None,
     validated_webhooks: list[tables.Webhook],
 ) -> CreateExperimentResponse:
+    if isinstance(datasource.get_config().dwh, GoogleSheetsDsn) and not isinstance(
+        request.design_spec, PreassignedFrequentistExperimentSpec
+    ):
+        raise LateValidationError("Google Sheets supports preassigned A/B experiments only.")
     match request.design_spec:
         case PreassignedFrequentistExperimentSpec():
             preassigned_spec = request.design_spec
@@ -624,6 +628,7 @@ def list_organization_or_datasource_experiments_impl(
     *,
     organization_id: str | None = None,
     datasource_id: str | None = None,
+    include_google_sheets: bool = False,
 ) -> ListExperimentsResponse:
     """
     List experiments for a given organization or datasource.
@@ -648,6 +653,11 @@ def list_organization_or_datasource_experiments_impl(
     else:
         raise ValueError(
             "Either datasource_id or organization_id must be provided",
+        )
+
+    if not include_google_sheets:
+        stmt = stmt.where(
+            ~tables.Experiment.datasource.has(tables.Datasource.config["dwh"]["driver"].astext == "google_sheets")
         )
 
     stmt = stmt.where(
@@ -1305,6 +1315,14 @@ def analyze_experiment_freq_impl(
     if experiment.datasource_table is None or unique_id_field is None:
         raise StatsAnalysisError("Experiment must have a datasource table and unique ID field to analyze.")
 
+    dwh_config = dsconfig.dwh
+    if isinstance(dwh_config, GoogleSheetsDsn):
+        if experiment.google_sheets_experiment_url is None:
+            raise LateValidationError("Connect a Google Sheets experiment outcome tab before running analysis.")
+        dwh_config = GoogleSheetsDsn(
+            spreadsheet_url=experiment.google_sheets_experiment_url, table_name=experiment.datasource_table
+        )
+
     include_cluster = experiment.cluster_key_field() is not None
     participant_ids, assignments_df = read_assignments_efficiently(
         xngin_session, experiment.id, include_cluster_key=include_cluster
@@ -1312,7 +1330,7 @@ def analyze_experiment_freq_impl(
     if assignments_df.empty:
         raise StatsAnalysisError("No participants found for experiment.")
 
-    with DwhSession.open(dsconfig.dwh, timeout=dwh_timeout) as dwh:
+    with DwhSession.open(dwh_config, timeout=dwh_timeout) as dwh:
         sa_table = dwh.inspect_table(experiment.datasource_table)
 
         # Mark the start of the analysis as when we begin pulling outcomes.

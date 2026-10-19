@@ -431,6 +431,8 @@ class Experiment(Base):
     description: Mapped[str] = mapped_column(String(2000))
     # Allow an explicit link to a more explicit experiment design doc.
     design_url: Mapped[str] = mapped_column(server_default="")
+    # Independent outcomes connection; datasource config continues to identify the raw tab.
+    google_sheets_experiment_url: Mapped[str | None] = mapped_column()
 
     # The experiment state should be one of xngin.apiserver.routers.common_enums.ExperimentState.
     state: Mapped[str]

@@ -26,9 +26,7 @@ from xngin.apiserver.routers.preloads import (
     PreloadChain,
     build_preload_options,
 )
-from xngin.apiserver.settings import (
-    Datasource,
-)
+from xngin.apiserver.settings import Datasource, GoogleSheetsDsn
 from xngin.apiserver.sqla import tables
 
 
@@ -77,6 +75,11 @@ def datasource(
     if from_db := xngin_session.get(tables.Datasource, datasource_id):
         require_valid_api_key(xngin_session, api_key, datasource_id)
         dsconfig = from_db.get_config()
+        if isinstance(dsconfig.dwh, GoogleSheetsDsn):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Google Sheets requires a privileged user session.",
+            )
         return Datasource(id=datasource_id, config=dsconfig)
 
     raise CannotFindDatasourceError("Datasource not found.")
@@ -132,10 +135,12 @@ class _Experiment:
                 tables.ApiKey,
                 tables.Experiment.datasource_id == tables.ApiKey.datasource_id,
             )
+            .join(tables.Datasource, tables.Experiment.datasource_id == tables.Datasource.id)
             .options(joinedload(tables.Experiment.arms))
             .where(
                 tables.Experiment.id == experiment_id,
                 tables.ApiKey.key == key_hash,
+                tables.Datasource.config["dwh"]["driver"].astext.is_distinct_from("google_sheets"),
             )
         )
         options = build_preload_options(self.preload, self.nested_preload)

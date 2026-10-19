@@ -11,6 +11,31 @@ from xngin.stats.power import analyze_metric_power, check_power
 from xngin.stats.stats_errors import StatsPowerError
 
 
+@pytest.mark.parametrize("metric_baseline", [None, 100])
+def test_clustered_power_without_icc_does_not_use_individual_power(metric_baseline):
+    metric = DesignSpecMetric(
+        field_name="onboarded_within_1_week",
+        metric_type=MetricType.NUMERIC,
+        metric_pct_change=0.1,
+        metric_baseline=metric_baseline,
+        metric_stddev=20 if metric_baseline is not None else None,
+        available_n=1000,
+        available_nonnull_n=1000 if metric_baseline is not None else 0,
+        avg_cluster_size=250,
+        cv=0,
+    )
+    result = check_power([metric], n_arms=2, desired_n_clusters=4, desired_ns_clusters=[2, 4])[0]
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
+    assert result.target_n is None
+    assert result.pct_change_with_desired_n is None
+    assert result.design_effect is None
+    assert result.mde_curve is not None
+    assert all(point.pct_change is None for point in result.mde_curve)
+    assert result.metric_spec.icc is None
+    assert result.metric_spec.avg_cluster_size == 250
+
+
 def test_analyze_metric_power_numeric():
     metric = DesignSpecMetric(
         field_name="test_metric",

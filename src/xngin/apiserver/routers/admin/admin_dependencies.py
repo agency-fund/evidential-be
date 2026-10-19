@@ -23,6 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import QueryableAttribute, Session, selectinload
 
 from xngin.apiserver.dependencies import xngin_sync_db_session
+from xngin.apiserver.routers.admin import authz
 from xngin.apiserver.routers.auth.auth_dependencies import require_user_from_token
 from xngin.apiserver.routers.preloads import (
     EXPERIMENT_FIELDS_WITH_FILTERS,
@@ -135,6 +136,8 @@ def _load_datasource_or_raise(
     if organization_id:
         stmt = stmt.where(tables.Organization.id == organization_id)
     stmt = stmt.options(*build_preload_options(preload))
+    if not authz.can_access_google_sheets(user):
+        stmt = stmt.where(tables.Datasource.config["dwh"]["driver"].astext.is_distinct_from("google_sheets"))
     ds = session.execute(stmt).scalar_one_or_none()
     if ds is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Datasource not found.")
@@ -295,6 +298,7 @@ def event(
     event_id: Annotated[str, Path()],
     org: Annotated[tables.Organization, Depends(organization)],
     session: Annotated[Session, Depends(xngin_sync_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> tables.Event:
     """Resolves the event a route names.
 
@@ -304,6 +308,7 @@ def event(
         select(tables.Event).where(
             tables.Event.id == event_id,
             tables.Event.organization_id == org.id,
+            authz.event_is_visible(user),
         )
     )
     if evt is None:

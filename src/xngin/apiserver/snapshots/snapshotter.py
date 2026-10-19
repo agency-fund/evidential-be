@@ -44,6 +44,12 @@ def create_pending_snapshots(snapshot_interval: int) -> None:
                     func.date_trunc("minute", tables.Experiment.end_date + buffer),
                 ),
                 tables.Experiment.state == ExperimentState.COMMITTED.value,
+                or_(
+                    tables.Experiment.google_sheets_experiment_url.is_not(None),
+                    ~tables.Experiment.datasource.has(
+                        tables.Datasource.config["dwh"]["driver"].astext == "google_sheets"
+                    ),
+                ),
             )
             .order_by(tables.Experiment.id, tables.Snapshot.updated_at.desc())
             .cte()
@@ -121,7 +127,6 @@ def process_pending_snapshots(snapshot_timeout: float, *, max_jitter_secs: float
             .selectinload(tables.ExperimentField.experiment_filters),
         )
     )
-
     while True:
         time.sleep(random.uniform(0, max_jitter_secs))  # jitter  # noqa: S311
         with database.get_session() as session, session.begin():
@@ -133,9 +138,9 @@ def process_pending_snapshots(snapshot_timeout: float, *, max_jitter_secs: float
 
 
 def _handle_one_snapshot_safely(session: Session, snapshot: tables.Snapshot, snapshot_timeout: float) -> None:
-    sentry_sdk.metrics.count("snapshots.started", 1, attributes={"experiment_id": snapshot.experiment_id})
     experiment = snapshot.experiment
     datasource = experiment.datasource
+    sentry_sdk.metrics.count("snapshots.started", 1, attributes={"experiment_id": snapshot.experiment_id})
     with logger.contextualize(experiment_id=experiment.id):
         logger.info(f"{experiment.id}.{snapshot.id}: processing")
         try:
