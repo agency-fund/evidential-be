@@ -19,8 +19,6 @@ from xngin.apiserver import flags
 from xngin.apiserver.dns.safe_resolve import safe_resolve
 from xngin.apiserver.dwh import dwh_utils, participant_metrics_queries, queries, query_constructors
 from xngin.apiserver.dwh.analysis_types import ParticipantOutcome
-from xngin.apiserver.dwh.inspection_types import FieldDescriptor
-from xngin.apiserver.dwh.inspections import generate_field_descriptors
 from xngin.apiserver.exceptions_common import DwhConnectionError, DwhDatabaseDoesNotExistError, DwhTimeoutError
 from xngin.apiserver.routers.common_api_types import DesignSpecMetricRequest, Filter
 from xngin.apiserver.settings import SA_LOGGER_NAME_FOR_DWH, TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES, Dsn, Dwh
@@ -52,14 +50,6 @@ class GetParticipantsResult:
 
     sa_table: sqlalchemy.Table
     participants: list
-
-
-@dataclass
-class InspectTableWithDescriptorsResult:
-    """Result of inspecting table structure."""
-
-    sa_table: sqlalchemy.Table
-    db_schema: dict[str, FieldDescriptor]
 
 
 class CannotFindTableError(Exception):
@@ -285,34 +275,6 @@ class DwhSession:
             self._inspect_table_blocking,
             table_name,
             use_sa_autoload=use_sa_autoload,
-        )
-
-    def _inspect_table_with_descriptors_blocking(
-        self, table_name: str, unique_id_field: str, use_sa_autoload: bool | None = None
-    ) -> InspectTableWithDescriptorsResult:
-        sa_table = self._inspect_table_blocking(table_name, use_sa_autoload=use_sa_autoload)
-        db_schema = generate_field_descriptors(sa_table, unique_id_field)
-        return InspectTableWithDescriptorsResult(sa_table=sa_table, db_schema=db_schema)
-
-    def inspect_table_with_descriptors(
-        self, table_name: str, unique_id_field: str, use_sa_autoload: bool | None = None
-    ) -> InspectTableWithDescriptorsResult:
-        """Convenience method combining table inspection and field descriptor generation.
-
-        Args:
-            table_name: Name of the table to inspect
-            unique_id_field: The column name to use as a participant's unique identifier
-            use_sa_autoload: If not None, overrides the configuration's default behavior.
-
-        Returns:
-            InspectTableWithDescriptorsResult containing both the SQLAlchemy Table and field descriptors
-        """
-        return self._on_worker(
-            "inspecting a table",
-            self._inspect_table_with_descriptors_blocking,
-            table_name,
-            unique_id_field,
-            use_sa_autoload,
         )
 
     def _get_result_blocking(
