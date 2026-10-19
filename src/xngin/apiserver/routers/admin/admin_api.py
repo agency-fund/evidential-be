@@ -702,17 +702,17 @@ def list_organizations(
         )
         user_counts = {org_id: count for org_id, count in user_count_rows}
 
-        experiment_count_rows = session.execute(
+        experiment_count_stmt = (
             select(tables.Datasource.organization_id, func.count(tables.Experiment.id))
             .join(tables.Experiment, tables.Experiment.datasource_id == tables.Datasource.id)
             .where(tables.Datasource.organization_id.in_(org_ids))
-            .where(
-                authz.can_access_google_sheets(user)
-                or tables.Datasource.config["dwh"]["driver"].astext.is_distinct_from("google_sheets")
-            )
             .group_by(tables.Datasource.organization_id)
         )
-        experiment_counts = {org_id: count for org_id, count in experiment_count_rows}
+        if not authz.can_access_google_sheets(user):
+            experiment_count_stmt = experiment_count_stmt.where(
+                tables.Datasource.config["dwh"]["driver"].astext.is_distinct_from("google_sheets")
+            )
+        experiment_counts = {org_id: count for org_id, count in session.execute(experiment_count_stmt)}
 
     return ListOrganizationsResponse(
         items=[
@@ -866,9 +866,7 @@ def list_organization_events(
     user: Annotated[tables.User, Depends(require_user_from_token)],
 ) -> ListOrganizationEventsResponse:
     """Returns events in an organization, newest first."""
-    stmt = select(tables.Event).where(
-        tables.Event.organization_id == organization.id, authz.event_is_visible(user)
-    )
+    stmt = select(tables.Event).where(tables.Event.organization_id == organization.id, authz.event_is_visible(user))
     ordering = [
         SortField.timestamp(
             column=tables.Event.created_at,

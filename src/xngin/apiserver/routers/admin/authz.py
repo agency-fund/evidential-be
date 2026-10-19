@@ -16,9 +16,7 @@ def event_is_visible(user: tables.User) -> sqlalchemy.ColumnElement[bool]:
     sheets_datasources = select(tables.Datasource.id).where(
         tables.Datasource.config["dwh"]["driver"].astext == "google_sheets"
     )
-    sheets_experiments = select(tables.Experiment.id).where(
-        tables.Experiment.datasource_id.in_(sheets_datasources)
-    )
+    sheets_experiments = select(tables.Experiment.id).where(tables.Experiment.datasource_id.in_(sheets_datasources))
     return ~or_(
         func.coalesce(tables.Event.data["datasource_id"].astext.in_(sheets_datasources), False),
         func.coalesce(tables.Event.data["experiment_id"].astext.in_(sheets_experiments), False),
