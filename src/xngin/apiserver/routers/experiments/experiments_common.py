@@ -1193,7 +1193,7 @@ def update_bandit_arm_with_outcome_impl(
         experiment=experiment,
         arm_to_update=arm_to_update,
         outcomes=outcomes,
-        context=context_vals,
+        contexts=context_vals,
     )
 
     # Update the draw record and arm with the new parameters

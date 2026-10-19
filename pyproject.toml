@@ -151,6 +151,8 @@ ignore = [
     "SIM108", # Use ternary operator instead of `if`-`else`-block
     "TRY003", # Raised bare custom exception with long message
 ]
+# Allow Greek letters used in math notation in docstrings (e.g. bandit_sampling.py).
+allowed-confusables = ["α", "Ν", "σ"]
 
 [tool.ruff.lint.pylint]
 max-statements = 54

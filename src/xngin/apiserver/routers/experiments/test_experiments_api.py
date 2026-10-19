@@ -1519,7 +1519,7 @@ def test_normal_prior_binary_reward_fits_each_outcome_exactly_once(
         ),
         arm_to_update=tables.Arm(mu=initial_mu, covariance=initial_covariance),
         outcomes=[1.0],
-        context=None,
+        contexts=None,
     )
     assert isinstance(expected, UpdateTypeNormal)
 
