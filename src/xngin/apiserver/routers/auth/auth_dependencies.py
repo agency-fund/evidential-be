@@ -13,6 +13,7 @@ from sqlalchemy.sql.functions import count
 
 from xngin.apiserver import flags
 from xngin.apiserver.dependencies import xngin_sync_db_session
+from xngin.apiserver.request_context_middleware import add_request_fields
 from xngin.apiserver.routers.auth.discovery import LOGIN_UNAVAILABLE_DETAIL, get_oidc_discovery
 from xngin.apiserver.routers.auth.oidc_settings import get_oidc_settings
 from xngin.apiserver.routers.auth.principal import Principal
@@ -142,9 +143,13 @@ def require_user_from_token(
     session: Annotated[Session, Depends(xngin_sync_db_session)],
     principal: Annotated[Principal, Depends(require_valid_session_token)],
 ) -> tables.User:
-    """Dependency for fetching the User record matching the authenticated user's email."""
+    """Dependency for fetching the User record matching the authenticated user's email.
+
+    Adds the user's ID to the request's log context as user_id.
+    """
     user = _lookup_or_create(session, principal)
     if user:
+        add_request_fields(user_id=user.id)
         return user
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

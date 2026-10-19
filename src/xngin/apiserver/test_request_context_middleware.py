@@ -3,6 +3,7 @@ import asyncio
 import pytest
 from loguru import logger
 from starlette.applications import Starlette
+from starlette.concurrency import run_in_threadpool
 from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
@@ -14,7 +15,9 @@ from xngin.apiserver.request_context_middleware import (
     RAILWAY_REQUEST_ID_HEADER,
     REQUEST_ID_HEADER,
     RequestContextMiddleware,
+    add_request_fields,
 )
+from xngin.apiserver.testing.logs_like_uvicorn import LogsLikeUvicorn
 
 
 def _handler(_request):
@@ -22,32 +25,15 @@ def _handler(_request):
     return PlainTextResponse("ok")
 
 
+async def _handler_adding_fields_from_a_thread(request):
+    # Like a sync FastAPI dependency, add the fields from a worker thread that has a copy of the task's context.
+    await run_in_threadpool(add_request_fields, experiment_id=request.query_params["experiment_id"])
+    logger.info("handled")
+    return PlainTextResponse("ok")
+
+
 def _failing_handler(_request):
     raise RuntimeError("boom")
-
-
-class _LogsLikeUvicorn:
-    """Logs at the points where Uvicorn does.
-
-    Uvicorn writes the access line when the response headers are sent ("access"), which is normally inside the
-    application. For an unhandled exception, Starlette's ServerErrorMiddleware sends the 500 response, and Uvicorn logs
-    the traceback ("after app"), only after the exception has propagated out of the application's middleware.
-    """
-
-    def __init__(self, app):
-        self._app = app
-
-    async def __call__(self, scope, receive, send):
-        async def logging_send(message):
-            if message["type"] == "http.response.start":
-                logger.info("access")
-            await send(message)
-
-        try:
-            await self._app(scope, receive, logging_send)
-        finally:
-            if scope["type"] == "http":
-                logger.info("after app")
 
 
 async def _receive() -> Message:
@@ -60,18 +46,15 @@ async def _send(_message: Message) -> None:
 
 @pytest.fixture
 def client():
-    app = Starlette(routes=[Route("/", _handler), Route("/boom", _failing_handler)])
+    app = Starlette(
+        routes=[
+            Route("/", _handler),
+            Route("/boom", _failing_handler),
+            Route("/fields", _handler_adding_fields_from_a_thread),
+        ]
+    )
     app.add_middleware(RequestContextMiddleware)
-    return TestClient(_LogsLikeUvicorn(app), raise_server_exceptions=False)
-
-
-@pytest.fixture
-def records():
-    logger.configure(patcher=request_context_middleware.add_request_context)
-    captured = []
-    handler_id = logger.add(lambda message: captured.append(message.record), level="INFO")
-    yield captured
-    logger.remove(handler_id)
+    return TestClient(LogsLikeUvicorn(app), raise_server_exceptions=False)
 
 
 @pytest.fixture
@@ -156,6 +139,33 @@ def test_header_values_are_truncated(client, records, sentry_tags, header, field
     (record,) = _handled(records)
     assert record["extra"][field] == "x" * 64
     assert sentry_tags == {field: "x" * 64}
+
+
+def test_fields_added_from_a_worker_thread_reach_the_rest_of_that_request(client, records):
+    client.get("/fields", params={"experiment_id": "exp_1"})
+    client.get("/")
+
+    first_handled, second_handled = _handled(records)
+    first_access, second_access = _with_message(records, "access")
+    for record in (first_handled, first_access):
+        assert record["extra"]["experiment_id"] == "exp_1"
+    for record in (second_handled, second_access):
+        assert "experiment_id" not in record["extra"]
+
+
+def test_added_field_values_are_truncated(client, records):
+    client.get("/fields", params={"experiment_id": "x" * 1000})
+
+    (handled,) = _handled(records)
+    assert handled["extra"]["experiment_id"] == "x" * 64
+
+
+def test_adding_fields_outside_a_request_does_nothing(records):
+    add_request_fields(experiment_id="exp_1")
+    logger.info("outside")
+
+    (outside,) = _with_message(records, "outside")
+    assert "experiment_id" not in outside["extra"]
 
 
 @pytest.fixture
