@@ -17,12 +17,12 @@ from sqlalchemy import event
 
 from xngin.apiserver.common_field_types import VALID_SQL_COLUMN_REGEX
 from xngin.apiserver.exceptions_common import DwhConnectionError, LateValidationError
+from xngin.apiserver.limits import MAX_LENGTH_OF_NAME_VALUE
 from xngin.apiserver.sheets_url import parse_spreadsheet_url
 
 MAX_SHEET_ROWS = 5_000
 MAX_SHEET_COLUMNS = 100
 MAX_SHEET_BYTES = 8 * 1024 * 1024
-PUBLIC_SHEET_TABLE = "linked_sheet"
 
 
 def participant_id(value) -> str:
@@ -74,7 +74,6 @@ class SheetData:
     headers: list[str]
     # Retain source row gaps in the assignment CSV imported into a separate outcome tab.
     rows: list[tuple[int, list]]
-    display_name: str | None = None
 
     @classmethod
     def from_values(cls, values: list[list]) -> Self:
@@ -127,7 +126,7 @@ class SheetData:
             for row, value in zip(typed_rows, values, strict=True):
                 row[i] = value
             columns.append(sa.Column(header, column_type, nullable=True))
-        table = sa.Table(table_name, sa.MetaData(), *columns, info={"display_name": self.display_name})
+        table = sa.Table(table_name, sa.MetaData(), *columns)
         table.create(engine)
         records = [
             {
@@ -194,17 +193,19 @@ class SheetData:
 
 
 class GoogleSheetsClient:
-    def __init__(self, spreadsheet_url: str):
+    def __init__(self, spreadsheet_url: str, table_name: str | None = None):
         spreadsheet_id, gid = parse_spreadsheet_url(spreadsheet_url)
         self.http = requests.Session()
         # Public downloads must never pick up server credentials from .netrc.
         self.http.trust_env = False
-        self.sheets = [PUBLIC_SHEET_TABLE]
         try:
             params = {"format": "csv", "_evidential": str(time.time_ns())}
             if gid is not None:
                 params["gid"] = str(gid)
-            self.data = self._download(f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/export", params)
+            self.data, self.table_name = self._download(
+                f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/export", params, table_name
+            )
+            self.sheets = [self.table_name]
         except Exception:
             self.close()
             raise
@@ -237,7 +238,7 @@ class GoogleSheetsClient:
             url, params = redirect_url, {}
         raise requests.TooManyRedirects("Google Sheets returned too many redirects.")
 
-    def _download(self, url: str, params: dict[str, str]) -> SheetData:
+    def _download(self, url: str, params: dict[str, str], table_name: str | None) -> tuple[SheetData, str]:
         try:
             with self._get_response(url, params) as response:
                 if not response.ok:
@@ -270,31 +271,40 @@ class GoogleSheetsClient:
                         )
                     )
                 data = SheetData.from_values(list(csv.reader(io.StringIO(content), strict=True)))
-                disposition = Message()
-                disposition["Content-Disposition"] = response.headers.get("Content-Disposition", "")
-                # email's stubs omit the RFC 2231 tuples returned for filename*.
-                parameters = cast(
-                    list[tuple[str, str | tuple[str, str, str]]],
-                    disposition.get_params(header="content-disposition") or [],
-                )
-                filename = next(
-                    (
-                        collapse_rfc2231_value(value)
-                        for key, value in parameters
-                        if key == "filename" and isinstance(value, tuple)
-                    ),
-                    disposition.get_filename(),
-                )
-                data.display_name = filename.removesuffix(".csv") if filename else None
-                return data
+                if table_name is None:
+                    disposition = Message()
+                    disposition["Content-Disposition"] = response.headers.get("Content-Disposition", "")
+                    # email's stubs omit the RFC 2231 tuples returned for filename*.
+                    parameters = cast(
+                        list[tuple[str, str | tuple[str, str, str]]],
+                        disposition.get_params(header="content-disposition") or [],
+                    )
+                    filename = next(
+                        (
+                            collapse_rfc2231_value(value)
+                            for key, value in parameters
+                            if key == "filename" and isinstance(value, tuple)
+                        ),
+                        disposition.get_filename(),
+                    )
+                    if not filename or not (table_name := filename.removesuffix(".csv")):
+                        raise DwhConnectionError(
+                            ValueError("Google Sheets did not provide a CSV filename. Reconnect the spreadsheet tab.")
+                        )
+                    if len(table_name) > MAX_LENGTH_OF_NAME_VALUE:
+                        raise LateValidationError(
+                            f"Google Sheets table names must be at most {MAX_LENGTH_OF_NAME_VALUE} characters. "
+                            "Shorten the spreadsheet or tab name before connecting."
+                        )
+                return data, table_name
         except requests.RequestException as exc:
             raise DwhConnectionError(ValueError("Google Sheets did not respond. Please try again.")) from exc
         except (UnicodeError, csv.Error) as exc:
             raise DwhConnectionError(ValueError("Google Sheets returned an unreadable CSV download.")) from exc
 
     def read(self, table_name: str) -> SheetData:
-        if table_name != PUBLIC_SHEET_TABLE:
-            raise LateValidationError("Select linked_sheet to use the tab in the spreadsheet URL.")
+        if table_name != self.table_name:
+            raise LateValidationError("Select the saved Google Sheets table to use the tab in the spreadsheet URL.")
         return self.data
 
     @staticmethod

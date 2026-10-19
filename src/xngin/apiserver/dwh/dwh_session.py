@@ -147,7 +147,7 @@ class DwhSession:
 
     def _connect_blocking(self) -> None:
         if isinstance(self._dwh_config, GoogleSheetsDsn):
-            self._sheets = GoogleSheetsClient(self._dwh_config.spreadsheet_url)
+            self._sheets = GoogleSheetsClient(self._dwh_config.spreadsheet_url, self._dwh_config.table_name)
             self._sheet_tables: dict[str, sqlalchemy.Table] = {}
             self._engine = self._sheets.create_engine()
         else:

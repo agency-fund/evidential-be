@@ -1111,11 +1111,20 @@ def create_datasource(
     raise_unless_safe_hostname(body.dsn)
 
     config = RemoteDatabaseConfig(type="remote", dwh=api_dsn_to_settings_dwh(body.dsn))
-    if connectivity_check and config.dwh.driver != "none":
+    sheet_tables = None
+    if isinstance(config.dwh, GoogleSheetsDsn):
+        # Capturing the name is required even when the optional connectivity check is disabled.
+        with DwhSession.open(config.dwh) as dwh:
+            sheet_tables = dwh.list_tables()
+            config.dwh.table_name = sheet_tables[0]
+            if connectivity_check:
+                dwh.connectivity_check()
+    elif connectivity_check and config.dwh.driver != "none":
         with DwhSession.open(config.dwh) as dwh:
             dwh.connectivity_check()
-
     datasource = admin_common.create_datasource_impl(session, org, body.name, config)
+    if sheet_tables is not None:
+        datasource.set_table_list(sheet_tables)
     session.commit()
 
     return CreateDatasourceResponse(id=datasource.id)
@@ -1132,13 +1141,22 @@ def update_datasource(
         adeps.raise_unless_privileged(user)
     if body.name is not None:
         datasource.name = body.name
+    cfg = datasource.get_config()
     if body.dsn is not None:
         raise_unless_safe_hostname(body.dsn)
-        cfg = datasource.get_config()
-        cfg.dwh = api_dsn_to_settings_dwh(body.dsn, cfg.dwh)
+        current_dwh = cfg.dwh
+        cfg.dwh = api_dsn_to_settings_dwh(body.dsn, current_dwh)
+        if isinstance(cfg.dwh, GoogleSheetsDsn) and not isinstance(current_dwh, GoogleSheetsDsn):
+            with DwhSession.open(cfg.dwh) as dwh:
+                cfg.dwh.table_name = dwh.list_tables()[0]
         datasource.set_config(cfg)
 
-    datasource.clear_table_list()
+    if isinstance(cfg.dwh, GoogleSheetsDsn):
+        if cfg.dwh.table_name is None:
+            raise LateValidationError("The Google Sheets connection is missing its saved table name. Reconnect it.")
+        datasource.set_table_list([cfg.dwh.table_name])
+    else:
+        datasource.clear_table_list()
     invalidate_inspect_tables = delete(tables.DatasourceTablesInspected).where(
         tables.DatasourceTablesInspected.datasource_id == datasource.id
     )
@@ -1172,15 +1190,19 @@ def inspect_datasource(
     session: Annotated[Session, Depends(xngin_sync_db_session)],
     refresh: Annotated[bool, Query(description="Refresh the cache.")] = False,
 ) -> InspectDatasourceResponse:
-    """Verifies connectivity to a datasource and returns a list of readable tables."""
-    if datasource.get_config().dwh.driver == "none":
+    """Returns readable tables; saved Google Sheets names do not require a new download."""
+    config = datasource.get_config()
+    if config.dwh.driver == "none":
         return InspectDatasourceResponse(tables=[])
+    if isinstance(config.dwh, GoogleSheetsDsn):
+        if config.dwh.table_name is None:
+            raise LateValidationError("The Google Sheets connection is missing its saved table name. Reconnect it.")
+        return InspectDatasourceResponse(tables=[config.dwh.table_name])
 
     if not refresh and cache_is_fresh(datasource.table_list_updated) and datasource.table_list is not None:
         return InspectDatasourceResponse(tables=datasource.table_list)
 
     with clear_db_table_cache_on_error(session, datasource):
-        config = datasource.get_config()
         with DwhSession.open(config.dwh) as dwh:
             tablenames = dwh.list_tables()
         datasource.set_table_list(tablenames)
@@ -1196,7 +1218,7 @@ def invalidate_inspect_table_cache(session: Session, datasource_id: str) -> None
 
 
 @router.get(
-    "/datasources/{datasource_id}/inspect/{table_name}",
+    "/datasources/{datasource_id}/inspect/{table_name:path}",
     responses=DWH_CONNECTION_AND_NOT_FOUND_RESPONSES,
 )
 def inspect_table_in_datasource(
@@ -1212,7 +1234,6 @@ def inspect_table_in_datasource(
         and (cached := session.get(tables.DatasourceTablesInspected, (datasource_id, table_name)))
         and cache_is_fresh(cached.response_last_updated)
         and cached.response is not None
-        and "display_name" in cached.response
     ):
         return InspectDatasourceTableResponse.model_validate(cached.response)
 

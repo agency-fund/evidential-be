@@ -2,16 +2,18 @@ import csv
 import io
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import quote
 
 import numpy as np
 import pytest
 import sqlalchemy as sa
 
 from xngin.apiserver.dwh.dwh_session import DwhSession
-from xngin.apiserver.dwh.google_sheets import PUBLIC_SHEET_TABLE, GoogleSheetsClient, SheetData
+from xngin.apiserver.dwh.google_sheets import GoogleSheetsClient, SheetData
 from xngin.apiserver.dwh.participant_metrics_queries import get_participant_metrics
 from xngin.apiserver.dwh.queries import get_raw_metric_stats
 from xngin.apiserver.exceptions_common import DwhConnectionError, LateValidationError
+from xngin.apiserver.limits import MAX_LENGTH_OF_NAME_VALUE
 from xngin.apiserver.routers.admin import admin_api_types as aapi
 from xngin.apiserver.routers.admin.admin_api_converters import api_dsn_to_settings_dwh, settings_dwh_to_api_dsn
 from xngin.apiserver.routers.common_api_types import (
@@ -28,7 +30,7 @@ from xngin.apiserver.settings import GoogleSheetsDsn, RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
 
 URL = "https://docs.google.com/spreadsheets/d/demo_sheet/edit#gid=42"
-TAB = PUBLIC_SHEET_TABLE
+TAB = "Evidential Demo Sheet - Data"
 
 
 @pytest.fixture
@@ -43,17 +45,19 @@ def sheets_http(mocker):
         ["003", "north", 30, True],
     ]
     http.csv_tabs = {"42": values}
-    http.csv_headers = {"Content-Type": "text/csv"}
+    http.csv_headers = {"Content-Type": "text/csv", "Content-Disposition": f'attachment; filename="{TAB}.csv"'}
+    http.csv_tab_headers = {}
 
     def download(url, **kwargs):
         assert url == "https://docs.google.com/spreadsheets/d/demo_sheet/export"
         assert kwargs["params"]["format"] == "csv"
-        tab_values = http.csv_tabs[kwargs["params"]["gid"]]
+        gid = kwargs["params"]["gid"]
+        tab_values = http.csv_tabs[gid]
         assert "auth" not in kwargs
         assert "Authorization" not in kwargs["headers"]
         content = io.StringIO(newline="")
         csv.writer(content).writerows(tab_values)
-        response = mocker.MagicMock(ok=True, headers=http.csv_headers)
+        response = mocker.MagicMock(ok=True, headers=http.csv_tab_headers.get(gid, http.csv_headers))
         response.__enter__.return_value = response
         response.iter_content.return_value = [content.getvalue().encode()]
         return response
@@ -64,9 +68,17 @@ def sheets_http(mocker):
 
 def test_dsn_roundtrip_and_storage():
     api_dsn = aapi.GoogleSheetsDsn(spreadsheet_url=URL)
-    config = RemoteDatabaseConfig(type="remote", dwh=api_dsn_to_settings_dwh(api_dsn))
+    config = RemoteDatabaseConfig(type="remote", dwh=GoogleSheetsDsn(spreadsheet_url=URL, table_name=TAB))
     reloaded = RemoteDatabaseConfig.model_validate_json(config.model_dump_json())
+    assert isinstance(reloaded.dwh, GoogleSheetsDsn)
+    assert reloaded.dwh.table_name == TAB
+    assert settings_dwh_to_api_dsn(reloaded.dwh).model_dump() == {
+        "type": "google_sheets",
+        "spreadsheet_url": URL,
+    }
     assert settings_dwh_to_api_dsn(reloaded.dwh) == api_dsn
+    with pytest.raises(ValueError):
+        aapi.GoogleSheetsDsn.model_validate({"spreadsheet_url": URL, "table_name": TAB})
 
 
 @pytest.mark.parametrize(
@@ -103,7 +115,7 @@ def test_bad_headers_are_rejected(values):
 def test_queries_use_typed_cells_and_refresh_each_session(sheets_http):
     http, values = sheets_http
     metric = DesignSpecMetricRequest(field_name="outcome", metric_pct_change=0.1)
-    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL)) as dwh:
+    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL, table_name=TAB)) as dwh:
         assert dwh.list_tables() == [TAB]
         table = dwh.inspect_table(TAB)
         assert isinstance(table.c.participant_id.type, sa.String)
@@ -126,7 +138,7 @@ def test_queries_use_typed_cells_and_refresh_each_session(sheets_http):
         assert http.trust_env is False
     # A manual edit becomes visible on the next analysis request, without a schema-cache refresh.
     values[3][2] = 50
-    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL)) as dwh:
+    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL, table_name=TAB)) as dwh:
         table = dwh.inspect_table(TAB)
         stats = dwh.run(get_raw_metric_stats, table, [metric], [])
         assert stats["outcome__count"] == 3
@@ -138,48 +150,207 @@ def test_queries_use_typed_cells_and_refresh_each_session(sheets_http):
     )
 
 
+@pytest.mark.parametrize("connectivity_check", [False, True])
 @pytest.mark.parametrize(
-    ("disposition", "display_name"),
+    ("disposition", "table_name"),
     [
         ('attachment; filename="My spreadsheet - Raw data.csv"', "My spreadsheet - Raw data"),
         (
             "attachment; filename=\"Cafe-Raw.csv\"; filename*=UTF-8''Caf%C3%A9%20-%20Raw%20data.csv",
             "Café - Raw data",
         ),
-        (None, None),
+        (
+            "attachment; filename*=UTF-8''Caf%C3%A9%20%2F%20Raw%3F%23%25%26%2B%20data.csv",
+            "Café / Raw?#%&+ data",
+        ),
+        (
+            f'attachment; filename="{"n" * MAX_LENGTH_OF_NAME_VALUE}.csv"',
+            "n" * MAX_LENGTH_OF_NAME_VALUE,
+        ),
     ],
 )
-def test_source_name_is_inspected_without_changing_table_identity(
-    sheets_http, aclient, xngin_session, disposition, display_name
+def test_creation_captures_google_name_as_the_persisted_table(
+    sheets_http, aclient, xngin_session, disposition, table_name, connectivity_check
 ):
     http, _ = sheets_http
-    if disposition is not None:
-        http.csv_headers["Content-Disposition"] = disposition
+    http.csv_headers["Content-Disposition"] = disposition
     organization = aclient.create_organizations(body=aapi.CreateOrganizationRequest(name="Named sheet")).data
-    datasource = aclient.create_datasource(
+    datasource_id = aclient.create_datasource(
         body=aapi.CreateDatasourceRequest(
             organization_id=organization.id, name="Connector", dsn=aapi.GoogleSheetsDsn(spreadsheet_url=URL)
         ),
-        connectivity_check=True,
-    ).data
+        connectivity_check=connectivity_check,
+    ).data.id
 
-    assert aclient.inspect_datasource(datasource_id=datasource.id).data.tables == [TAB]
-    inspection = aclient.inspect_table_in_datasource(datasource_id=datasource.id, table_name=TAB).data
-    assert inspection.display_name == display_name
-    cached = xngin_session.get_one(tables.DatasourceTablesInspected, (datasource.id, TAB))
-    assert cached.response is not None
-    cached.response = {key: value for key, value in cached.response.items() if key != "display_name"}
+    xngin_session.expire_all()
+    datasource = xngin_session.get_one(tables.Datasource, datasource_id)
+    assert datasource.config["dwh"]["table_name"] == table_name
+    assert datasource.table_list == [table_name]
+    assert datasource.table_list_updated is not None
+    assert http.get.call_count == 1
+    assert aclient.inspect_datasource(datasource_id=datasource_id).data.tables == [table_name]
+    assert http.get.call_count == 1
+    # Exercise the same single encoded path segment used by browser callers, including decoded slashes.
+    inspection_url = f"/v1/m/datasources/{datasource_id}/inspect/{quote(table_name, safe='')}"
+    inspection = aclient.client.get(inspection_url)
+    assert inspection.status_code == 200
+    assert "participant_id" in inspection.json()["detected_unique_id_fields"]
+    assert "display_name" not in inspection.json()
+    assert http.get.call_count == 2
+    cached = xngin_session.get_one(tables.DatasourceTablesInspected, (datasource_id, table_name))
+    assert cached.response == inspection.json()
+    # An ordinary fresh inspection cache remains usable without display-name-specific validation.
+    http.csv_headers.pop("Content-Disposition")
+    assert aclient.client.get(inspection_url).json() == inspection.json()
+    assert http.get.call_count == 2
+    refreshed = aclient.client.get(inspection_url, params={"refresh": True})
+    assert refreshed.status_code == 200
+    assert refreshed.json() == inspection.json()
+    assert http.get.call_count == 3
+    assert aclient.inspect_datasource(datasource_id=datasource_id, refresh=True).data.tables == [table_name]
+    assert http.get.call_count == 3
+    assert datasource.config["dwh"]["table_name"] == table_name
+
+
+@pytest.mark.parametrize(
+    "disposition",
+    [None, 'attachment; filename=""', 'attachment; filename=".csv"'],
+)
+@pytest.mark.parametrize("connectivity_check", [False, True])
+def test_creation_requires_a_google_csv_filename(sheets_http, aclient, xngin_session, disposition, connectivity_check):
+    http, _ = sheets_http
+    http.csv_headers.pop("Content-Disposition")
+    if disposition is not None:
+        http.csv_headers["Content-Disposition"] = disposition
+    organization = aclient.create_organizations(body=aapi.CreateOrganizationRequest(name="Unnamed sheet")).data
+    result = aclient.create_datasource(
+        body=aapi.CreateDatasourceRequest(
+            organization_id=organization.id, name="Cannot create", dsn=aapi.GoogleSheetsDsn(spreadsheet_url=URL)
+        ),
+        connectivity_check=connectivity_check,
+        raise_if_not_default_status=False,
+    )
+    assert result.status == 502
+    assert "CSV filename" in str(result.data)
+    assert not list(
+        xngin_session.scalars(sa.select(tables.Datasource).where(tables.Datasource.name == "Cannot create"))
+    )
+
+
+def test_captured_name_rejects_names_that_exceed_the_table_name_limit(sheets_http):
+    http, _ = sheets_http
+    name = "n" * (MAX_LENGTH_OF_NAME_VALUE + 1)
+    http.csv_headers["Content-Disposition"] = f'attachment; filename="{name}.csv"'
+    with pytest.raises(LateValidationError, match=f"at most {MAX_LENGTH_OF_NAME_VALUE} characters"):
+        GoogleSheetsClient(URL)
+
+
+@pytest.mark.parametrize(
+    "later_disposition",
+    [None, 'attachment; filename="Renamed spreadsheet - Different tab.csv"'],
+)
+def test_saved_connection_does_not_rediscover_its_name(sheets_http, later_disposition):
+    http, values = sheets_http
+    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL)) as discovery:
+        captured_name = discovery.list_tables()[0]
+    config = GoogleSheetsDsn(spreadsheet_url=URL, table_name=captured_name)
+    http.csv_headers.pop("Content-Disposition")
+    if later_disposition is not None:
+        http.csv_headers["Content-Disposition"] = later_disposition
+    values[1][2] = 50
+    with DwhSession.open(config) as dwh:
+        assert dwh.list_tables() == [TAB]
+        table = dwh.inspect_table(TAB)
+        assert table.name == TAB
+        stats = dwh.run(
+            get_raw_metric_stats, table, [DesignSpecMetricRequest(field_name="outcome", metric_pct_change=0.1)], []
+        )
+        assert stats["outcome__mean"] == 40
+        for wrong_name in ("linked_sheet", "Renamed spreadsheet - Different tab"):
+            with pytest.raises(LateValidationError, match="saved Google Sheets table"):
+                dwh.inspect_table(wrong_name)
+
+
+@pytest.mark.parametrize("cached_tables", [None, ["Stale table name"]])
+@pytest.mark.parametrize("refresh", [False, True])
+def test_saved_table_list_needs_no_google_download_even_with_a_stale_cache(
+    sheets_http, aclient, xngin_session, refresh, cached_tables
+):
+    http, _ = sheets_http
+    organization = aclient.create_organizations(body=aapi.CreateOrganizationRequest(name="Offline sheet")).data
+    datasource_id = aclient.create_datasource(
+        body=aapi.CreateDatasourceRequest(
+            organization_id=organization.id, name="Connector", dsn=aapi.GoogleSheetsDsn(spreadsheet_url=URL)
+        ),
+    ).data.id
+    datasource = xngin_session.get_one(tables.Datasource, datasource_id)
+    datasource.table_list = cached_tables
+    stale_updated = datetime.now(UTC) - timedelta(days=30)
+    datasource.table_list_updated = stale_updated
     xngin_session.commit()
-    http.csv_headers["Content-Disposition"] = 'attachment; filename="Renamed spreadsheet - Raw data.csv"'
-    refreshed = aclient.inspect_table_in_datasource(datasource_id=datasource.id, table_name=TAB).data
-    assert refreshed.display_name == "Renamed spreadsheet - Raw data"
-    assert aclient.inspect_datasource(datasource_id=datasource.id).data.tables == [TAB]
+    reads = http.get.call_count
+    http.get.side_effect = AssertionError("Listing a captured name must not contact Google")
+    assert aclient.inspect_datasource(datasource_id=datasource_id, refresh=refresh).data.tables == [TAB]
+    assert http.get.call_count == reads
+    xngin_session.expire_all()
+    assert datasource.table_list == cached_tables
+    assert datasource.table_list_updated == stale_updated
+
+
+def test_datasource_updates_preserve_the_saved_name_and_bind_the_new_url(sheets_http, aclient, xngin_session):
+    http, _ = sheets_http
+    organization = aclient.create_organizations(body=aapi.CreateOrganizationRequest(name="Editable sheet")).data
+    datasource_id = aclient.create_datasource(
+        body=aapi.CreateDatasourceRequest(
+            organization_id=organization.id, name="Connector", dsn=aapi.GoogleSheetsDsn(spreadsheet_url=URL)
+        ),
+    ).data.id
+    http.csv_tabs["99"] = [["participant_id", "outcome"], ["001", 900], ["002", 100]]
+    http.csv_headers.pop("Content-Disposition")
+    reads = http.get.call_count
+    aclient.update_datasource(datasource_id=datasource_id, body=aapi.UpdateDatasourceRequest(name="Renamed connector"))
+    new_url = URL.replace("gid=42", "gid=99")
+    aclient.update_datasource(
+        datasource_id=datasource_id,
+        body=aapi.UpdateDatasourceRequest(dsn=aapi.GoogleSheetsDsn(spreadsheet_url=new_url)),
+    )
+    assert http.get.call_count == reads
+    xngin_session.expire_all()
+    datasource = xngin_session.get_one(tables.Datasource, datasource_id)
+    config = datasource.get_config().dwh
+    assert isinstance(config, GoogleSheetsDsn)
+    assert config.table_name == TAB
+    assert config.spreadsheet_url == new_url
+    assert datasource.table_list == [TAB]
+    with DwhSession.open(config) as dwh:
+        stats = dwh.run(
+            get_raw_metric_stats,
+            dwh.inspect_table(TAB),
+            [DesignSpecMetricRequest(field_name="outcome", metric_pct_change=0.1)],
+            [],
+        )
+    assert stats["outcome__mean"] == 500
+    assert http.get.call_args.kwargs["params"]["gid"] == "99"
+
+
+def test_switching_to_sheets_captures_a_name(sheets_http, aclient, xngin_session):
+    organization = aclient.create_organizations(body=aapi.CreateOrganizationRequest(name="Switch connector")).data
+    datasource_id = aclient.create_datasource(
+        body=aapi.CreateDatasourceRequest(organization_id=organization.id, name="Connector", dsn=aapi.ApiOnlyDsn())
+    ).data.id
+    aclient.update_datasource(
+        datasource_id=datasource_id, body=aapi.UpdateDatasourceRequest(dsn=aapi.GoogleSheetsDsn(spreadsheet_url=URL))
+    )
+    xngin_session.expire_all()
+    datasource = xngin_session.get_one(tables.Datasource, datasource_id)
+    assert datasource.config["dwh"]["table_name"] == TAB
+    assert datasource.table_list == [TAB]
 
 
 def test_empty_metric_is_numeric_and_zero_is_observed(sheets_http):
     _, values = sheets_http
     values[:] = [["id", "outcome"], ["001", ""], ["002", 0]]
-    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL)) as dwh:
+    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL, table_name=TAB)) as dwh:
         table = dwh.inspect_table(TAB)
         outcomes = dwh.run(
             get_participant_metrics,
@@ -190,14 +361,14 @@ def test_empty_metric_is_numeric_and_zero_is_observed(sheets_http):
         )
         assert {o.participant_id: o.metric_values[0].metric_value for o in outcomes} == {"001": None, "002": 0}
     values[2][1] = ""
-    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL)) as dwh:
+    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL, table_name=TAB)) as dwh:
         assert isinstance(dwh.inspect_table(TAB).c.outcome.type, sa.Double)
 
 
 def test_export_matches_ids_after_reordering_and_preserves_other_columns(sheets_http):
     http, values = sheets_http
     values[1], values[4] = values[4], values[1]
-    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL)) as dwh:
+    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL, table_name=TAB)) as dwh:
         data = dwh.export_sheet_assignments(TAB, "participant_id", "demo-123", {"001": "Treatment", "003": "Control"})
     assert list(csv.reader(io.StringIO(data))) == [
         ["participant_id", "region", "outcome", "converted", "evidential_demo_123_arm"],
@@ -213,7 +384,7 @@ def test_export_matches_ids_after_reordering_and_preserves_other_columns(sheets_
 def test_export_matches_numeric_ids_as_stored_without_changing_source_cells(sheets_http):
     _, values = sheets_http
     values[:] = [["reference", "outcome"], ["+1", "10"], [" 2 ", "20"], ["3", "30"]]
-    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL)) as dwh:
+    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL, table_name=TAB)) as dwh:
         participants = dwh.get_participants(TAB, select_columns={"reference"}, n=3, filters=[]).participants
         assignments = {str(row.reference): "Treatment" for row in participants}
         exported = dwh.export_sheet_assignments(TAB, "reference", "demo", assignments)
@@ -229,7 +400,7 @@ def test_reexport_reuses_its_column(sheets_http):
     _, values = sheets_http
     values[0].append("evidential_demo_arm")
     values[1].append("Old treatment name")
-    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL)) as dwh:
+    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL, table_name=TAB)) as dwh:
         data = dwh.export_sheet_assignments(TAB, "participant_id", "demo", {"001": "Treatment"})
     exported = list(csv.reader(io.StringIO(data)))
     assert exported[0].count("evidential_demo_arm") == 1
@@ -246,7 +417,7 @@ def test_experiment_csv_keeps_selected_columns_and_matches_original_ids(sheets_h
         ["internal", 0, "002", 30, "Old treatment"],
         ["internal", 5, "003", 40, "Old control"],
     ]
-    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL)) as dwh:
+    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL, table_name=TAB)) as dwh:
         exported = dwh.export_sheet_assignments(
             TAB, "participant_id", "demo", {"001": "Treatment", "003": "Control"}, field_names={"outcome"}
         )
@@ -263,7 +434,7 @@ def test_experiment_csv_keeps_selected_columns_and_matches_original_ids(sheets_h
 def test_experiment_csv_rejects_missing_selected_columns(sheets_http):
     with (
         pytest.raises(LateValidationError, match=r"Experiment columns are missing.*missing_metric"),
-        DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL)) as dwh,
+        DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL, table_name=TAB)) as dwh,
     ):
         dwh.export_sheet_assignments(TAB, "participant_id", "demo", {}, field_names={"missing_metric"})
 
@@ -287,7 +458,10 @@ def test_export_rejects_invalid_participant_ids(sheets_http, mutation, match):
         values[4][0] = ""
     else:
         values[0][0] = "other_id"
-    with pytest.raises(LateValidationError, match=match), DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL)) as dwh:
+    with (
+        pytest.raises(LateValidationError, match=match),
+        DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL, table_name=TAB)) as dwh,
+    ):
         dwh.export_sheet_assignments(TAB, "participant_id", "demo", {"001": "Treatment"})
     http.post.assert_not_called()
 
@@ -349,7 +523,7 @@ def test_download_follows_public_google_download_redirect(sheets_http, mocker):
     http, _ = sheets_http
     location = "https://doc-abc-sheets.googleusercontent.com/export/download.csv?token=public"
     redirect = mocker.MagicMock(status_code=302, headers={"Location": location})
-    response = mocker.MagicMock(status_code=200, ok=True, headers={"Content-Type": "text/csv"})
+    response = mocker.MagicMock(status_code=200, ok=True, headers=http.csv_headers)
     response.__enter__.return_value = response
     response.iter_content.return_value = [b"participant_id,outcome\n001,0\n"]
     http.get.side_effect = [redirect, response]
@@ -594,14 +768,15 @@ def test_create_launch_export_import_and_analyze_a_sheet_experiment(sheets_http,
     assert http.get.call_args.kwargs["params"]["gid"] == "99"
 
 
-def test_shared_raw_sheet_has_isolated_experiment_outcomes(sheets_http, aclient, xngin_session):
+@pytest.mark.parametrize("table_name", [TAB, "Café / Raw?#%&+ data"])
+def test_shared_raw_sheet_has_isolated_experiment_outcomes(sheets_http, aclient, xngin_session, table_name):
     from xngin.apiserver.snapshots.snapshotter import (  # noqa: PLC0415
         create_pending_snapshots,
         process_pending_snapshots,
     )
-    from xngin.apiserver.sqla import tables  # noqa: PLC0415
 
     http, raw = sheets_http
+    http.csv_headers["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(table_name, safe='')}.csv"
     raw[:] = [["participant_id", "outcome"], *[[f"{i:03}", i] for i in range(1, 21)]]
     original_raw = [row.copy() for row in raw]
     org_id = aclient.create_organizations(body=aapi.CreateOrganizationRequest(name="Shared sheet")).data.id
@@ -622,7 +797,7 @@ def test_shared_raw_sheet_has_isolated_experiment_outcomes(sheets_http, aclient,
                     experiment_type="freq_preassigned",
                     experiment_name=name,
                     description="Shared raw source, independent outcomes",
-                    table_name=TAB,
+                    table_name=table_name,
                     primary_key="participant_id",
                     start_date=now - timedelta(days=1),
                     end_date=now + timedelta(days=1),
@@ -642,6 +817,17 @@ def test_shared_raw_sheet_has_isolated_experiment_outcomes(sheets_http, aclient,
         return response.experiment_id
 
     first, second = create("First"), create("Second")
+    assert {
+        xngin_session.get_one(tables.Experiment, experiment_id).datasource_table for experiment_id in (first, second)
+    } == {table_name}
+    # A Sheets rename and an explicit URL update must not change either experiment's saved table reference.
+    http.csv_headers["Content-Disposition"] = 'attachment; filename="Renamed raw spreadsheet - Data.csv"'
+    reads = http.get.call_count
+    aclient.update_datasource(
+        datasource_id=ds_id, body=aapi.UpdateDatasourceRequest(dsn=aapi.GoogleSheetsDsn(spreadsheet_url=URL))
+    )
+    assert http.get.call_count == reads
+    http.csv_headers.pop("Content-Disposition")
 
     def export(experiment_id):
         download = aclient.get_experiment_assignments_as_csv_for_ui(datasource_id=ds_id, experiment_id=experiment_id)
@@ -687,6 +873,9 @@ def test_shared_raw_sheet_has_isolated_experiment_outcomes(sheets_http, aclient,
         for i, row in enumerate(tab[1:]):
             row[1] = str(i + (effect if row[-1] == "Treatment" else 0))
         http.csv_tabs[gid] = tab
+        http.csv_tab_headers[gid] = {"Content-Type": "text/csv"}
+        if experiment_id == first:
+            http.csv_tab_headers[gid]["Content-Disposition"] = 'attachment; filename="First experiment - Outcomes.csv"'
         connect(experiment_id, gid)
 
     def treatment(experiment_id):
@@ -732,12 +921,18 @@ def test_shared_raw_sheet_has_isolated_experiment_outcomes(sheets_http, aclient,
     for experiment_id in (first, second):
         assert export(experiment_id) == exports[experiment_id]
     assert raw == original_raw
-    assert xngin_session.get_one(tables.Datasource, ds_id).get_config().dwh.spreadsheet_url == URL
-    assert aclient.inspect_datasource(datasource_id=ds_id).data.tables == [TAB]
+    datasource_config = xngin_session.get_one(tables.Datasource, ds_id).get_config().dwh
+    assert isinstance(datasource_config, GoogleSheetsDsn)
+    assert datasource_config.spreadsheet_url == URL
+    assert datasource_config.table_name == table_name
+    assert {
+        xngin_session.get_one(tables.Experiment, experiment_id).datasource_table for experiment_id in (first, second)
+    } == {table_name}
+    assert aclient.inspect_datasource(datasource_id=ds_id).data.tables == [table_name]
     with DwhSession.open(xngin_session.get_one(tables.Datasource, ds_id).get_config().dwh) as dwh:
         stats = dwh.run(
             get_raw_metric_stats,
-            dwh.inspect_table(TAB),
+            dwh.inspect_table(table_name),
             [DesignSpecMetricRequest(field_name="outcome", metric_pct_change=0.1)],
             [],
         )

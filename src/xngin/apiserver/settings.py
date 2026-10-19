@@ -22,6 +22,7 @@ from sqlalchemy import make_url
 
 from xngin.apiserver.certs import get_amazon_trust_ca_bundle_path
 from xngin.apiserver.dwh import dwh_utils
+from xngin.apiserver.limits import MAX_LENGTH_OF_NAME_VALUE
 from xngin.apiserver.routers.common_api_types import (
     validate_gcp_service_account_info_json,
 )
@@ -305,10 +306,12 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
 
 
 class GoogleSheetsDsn(ConfigBaseModel, BaseDsn):
-    """A public spreadsheet read anonymously through its CSV export."""
+    """A public spreadsheet bound to the Google-provided name captured at connection."""
 
     driver: Literal["google_sheets"] = "google_sheets"
     spreadsheet_url: str
+    # None is only used during discovery before a datasource is persisted.
+    table_name: str | None = Field(default=None, min_length=1, max_length=MAX_LENGTH_OF_NAME_VALUE)
 
     @field_validator("spreadsheet_url")
     @classmethod

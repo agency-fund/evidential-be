@@ -28,7 +28,10 @@ def api_dsn_to_settings_dwh(dsn: aapi.Dsn, current: settings.Dwh | None = None) 
         case aapi.ApiOnlyDsn():
             return settings.NoDwh()
         case aapi.GoogleSheetsDsn():
-            return settings.GoogleSheetsDsn(spreadsheet_url=dsn.spreadsheet_url)
+            return settings.GoogleSheetsDsn(
+                spreadsheet_url=dsn.spreadsheet_url,
+                table_name=current.table_name if isinstance(current, settings.GoogleSheetsDsn) else None,
+            )
         case aapi.BqDsn():
             if isinstance(dsn.credentials, aapi.Hidden) and isinstance(current, settings.BqDsn):
                 credentials = current.credentials

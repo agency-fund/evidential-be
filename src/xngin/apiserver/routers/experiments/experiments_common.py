@@ -1311,15 +1311,17 @@ def analyze_experiment_freq_impl(
 ) -> FreqExperimentAnalysisResponse:
     """Analyze a frequentist experiment. Assumes arms and arm_assignments are preloaded."""
 
+    unique_id_field = experiment.unique_id_field()
+    if experiment.datasource_table is None or unique_id_field is None:
+        raise StatsAnalysisError("Experiment must have a datasource table and unique ID field to analyze.")
+
     dwh_config = dsconfig.dwh
     if isinstance(dwh_config, GoogleSheetsDsn):
         if experiment.google_sheets_experiment_url is None:
             raise LateValidationError("Connect a Google Sheets experiment outcome tab before running analysis.")
-        dwh_config = GoogleSheetsDsn(spreadsheet_url=experiment.google_sheets_experiment_url)
-
-    unique_id_field = experiment.unique_id_field()
-    if experiment.datasource_table is None or unique_id_field is None:
-        raise StatsAnalysisError("Experiment must have a datasource table and unique ID field to analyze.")
+        dwh_config = GoogleSheetsDsn(
+            spreadsheet_url=experiment.google_sheets_experiment_url, table_name=experiment.datasource_table
+        )
 
     include_cluster = experiment.cluster_key_field() is not None
     participant_ids, assignments_df = read_assignments_efficiently(
