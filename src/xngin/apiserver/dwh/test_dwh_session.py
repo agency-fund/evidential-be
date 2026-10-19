@@ -145,6 +145,22 @@ def test_a_later_block_works_after_one_times_out(dwh_config, mocker):
         assert dwh.inspect_table("dwh") is not None
 
 
+def test_a_table_is_reflected_once_per_block(dwh_config, mocker):
+    """Callers validate against a table and then query it, and the query inspects the table again."""
+    reflect = mocker.spy(DwhSession, "_reflect_table_blocking")
+    with DwhSession.open(dwh_config) as dwh:
+        first = dwh.inspect_table(TESTING_DWH_TABLE_NAME)
+        assert dwh.inspect_table(TESTING_DWH_TABLE_NAME) is first
+        result = dwh.get_participants(TESTING_DWH_TABLE_NAME, select_columns={"id"}, filters=[], n=1)
+        assert result.sa_table is first
+    assert reflect.call_count == 1
+
+    # A Table belongs to the connection it was reflected over, so the next block reflects again.
+    with DwhSession.open(dwh_config) as dwh:
+        assert dwh.inspect_table(TESTING_DWH_TABLE_NAME) is not first
+    assert reflect.call_count == 2
+
+
 def test_inspecting_a_missing_table_names_only_that_table(dwh_config, mocker):
     """The error must not list the warehouse's other tables.
 

@@ -134,7 +134,7 @@ def make_schema_from_experiment(experiment: tables.Experiment) -> ParticipantsSc
 
 
 def fetch_fields_or_raise(
-    datasource: tables.Datasource,
+    dwh: DwhSession,
     design_spec: AnyFrequentistDesignSpec,
 ) -> dict[str, DataType]:
     """Inspect an explicit table/primary_key experiment request and return field metadata.
@@ -143,13 +143,12 @@ def fetch_fields_or_raise(
     Raises: LateValidationError if any fields used in the request are not found, invalid for a
     certain use, or if filter values are invalid for the field type.
     """
-    with DwhSession.open(datasource.get_config().dwh) as dwh:
-        sa_table = dwh.inspect_table(design_spec.table_name)
-        return convert_table_to_fields_or_raise(sa_table, design_spec)
+    sa_table = dwh.inspect_table(design_spec.table_name)
+    return convert_table_to_fields_or_raise(sa_table, design_spec)
 
 
 def fetch_mab_dwh_fields_or_raise(
-    datasource: tables.Datasource,
+    dwh: DwhSession,
     design_spec: MABDwhExperimentSpec,
 ) -> dict[str, DataType]:
     """Inspect the DWH table referenced by a MAB-DWH design spec and return field metadata
@@ -158,8 +157,7 @@ def fetch_mab_dwh_fields_or_raise(
     Returns: Field name => datatype map (covering primary_key and target_field_name only).
     Raises: LateValidationError if either column is missing from the table.
     """
-    with DwhSession.open(datasource.get_config().dwh) as dwh:
-        sa_table = dwh.inspect_table(design_spec.table_name)
+    sa_table = dwh.inspect_table(design_spec.table_name)
 
     referenced_fields_and_types = _resolve_referenced_field_types(
         sa_table, {design_spec.primary_key, design_spec.target_field_name}
@@ -282,7 +280,6 @@ def create_experiment_impl(
 
             table_name = preassigned_spec.table_name
             primary_key = preassigned_spec.primary_key
-            field_type_map = fetch_fields_or_raise(datasource, preassigned_spec)
 
             # Get participants and their schema info from the client dwh.
             # Only fetch the columns we might need for stratified random assignment.
@@ -300,6 +297,9 @@ def create_experiment_impl(
 
             ds_config = datasource.get_config()
             with DwhSession.open(ds_config.dwh) as dwh:
+                # Validate first so a bad field name fails before the participants query. Both share
+                # one inspection of the table.
+                field_type_map = fetch_fields_or_raise(dwh, preassigned_spec)
                 if cluster_key is not None:
                     assert desired_n_clusters is not None  # covered by CreateExperimentRequest validation
                     result = dwh.get_clusters_of_participants(
@@ -337,7 +337,8 @@ def create_experiment_impl(
 
         case OnlineFrequentistExperimentSpec():
             online_spec = request.design_spec
-            field_type_map = fetch_fields_or_raise(datasource, online_spec)
+            with DwhSession.open(datasource.get_config().dwh) as dwh:
+                field_type_map = fetch_fields_or_raise(dwh, online_spec)
 
             return create_freq_online_experiment_impl(
                 request=request,
@@ -349,7 +350,8 @@ def create_experiment_impl(
             )
 
         case MABDwhExperimentSpec():
-            field_type_map = fetch_mab_dwh_fields_or_raise(datasource, request.design_spec)
+            with DwhSession.open(datasource.get_config().dwh) as dwh:
+                field_type_map = fetch_mab_dwh_fields_or_raise(dwh, request.design_spec)
             return create_bandit_online_experiment_impl(
                 xngin_session=xngin_session,
                 organization_id=datasource.organization_id,

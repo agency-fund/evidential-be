@@ -131,6 +131,7 @@ class DwhSession:
         self._dwh_config = dwh_config
         self._timeout = deadline
         self._timeout_secs = timeout_secs
+        self._inspected_tables: dict[tuple[str, bool], sqlalchemy.Table] = {}
 
     def _connect_blocking(self) -> None:
         self._engine = self._create_engine()
@@ -181,8 +182,17 @@ class DwhSession:
         return self._on_worker(getattr(fn, "__name__", "a query"), fn, self._session, *args, **kwargs)
 
     def _inspect_table_blocking(self, table_name: str, *, use_sa_autoload: bool | None = None) -> sqlalchemy.Table:
+        """Returns the Table for table_name, inspecting the DWH only the first time it is requested."""
         if use_sa_autoload is None:
             use_sa_autoload = self._dwh_config.supports_sa_autoload()
+        key = (table_name, use_sa_autoload)
+        sa_table = self._inspected_tables.get(key)
+        if sa_table is None:
+            sa_table = self._reflect_table_blocking(table_name, use_sa_autoload=use_sa_autoload)
+            self._inspected_tables[key] = sa_table
+        return sa_table
+
+    def _reflect_table_blocking(self, table_name: str, *, use_sa_autoload: bool) -> sqlalchemy.Table:
         metadata = sqlalchemy.MetaData()
         try:
             if use_sa_autoload:
@@ -261,7 +271,8 @@ class DwhSession:
         """Inspect table structure using a variety of backend-specific workarounds.
 
         The only fields guaranteed to be set on the the returned Table.columns field are
-        .name, .type, and .nullable.
+        .name, .type, and .nullable. Inspecting the same table again on this DwhSession returns the
+        same Table without contacting the DWH.
 
         Args:
             table_name: Name of the table to inspect. Only unqualified table names are supported.
