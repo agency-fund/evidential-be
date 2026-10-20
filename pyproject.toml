@@ -45,6 +45,7 @@ dev = [
     "mypy>=1.19.1",
     "pandas-stubs>=2.3.3,<3",
     "prek>=0.5.3,<0.6.0",
+    "py-machineid>=0.8,<1",
     "pytest-asyncio>=1.2.0",
     "pytest-env>=1.7.0,<2",
     "pytest-mock>=3.15.1,<4",
@@ -78,7 +79,7 @@ markers = [
     "integration: integration tests that rely on remote resources",
     "benchmark: performance benchmarks; opt-in via -m benchmark"
 ]
-addopts = "-m 'not integration and not benchmark'"
+addopts = "-m 'not integration and not benchmark' -p xngin.apiserver.testing.database_plugin"
 # filtewarnings can be used to silence warnings during tests.
 # format is: action:message:category:module
 filterwarnings = [

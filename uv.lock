@@ -1101,6 +1101,15 @@ wheels = [
 ]
 
 [[package]]
+name = "py-machineid"
+version = "0.8.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d7/2f/1b2b44dd362b8542df41417cb93162287f677585723386b981f602d0cd1c/py-machineid-0.8.1.tar.gz", hash = "sha256:e50416221235c874759e19cb64e8499def12afc2bdffd377bfd68f477f799dc8", size = 4608, upload-time = "2025-10-08T13:32:49.552Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/da/fd/c0c54a572399922fe97aebdc3adf2b27d5278bf30cecaa176a314d914adc/py_machineid-0.8.1-py3-none-any.whl", hash = "sha256:b8056f4e00c6b14caa60fcbbe3787829399eed5f352ecc428bc778d699347cf3", size = 4913, upload-time = "2025-10-08T13:32:48.811Z" },
+]
+
+[[package]]
 name = "pyarrow"
 version = "23.0.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1946,6 +1955,7 @@ dev = [
     { name = "mypy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pandas-stubs", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "prek", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "py-machineid", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pytest", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pytest-asyncio", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pytest-env", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -2002,6 +2012,7 @@ dev = [
     { name = "mypy", specifier = ">=1.19.1" },
     { name = "pandas-stubs", specifier = ">=2.3.3,<3" },
     { name = "prek", specifier = ">=0.5.3,<0.6.0" },
+    { name = "py-machineid", specifier = ">=0.8,<1" },
     { name = "pytest", specifier = ">=9.0.3,<10" },
     { name = "pytest-asyncio", specifier = ">=1.2.0" },
     { name = "pytest-env", specifier = ">=1.7.0,<2" },

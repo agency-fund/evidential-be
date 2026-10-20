@@ -199,7 +199,9 @@ jobs:
               - 'migrations/**'
             queries:
               - 'src/xngin/apiserver/dwh/**'
-              - 'src/xngin/apiserver/conftest.py'
+              - 'src/xngin/conftest.py'
+              - 'src/xngin/apiserver/apiserver_test_support.py'
+              - 'src/xngin/apiserver/testing/pg_helpers.py'
             bigquery:
               - 'src/xngin/cli/**'
             openapi:

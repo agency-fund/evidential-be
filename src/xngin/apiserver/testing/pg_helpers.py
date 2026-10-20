@@ -1,16 +1,21 @@
 """Creates and drops the Postgres databases used by tests.
 
 Each test run and pytest-xdist worker gets its own databases, named "<configured name>_<checkout>_p<run pid>_<worker>"
-(e.g. test_xngin_1a2b_p4242_gw0), so that concurrent runs, including runs in sibling checkouts sharing one Postgres
-instance, never touch each other's databases. A run drops its databases when it passes and leaves them behind for
-inspection when it fails; the next run in the same checkout drops them.
+(e.g. test_xngin_1a2b_p4242_gw0), so that concurrent runs, including runs in other checkouts or on other machines
+sharing one Postgres instance, never touch each other's databases. A process drops the databases it created when its
+tests pass and leaves them behind for inspection when they fail. Whatever a run leaves behind, including the
+databases of a pytest-xdist worker that crashed, is dropped by the next run of the same checkout on the same machine.
+
+See xngin.apiserver.testing.database_plugin for the pytest hooks that use this.
 """
 
 import hashlib
 import os
 import re
+import socket
 from pathlib import Path
 
+import machineid
 import psycopg as psycopg3
 import sqlalchemy
 from sqlalchemy import MetaData, create_mock_engine
@@ -20,8 +25,22 @@ from sqlalchemy.dialects.postgresql import psycopg
 # pytest-xdist workers and between checkouts sharing one Postgres instance.
 _LOCK_KEY = 0x786E67696E
 
-# Identifies this checkout, so that a run only ever cleans up after earlier runs in the same checkout.
-_CHECKOUT_ID = hashlib.sha256(str(Path(__file__).resolve().parents[4]).encode()).hexdigest()[:4]
+TEMPLATE_PREFIX = "xngin_tmpl_"
+
+
+def _machine_id() -> str:
+    try:
+        return machineid.id()
+    except machineid.MachineIdNotFound:
+        return socket.gethostname()
+
+
+# Identifies this checkout on this machine. A run only cleans up after earlier runs with the same id, because the pids
+# in their database names can only be checked for liveness on the machine that ran them.
+_CHECKOUT_ID = hashlib.sha256(f"{_machine_id()}:{Path(__file__).resolve().parents[4]}".encode()).hexdigest()[:4]
+
+# The URLs of the databases this process created, which it drops when its tests pass.
+_CREATED: dict[str, sqlalchemy.URL] = {}
 
 
 def _database_suffix() -> str:
@@ -38,30 +57,14 @@ def with_database_suffix(connect_url: str) -> str:
     return url.set(database=f"{url.database}{_database_suffix()}").render_as_string(hide_password=False)
 
 
-def _management_dsn(connect_url: sqlalchemy.URL) -> str:
-    """Returns a psycopg3-compatible DSN for the server's always-present postgres database."""
-    return connect_url.set(database="postgres", drivername="postgres").render_as_string(hide_password=False)
+def _connect_to_server(url: sqlalchemy.URL) -> psycopg3.Connection:
+    """Connects to the server's always-present postgres database, from which databases can be created and dropped."""
+    dsn = url.set(database="postgres", drivername="postgres").render_as_string(hide_password=False)
+    return psycopg3.connect(dsn, autocommit=True)
 
 
-def finish_test_databases_pg(connect_url: str, *, keep: bool) -> list[str]:
-    """Drops this process's test databases unless keep is true, and returns their names.
-
-    connect_url may name any database on the server.
-    """
-    url = sqlalchemy.engine.url.make_url(connect_url)
-    with psycopg3.connect(_management_dsn(url), autocommit=True) as conn:
-        rows = conn.execute(
-            "SELECT datname FROM pg_database WHERE right(datname, %s) = %s ORDER BY datname",
-            (
-                len(_database_suffix()),
-                _database_suffix(),
-            ),
-        ).fetchall()
-        names = [name for (name,) in rows]
-        if not keep:
-            for name in names:
-                conn.execute(f"DROP DATABASE IF EXISTS {name} WITH (FORCE)")
-    return names
+def _drop_database(conn: psycopg3.Connection, name: str):
+    conn.execute(t"DROP DATABASE IF EXISTS {name:i} WITH (FORCE)")  # type: ignore[misc]
 
 
 def _is_running(pid: int) -> bool:
@@ -74,12 +77,18 @@ def _is_running(pid: int) -> bool:
     return True
 
 
-def _drop_databases_of_finished_runs(conn: psycopg3.Connection):
-    """Drops this checkout's test databases whose run has exited, such as those a failed run left behind."""
+def _drop_leftovers(conn: psycopg3.Connection, current_template: str):
+    """Drops this checkout's test databases whose run has exited, and templates for schemas other than the current one.
+
+    Rebuilding a template takes about a second, so a checkout using another schema just rebuilds its own next time.
+    """
     pattern = re.compile(rf"_{_CHECKOUT_ID}_p(\d+)_(main|gw\d+)$")
     for (name,) in conn.execute("SELECT datname FROM pg_database").fetchall():
-        if (match := pattern.search(name)) and not _is_running(int(match[1])):
-            conn.execute(f"DROP DATABASE IF EXISTS {name} WITH (FORCE)")
+        if name.startswith(TEMPLATE_PREFIX) and name != current_template:
+            conn.execute(t"ALTER DATABASE {name:i} IS_TEMPLATE false")  # type: ignore[misc]
+            _drop_database(conn, name)
+        elif (match := pattern.search(name)) and not _is_running(int(match[1])):
+            _drop_database(conn, name)
 
 
 def _schema_digest(metadata: MetaData) -> str:
@@ -100,27 +109,50 @@ def create_test_database_pg(connect_url: str, metadata: MetaData):
 
     The schema is built once into a template database named after a hash of its DDL and then cloned, which is much
     faster than running create_all() for every test session. The template is shared by every pytest-xdist worker and
-    by checkouts whose schemas match. Databases left behind by earlier, finished runs in this checkout are dropped.
+    by checkouts whose schemas match. Leftovers from earlier runs are dropped first; see _drop_leftovers().
     """
     url = sqlalchemy.engine.url.make_url(connect_url)
-    template = f"xngin_tmpl_{_schema_digest(metadata)}"
-    with psycopg3.connect(_management_dsn(url), autocommit=True) as conn:
+    database = url.database or ""
+    template = f"{TEMPLATE_PREFIX}{_schema_digest(metadata)}"
+    with _connect_to_server(url) as conn:
         conn.execute("SELECT pg_advisory_lock(%s)", (_LOCK_KEY,))
         try:
-            _drop_databases_of_finished_runs(conn)
+            _drop_leftovers(conn, template)
             row = conn.execute("SELECT datistemplate FROM pg_database WHERE datname = %s", (template,)).fetchone()
             if row is None or not row[0]:
                 # A template that exists but was never marked as one is left over from an interrupted build.
-                conn.execute(f"DROP DATABASE IF EXISTS {template} WITH (FORCE)")
-                conn.execute(f"CREATE DATABASE {template}")
+                _drop_database(conn, template)
+                conn.execute(t"CREATE DATABASE {template:i}")  # type: ignore[misc]
                 engine = sqlalchemy.create_engine(url.set(database=template), poolclass=sqlalchemy.NullPool)
                 try:
                     with engine.begin() as template_conn:
                         metadata.create_all(template_conn)
                 finally:
                     engine.dispose()
-                conn.execute(f"ALTER DATABASE {template} WITH IS_TEMPLATE true")
-            conn.execute(f"DROP DATABASE IF EXISTS {url.database} WITH (FORCE)")
-            conn.execute(f"CREATE DATABASE {url.database} TEMPLATE {template} STRATEGY FILE_COPY")
+                conn.execute(t"ALTER DATABASE {template:i} IS_TEMPLATE true")  # type: ignore[misc]
+            _drop_database(conn, database)
+            conn.execute(t"CREATE DATABASE {database:i} TEMPLATE {template:i} STRATEGY FILE_COPY")  # type: ignore[misc]
+            _CREATED[database] = url
         finally:
             conn.execute("SELECT pg_advisory_unlock(%s)", (_LOCK_KEY,))
+
+
+def create_empty_test_database_pg(connect_url: sqlalchemy.URL | str):
+    """(Re)creates the empty database named by connect_url."""
+    url = sqlalchemy.engine.url.make_url(connect_url)
+    database = url.database or ""
+    with _connect_to_server(url) as conn:
+        _drop_database(conn, database)
+        conn.execute(t"CREATE DATABASE {database:i}")  # type: ignore[misc]
+    _CREATED[database] = url
+
+
+def finish_test_databases_pg(*, keep: bool) -> list[str]:
+    """Drops the databases this process created unless keep is true, and returns their names."""
+    names = sorted(_CREATED)
+    if not keep:
+        for name, url in sorted(_CREATED.items()):
+            with _connect_to_server(url) as conn:
+                _drop_database(conn, name)
+        _CREATED.clear()
+    return names

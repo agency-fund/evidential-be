@@ -7,8 +7,6 @@ as a module loads a second copy of it.
 """
 
 import contextlib
-import os
-import sys
 
 import pytest
 import sqlalchemy
@@ -50,30 +48,8 @@ from xngin.apiserver.testing import (
 )
 from xngin.apiserver.testing.pg_helpers import (
     create_test_database_pg,
-    finish_test_databases_pg,
-    with_database_suffix,
 )
 from xngin.db_extensions import custom_functions
-
-# SQLAlchemy's logger will append this to the name of its loggers used for the application database; e.g.
-# sqlalchemy.engine.Engine.xngin_app.
-SA_LOGGER_NAME_FOR_APP = "xngin_app"
-
-
-def pytest_configure():
-    """Points the application at a database unique to this test run and worker; see pg_helpers."""
-    if database_url := os.environ.get("DATABASE_URL"):
-        flags.DATABASE_URL = with_database_suffix(database_url)
-
-
-def pytest_sessionfinish(session: pytest.Session, exitstatus: int):
-    """Drops this process's test databases, unless a test failed or the run was cut short."""
-    if not flags.DATABASE_URL:
-        return
-    keep = bool(session.testsfailed) or exitstatus not in {pytest.ExitCode.OK, pytest.ExitCode.NO_TESTS_COLLECTED}
-    kept = finish_test_databases_pg(flags.DATABASE_URL, keep=keep)
-    if keep and kept:
-        print(f"\nKept test databases for inspection (the next run drops them): {', '.join(kept)}", file=sys.stderr)
 
 
 @pytest.fixture(scope="session", autouse=True)

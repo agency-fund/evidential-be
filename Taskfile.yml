@@ -243,8 +243,9 @@ tasks:
       task test -- --lf                                            # only re-run failed tests
       task test -- -n0                                             # run serially (tests run in parallel by default)
 
-      When tests fail, the databases of the workers that ran them are kept for inspection (their names are printed) and
-      dropped by the next run. Each test clears the tables when it starts, so a kept database shows the last test its
+      Parallel runs use at most 16 workers (about 3 Postgres connections each; see max_connections in tools/localpg.py).
+      When tests fail, the databases of the workers that ran them are kept for inspection (their names are printed after
+      the test summary) and dropped by the next run. Each test clears the tables when it starts, so a kept database shows the last test its
       worker ran: re-run just the failures serially to inspect them, e.g. task test -- --lf -n0.
     interactive: true
     env:
@@ -252,14 +253,14 @@ tasks:
     deps:
       - bootstrap-dwh-database
     cmds:
-      - uv run pytest -n auto {{.CLI_ARGS}}
+      - uv run pytest -n auto --maxprocesses 16 {{.CLI_ARGS}}
   test-only:
     desc: "Runs unit tests without boostrapping the DWH database."
     interactive: true
     env:
       DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"
     cmds:
-      - uv run pytest -n auto {{.CLI_ARGS}}
+      - uv run pytest -n auto --maxprocesses 16 {{.CLI_ARGS}}
   test-airplane:
     desc: "Run unit tests (in airplane mode)."
     interactive: true
