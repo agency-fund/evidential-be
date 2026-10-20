@@ -18,7 +18,7 @@ from deepdiff import DeepDiff
 from pydantic import HttpUrl
 
 from xngin.apiserver import flags
-from xngin.apiserver.conftest import convert_dwh_to_create_api_dsn, expect_status_code
+from xngin.apiserver.apiserver_test_support import convert_dwh_to_create_api_dsn, expect_status_code
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.routers.admin.admin_api_converters import CREDENTIALS_UNAVAILABLE_MESSAGE

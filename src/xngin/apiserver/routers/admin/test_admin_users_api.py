@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
-from xngin.apiserver.conftest import expect_status_code
+from xngin.apiserver.apiserver_test_support import expect_status_code
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddMemberToOrganizationRequest,
     CreateOrganizationRequest,

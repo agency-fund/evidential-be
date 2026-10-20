@@ -8,7 +8,7 @@ from sqlalchemy import Table, create_engine, make_url, text
 from sqlalchemy.orm import DeclarativeBase, Session, mapped_column
 from sqlalchemy.types import Boolean, Date, DateTime, Float, Integer, String
 
-from xngin.apiserver.conftest import DbType, get_queries_test_uri
+from xngin.apiserver.apiserver_test_support import DbType, get_queries_test_uri
 from xngin.apiserver.dwh.dwh_utils import extra_engine_setup
 from xngin.apiserver.settings import SA_LOGGER_NAME_FOR_DWH
 

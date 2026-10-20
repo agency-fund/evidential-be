@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from xngin.apiserver.conftest import expect_status_code
+from xngin.apiserver.apiserver_test_support import expect_status_code
 from xngin.apiserver.routers.admin.admin_api_types import CreateOrganizationRequest
 from xngin.apiserver.routers.admin.test_admin_api import make_bandit_online_experiment
 from xngin.apiserver.routers.admin_integrations.admin_integrations_api_types import (

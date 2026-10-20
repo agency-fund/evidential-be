@@ -11,7 +11,7 @@ import pytest
 from sqlalchemy import DECIMAL, Boolean, Column, Float, Integer, MetaData, String, Table, select
 from sqlalchemy.orm import Session
 
-from xngin.apiserver.conftest import DatasourceMetadata, RowProtocolMixin
+from xngin.apiserver.apiserver_test_support import DatasourceMetadata, RowProtocolMixin
 from xngin.apiserver.routers.admin.admin_api_types import DeleteExperimentDataRequest
 from xngin.apiserver.routers.assignment_adapters import (
     _is_present_scalar,  # noqa: PLC2701

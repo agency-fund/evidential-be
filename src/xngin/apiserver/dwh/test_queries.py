@@ -5,7 +5,7 @@ from sqlalchemy import Table, text
 from sqlalchemy.exc import DataError
 from sqlalchemy.orm import Session
 
-from xngin.apiserver.conftest import DbType, get_queries_test_uri
+from xngin.apiserver.apiserver_test_support import DbType, get_queries_test_uri
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.queries import get_raw_metric_stats
 from xngin.apiserver.exceptions_common import LateValidationError

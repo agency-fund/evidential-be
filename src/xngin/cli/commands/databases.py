@@ -137,21 +137,42 @@ def create_database(
                 fail(f"database {name} already exists.")
 
 
-def drop_database(names: NamesArgument, dsn: DsnOption):
+def _drop_database(conn: psycopg.Connection, name: str) -> None:
+    """Drops a database, terminating its sessions. Template databases are unmarked first, as Postgres requires."""
+    try:
+        conn.execute(t"ALTER DATABASE {name:i} IS_TEMPLATE false")  # type: ignore[misc]
+        conn.execute(t"DROP DATABASE {name:i} WITH (FORCE)")  # type: ignore[misc]
+    except psycopg.errors.InvalidCatalogName:
+        console.print(f"Database [cyan]{name}[/cyan] does not exist.")
+    except psycopg.errors.ObjectInUse as exc:
+        fail(f"database {name} could not be dropped: {exc}")
+    else:
+        console.print(f"Dropped database [cyan]{name}[/cyan].")
+
+
+def drop_database(
+    dsn: DsnOption,
+    names: Annotated[list[str] | None, typer.Argument(metavar="[DBNAME...]", help="Names of the databases.")] = None,
+    prefix: Annotated[
+        list[str] | None,
+        typer.Option(help="Also drop every database whose name starts with this prefix. May be repeated."),
+    ] = None,
+):
     """Drops one or more databases, ignoring those that do not exist.
 
     Sessions connected to a database being dropped are terminated.
     """
     with _maintenance_connection(dsn) as conn:
-        for name in names:
-            try:
-                conn.execute(t"DROP DATABASE {name:i} WITH (FORCE)")  # type: ignore[misc]
-            except psycopg.errors.InvalidCatalogName:
-                console.print(f"Database [cyan]{name}[/cyan] does not exist.")
-            except psycopg.errors.ObjectInUse as exc:
-                fail(f"database {name} could not be dropped: {exc}")
-            else:
-                console.print(f"Dropped database [cyan]{name}[/cyan].")
+        for name in names or []:
+            _drop_database(conn, name)
+        for p in prefix or []:
+            matches = conn.execute(
+                "SELECT datname FROM pg_database WHERE starts_with(datname, %s)"
+                " AND datname NOT IN ('postgres', 'template0', 'template1') ORDER BY datname",
+                (p,),
+            ).fetchall()
+            for (name,) in matches:
+                _drop_database(conn, name)
 
 
 def register(app: typer.Typer) -> None:

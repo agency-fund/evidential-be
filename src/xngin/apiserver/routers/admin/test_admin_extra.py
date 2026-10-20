@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from xngin.apiserver import constants, settings
-from xngin.apiserver.conftest import delete_seeded_users
+from xngin.apiserver.apiserver_test_support import delete_seeded_users
 from xngin.apiserver.routers.admin.admin_api_types import (
     ApiOnlyDsn,
     BqDsn,

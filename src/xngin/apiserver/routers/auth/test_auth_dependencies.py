@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags
-from xngin.apiserver.conftest import delete_seeded_users
+from xngin.apiserver.apiserver_test_support import delete_seeded_users
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.routers.admin.admin_common import DEFAULT_NO_DWH_SOURCE_NAME
 from xngin.apiserver.routers.admin.test_admin_api import find_ds_with_name

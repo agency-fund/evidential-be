@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, TypeIs
 import pytest
 from pydantic import TypeAdapter
 
-from xngin.apiserver.conftest import DatasourceMetadata
+from xngin.apiserver.apiserver_test_support import DatasourceMetadata
 from xngin.apiserver.routers.common_api_types import (
     AnyBanditDesignSpec,
     AnyFrequentistDesignSpec,

@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from xngin.apiserver.conftest import DatasourceMetadata, expect_status_code
+from xngin.apiserver.apiserver_test_support import DatasourceMetadata, expect_status_code
 from xngin.apiserver.routers.admin.admin_api_types import AddTurnJourneysChangedWebhookRequest
 from xngin.apiserver.routers.admin_integrations.admin_integrations_api_types import (
     SetConnectionToTurnRequest,

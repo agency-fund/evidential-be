@@ -8,7 +8,7 @@ from sqlalchemy import MetaData, Table, create_engine
 from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags
-from xngin.apiserver.conftest import get_test_uri_info
+from xngin.apiserver.apiserver_test_support import get_test_uri_info
 from xngin.apiserver.dwh.queries import get_cluster_sufficient_stats
 from xngin.apiserver.routers.common_api_types import Filter
 from xngin.apiserver.routers.common_enums import Relation

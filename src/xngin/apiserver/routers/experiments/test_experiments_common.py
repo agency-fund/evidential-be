@@ -16,7 +16,7 @@ from sqlalchemy import Boolean, Column, MetaData, String, Table, insert, select
 from sqlalchemy.orm import Session, selectinload
 
 from xngin.apiserver import database
-from xngin.apiserver.conftest import RowProtocolMixin
+from xngin.apiserver.apiserver_test_support import RowProtocolMixin
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import (
