@@ -13,11 +13,10 @@ See xngin.apiserver.testing.database_plugin for the pytest hooks that use this.
 import hashlib
 import os
 import re
-import socket
+import secrets
 import sys
 from pathlib import Path
 
-import machineid
 import psycopg as psycopg3
 import sqlalchemy
 from sqlalchemy import MetaData, create_mock_engine
@@ -34,16 +33,30 @@ TEMPLATE_PREFIX = "xngin_tmpl_"
 _OTHER_TEMPLATES_KEPT = 4
 
 
-def _machine_id() -> str:
-    try:
-        return machineid.id()
-    except machineid.MachineIdNotFound:
-        return socket.gethostname()
+def _checkout_id() -> str:
+    """Returns the random id stored in this checkout, creating it on first use.
+
+    A run only cleans up after earlier runs with the same id, because the pids in their database names can only be
+    checked for liveness on the machine that ran them. Checkouts on one machine may share an id (e.g. after cp -r), as
+    the pids keep their runs apart; a checkout copied to another machine sharing the Postgres instance must not keep
+    the file.
+    """
+    path = Path(__file__).resolve().parents[4] / ".test-databases-id"
+    if not path.exists():
+        # Written aside and then linked into place, which fails if another process got there first, so that every
+        # process of the run reads the same complete id.
+        staged = path.with_name(f"{path.name}.{os.getpid()}")
+        staged.write_text(secrets.token_hex(4))
+        try:
+            os.link(staged, path)
+        except FileExistsError:
+            pass
+        finally:
+            staged.unlink()
+    return path.read_text().strip()
 
 
-# Identifies this checkout on this machine. A run only cleans up after earlier runs with the same id, because the pids
-# in their database names can only be checked for liveness on the machine that ran them.
-_CHECKOUT_ID = hashlib.sha256(f"{_machine_id()}:{Path(__file__).resolve().parents[4]}".encode()).hexdigest()[:8]
+_CHECKOUT_ID = _checkout_id()
 
 # The URLs of the databases this process created, which it drops when its tests pass.
 _CREATED: dict[str, sqlalchemy.URL] = {}

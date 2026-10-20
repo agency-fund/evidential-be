@@ -49,6 +49,8 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+# Random id of this checkout used in test database names; see xngin.apiserver.testing.pg_helpers.
+/.test-databases-id
 cover/
 
 # Translations

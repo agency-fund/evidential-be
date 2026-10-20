@@ -45,7 +45,6 @@ dev = [
     "mypy>=1.19.1",
     "pandas-stubs>=2.3.3,<3",
     "prek>=0.5.3,<0.6.0",
-    "py-machineid>=0.8,<1",
     "pytest-asyncio>=1.2.0",
     "pytest-env>=1.7.0,<2",
     "pytest-mock>=3.15.1,<4",
