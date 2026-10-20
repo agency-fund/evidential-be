@@ -252,7 +252,10 @@ router = APIRouter(
     lifespan=lifespan,
     prefix=constants.API_PREFIX_V1 + "/m",
     responses=STANDARD_ADMIN_RESPONSES,
-    dependencies=[Depends(require_user_from_token)],  # All routes in this router require authentication.
+    dependencies=[
+        Depends(require_user_from_token),  # All routes in this router require authentication.
+        Depends(adeps.add_path_params_to_request_context),
+    ],
 )
 
 
