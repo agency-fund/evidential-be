@@ -1,10 +1,11 @@
 """Creates and drops the Postgres databases used by tests.
 
 Each test run and pytest-xdist worker gets its own databases, named "<configured name>_<checkout>_p<run pid>_<worker>"
-(e.g. test_xngin_1a2b_p4242_gw0), so that concurrent runs, including runs in other checkouts or on other machines
+(e.g. test_xngin_1a2b3c4d_p4242_gw0), so that concurrent runs, including runs in other checkouts or on other machines
 sharing one Postgres instance, never touch each other's databases. A process drops the databases it created when its
 tests pass and leaves them behind for inspection when they fail. Whatever a run leaves behind, including the
-databases of a pytest-xdist worker that crashed, is dropped by the next run of the same checkout on the same machine.
+databases of a pytest-xdist worker that crashed, is dropped by the next run of the same checkout on the same machine
+(unless the dead run's pid has since been reused; task drop-databases drops everything).
 
 See xngin.apiserver.testing.database_plugin for the pytest hooks that use this.
 """
@@ -13,6 +14,7 @@ import hashlib
 import os
 import re
 import socket
+import sys
 from pathlib import Path
 
 import machineid
@@ -27,6 +29,10 @@ _LOCK_KEY = 0x786E67696E
 
 TEMPLATE_PREFIX = "xngin_tmpl_"
 
+# How many templates for other schemas to keep, so that checkouts using different schemas (e.g. a branch with a new
+# migration) can run concurrently without each dropping the template that the other is about to clone.
+_OTHER_TEMPLATES_KEPT = 4
+
 
 def _machine_id() -> str:
     try:
@@ -37,7 +43,7 @@ def _machine_id() -> str:
 
 # Identifies this checkout on this machine. A run only cleans up after earlier runs with the same id, because the pids
 # in their database names can only be checked for liveness on the machine that ran them.
-_CHECKOUT_ID = hashlib.sha256(f"{_machine_id()}:{Path(__file__).resolve().parents[4]}".encode()).hexdigest()[:4]
+_CHECKOUT_ID = hashlib.sha256(f"{_machine_id()}:{Path(__file__).resolve().parents[4]}".encode()).hexdigest()[:8]
 
 # The URLs of the databases this process created, which it drops when its tests pass.
 _CREATED: dict[str, sqlalchemy.URL] = {}
@@ -68,6 +74,8 @@ def _drop_database(conn: psycopg3.Connection, name: str):
 
 
 def _is_running(pid: int) -> bool:
+    if sys.platform == "win32":
+        return True  # os.kill() terminates the process on Windows, whatever the signal.
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -78,16 +86,19 @@ def _is_running(pid: int) -> bool:
 
 
 def _drop_leftovers(conn: psycopg3.Connection, current_template: str):
-    """Drops this checkout's test databases whose run has exited, and templates for schemas other than the current one.
+    """Drops this checkout's test databases whose run has exited, and all but the newest templates for other schemas.
 
-    Rebuilding a template takes about a second, so a checkout using another schema just rebuilds its own next time.
+    A checkout whose template was dropped just rebuilds it, which takes about a second.
     """
     pattern = re.compile(rf"_{_CHECKOUT_ID}_p(\d+)_(main|gw\d+)$")
-    for (name,) in conn.execute("SELECT datname FROM pg_database").fetchall():
-        if name.startswith(TEMPLATE_PREFIX) and name != current_template:
-            conn.execute(t"ALTER DATABASE {name:i} IS_TEMPLATE false")  # type: ignore[misc]
-            _drop_database(conn, name)
-        elif (match := pattern.search(name)) and not _is_running(int(match[1])):
+    # Newest first: database OIDs are assigned in creation order.
+    rows = conn.execute("SELECT datname FROM pg_database ORDER BY oid DESC").fetchall()
+    other_templates = [name for (name,) in rows if name.startswith(TEMPLATE_PREFIX) and name != current_template]
+    for name in other_templates[_OTHER_TEMPLATES_KEPT:]:
+        conn.execute(t"ALTER DATABASE {name:i} IS_TEMPLATE false")  # type: ignore[misc]
+        _drop_database(conn, name)
+    for (name,) in rows:
+        if (match := pattern.search(name)) and not _is_running(int(match[1])):
             _drop_database(conn, name)
 
 
@@ -110,31 +121,31 @@ def create_test_database_pg(connect_url: str, metadata: MetaData):
     The schema is built once into a template database named after a hash of its DDL and then cloned, which is much
     faster than running create_all() for every test session. The template is shared by every pytest-xdist worker and
     by checkouts whose schemas match. Leftovers from earlier runs are dropped first; see _drop_leftovers().
+
+    The advisory lock serializing this is released when the connection closes.
     """
     url = sqlalchemy.engine.url.make_url(connect_url)
     database = url.database or ""
     template = f"{TEMPLATE_PREFIX}{_schema_digest(metadata)}"
     with _connect_to_server(url) as conn:
         conn.execute("SELECT pg_advisory_lock(%s)", (_LOCK_KEY,))
-        try:
-            _drop_leftovers(conn, template)
-            row = conn.execute("SELECT datistemplate FROM pg_database WHERE datname = %s", (template,)).fetchone()
-            if row is None or not row[0]:
-                # A template that exists but was never marked as one is left over from an interrupted build.
-                _drop_database(conn, template)
-                conn.execute(t"CREATE DATABASE {template:i}")  # type: ignore[misc]
-                engine = sqlalchemy.create_engine(url.set(database=template), poolclass=sqlalchemy.NullPool)
-                try:
-                    with engine.begin() as template_conn:
-                        metadata.create_all(template_conn)
-                finally:
-                    engine.dispose()
-                conn.execute(t"ALTER DATABASE {template:i} IS_TEMPLATE true")  # type: ignore[misc]
-            _drop_database(conn, database)
-            conn.execute(t"CREATE DATABASE {database:i} TEMPLATE {template:i} STRATEGY FILE_COPY")  # type: ignore[misc]
-            _CREATED[database] = url
-        finally:
-            conn.execute("SELECT pg_advisory_unlock(%s)", (_LOCK_KEY,))
+        _drop_leftovers(conn, template)
+        row = conn.execute("SELECT datistemplate FROM pg_database WHERE datname = %s", (template,)).fetchone()
+        if row is None or not row[0]:
+            # A template that exists but was never marked as one is left over from an interrupted build.
+            _drop_database(conn, template)
+            conn.execute(t"CREATE DATABASE {template:i}")  # type: ignore[misc]
+            engine = sqlalchemy.create_engine(url.set(database=template), poolclass=sqlalchemy.NullPool)
+            try:
+                with engine.begin() as template_conn:
+                    metadata.create_all(template_conn)
+            finally:
+                engine.dispose()
+            conn.execute(t"ALTER DATABASE {template:i} IS_TEMPLATE true")  # type: ignore[misc]
+        _drop_database(conn, database)
+        # FILE_COPY measured ~23ms per clone of the ~8MB template against ~30ms for the default WAL_LOG.
+        conn.execute(t"CREATE DATABASE {database:i} TEMPLATE {template:i} STRATEGY FILE_COPY")  # type: ignore[misc]
+        _CREATED[database] = url
 
 
 def create_empty_test_database_pg(connect_url: sqlalchemy.URL | str):

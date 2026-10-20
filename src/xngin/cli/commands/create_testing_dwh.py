@@ -329,6 +329,7 @@ def _load_postgres(source: _Source, dest: _Dest) -> None:
 
 
 def create_testing_dwh(
+    ctx: typer.Context,
     dsn: Annotated[str, typer.Option(help="The SQLAlchemy URL for the database.")],
     src: Annotated[
         Path,
@@ -423,7 +424,10 @@ def create_testing_dwh(
     if template is None:
         tables = [(src, table_name, views)]
     else:
-        if src != _TESTING_DWH_RAW_DATA or table_name != "dwh" or views is not None:
+        # Only options given on the command line conflict: XNGIN_CLI_TABLE_NAME may be set in the environment.
+        if any(
+            getattr(ctx.get_parameter_source(p), "name", None) == "COMMANDLINE" for p in ("src", "table_name", "views")
+        ):
             fail("--template cannot be combined with --src, --table-name, or --views.", code=2)
         try:
             parsed = _Template.model_validate_json(template.read_text())

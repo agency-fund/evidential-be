@@ -214,7 +214,8 @@ tasks:
     deps:
       - bootstrap-dwh-database
     cmds:
-      - uv run coverage run -m pytest {{.CLI_ARGS}}
+      # -n0 comes last so that it wins: coverage only measures the pytest process it starts, not pytest-xdist workers.
+      - uv run coverage run -m pytest {{.CLI_ARGS}} -n0
       - uv run coverage html
       - uv run coverage report
       - echo "Open the HTML report at file://{{.USER_WORKING_DIR}}/htmlcov/index.html"
@@ -237,9 +238,10 @@ tasks:
       task test -- -n0                                             # run serially (tests run in parallel by default)
 
       Parallel runs use at most 16 workers (about 3 Postgres connections each; see max_connections in tools/localpg.py).
-      When tests fail, the databases of the workers that ran them are kept for inspection (their names are printed after
-      the test summary) and dropped by the next run. Each test clears the tables when it starts, so a kept database shows the last test its
-      worker ran: re-run just the failures serially to inspect them, e.g. task test -- --lf -n0.
+      When tests fail, the databases of the workers that ran them are kept for inspection (their names are printed just
+      before the short test summary) and dropped by the next run. Each test clears the tables when it starts, so a kept
+      database shows the last test its worker ran: re-run just the failures serially to inspect them, e.g.
+      task test -- --lf -n0.
     interactive: true
     env:
       DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"

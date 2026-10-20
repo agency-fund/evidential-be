@@ -202,6 +202,7 @@ jobs:
               - 'src/xngin/conftest.py'
               - 'src/xngin/apiserver/apiserver_test_support.py'
               - 'src/xngin/apiserver/testing/pg_helpers.py'
+              - 'src/xngin/apiserver/testing/database_plugin.py'
             bigquery:
               - 'src/xngin/cli/**'
             openapi:

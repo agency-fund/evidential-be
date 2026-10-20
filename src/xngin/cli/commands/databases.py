@@ -162,6 +162,8 @@ def drop_database(
 
     Sessions connected to a database being dropped are terminated.
     """
+    if not names and not prefix:
+        fail("pass the names of the databases to drop, or --prefix.", code=2)
     with _maintenance_connection(dsn) as conn:
         for name in names or []:
             _drop_database(conn, name)

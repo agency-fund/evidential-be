@@ -8,6 +8,7 @@ import sys
 
 import psycopg
 import pytest
+import sqlalchemy
 
 from xngin.apiserver.testing.pg_helpers import finish_test_databases_pg, with_database_suffix
 
@@ -22,7 +23,13 @@ def pytest_configure(config: pytest.Config):
     from xngin.apiserver import flags  # noqa: PLC0415
 
     config.stash[_kept] = []
-    if flags.DATABASE_URL:
+    if not flags.DATABASE_URL:
+        return
+    try:
+        backend = sqlalchemy.make_url(flags.DATABASE_URL).get_backend_name()
+    except sqlalchemy.exc.ArgumentError:
+        return  # Leave it to the tests that use the database to report.
+    if backend == "postgresql":
         flags.DATABASE_URL = with_database_suffix(flags.DATABASE_URL)
 
 
