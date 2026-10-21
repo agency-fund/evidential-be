@@ -2,7 +2,7 @@
 
 import contextvars
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from typing import Any
@@ -75,7 +75,7 @@ class ThreadTimeout:
 
 
 @contextmanager
-def timeout_thread(*, seconds: float, name: str) -> Iterator[ThreadTimeout]:
+def timeout_thread(*, seconds: float, name: str) -> Generator[ThreadTimeout]:
     """Bounds how long a block of blocking calls may run, by running them on a helper thread.
 
     Use this for calls that cannot be interrupted -- a query against a customer data warehouse, say
