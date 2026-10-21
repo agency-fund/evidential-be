@@ -144,7 +144,7 @@ def _handle_one_snapshot_safely(session: Session, snapshot: tables.Snapshot, sna
             snapshot.status = "success"
         except Exception as exc:
             sentry_sdk.metrics.count("snapshots.failed", 1, attributes={"experiment_id": snapshot.experiment_id})
-            logger.opt(exception=exc).info(f"{experiment.id}.{snapshot.id}: exception")
+            logger.opt(exception=exc).warning(f"{experiment.id}.{snapshot.id}: exception")
             snapshot.status = "failed"
             snapshot.message = f"{type(exc).__name__}: {exc}"
         sentry_sdk.metrics.count("snapshots.finished", 1, attributes={"experiment_id": snapshot.experiment_id})
