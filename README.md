@@ -22,7 +22,7 @@
 | src/xngin/apiserver/dwh/queries.py                                                 |       45 |        3 |     93% |83, 86, 112 |
 | src/xngin/apiserver/dwh/query\_constructors.py                                     |       81 |        4 |     95% |75-76, 95-96 |
 | src/xngin/apiserver/dwh/test\_dialect\_sql.py                                      |       74 |        6 |     92% |494, 507, 510-513 |
-| src/xngin/apiserver/dwh/test\_dwh\_session.py                                      |      106 |        1 |     99% |       123 |
+| src/xngin/apiserver/dwh/test\_dwh\_session.py                                      |      112 |        1 |     99% |       123 |
 | src/xngin/apiserver/dwh/test\_queries.py                                           |       69 |        1 |     99% |       170 |
 | src/xngin/apiserver/dwh/test\_query\_constructors.py                               |      160 |        2 |     99% |  444, 461 |
 | src/xngin/apiserver/dwhpull/cli.py                                                 |       25 |        7 |     72% |     51-59 |
@@ -105,7 +105,7 @@
 | src/xngin/xsecrets/secretservice.py                                                |       64 |        7 |     89% |37, 45-46, 51-52, 104, 126 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                                     |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                                         |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                                          | **18157** | **1044** | **94%** |           |
+| **TOTAL**                                                                          | **18163** | **1044** | **94%** |           |
 
 94 files skipped due to complete coverage.
 
