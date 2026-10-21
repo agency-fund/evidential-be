@@ -11,7 +11,6 @@ from typing import Annotated, Any, Literal, assert_never
 
 from fastapi import (
     APIRouter,
-    BackgroundTasks,
     Body,
     Depends,
     FastAPI,
@@ -65,7 +64,6 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     CreateDatasourceResponse,
     CreateOrganizationRequest,
     CreateOrganizationResponse,
-    CreateSnapshotResponse,
     CreateUserRequest,
     CreateUserResponse,
     DatasourceSummary,
@@ -134,7 +132,6 @@ from xngin.apiserver.routers.experiments.experiments_common import (
 from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
 from xngin.apiserver.routers.power_adapters import build_metric_stats, calculate_cluster_stats
 from xngin.apiserver.settings import NoDwh, RemoteDatabaseConfig
-from xngin.apiserver.snapshots import snapshotter
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.events.webhook_sent import WebhookSentEvent
@@ -619,29 +616,6 @@ def delete_snapshot(
     )
     session.commit()
     return response
-
-
-@router.post("/organizations/{organization_id}/datasources/{datasource_id}/experiments/{experiment_id}/snapshots")
-def create_snapshot(
-    experiment: Annotated[tables.Experiment, Depends(adeps.org_experiment)],
-    session: Annotated[Session, Depends(xngin_sync_db_session)],
-    background_tasks: BackgroundTasks,
-) -> CreateSnapshotResponse:
-    """Request the asynchronous creation of a snapshot for an experiment.
-
-    Returns the ID of the snapshot. Poll get_snapshot until the job is completed.
-    """
-    if experiment.state != ExperimentState.COMMITTED:
-        raise LateValidationError("You can only snapshot committed experiments.")
-    # Aligning with the buffer in snapshotter.py, as we wish to capture +/- 1 day on both sides.
-    if experiment.end_date < datetime.now(UTC) - timedelta(days=1):
-        raise LateValidationError("You can only snapshot active experiments.")
-
-    snapshot = tables.Snapshot(experiment_id=experiment.id)
-    session.add(snapshot)
-    session.commit()
-    background_tasks.add_task(snapshotter.make_first_snapshot, snapshot.experiment_id, snapshot.id)
-    return CreateSnapshotResponse(id=snapshot.id)
 
 
 @router.get("/organizations")
