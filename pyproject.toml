@@ -57,7 +57,7 @@ dev = [
 ]
 
 [build-system]
-requires = ["uv_build>=0.9.4"]
+requires = ["uv_build>=0.13.4"]
 build-backend = "uv_build"
 
 [project.scripts]
@@ -215,7 +215,7 @@ banned-from = [
 "xngin.apiserver.routers.integrations.integrations_dependencies" = "ideps"
 
 [tool.uv]
-required-version = ">=0.9.4"
+required-version = ">=0.13.4"
 environments = [
     "sys_platform == 'darwin'",
     "sys_platform == 'linux'",
