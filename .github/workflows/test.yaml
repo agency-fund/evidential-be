@@ -187,25 +187,30 @@ jobs:
         id: filter
         with:
           filters: |
+            common: &common
+              - 'uv.lock'
             ruffannotations:
+              - *common
               - '*.py'
               - '**/*.py'
               - 'pyproject.toml'
-              - 'uv.lock'
             pydependencies:
+              - *common
               - 'pyproject.toml'
-              - 'uv.lock'
             migrations:
+              - *common
               - 'migrations/**'
             queries:
+              - *common
               - 'src/xngin/apiserver/dwh/**'
               - 'src/xngin/apiserver/conftest.py'
             bigquery:
+              - *common
               - 'src/xngin/cli/**'
             openapi:
+              - *common
               - 'src/**/*.py'
               - 'pyproject.toml'
-              - 'uv.lock'
 
   osx-setup:
     needs: changes
