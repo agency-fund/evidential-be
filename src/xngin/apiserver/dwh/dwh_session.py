@@ -616,6 +616,11 @@ class DwhSession:
             engine = sqlalchemy.create_engine(
                 url,
                 connect_args=connect_args,
+                # Bind parameters are customer data. With hide_parameters set, SQLAlchemy prints
+                # "[SQL parameters hidden due to hide_parameters=True]" instead of the values in exception text
+                # and in its own logging, which keeps them out of Railway logs and Sentry. Developers keep full
+                # parameters locally.
+                hide_parameters=not flags.is_dev_environment(),
                 logging_name=SA_LOGGER_NAME_FOR_DWH,
                 execution_options={"logging_token": "dwh"},
                 poolclass=sqlalchemy.pool.NullPool,

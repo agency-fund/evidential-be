@@ -178,3 +178,11 @@ def test_inspecting_a_missing_table_names_only_that_table(dwh_config, mocker):
 
     assert TESTING_DWH_TABLE_NAME not in str(excinfo.value)
     reflect.assert_not_called()
+
+
+@pytest.mark.parametrize(("environment", "shows_parameters"), [("dev", True), ("production", False)])
+def test_bind_parameters_appear_in_exception_text_only_in_dev(dwh_config, monkeypatch, environment, shows_parameters):
+    monkeypatch.setenv("ENVIRONMENT", environment)
+    with DwhSession.open(dwh_config) as dwh, pytest.raises(sqlalchemy.exc.DBAPIError) as excinfo:
+        dwh._run(lambda session: session.execute(text("SELECT CAST(:a AS text), 1 / 0"), {"a": "SECRET_VALUE"}))
+    assert ("SECRET_VALUE" in str(excinfo.value)) is shows_parameters

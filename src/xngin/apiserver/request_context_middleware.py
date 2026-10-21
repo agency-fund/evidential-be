@@ -21,8 +21,8 @@ RAILWAY_EDGE_HEADER = "x-railway-edge"
 # Set by many other proxies and load balancers. Used when Railway's header is absent, i.e. when not hosted on Railway.
 REQUEST_ID_HEADER = "x-request-id"
 
-# Bounds what a client that sends its own header can put in our logs.
-_MAX_HEADER_VALUE_LENGTH = 64
+# Bounds what a client can put in our logs through a header it sends or a path it requests.
+_MAX_VALUE_LENGTH = 64
 
 # Track the time-since-started and ordering of requests handled by this worker.
 _worker_started_at = time.monotonic()
@@ -46,6 +46,20 @@ def add_request_context(record: loguru_Record) -> None:
             record["extra"].setdefault(key, value)
 
 
+def add_request_fields(**fields: str) -> None:
+    """Adds fields to the log context of the request being handled; does nothing outside a request.
+
+    Values are truncated like header values.
+
+    This works from the worker threads FastAPI runs sync dependencies and handlers on, where logger.contextualize()
+    would not: those threads get a copy of the request task's contextvars, so a variable set there is invisible to
+    the task, but the copy shares the task's dict, so updating it in place is seen by every later log line of the
+    request.
+    """
+    if (current := _request_context.get()) is not None:
+        current.update((key, value[:_MAX_VALUE_LENGTH]) for key, value in fields.items())
+
+
 class RequestContextMiddleware:
     """ASGI middleware that adds per-request diagnostic context to log lines and Sentry events.
 
@@ -61,6 +75,8 @@ class RequestContextMiddleware:
 
     Both also carry the worker's request sequence number and uptime (as worker_request_seq and worker_uptime_seconds
     log fields, and a "worker" Sentry context).
+
+    Dependencies and handlers may add log fields of their own with add_request_fields().
     """
 
     def __init__(self, app: ASGIApp) -> None:
@@ -81,12 +97,12 @@ class RequestContextMiddleware:
 
         headers = Headers(scope=scope)
         if request_id := headers.get(RAILWAY_REQUEST_ID_HEADER) or headers.get(REQUEST_ID_HEADER):
-            request_id = request_id[:_MAX_HEADER_VALUE_LENGTH]
+            request_id = request_id[:_MAX_VALUE_LENGTH]
             fields["request_id"] = request_id
             sentry_sdk.set_tag("request_id", request_id)
 
         if railway_edge := headers.get(RAILWAY_EDGE_HEADER):
-            railway_edge = railway_edge[:_MAX_HEADER_VALUE_LENGTH]
+            railway_edge = railway_edge[:_MAX_VALUE_LENGTH]
             fields["railway_edge"] = railway_edge
             sentry_sdk.set_tag("railway_edge", railway_edge)
 

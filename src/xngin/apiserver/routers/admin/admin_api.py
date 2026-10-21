@@ -4,6 +4,7 @@ This module defines the internal Evidential UI-facing Admin API endpoints.
 """
 
 import secrets
+from collections.abc import Iterable
 from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal, assert_never
@@ -65,6 +66,7 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     CreateUserResponse,
     DatasourceSummary,
     DeleteExperimentDataRequest,
+    Dsn,
     EventSummary,
     GetDatasourceResponse,
     GetExperimentForUiResponse,
@@ -246,7 +248,10 @@ router = APIRouter(
     lifespan=lifespan,
     prefix=constants.API_PREFIX_V1 + "/m",
     responses=STANDARD_ADMIN_RESPONSES,
-    dependencies=[Depends(require_user_from_token)],  # All routes in this router require authentication.
+    dependencies=[
+        Depends(require_user_from_token),  # All routes in this router require authentication.
+        Depends(adeps.add_path_params_to_request_context),
+    ],
 )
 
 
@@ -777,7 +782,7 @@ def list_organization_webhooks(
     return ListWebhooksResponse(items=webhook_summaries)
 
 
-def convert_webhooks_to_webhooksummaries(webhooks):
+def convert_webhooks_to_webhooksummaries(webhooks: Iterable[tables.Webhook]) -> list[WebhookSummary]:
     return [
         WebhookSummary(
             id=webhook.id,
@@ -874,7 +879,7 @@ def list_organization_events(
     return ListOrganizationEventsResponse(items=event_summaries, next_page_token=next_page_token)
 
 
-def convert_events_to_eventsummaries(events):
+def convert_events_to_eventsummaries(events: list[tables.Event]) -> list[EventSummary]:
     event_summaries = []
     for event in events:
         data = event.get_data()
@@ -883,10 +888,10 @@ def convert_events_to_eventsummaries(events):
                 id=event.id,
                 created_at=event.created_at,
                 type=event.type,
-                summary=data.summarize() if data else "Unknown",
-                link=data.link() if data else None,
-                details=data.sanitize().model_dump() if data else None,
-                status_icon=data.status_icon() if data else "info",
+                summary=data.summarize(),
+                link=data.link(),
+                details=data.sanitize().model_dump(),
+                status_icon=data.status_icon(),
             )
         )
     return event_summaries
@@ -1633,12 +1638,12 @@ def power_check(
     metric has baseline stats, and cluster stats for cluster-randomized designs — the warehouse is
     not contacted at all, so the request is not validated against the participants table.
     """
-    if isinstance(datasource.get_config(), NoDwh):
+    dsconfig = datasource.get_config()
+    if isinstance(dsconfig.dwh, NoDwh):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Power checks are not supported for datasources without a data warehouse.",
         )
-    dsconfig = datasource.get_config()
 
     filters = body.filters
     cluster_key = body.cluster_key
@@ -1745,7 +1750,7 @@ def power_check(
     )
 
 
-def raise_unless_safe_hostname(dsn):
+def raise_unless_safe_hostname(dsn: Dsn) -> None:
     """Raises a 400 if the DNS name in dsn is possibly attempting to connect to resources on local network."""
     if isinstance(dsn, PostgresDsn | RedshiftDsn):
         try:
