@@ -214,8 +214,9 @@ tasks:
     deps:
       - bootstrap-dwh-database
     cmds:
-      # -n0 comes last so that it wins: coverage only measures the pytest process it starts, not pytest-xdist workers.
-      - uv run coverage run -m pytest {{.CLI_ARGS}} -n0
+      - uv run coverage run -m pytest -n auto --maxprocesses 16 {{.CLI_ARGS}}
+      # Merges the data files of the pytest process and its pytest-xdist workers (patch = subprocess in pyproject.toml).
+      - uv run coverage combine
       - uv run coverage html
       - uv run coverage report
       - echo "Open the HTML report at file://{{.USER_WORKING_DIR}}/htmlcov/index.html"

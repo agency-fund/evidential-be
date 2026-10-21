@@ -260,6 +260,9 @@ ignore_missing_imports = true
 
 [tool.coverage.run]
 relative_files = true
+# pytest-xdist workers are subprocesses: measure them too and combine their data files; see task test-coverage.
+parallel = true
+patch = ["subprocess"]
 omit = ["src/xngin/apiserver/testing/*_api_client.py"]
 
 [tool.coverage.report]

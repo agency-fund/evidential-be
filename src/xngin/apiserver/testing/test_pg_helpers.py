@@ -31,6 +31,11 @@ def test_with_database_suffix_without_xdist(monkeypatch):
     assert sqlalchemy.make_url(url).database == f"test_xngin_{pg_helpers._CHECKOUT_ID}_p{os.getpid()}_main"
 
 
+def test_with_database_suffix_requires_a_database_name():
+    with pytest.raises(ValueError, match="must name a database"):
+        pg_helpers.with_database_suffix("postgresql+psycopg://u@localhost")
+
+
 def _metadata(*, extra_column: bool = False) -> MetaData:
     metadata = MetaData()
     columns: list[Column] = [Column("id", Integer, primary_key=True), Column("a", String), Column("b", String)]

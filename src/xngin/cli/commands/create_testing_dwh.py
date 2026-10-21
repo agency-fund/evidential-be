@@ -424,7 +424,8 @@ def create_testing_dwh(
     if template is None:
         tables = [(src, table_name, views)]
     else:
-        # Only options given on the command line conflict: XNGIN_CLI_TABLE_NAME may be set in the environment.
+        # Only options given on the command line conflict: XNGIN_CLI_TABLE_NAME may be set in the environment. Compared
+        # by name because typer vendors click, so its ParameterSource is not click.core.ParameterSource.
         if any(
             getattr(ctx.get_parameter_source(p), "name", None) == "COMMANDLINE" for p in ("src", "table_name", "views")
         ):

@@ -73,6 +73,8 @@ def _database_suffix() -> str:
 def with_database_suffix(connect_url: str) -> str:
     """Returns connect_url with its database name suffixed to be unique to this checkout, run, and worker."""
     url = sqlalchemy.engine.url.make_url(connect_url)
+    if not url.database:
+        raise ValueError(f"The test database URL must name a database: {url.render_as_string()}")
     return url.set(database=f"{url.database}{_database_suffix()}").render_as_string(hide_password=False)
 
 

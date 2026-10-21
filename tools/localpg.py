@@ -169,6 +169,7 @@ def run(
             console.print(f"⚠️ [warning]Container named '{name}' already exists.[/]")
             if allow_existing:
                 console.print("[info]Continuing due to --allow-existing flag[/]")
+                check_existing_config(name, port)
             else:
                 console.print(f"[command]Run 'docker kill {name}' to remove it first.[/]\n")
                 # ruff: noqa: TRY301
@@ -200,12 +201,34 @@ def run(
                 f"🔌 Connection string:\n   [url]postgresql://postgres:postgres@localhost:{port}/{create_db}?sslmode=disable[/]"
             )
         console.print("")
+    except typer.Exit:
+        raise
     except subprocess.CalledProcessError as e:
         typer.echo(f"Error running Docker command: {e}", err=True)
         raise typer.Exit(1) from e
     except Exception as e:
         typer.echo(f"Unexpected error: {e}", err=True)
         raise typer.Exit(1) from e
+
+
+def check_existing_config(name: str, port: int) -> None:
+    """Exits if the existing container's max_connections differs from PG_CONFIG, which an old container can't apply.
+
+    Parallel test runs need the larger limit; without it they fail with "sorry, too many clients already".
+    """
+    conn_str = f"postgresql://postgres:postgres@localhost:{port}/postgres"
+    try:
+        with psycopg.connect(conn_str, connect_timeout=5) as conn:
+            (actual,) = conn.execute("SHOW max_connections").fetchone()
+    except psycopg.OperationalError:
+        return  # Not reachable yet, or not ours to inspect; later steps report connection problems.
+    expected = PG_CONFIG["max_connections"]
+    if actual != expected:
+        console.print(
+            f"❌ [warning]Container '{name}' has max_connections={actual}, but {expected} is configured.[/]"
+            f"\n[command]Run 'docker kill {name}' and start it again to apply the current configuration.[/]\n"
+        )
+        raise typer.Exit(3)
 
 
 def create_database(dbname: str, port: int, drop_database: bool = False) -> bool:
