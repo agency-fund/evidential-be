@@ -1895,7 +1895,6 @@ dependencies = [
     { name = "numpy" },
     { name = "orjson" },
     { name = "pandas" },
-    { name = "pandas-gbq" },
     { name = "psycopg", extra = ["binary"] },
     { name = "psycopg2", marker = "sys_platform == 'linux'" },
     { name = "psycopg2-binary", marker = "sys_platform != 'linux'" },
@@ -1912,7 +1911,6 @@ dependencies = [
     { name = "stochatreat" },
     { name = "typer" },
     { name = "uvicorn", extra = ["standard"] },
-    { name = "zstandard" },
 ]
 
 [package.dev-dependencies]
@@ -1922,6 +1920,7 @@ dev = [
     { name = "deepdiff" },
     { name = "fastapi-typed-client" },
     { name = "mypy" },
+    { name = "pandas-gbq" },
     { name = "pandas-stubs" },
     { name = "prek" },
     { name = "pytest" },
@@ -1933,6 +1932,7 @@ dev = [
     { name = "scipy-stubs" },
     { name = "types-cachetools" },
     { name = "types-psycopg2" },
+    { name = "zstandard" },
 ]
 
 [package.metadata]
@@ -1950,7 +1950,6 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.3,<2.4" },
     { name = "orjson", specifier = ">=3.11.7,<4" },
     { name = "pandas", specifier = ">=2.3.3,<3" },
-    { name = "pandas-gbq", specifier = ">=0.33.0,<0.34" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.2,<4" },
     { name = "psycopg2", marker = "sys_platform == 'linux'", specifier = ">=2.9.11,<3" },
     { name = "psycopg2-binary", marker = "sys_platform == 'darwin'", specifier = ">=2.9.11,<3" },
@@ -1967,7 +1966,6 @@ requires-dist = [
     { name = "stochatreat", git = "https://github.com/agency-fund/stochatreat?rev=prod" },
     { name = "typer", specifier = ">=0.26.7,<0.27" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.54.0" },
-    { name = "zstandard", specifier = ">=0.25.0,<0.26" },
 ]
 
 [package.metadata.requires-dev]
@@ -1977,6 +1975,7 @@ dev = [
     { name = "deepdiff", specifier = ">=8.6.2,<9" },
     { name = "fastapi-typed-client", git = "https://github.com/dctaf/fastapi-typed-client-fork?rev=evid%2Fv0.4.0%2Bevid.1" },
     { name = "mypy", specifier = ">=1.19.1" },
+    { name = "pandas-gbq", specifier = ">=0.33.0,<0.34" },
     { name = "pandas-stubs", specifier = ">=2.3.3,<3" },
     { name = "prek", specifier = ">=0.5.3,<0.6.0" },
     { name = "pytest", specifier = ">=9.0.3,<10" },
@@ -1988,6 +1987,7 @@ dev = [
     { name = "scipy-stubs", specifier = ">=1.16.2,<2" },
     { name = "types-cachetools", specifier = ">=6.0.0.20250525" },
     { name = "types-psycopg2", specifier = ">=2.9.10,<3" },
+    { name = "zstandard", specifier = ">=0.25.0,<0.26" },
 ]
 
 [[package]]
