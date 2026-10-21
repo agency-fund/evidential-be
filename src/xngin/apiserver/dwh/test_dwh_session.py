@@ -15,15 +15,15 @@ def fixture_dwh_config(testing_datasource):
     return testing_datasource.ds.get_config().dwh
 
 
-def test_run_hands_fn_the_warehouse_session(dwh_config):
+def test_on_worker_can_query_the_warehouse_session(dwh_config):
     with DwhSession.open(dwh_config) as dwh:
-        assert dwh._run(lambda session: session.execute(text("SELECT 1")).scalar_one()) == 1
+        assert dwh._on_worker("select 1", lambda: dwh._session.execute(text("SELECT 1")).scalar_one()) == 1
 
 
 def test_all_warehouse_calls_run_on_one_helper_thread(dwh_config):
     """The block reuses one warehouse Session, which is only safe if every call shares one thread."""
     with DwhSession.open(dwh_config) as dwh:
-        idents = {dwh._run(lambda _session: threading.get_ident()) for _ in range(3)}
+        idents = {dwh._on_worker("get_ident", threading.get_ident) for _ in range(3)}
     assert len(idents) == 1
     assert idents != {threading.get_ident()}
 
@@ -184,5 +184,8 @@ def test_inspecting_a_missing_table_names_only_that_table(dwh_config, mocker):
 def test_bind_parameters_appear_in_exception_text_only_in_dev(dwh_config, monkeypatch, environment, shows_parameters):
     monkeypatch.setenv("ENVIRONMENT", environment)
     with DwhSession.open(dwh_config) as dwh, pytest.raises(sqlalchemy.exc.DBAPIError) as excinfo:
-        dwh._run(lambda session: session.execute(text("SELECT CAST(:a AS text), 1 / 0"), {"a": "SECRET_VALUE"}))
+        dwh._on_worker(
+            "failing query",
+            lambda: dwh._session.execute(text("SELECT CAST(:a AS text), 1 / 0"), {"a": "SECRET_VALUE"}),
+        )
     assert ("SECRET_VALUE" in str(excinfo.value)) is shows_parameters

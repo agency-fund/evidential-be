@@ -4,7 +4,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from concurrent.futures import Future
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Concatenate, Self
+from typing import Self
 
 import google.api_core.exceptions
 import sqlalchemy
@@ -170,16 +170,6 @@ class DwhSession:
             return self._timeout.run(fn, *args, **kwargs)
         except TimeoutError as exc:
             raise DwhTimeoutError(f"The data warehouse did not finish {label} within {self._timeout_secs:g}s.") from exc
-
-    def _run[T, **P](self, fn: Callable[Concatenate[Session, P], T], /, *args: P.args, **kwargs: P.kwargs) -> T:
-        """Call fn(warehouse_session, *args, **kwargs) on the helper thread, under the deadline.
-
-        fn must touch nothing but the Session it is handed: an application-database Session, or an ORM
-        object belonging to the caller, would end up in use from two threads at once. The Session is
-        never returned to callers, only passed to fn, so that no one can hold it past the deadline or
-        use it off the helper thread.
-        """
-        return self._on_worker(getattr(fn, "__name__", "a query"), fn, self._session, *args, **kwargs)
 
     def _inspect_table_blocking(self, table_name: str, *, use_sa_autoload: bool | None = None) -> sqlalchemy.Table:
         """Returns the Table for table_name, inspecting the DWH only the first time it is requested."""
