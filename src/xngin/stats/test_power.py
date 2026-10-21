@@ -7,6 +7,7 @@ from xngin.apiserver.routers.common_enums import (
     MetricPowerAnalysisMessageType,
     MetricType,
 )
+from xngin.stats.individual_power import solve_for_mde_individual_impl
 from xngin.stats.power import analyze_metric_power, check_power
 from xngin.stats.stats_errors import StatsPowerError
 
@@ -85,11 +86,11 @@ def test_analyze_metric_power_numeric_insufficient(available_nonnull_n, availabl
         "metric_target": 14.5272,
     }
 
-    # Check that null warning appears when there are nulls
+    # Check that null note appears when there are nulls
     if available_nonnull_n != available_n:
-        assert "WARNING" in result.msg.msg
+        assert "NOTE" in result.msg.msg
     else:
-        assert "WARNING" not in result.msg.msg
+        assert "NOTE" not in result.msg.msg
 
     assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
 
@@ -221,11 +222,174 @@ def test_analyze_metric_with_zero_available_nonnull_n_returns_insufficient():
 
     assert result.msg is not None
     assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
-    assert "You have no units with non-null values" in result.msg.msg
+    assert result.msg.msg == (
+        "Cannot estimate the minimum sample size. All participants have null for this metric. "
+        "Adjust your filters to target units with non-null values."
+    )
     # When returning early error, values is None
     assert result.msg.values is None
     assert result.target_n is None
     assert result.sufficient_n is None
+
+
+def make_metric_with_nulls(*, use_one_time_metric: bool, available_nonnull_n: int = 800):
+    # 1000 units, 800 non-null by default, so the column has 200 nulls and is one-time eligible.
+    return DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=1000,
+        available_nonnull_n=available_nonnull_n,
+        is_one_time_eligible=use_one_time_metric,
+        use_one_time_metric=use_one_time_metric,
+    )
+
+
+def test_analyze_metric_power_null_warning_suggests_handling_nulls():
+    result = analyze_metric_power(make_metric_with_nulls(use_one_time_metric=False), n_arms=2)
+
+    assert result.metric_spec.is_one_time_eligible
+    assert result.msg is not None
+    assert "NOTE: Only 800 of 1000 units have non-null values." in result.msg.msg
+    assert "Consider assigning only participants with nulls to the experiment" in result.msg.msg
+
+
+def test_analyze_metric_power_one_time_mode_skips_null_warning():
+    result = analyze_metric_power(make_metric_with_nulls(use_one_time_metric=True), n_arms=2)
+
+    # The user already opted into one-time mode, so there is nothing to suggest.
+    assert result.metric_spec.use_one_time_metric
+    assert result.msg is not None
+    assert "NOTE" not in result.msg.msg
+    assert "Consider" not in result.msg.msg
+
+
+def test_analyze_metric_power_resets_one_time_flags_when_no_nulls_remain():
+    # The request still carries one-time flags from an earlier check, but the column has since filled up.
+    metric = make_metric_with_nulls(use_one_time_metric=True, available_nonnull_n=1000)
+
+    result = analyze_metric_power(metric, n_arms=2)
+
+    assert not result.metric_spec.is_one_time_eligible
+    assert not result.metric_spec.use_one_time_metric
+    assert result.msg is not None
+    assert "NOTE" not in result.msg.msg
+
+
+def test_analyze_metric_power_one_time_mode_sufficient_uses_null_pool():
+    # 900 nulls but only 100 non-null rows. The design needs ~128 units, which the null pool covers,
+    # so one-time mode is sufficient even though the non-null count alone would not be.
+    result = analyze_metric_power(make_metric_with_nulls(use_one_time_metric=True, available_nonnull_n=100), n_arms=2)
+
+    assert result.target_n is not None
+    assert 100 < result.target_n <= 900
+    assert result.sufficient_n
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
+    assert "One-time mode: 900 of 1000 units have no value for this metric yet" in result.msg.msg
+    assert result.msg.values is not None
+    assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
+
+
+def test_analyze_metric_power_one_time_mode_insufficient_null_pool_uses_null_mde():
+    # Only 50 nulls, fewer than the ~128 units the design needs.
+    metric = make_metric_with_nulls(use_one_time_metric=True, available_nonnull_n=950)
+
+    result = analyze_metric_power(metric, n_arms=2)
+
+    assert result.target_n is not None
+    assert result.target_n > 50
+    assert not result.sufficient_n
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
+    # The MDE must be computed for the 50 null rows that will be assigned, not the 950 non-null rows.
+    expected_target, expected_pct = solve_for_mde_individual_impl(metric, desired_n=50, n_arms=2)
+    assert result.target_possible == pytest.approx(expected_target)
+    assert result.pct_change_possible == pytest.approx(expected_pct)
+    assert result.msg.values is not None
+    assert result.msg.values["additional_n_needed"] == result.target_n - 50
+    assert "There are not enough units without a value for this metric." in result.msg.msg
+    assert "with the 50 units without a value" in result.msg.msg
+    assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
+
+
+def test_analyze_metric_power_one_time_mode_binary_insufficient_null_pool():
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.BINARY,
+        metric_baseline=0.5,
+        metric_target=0.55,
+        available_n=1000,
+        available_nonnull_n=900,
+        use_one_time_metric=True,
+    )
+
+    result = analyze_metric_power(metric, n_arms=2)
+
+    assert not result.sufficient_n
+    expected_target, _ = solve_for_mde_individual_impl(metric, desired_n=100, n_arms=2)
+    assert result.target_possible == pytest.approx(expected_target)
+
+
+def test_analyze_metric_power_one_time_mode_too_few_nulls_for_mde():
+    # A single null row can't be split across arms, so the MDE can't be solved; we still report insufficient.
+    result = analyze_metric_power(make_metric_with_nulls(use_one_time_metric=True, available_nonnull_n=999), n_arms=2)
+
+    assert not result.sufficient_n
+    assert result.target_possible is None
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
+    assert "too few units to estimate a detectable effect" in result.msg.msg
+    assert result.msg.values is not None
+    assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
+
+
+def test_analyze_metric_power_one_time_mode_desired_n_within_null_pool():
+    metric = make_metric_with_nulls(use_one_time_metric=True)  # 200 nulls
+
+    result = analyze_metric_power(metric, n_arms=2, desired_n=200)
+
+    assert result.pct_change_possible is not None
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
+
+
+def test_analyze_metric_power_one_time_mode_desired_n_exceeds_null_pool():
+    metric = make_metric_with_nulls(use_one_time_metric=True)  # 200 nulls
+
+    result = analyze_metric_power(metric, n_arms=2, desired_n=500)
+
+    assert result.pct_change_possible is None
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
+    assert "only 200 units have no value for this metric yet" in result.msg.msg
+
+
+def test_analyze_metric_power_one_time_mode_desired_n_with_no_nulls():
+    # Every row has a value, so one-time mode can assign nobody. Report that instead of an MDE that creation
+    # could never use.
+    metric = make_metric_with_nulls(use_one_time_metric=True, available_nonnull_n=1000)
+
+    result = analyze_metric_power(metric, n_arms=2, desired_n=500)
+
+    assert result.pct_change_possible is None
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
+    assert "only 0 units have no value for this metric yet" in result.msg.msg
+
+
+def test_check_power_one_time_mode_desired_ns_beyond_null_pool():
+    metric = make_metric_with_nulls(use_one_time_metric=True)  # 200 nulls
+
+    (analysis,) = check_power([metric], n_arms=2, desired_n=500, desired_ns=[200, 500])
+
+    # Sizes beyond the null pool get no MDE; sizes within it still do.
+    assert analysis.pct_change_with_desired_n is None
+    assert analysis.mde_curve is not None
+    assert analysis.mde_curve[0].pct_change is not None
+    assert analysis.mde_curve[1].pct_change is None
 
 
 def test_analyze_metric_zero_effect_size_returns_friendly_error():
@@ -752,3 +916,24 @@ def test_check_power_mde_curve_cluster_counts_take_precedence_over_desired_ns():
 
     assert both[0].mde_curve == clusters_only[0].mde_curve
     assert both[0].mde_curve != individuals_only[0].mde_curve
+
+
+def test_check_power_only_primary_metric_is_one_time_eligible():
+    # Both metrics have nulls, but one-time mode is only allowed on the primary (first) metric.
+    primary = make_metric_with_nulls(use_one_time_metric=False)
+    secondary = make_metric_with_nulls(use_one_time_metric=False).model_copy(update={"field_name": "secondary"})
+
+    primary_analysis, secondary_analysis = check_power([primary, secondary], n_arms=2)
+
+    assert primary_analysis.metric_spec.is_one_time_eligible
+    assert primary_analysis.msg is not None
+    assert "Consider assigning only participants with nulls" in primary_analysis.msg.msg
+
+    assert not secondary_analysis.metric_spec.is_one_time_eligible
+    assert secondary_analysis.msg is not None
+    # Still warned about nulls, but not told to use a mode it can't use.
+    assert "NOTE: Only 800 of 1000 units have non-null values." in secondary_analysis.msg.msg
+    assert (
+        "Consider adding a filter to explicitly exclude participants with a null value." in secondary_analysis.msg.msg
+    )
+    assert "assigning only participants with nulls" not in secondary_analysis.msg.msg
