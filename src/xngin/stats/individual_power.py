@@ -208,11 +208,11 @@ def solve_for_sample_size_individual(
             "You have no available units to run your experiment. Adjust your filters to target more units.",
         )
 
-    # Use nonnull count for power calculations (only users with data count toward power)
-    effective_n = metric.available_nonnull_n if metric.available_nonnull_n is not None else metric.available_n
+    # The baseline and stddev come from the non-null rows, so we always need some of them.
+    available_nonnull_n = metric.available_nonnull_n if metric.available_nonnull_n is not None else metric.available_n
 
-    # Check for zero effective_n (no non-null values)
-    if effective_n <= 0:
+    # Check for zero non-null values
+    if available_nonnull_n <= 0:
         # Only show error when ALL values are null (100%)
         error_msg = (
             "Cannot estimate the minimum sample size. All participants have null for this metric. "
@@ -223,6 +223,23 @@ def solve_for_sample_size_individual(
             MetricPowerAnalysisMessageType.INSUFFICIENT,
             error_msg,
         )
+
+    # effective_n is the pool that will actually be assigned, which is what we size against. Normally that's the
+    # non-null rows (only units with data count toward power); one-time mode assigns only the units with no value
+    # yet, so it's the null rows instead.
+    effective_n = available_nonnull_n
+    if metric.use_one_time_metric:
+        available_null_n = metric.available_n - available_nonnull_n
+        if available_null_n <= 0:
+            return power_analysis_error(
+                metric,
+                MetricPowerAnalysisMessageType.INSUFFICIENT,
+                (
+                    "One-time mode: every unit already has a value for this metric, so there are no units to "
+                    "assign. Turn off one-time mode or adjust your filters."
+                ),
+            )
+        effective_n = available_null_n
 
     # Calculate target from pct_change if needed
     if metric.metric_target is None and metric.metric_baseline is not None and metric.metric_pct_change is not None:
@@ -283,33 +300,24 @@ def solve_for_sample_size_individual(
 
     # Check for nulls only if nonnull_n is provided
     has_nulls = metric.available_nonnull_n is not None and metric.available_nonnull_n != metric.available_n
-    # Only meaningful when the column actually has nulls (flags are reset otherwise).
-    one_time_mode = metric.use_one_time_metric and has_nulls
-    # The baseline and stddev always come from the non-null rows, but the pool that will actually be
-    # assigned differs: one-time mode assigns only the null rows; otherwise we compare against the
-    # non-null rows (only units with data count toward power).
-    null_n = metric.available_n - effective_n
+    # A one-time request with no nulls already returned an error above, so effective_n is the null count here.
+    one_time_mode = metric.use_one_time_metric
 
     # Prep the response object
     analysis = MetricPowerAnalysis(metric_spec=metric)
     analysis.target_n = int(target_n)
-    analysis.sufficient_n = bool(target_n <= (null_n if one_time_mode else effective_n))
+    analysis.sufficient_n = bool(target_n <= effective_n)
 
     # Construct potential components of the MetricPowerAnalysisMessage
     values_map: dict[str, float | int] = {
         "available_n": metric.available_n,
         "target_n": analysis.target_n,
-        "available_nonnull_n": effective_n,
-        **({"available_null_n": null_n} if one_time_mode else {}),
+        "available_nonnull_n": available_nonnull_n,
+        **({"available_null_n": effective_n} if one_time_mode else {}),
     }
 
-    # The primary metric is one-time eligible when the power calc succeeds and its column has nulls. With no nulls
-    # left, one-time mode would match nobody, so turn it off.
-    analysis.metric_spec = metric.model_copy(
-        update={"is_one_time_eligible": is_primary}
-        if has_nulls
-        else {"is_one_time_eligible": False, "use_one_time_metric": False}
-    )
+    # The primary metric is one-time eligible when the power calc succeeds and its column has nulls.
+    analysis.metric_spec = metric.model_copy(update={"is_one_time_eligible": is_primary and has_nulls})
 
     msg_base_stats = (
         (
@@ -348,7 +356,7 @@ def solve_for_sample_size_individual(
             analysis,
             values_map,
             metric=metric,
-            null_n=null_n,
+            null_n=effective_n,
             n_arms=n_arms,
             arm_weights=arm_weights,
             alpha=alpha,
@@ -377,7 +385,7 @@ def solve_for_sample_size_individual(
             "There are not enough non-null valued units available. "
             "You need {additional_n_needed} more units to meet your specified "
             "metric target of {metric_target}. "
-            "Alternatively, with the available {available_nonnull_n} non-null units "
+            "Alternatively, with the available {available_nonnull_n} non-null units "  # noqa: RUF027
             "and a metric baseline of {metric_baseline}, your metric target should be "
             "{target_possible} or further from the baseline. "  # noqa: RUF027
         )

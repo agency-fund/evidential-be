@@ -266,16 +266,19 @@ def test_analyze_metric_power_one_time_mode_skips_null_warning():
     assert "Consider" not in result.msg.msg
 
 
-def test_analyze_metric_power_resets_one_time_flags_when_no_nulls_remain():
-    # The request still carries one-time flags from an earlier check, but the column has since filled up.
+def test_analyze_metric_power_one_time_mode_errors_when_no_nulls_remain():
+    # The request still carries one-time flags from an earlier check, but the column has since filled up, so there
+    # is nobody left to assign. This is reported as an error rather than silently switching one-time mode off.
     metric = make_metric_with_nulls(use_one_time_metric=True, available_nonnull_n=1000)
 
     result = analyze_metric_power(metric, n_arms=2)
 
-    assert not result.metric_spec.is_one_time_eligible
-    assert not result.metric_spec.use_one_time_metric
+    assert result.target_n is None
+    assert result.sufficient_n is None
+    assert result.metric_spec.use_one_time_metric
     assert result.msg is not None
-    assert "NOTE" not in result.msg.msg
+    assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
+    assert "every unit already has a value for this metric" in result.msg.msg
 
 
 def test_analyze_metric_power_one_time_mode_sufficient_uses_null_pool():
