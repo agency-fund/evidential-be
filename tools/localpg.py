@@ -46,7 +46,6 @@ PG_CONFIG = {
     "max_parallel_workers": "2",
     "max_parallel_workers_per_gather": "2",
     "max_wal_size": "6GB",
-    "max_worker_processes": "4",
     "min_wal_size": "2GB",
     "random_page_cost": "1",
     "shared_buffers": "2GB",
@@ -81,7 +80,7 @@ def build_docker_command(daemon: bool, tmpfs: bool, port: int, name: str) -> lis
 
     # Add tmpfs mount if specified
     if tmpfs:
-        cmd.extend(["--tmpfs", "/var/lib/postgresql/data:rw,noexec,nosuid,size=4G"])
+        cmd.extend(["--tmpfs", "/var/lib/postgresql:rw,noexec,nosuid,size=4G"])
 
     # Add postgres image and version
     cmd.append("postgres:18")
