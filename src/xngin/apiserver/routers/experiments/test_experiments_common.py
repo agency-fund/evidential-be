@@ -368,10 +368,12 @@ def make_insertable_experiment(
     field_type_map = None
     if experiment_type in {ExperimentsType.FREQ_PREASSIGNED, ExperimentsType.FREQ_ONLINE}:
         assert isinstance(design_spec, PreassignedFrequentistExperimentSpec | OnlineFrequentistExperimentSpec)
-        field_type_map = fetch_fields_or_raise(datasource, design_spec)
+        with DwhSession.open(datasource.get_config().dwh) as dwh:
+            field_type_map = fetch_fields_or_raise(dwh, design_spec)
     elif experiment_type == ExperimentsType.MAB_ONLINE_DWH:
         assert isinstance(design_spec, MABDwhExperimentSpec)
-        field_type_map = fetch_mab_dwh_fields_or_raise(datasource, design_spec)
+        with DwhSession.open(datasource.get_config().dwh) as dwh:
+            field_type_map = fetch_mab_dwh_fields_or_raise(dwh, design_spec)
 
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
@@ -592,7 +594,8 @@ def test_create_preassigned_experiment_impl(
         ]
     )
 
-    field_type_map = fetch_fields_or_raise(testing_datasource.ds, spec)
+    with DwhSession.open(testing_datasource.ds.get_config().dwh) as dwh:
+        field_type_map = fetch_fields_or_raise(dwh, spec)
 
     response = create_preassigned_experiment_impl(
         request=request.model_copy(deep=True),  # we'll use the original request for assertions
@@ -738,11 +741,11 @@ def test_create_preassigned_experiment_impl_cluster_assignment(xngin_session, te
     """Preassigned create with cluster_key assigns all members of a cluster to the same arm."""
     design_spec = make_design_spec_clustered()
     request = CreateExperimentRequest(design_spec=design_spec)
-    field_type_map = fetch_fields_or_raise(testing_datasource.ds, design_spec)
     assert design_spec.desired_n is not None
     assert design_spec.cluster_key is not None
 
     with DwhSession.open(testing_datasource.ds.get_config().dwh) as dwh:
+        field_type_map = fetch_fields_or_raise(dwh, design_spec)
         participant_result = dwh.get_participants(
             design_spec.table_name,
             select_columns={design_spec.primary_key, design_spec.cluster_key, "test_score"},
@@ -846,6 +849,25 @@ def test_create_experiment_impl_clustered_rejects_empty_eligible_cohort(xngin_se
         )
 
 
+def test_create_experiment_impl_uses_one_warehouse_session(xngin_session, testing_datasource, mocker):
+    """Field validation and the participants query share one connection and one reflection."""
+    connect = mocker.spy(DwhSession, "_connect_blocking")
+    reflect = mocker.spy(DwhSession, "_reflect_table_blocking")
+    design_spec = make_design_spec_clustered(cluster_key="cluster_equal", desired_n=999, desired_n_clusters=3)
+
+    create_experiment_impl(
+        request=CreateExperimentRequest(design_spec=design_spec),
+        datasource=testing_datasource.ds,
+        xngin_session=xngin_session,
+        stratify_on_metrics=False,
+        random_state=42,
+        validated_webhooks=[],
+    )
+
+    assert connect.call_count == 1
+    assert reflect.call_count == 1
+
+
 def test_create_experiment_impl_clustered_samples_clusters(xngin_session, testing_datasource):
     """Clustered preassigned creation samples clusters, then includes every participant in each sampled cluster."""
     design_spec = make_design_spec_clustered(
@@ -912,13 +934,13 @@ def _create_clustered_preassigned_experiment(
 ) -> tables.Experiment:
     design_spec = make_design_spec_clustered(cluster_key=cluster_key)
     request = CreateExperimentRequest(design_spec=design_spec)
-    field_type_map = fetch_fields_or_raise(testing_datasource.ds, design_spec)
     assert design_spec.desired_n is not None
 
     select_columns = {design_spec.primary_key, metric_name}
     if cluster_key is not None:
         select_columns.add(cluster_key)
     with DwhSession.open(testing_datasource.ds.get_config().dwh) as dwh:
+        field_type_map = fetch_fields_or_raise(dwh, design_spec)
         participant_result = dwh.get_participants(
             design_spec.table_name,
             select_columns=select_columns,
@@ -1062,7 +1084,8 @@ def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
     ]
 
     spec = cast(PreassignedFrequentistExperimentSpec, request.design_spec)
-    field_type_map = fetch_fields_or_raise(testing_datasource.ds, spec)
+    with DwhSession.open(testing_datasource.ds.get_config().dwh) as dwh:
+        field_type_map = fetch_fields_or_raise(dwh, spec)
 
     with pytest.raises(LateValidationError, match="Duplicate participant ID found after filtering:"):
         create_preassigned_experiment_impl(
@@ -1091,7 +1114,8 @@ def test_create_preassigned_experiment_impl_with_unbalanced_arms(
     spec.arms[0].arm_weight = expected_weights[0]
     spec.arms[1].arm_weight = expected_weights[1]
 
-    field_type_map = fetch_fields_or_raise(testing_datasource.ds, spec)
+    with DwhSession.open(testing_datasource.ds.get_config().dwh) as dwh:
+        field_type_map = fetch_fields_or_raise(dwh, spec)
 
     response = create_preassigned_experiment_impl(
         request=request,
@@ -1152,7 +1176,8 @@ def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
     spec.arms[1].arm_weight = expected_weights[1]
     spec.arms[2].arm_weight = expected_weights[2]
 
-    field_type_map = fetch_fields_or_raise(testing_datasource.ds, spec)
+    with DwhSession.open(testing_datasource.ds.get_config().dwh) as dwh:
+        field_type_map = fetch_fields_or_raise(dwh, spec)
 
     response = create_preassigned_experiment_impl(
         request=request,

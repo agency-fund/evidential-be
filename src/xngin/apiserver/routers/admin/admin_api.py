@@ -33,10 +33,6 @@ from xngin.apiserver.dependencies import xngin_sync_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.inspections import create_inspect_table_response_from_table
-from xngin.apiserver.dwh.queries import (
-    get_cluster_sufficient_stats,
-    get_raw_metric_stats,
-)
 from xngin.apiserver.exceptionhandlers import XHTTPValidationError
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.limits import MAX_LENGTH_OF_EMAIL_VALUE, MAX_LENGTH_OF_NAME_VALUE
@@ -1678,12 +1674,7 @@ def power_check(
             # Only queries run inside this block; stats are computed from the raw rows after
             # the DWH connection is closed. Metrics carrying baseline stats are not queried.
             raw_metric_stats = (
-                dwh.run(
-                    get_raw_metric_stats,
-                    sa_table,
-                    metrics_missing_stats,
-                    filters,
-                )
+                dwh.get_raw_metric_stats(sa_table, metrics=metrics_missing_stats, filters=filters)
                 if metrics_missing_stats
                 else None
             )
@@ -1704,13 +1695,12 @@ def power_check(
                         mean = raw_metric_stats[f"{field_name}__mean"] if raw_metric_stats is not None else None
                     if mean is not None:
                         outcome_shifts[field_name] = mean
-                raw_cluster_stats = dwh.run(
-                    get_cluster_sufficient_stats,
+                raw_cluster_stats = dwh.get_cluster_sufficient_stats(
                     sa_table,
-                    cluster_key,
-                    db_derived_metrics,
-                    filters,
-                    outcome_shifts,
+                    cluster_column_name=cluster_key,
+                    outcome_column_names=db_derived_metrics,
+                    filters=filters,
+                    outcome_shifts=outcome_shifts,
                 )
 
         queried_stats = (

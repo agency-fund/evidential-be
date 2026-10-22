@@ -1,3 +1,10 @@
+"""Query planning and execution behind DwhSession.get_participant_metrics.
+
+Reading many participants by id is split into batches of IN and BETWEEN filters; the planning is
+pure and tested on its own. The Session get_participant_metrics takes is DwhSession's own, handed
+over on its helper thread. Application code reaches it only through the DwhSession method.
+"""
+
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -12,7 +19,7 @@ from sqlalchemy.orm import Session
 from xngin.apiserver.dwh.analysis_types import MetricValue, ParticipantOutcome
 from xngin.apiserver.dwh.query_constructors import create_one_filter
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.routers.common_api_types import DesignSpecMetricRequest, Filter
+from xngin.apiserver.routers.common_api_types import Filter
 from xngin.apiserver.routers.common_enums import MetricType, Relation
 
 if TYPE_CHECKING:
@@ -200,7 +207,7 @@ def coalesce_chunks_into_disjunctives(participant_filters: list[ParticipantChunk
 
 def build_participant_metrics_plan(
     sa_table: Table,
-    metrics: list[DesignSpecMetricRequest],
+    metric_names: list[str],
     unique_id_field: str,
     participant_ids: list[str],
 ) -> ParticipantMetricsPlans:
@@ -209,13 +216,11 @@ def build_participant_metrics_plan(
 
     # query for a participant_id column (the unique id column) and the metrics columns.
     field_names = ["participant_id"]
-    metric_types = [MetricType.from_python_type(sa_table.c[m.field_name].type.python_type) for m in metrics]
-    for metric, metric_type in zip(metrics, metric_types, strict=False):
-        field_name = metric.field_name
+    for field_name in metric_names:
         field_names.append(field_name)
         col = sa_table.c[field_name]
         # Coerce everything to Float to avoid Decimal/Integer/Boolean issues across backends.
-        if metric_type is MetricType.NUMERIC:
+        if MetricType.from_python_type(col.type.python_type) is MetricType.NUMERIC:
             cast_column = cast(col, Float)
         else:  # re: avg(boolean) doesn't work on pg-like backends
             cast_column = cast(cast(col, Integer), Float)
@@ -247,7 +252,7 @@ def build_participant_metrics_plan(
 def get_participant_metrics(
     session: Session,
     sa_table: Table,
-    metrics: list[DesignSpecMetricRequest],
+    metric_names: list[str],
     unique_id_field: str,
     participant_ids: list[str],
 ) -> list[ParticipantOutcome]:
@@ -256,9 +261,9 @@ def get_participant_metrics(
         sa_table.name,
         unique_id_field,
         len(participant_ids),
-        [metric.field_name for metric in metrics],
+        metric_names,
     )
-    missing_metrics = {m.field_name for m in metrics if m.field_name not in sa_table.c}
+    missing_metrics = {name for name in metric_names if name not in sa_table.c}
     if len(missing_metrics) > 0:
         raise LateValidationError(f"Missing metrics (check your Datasource configuration): {missing_metrics}")
     if unique_id_field not in sa_table.columns:
@@ -266,7 +271,7 @@ def get_participant_metrics(
 
     pmplans = build_participant_metrics_plan(
         sa_table=sa_table,
-        metrics=metrics,
+        metric_names=metric_names,
         unique_id_field=unique_id_field,
         participant_ids=participant_ids,
     )
