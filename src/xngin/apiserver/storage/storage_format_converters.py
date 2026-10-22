@@ -118,6 +118,7 @@ def _make_freq_experiment_fields(
                 metric_field.is_primary_metric = True
             metric_field.metric_pct_change = metric.metric_pct_change
             metric_field.metric_target = metric.metric_target
+            metric_field.use_one_time_metric = metric.use_one_time_metric
 
     # Add strata
     if design_spec.strata:
@@ -203,6 +204,7 @@ class ExperimentStorageConverter:
                 field_name=experiment_field.field_name,
                 metric_pct_change=experiment_field.metric_pct_change,
                 metric_target=experiment_field.metric_target,
+                use_one_time_metric=experiment_field.use_one_time_metric,
             )
         return None
 
@@ -225,9 +227,11 @@ class ExperimentStorageConverter:
         return [f[1] for f in sorted(position_filters, key=operator.itemgetter(0))]
 
     def get_design_spec_metrics(self) -> list[capi.DesignSpecMetricRequest]:
-        """Return design-spec metrics from experiment_fields."""
+        """Return design-spec metrics from experiment_fields, with the primary metric first."""
         metrics = []
-        for ef in self.experiment.experiment_fields:
+        # experiment_fields has no defined order, but the design spec treats metrics[0] as the primary metric
+        # (e.g. one-time mode is only valid there), so put it first. sorted() is stable for the rest.
+        for ef in sorted(self.experiment.experiment_fields, key=lambda f: not f.is_primary_metric):
             if api_metric := self._convert_experiment_field_to_api_metric(ef):
                 metrics.append(api_metric)
         return metrics

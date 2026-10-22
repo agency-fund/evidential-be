@@ -292,6 +292,16 @@ def create_experiment_impl(
             stratum_cols = strata_names + metric_names if stratify_on_metrics else strata_names
             select_columns = {*stratum_cols, primary_key}
             eligibility_filters = request.design_spec.filters
+
+            # One-time mode: only assign participants with a null value for the metric. It is validated to be
+            # primary-only, so at most one null filter is added.
+            primary_metric = request.design_spec.metrics[0]
+            if primary_metric.use_one_time_metric:
+                eligibility_filters = [
+                    *eligibility_filters,
+                    Filter(field_name=primary_metric.field_name, relation=Relation.INCLUDES, value=[None]),
+                ]
+
             if cluster_key is not None:
                 select_columns.add(cluster_key)
                 eligibility_filters = [
@@ -319,6 +329,16 @@ def create_experiment_impl(
                         n=desired_n,
                     )
                 sa_table, participants = result.sa_table, result.participants
+
+            # One-time mode can only assign the rows where the primary metric is still null. Block creation when
+            # there are fewer of those than requested rather than silently running a smaller experiment.
+            if primary_metric.use_one_time_metric and desired_n is not None and len(participants) < desired_n:
+                raise LateValidationError(
+                    f"Cannot create the experiment because only {len(participants)} participants have no value "
+                    f'for "{primary_metric.field_name}", fewer than the desired sample size of {desired_n}. '
+                    "Turn off one-time mode to sample from all participants, or adjust your filters to include "
+                    "more participants with no value."
+                )
 
             if not participants:
                 raise LateValidationError("Preassigned experiments must have eligible participants data")
