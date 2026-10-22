@@ -39,7 +39,7 @@ hooks = [
 
 [[repos]]
 repo = "https://github.com/astral-sh/ruff-pre-commit"
-rev = "6fec9b7edb08fd9989088709d864a7826dc74e80"  # frozen: v0.15.12
+rev = "38bfb07c0c64c304f47eb52090f8288150c77730"  # frozen: v0.17.1
 hooks = [
   {
     id = "ruff-check",

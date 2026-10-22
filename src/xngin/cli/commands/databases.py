@@ -1,7 +1,7 @@
 """`create-database` and `drop-database` commands, and the database creation helper other commands share."""
 
 import contextlib
-from collections.abc import Iterator
+from collections.abc import Generator
 from typing import Annotated
 
 import psycopg
@@ -32,7 +32,7 @@ NamesArgument = Annotated[list[str], typer.Argument(metavar="DBNAME...", help="N
 
 
 @contextlib.contextmanager
-def _maintenance_connection(dsn: str) -> Iterator[psycopg.Connection]:
+def _maintenance_connection(dsn: str) -> Generator[psycopg.Connection]:
     """Connects to the server's maintenance database with autocommit enabled.
 
     CREATE DATABASE and DROP DATABASE cannot run inside a transaction block.

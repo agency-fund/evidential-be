@@ -6,7 +6,7 @@ test: if the test signed with the same library that verifies, it would only prov
 """
 
 import base64
-import datetime
+import datetime as dt
 import hashlib
 import hmac
 import json
@@ -103,7 +103,7 @@ def _mint(private_key, claims: dict, *, kid: str = TEST_KID, alg: str = "RS256")
 
 
 def _now() -> int:
-    return int(datetime.datetime.now(datetime.UTC).timestamp())
+    return int(dt.datetime.now(dt.UTC).timestamp())
 
 
 def _claims(**overrides) -> dict:
@@ -300,7 +300,7 @@ def test_rejects_token_signed_by_another_key(settings, discovery, other_key):
         pytest.param({"aud": [TEST_CLIENT_ID]}, id="audience-array"),
         pytest.param({"iss": "https://accounts.evil.example"}, id="wrong-iss"),
         pytest.param({"iss": "accounts.google.com"}, id="schemeless-iss"),
-        pytest.param({"exp": int(datetime.datetime.now(datetime.UTC).timestamp()) - 3600}, id="expired"),
+        pytest.param({"exp": int(dt.datetime.now(dt.UTC).timestamp()) - 3600}, id="expired"),
         pytest.param({"iss": None}, id="missing-iss"),
         pytest.param({"aud": None}, id="missing-aud"),
         pytest.param({"iat": None}, id="missing-iat"),

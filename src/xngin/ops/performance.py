@@ -1,6 +1,6 @@
 import dataclasses
 import time
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 
 from loguru import logger
@@ -12,7 +12,7 @@ class TimingResult:
 
 
 @contextmanager
-def timing(message: str | None = None) -> Iterator[TimingResult]:
+def timing(message: str | None = None) -> Generator[TimingResult]:
     result = TimingResult()
     start = time.perf_counter()
     try:
