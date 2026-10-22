@@ -26,7 +26,6 @@ def select_as_csv(
     session: Session,
     select_sql: Template,
     buffer_size_bytes: int,
-    newline_framed: bool = False,
     include_header: bool = False,
 ) -> Iterator[bytes]:
     """Yield CSV bytes for a SELECT statement executed via COPY TO STDOUT.
@@ -37,7 +36,6 @@ def select_as_csv(
         session: SQLAlchemy session.
         select_sql: SELECT statement to wrap in a COPY ... TO STDOUT query.
         buffer_size_bytes: Approximate threshold at which buffered bytes are yielded.
-        newline_framed: If True, only yield through the last newline to preserve whole CSV rows.
         include_header: If True, request a CSV header row from Postgres.
 
     Yields:
@@ -55,16 +53,9 @@ def select_as_csv(
                 buffer.extend(chunk)
                 if len(buffer) < buffer_size_bytes:
                     continue
-                if newline_framed:
-                    last_newline = buffer.rfind(b"\n")
-                    if last_newline >= 0:
-                        yield_count += 1
-                        yield bytes(buffer[: last_newline + 1])
-                        del buffer[: last_newline + 1]
-                else:
-                    yield_count += 1
-                    yield bytes(buffer)
-                    buffer.clear()
+                yield_count += 1
+                yield bytes(buffer)
+                buffer.clear()
         if buffer:
             yield_count += 1
             yield bytes(buffer)
