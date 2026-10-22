@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 @contextmanager
-def with_driver_connection(session: Session) -> Iterator[Connection]:
+def with_driver_connection(session: Session) -> Generator[Connection]:
     driver_conn = session.connection().connection.driver_connection
     if driver_conn is None:
         raise RuntimeError("failed getting driver connection")

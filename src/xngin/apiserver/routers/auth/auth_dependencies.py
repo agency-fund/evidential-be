@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 import json
 import secrets
 import time
@@ -23,7 +23,7 @@ from xngin.apiserver.storage.bootstrap import create_entities_for_first_time_use
 from xngin.xsecrets import chafernet
 
 # The length of time that a session token is considered valid.
-SESSION_TOKEN_LIFETIME = datetime.timedelta(hours=12).seconds
+SESSION_TOKEN_LIFETIME = dt.timedelta(hours=12).seconds
 SESSION_TOKEN_LOCAL_KEYSET_FILE = ".xngin_session_token_keyset"  # noqa: S105
 SESSION_TOKEN_PREFIX = "xa_"  # noqa: S105
 SESSION_TOKEN_AAD_VERSION = "xngin-session-v1"  # noqa: S105
