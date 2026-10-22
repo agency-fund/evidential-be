@@ -1,6 +1,6 @@
 """Context manager for data warehouse connections."""
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from concurrent.futures import Future
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -112,7 +112,7 @@ class DwhSession:
 
     @classmethod
     @contextmanager
-    def open(cls, dwh_config: Dwh, *, timeout: float | None = None) -> Iterator[Self]:
+    def open(cls, dwh_config: Dwh, *, timeout: float | None = None) -> Generator[Self]:
         """Connect to a warehouse for the duration of the block.
 
         Args:

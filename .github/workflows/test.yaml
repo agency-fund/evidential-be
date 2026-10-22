@@ -274,7 +274,7 @@ jobs:
     runs-on: ubuntu-24.04
     services:
       postgres:
-        image: postgres:17
+        image: postgres:18
         env:
           POSTGRES_DB: postgres
           POSTGRES_PASSWORD: postgres
@@ -328,7 +328,7 @@ jobs:
       QUERIES_DATASET_NAME: bqintegration_${{ github.run_id }}_${{ github.run_attempt }}_q
     services:
       postgres:
-        image: postgres:17
+        image: postgres:18
         env:
           POSTGRES_DB: postgres
           POSTGRES_PASSWORD: postgres

@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 import json
 import math
 import uuid
@@ -580,7 +580,7 @@ class FreqExperimentAnalysisResponse(ApiBaseModel):
         ),
     ] = None
     created_at: Annotated[
-        datetime.datetime,
+        dt.datetime,
         Field(description="The date and time the experiment analysis was created."),
     ]
 
@@ -613,7 +613,7 @@ class BanditExperimentAnalysisResponse(ApiBaseModel):
         ),
     ] = 0.0
     created_at: Annotated[
-        datetime.datetime,
+        dt.datetime,
         Field(description="The date and time the experiment analysis was created."),
     ]
     contexts: Annotated[
@@ -835,7 +835,7 @@ class Filter(ApiBaseModel):
     DATE, DATETIME or TIMESTAMP-type columns support INCLUDES/EXCLUDES/BETWEEN, similar to numerics.
 
     Values must be expressed as ISO8601 datetime strings compatible with Python's datetime.fromisoformat()
-    (https://docs.python.org/3/library/datetime.html#datetime.datetime.fromisoformat).
+    (https://docs.python.org/3/library/datetime.html#dt.datetime.fromisoformat).
 
     If a timezone is provided, it must be UTC.
     """
@@ -931,8 +931,8 @@ class BaseDesignSpec(ApiBaseModel):
         Field(description="Optional URL to a more detailed experiment design doc."),
     ] = None
 
-    start_date: datetime.datetime
-    end_date: datetime.datetime
+    start_date: dt.datetime
+    end_date: dt.datetime
 
     # arms (at least two)
     arms: Annotated[Sequence[Arm], Field(..., min_length=2, max_length=MAX_NUMBER_OF_ARMS)]
@@ -1065,9 +1065,9 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
     ] = 0.6
 
     @field_serializer("start_date", "end_date", when_used="json")
-    def serialize_dt(self, dt: datetime.datetime, _info):
+    def serialize_dt(self, value: dt.datetime, _info):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
-        return dt.isoformat()
+        return value.isoformat()
 
     @model_validator(mode="after")
     def validate_strata(self) -> Self:
@@ -1593,7 +1593,7 @@ class Assignment(ApiBaseModel):
         ),
     ]
     created_at: Annotated[
-        datetime.datetime | None,
+        dt.datetime | None,
         Field(description="The date and time the assignment was created."),
     ] = None
 
@@ -1611,7 +1611,7 @@ class Assignment(ApiBaseModel):
 
     # -- Bandit-specific fields --
     observed_at: Annotated[
-        datetime.datetime | None,
+        dt.datetime | None,
         Field(description="The date and time the outcome was recorded."),
     ] = None
 
@@ -1744,7 +1744,7 @@ class ExperimentConfig(ApiBaseModel):
     datasource_id: str
     state: Annotated[ExperimentState, Field(description="Current state of this experiment.")]
     stopped_assignments_at: Annotated[
-        datetime.datetime | None,
+        dt.datetime | None,
         Field(
             description="The date and time assignments were stopped. Null if assignments are still allowed to be made."
         ),
