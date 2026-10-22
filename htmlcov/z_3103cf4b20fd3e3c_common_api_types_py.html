@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_3103cf4b20fd3e3c_common_enums_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.16.2">coverage.py v7.16.2</a>,
-            created at 2026-10-21 18:11 +0000
+            created at 2026-10-22 15:05 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -80,7 +80,7 @@
     </div>
 </header>
 <main id="source">
-    <p class="run"><span class="n"><a id="t1" href="#t1">1</a></span><span class="t"><span class="key">import</span> <span class="nam">datetime</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t1" href="#t1">1</a></span><span class="t"><span class="key">import</span> <span class="nam">datetime</span> <span class="key">as</span> <span class="nam">dt</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t2" href="#t2">2</a></span><span class="t"><span class="key">import</span> <span class="nam">json</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t3" href="#t3">3</a></span><span class="t"><span class="key">import</span> <span class="nam">math</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t4" href="#t4">4</a></span><span class="t"><span class="key">import</span> <span class="nam">uuid</span>&nbsp;</span><span class="r"></span></p>
@@ -662,7 +662,7 @@
     <p class="run run2"><span class="n"><a id="t580" href="#t580">580</a></span><span class="t">        <span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t581" href="#t581">581</a></span><span class="t">    <span class="op">]</span> <span class="op">=</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t582" href="#t582">582</a></span><span class="t">    <span class="nam">created_at</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t583" href="#t583">583</a></span><span class="t">        <span class="nam">datetime</span><span class="op">.</span><span class="nam">datetime</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t583" href="#t583">583</a></span><span class="t">        <span class="nam">dt</span><span class="op">.</span><span class="nam">datetime</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t584" href="#t584">584</a></span><span class="t">        <span class="nam">Field</span><span class="op">(</span><span class="nam">description</span><span class="op">=</span><span class="str">&quot;The date and time the experiment analysis was created.&quot;</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t585" href="#t585">585</a></span><span class="t">    <span class="op">]</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t586" href="#t586">586</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -695,7 +695,7 @@
     <p class="run run2"><span class="n"><a id="t613" href="#t613">613</a></span><span class="t">        <span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t614" href="#t614">614</a></span><span class="t">    <span class="op">]</span> <span class="op">=</span> <span class="num">0.0</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t615" href="#t615">615</a></span><span class="t">    <span class="nam">created_at</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t616" href="#t616">616</a></span><span class="t">        <span class="nam">datetime</span><span class="op">.</span><span class="nam">datetime</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t616" href="#t616">616</a></span><span class="t">        <span class="nam">dt</span><span class="op">.</span><span class="nam">datetime</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t617" href="#t617">617</a></span><span class="t">        <span class="nam">Field</span><span class="op">(</span><span class="nam">description</span><span class="op">=</span><span class="str">&quot;The date and time the experiment analysis was created.&quot;</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t618" href="#t618">618</a></span><span class="t">    <span class="op">]</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t619" href="#t619">619</a></span><span class="t">    <span class="nam">contexts</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span>&nbsp;</span><span class="r"></span></p>
@@ -885,7 +885,7 @@
     <p class="pln"><span class="n"><a id="t803" href="#t803">803</a></span><span class="t"><span class="str">    DATE, DATETIME or TIMESTAMP-type columns support INCLUDES/EXCLUDES/BETWEEN, similar to numerics.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t804" href="#t804">804</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t805" href="#t805">805</a></span><span class="t"><span class="str">    Values must be expressed as ISO8601 datetime strings compatible with Python&#x27;s datetime.fromisoformat()</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t806" href="#t806">806</a></span><span class="t"><span class="str">    (https://docs.python.org/3/library/datetime.html#datetime.datetime.fromisoformat).</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t806" href="#t806">806</a></span><span class="t"><span class="str">    (https://docs.python.org/3/library/datetime.html#dt.datetime.fromisoformat).</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t807" href="#t807">807</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t808" href="#t808">808</a></span><span class="t"><span class="str">    If a timezone is provided, it must be UTC.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t809" href="#t809">809</a></span><span class="t"><span class="str">    &quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
@@ -981,8 +981,8 @@
     <p class="run run2"><span class="n"><a id="t899" href="#t899">899</a></span><span class="t">        <span class="nam">Field</span><span class="op">(</span><span class="nam">description</span><span class="op">=</span><span class="str">&quot;Optional URL to a more detailed experiment design doc.&quot;</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t900" href="#t900">900</a></span><span class="t">    <span class="op">]</span> <span class="op">=</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t901" href="#t901">901</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t902" href="#t902">902</a></span><span class="t">    <span class="nam">start_date</span><span class="op">:</span> <span class="nam">datetime</span><span class="op">.</span><span class="nam">datetime</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t903" href="#t903">903</a></span><span class="t">    <span class="nam">end_date</span><span class="op">:</span> <span class="nam">datetime</span><span class="op">.</span><span class="nam">datetime</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t902" href="#t902">902</a></span><span class="t">    <span class="nam">start_date</span><span class="op">:</span> <span class="nam">dt</span><span class="op">.</span><span class="nam">datetime</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t903" href="#t903">903</a></span><span class="t">    <span class="nam">end_date</span><span class="op">:</span> <span class="nam">dt</span><span class="op">.</span><span class="nam">datetime</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t904" href="#t904">904</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t905" href="#t905">905</a></span><span class="t">    <span class="com"># arms (at least two)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t906" href="#t906">906</a></span><span class="t">    <span class="nam">arms</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span><span class="nam">Sequence</span><span class="op">[</span><span class="nam">Arm</span><span class="op">]</span><span class="op">,</span> <span class="nam">Field</span><span class="op">(</span><span class="op">...</span><span class="op">,</span> <span class="nam">min_length</span><span class="op">=</span><span class="num">2</span><span class="op">,</span> <span class="nam">max_length</span><span class="op">=</span><span class="nam">MAX_NUMBER_OF_ARMS</span><span class="op">)</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
@@ -1115,9 +1115,9 @@
     <p class="run run2"><span class="n"><a id="t1033" href="#t1033">1033</a></span><span class="t">    <span class="op">]</span> <span class="op">=</span> <span class="num">0.6</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1034" href="#t1034">1034</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t1035" href="#t1035">1035</a></span><span class="t">    <span class="op">@</span><span class="nam">field_serializer</span><span class="op">(</span><span class="str">&quot;start_date&quot;</span><span class="op">,</span> <span class="str">&quot;end_date&quot;</span><span class="op">,</span> <span class="nam">when_used</span><span class="op">=</span><span class="str">&quot;json&quot;</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t1036" href="#t1036">1036</a></span><span class="t">    <span class="key">def</span> <span class="nam">serialize_dt</span><span class="op">(</span><span class="nam">self</span><span class="op">,</span> <span class="nam">dt</span><span class="op">:</span> <span class="nam">datetime</span><span class="op">.</span><span class="nam">datetime</span><span class="op">,</span> <span class="nam">_info</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t1036" href="#t1036">1036</a></span><span class="t">    <span class="key">def</span> <span class="nam">serialize_dt</span><span class="op">(</span><span class="nam">self</span><span class="op">,</span> <span class="nam">value</span><span class="op">:</span> <span class="nam">dt</span><span class="op">.</span><span class="nam">datetime</span><span class="op">,</span> <span class="nam">_info</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1037" href="#t1037">1037</a></span><span class="t">        <span class="str">&quot;&quot;&quot;Convert dates to iso strings in model_dump_json()/model_dump(mode=&#x27;json&#x27;)&quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t1038" href="#t1038">1038</a></span><span class="t">        <span class="key">return</span> <span class="nam">dt</span><span class="op">.</span><span class="nam">isoformat</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t1038" href="#t1038">1038</a></span><span class="t">        <span class="key">return</span> <span class="nam">value</span><span class="op">.</span><span class="nam">isoformat</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1039" href="#t1039">1039</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t1040" href="#t1040">1040</a></span><span class="t">    <span class="op">@</span><span class="nam">model_validator</span><span class="op">(</span><span class="nam">mode</span><span class="op">=</span><span class="str">&quot;after&quot;</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t1041" href="#t1041">1041</a></span><span class="t">    <span class="key">def</span> <span class="nam">validate_strata</span><span class="op">(</span><span class="nam">self</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">Self</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
@@ -1643,7 +1643,7 @@
     <p class="pln"><span class="n"><a id="t1561" href="#t1561">1561</a></span><span class="t">        <span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1562" href="#t1562">1562</a></span><span class="t">    <span class="op">]</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t1563" href="#t1563">1563</a></span><span class="t">    <span class="nam">created_at</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t1564" href="#t1564">1564</a></span><span class="t">        <span class="nam">datetime</span><span class="op">.</span><span class="nam">datetime</span> <span class="op">|</span> <span class="key">None</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t1564" href="#t1564">1564</a></span><span class="t">        <span class="nam">dt</span><span class="op">.</span><span class="nam">datetime</span> <span class="op">|</span> <span class="key">None</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t1565" href="#t1565">1565</a></span><span class="t">        <span class="nam">Field</span><span class="op">(</span><span class="nam">description</span><span class="op">=</span><span class="str">&quot;The date and time the assignment was created.&quot;</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t1566" href="#t1566">1566</a></span><span class="t">    <span class="op">]</span> <span class="op">=</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1567" href="#t1567">1567</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -1661,7 +1661,7 @@
     <p class="pln"><span class="n"><a id="t1579" href="#t1579">1579</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1580" href="#t1580">1580</a></span><span class="t">    <span class="com"># -- Bandit-specific fields --</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t1581" href="#t1581">1581</a></span><span class="t">    <span class="nam">observed_at</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t1582" href="#t1582">1582</a></span><span class="t">        <span class="nam">datetime</span><span class="op">.</span><span class="nam">datetime</span> <span class="op">|</span> <span class="key">None</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t1582" href="#t1582">1582</a></span><span class="t">        <span class="nam">dt</span><span class="op">.</span><span class="nam">datetime</span> <span class="op">|</span> <span class="key">None</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t1583" href="#t1583">1583</a></span><span class="t">        <span class="nam">Field</span><span class="op">(</span><span class="nam">description</span><span class="op">=</span><span class="str">&quot;The date and time the outcome was recorded.&quot;</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t1584" href="#t1584">1584</a></span><span class="t">    <span class="op">]</span> <span class="op">=</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1585" href="#t1585">1585</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -1794,7 +1794,7 @@
     <p class="pln"><span class="n"><a id="t1712" href="#t1712">1712</a></span><span class="t">    <span class="nam">datasource_id</span><span class="op">:</span> <span class="nam">str</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1713" href="#t1713">1713</a></span><span class="t">    <span class="nam">state</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span><span class="nam">ExperimentState</span><span class="op">,</span> <span class="nam">Field</span><span class="op">(</span><span class="nam">description</span><span class="op">=</span><span class="str">&quot;Current state of this experiment.&quot;</span><span class="op">)</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1714" href="#t1714">1714</a></span><span class="t">    <span class="nam">stopped_assignments_at</span><span class="op">:</span> <span class="nam">Annotated</span><span class="op">[</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1715" href="#t1715">1715</a></span><span class="t">        <span class="nam">datetime</span><span class="op">.</span><span class="nam">datetime</span> <span class="op">|</span> <span class="key">None</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1715" href="#t1715">1715</a></span><span class="t">        <span class="nam">dt</span><span class="op">.</span><span class="nam">datetime</span> <span class="op">|</span> <span class="key">None</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1716" href="#t1716">1716</a></span><span class="t">        <span class="nam">Field</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1717" href="#t1717">1717</a></span><span class="t">            <span class="nam">description</span><span class="op">=</span><span class="str">&quot;The date and time assignments were stopped. Null if assignments are still allowed to be made.&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1718" href="#t1718">1718</a></span><span class="t">        <span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -1960,7 +1960,7 @@
             <a class="nav" href="z_3103cf4b20fd3e3c_common_enums_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.16.2">coverage.py v7.16.2</a>,
-            created at 2026-10-21 18:11 +0000
+            created at 2026-10-22 15:05 +0000
         </p>
     </div>
 </footer>
