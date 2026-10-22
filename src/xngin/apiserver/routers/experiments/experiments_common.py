@@ -1,5 +1,5 @@
 import enum
-import io
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -68,7 +68,7 @@ from xngin.apiserver.routers.common_enums import (
 )
 from xngin.apiserver.routers.experiments.property_filters import passes_filters, validate_filter_value
 from xngin.apiserver.settings import DatasourceConfig
-from xngin.apiserver.sql.queries import select_as_csv
+from xngin.apiserver.sql.queries import stream
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
@@ -81,7 +81,7 @@ from xngin.stats.bandit_sampling import update_arm as update_bandit_arm
 from xngin.stats.stats_errors import StatsAnalysisError
 from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
 
-CSV_PARSE_CHUNK_SIZE_BYTES = 5 << 20
+ASSIGNMENT_STREAM_FETCH_SIZE_ROWS = 16_384
 
 
 class ExperimentsAssignmentError(Exception):
@@ -1406,9 +1406,10 @@ def read_assignments_efficiently(
     *,
     include_cluster_key: bool = False,
 ) -> tuple[list[str], DataFrame]:
-    """Reads assignments directly from Postgres via a COPY statement.
+    """Reads an experiment's assignments by streaming rows directly from Postgres.
 
-    Reads CSV output in row-bounded chunks and concatenates the parsed frames.
+    Participant IDs and cluster keys are opaque strings and are returned exactly as stored. A NULL cluster_key is
+    returned as None.
     """
     column_names = [
         tables.ArmAssignment.arm_id.name,
@@ -1419,17 +1420,22 @@ def read_assignments_efficiently(
 
     joined_column_names = sql.SQL(", ").join(sql.Identifier(name) for name in column_names)
     select_query = t"SELECT {joined_column_names:q} FROM arm_assignments WHERE experiment_id = {experiment_id}"  # type: ignore
-    dfs = [
-        pd.read_csv(io.BytesIO(chunk), names=column_names, dtype=str)
-        for chunk in select_as_csv(
-            xngin_session, select_query, buffer_size_bytes=CSV_PARSE_CHUNK_SIZE_BYTES, newline_framed=True
-        )
-    ]
-    if dfs:
-        df = pd.concat(dfs, ignore_index=True)
-    else:
-        df = pd.DataFrame(columns=column_names).astype(str)
-    return df[tables.ArmAssignment.participant_id.name].to_list(), df
+    arm_ids: list[str] = []
+    participant_ids: list[str] = []
+    cluster_keys: list[str | None] = []
+    for row in stream(xngin_session, select_query, ASSIGNMENT_STREAM_FETCH_SIZE_ROWS):
+        arm_ids.append(sys.intern(row[0]))  # reduce memory by only storing one instance of each arm_id
+        participant_ids.append(row[1])
+        if include_cluster_key:
+            cluster_keys.append(row[2])
+
+    data: dict[str, list[str] | list[str | None]] = {
+        tables.ArmAssignment.arm_id.name: arm_ids,
+        tables.ArmAssignment.participant_id.name: participant_ids,
+    }
+    if include_cluster_key:
+        data[tables.ArmAssignment.cluster_key.name] = cluster_keys
+    return participant_ids, pd.DataFrame(data, dtype=object, copy=False)
 
 
 @dataclass(frozen=True, slots=True)

@@ -6,7 +6,7 @@ import contextlib
 import dataclasses
 import enum
 import os
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -483,7 +483,7 @@ def expect_status_code(
     detail_contains: str | None = None,
     detail_eq: str | None = None,
     text: str | None = None,
-) -> Iterator[StatusCodeMatcher]:
+) -> Generator[StatusCodeMatcher]:
     """Like pytest.raises(), but for checking the non-default response codes of an AdminAPIClient request."""
     match = StatusCodeMatcher()
     with pytest.raises((

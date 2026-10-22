@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 import json
 import math
 import uuid
@@ -580,7 +580,7 @@ class FreqExperimentAnalysisResponse(ApiBaseModel):
         ),
     ] = None
     created_at: Annotated[
-        datetime.datetime,
+        dt.datetime,
         Field(description="The date and time the experiment analysis was created."),
     ]
 
@@ -613,7 +613,7 @@ class BanditExperimentAnalysisResponse(ApiBaseModel):
         ),
     ] = 0.0
     created_at: Annotated[
-        datetime.datetime,
+        dt.datetime,
         Field(description="The date and time the experiment analysis was created."),
     ]
     contexts: Annotated[
@@ -701,8 +701,11 @@ class MetricPowerAnalysis(ApiBaseModel):
         Field(
             description=(
                 "When the sample size is too small to reach the desired metric_target, this is the target "
-                "that is possible given available_n. It is the absolute counterpart of pct_change_possible. "
-                "None when the sample size is large enough to detect the desired change."
+                "that is possible given available_n, in the improvement (positive) direction from the "
+                "baseline. It is the absolute counterpart of pct_change_possible. "
+                "None when the sample size is large enough to detect the desired change, or (for BINARY "
+                "metrics) when no value above the baseline is a large enough change to reach the "
+                "requested power."
             )
         ),
     ] = None
@@ -713,7 +716,35 @@ class MetricPowerAnalysis(ApiBaseModel):
             description=(
                 "When the sample size is too small to reach the desired metric_pct_change, this is the percent "
                 "change that is possible given available_n. It is the relative counterpart of target_possible. "
-                "None when the sample size is large enough to detect the desired change."
+                "None whenever target_possible is None."
+            )
+        ),
+    ] = None
+
+    target_possible_lower: Annotated[
+        float | None,
+        Field(
+            description=(
+                "The detectable metric value below the baseline. (target_possible is the metric value above the "
+                "baseline.) Both detectable metric values above and below the baseline use the chosen confidence "
+                "and power, and are always reported together, regardless of the direction of the requested "
+                "change. For numeric metrics, this is the same distance below the baseline as target_possible is "
+                "above it. However, for binary metrics, an "
+                "increase and a decrease that are equally detectable can sit at different distances from the "
+                "baseline. None when the sample size is large enough to detect the desired change, or (for "
+                "BINARY metrics) when no value below the baseline is a large enough change to reach the "
+                "requested power."
+            )
+        ),
+    ] = None
+
+    pct_change_possible_lower: Annotated[
+        float | None,
+        Field(
+            description=(
+                "The relative counterpart of target_possible_lower, as a percent change from the baseline "
+                "(negative for a decrease). A value of -0.10 means a 10% decrease. "
+                "None whenever target_possible_lower is None."
             )
         ),
     ] = None
@@ -723,9 +754,10 @@ class MetricPowerAnalysis(ApiBaseModel):
         Field(
             description=(
                 "The minimum detectable effect (MDE) achievable for the desired sample size at the chosen "
-                "confidence and power. Present only when design_spec.desired_n or design_spec.desired_n_clusters "
-                "is set (frequentist design specs). When desired_n_clusters is set, the desired sample size is "
-                "desired_n_clusters times this metric's avg_cluster_size."
+                "confidence and power, reported in the direction of the requested change (negative when the "
+                "requested change is a decrease from the baseline). Present only when design_spec.desired_n or "
+                "design_spec.desired_n_clusters is set (frequentist design specs). When desired_n_clusters is "
+                "set, the desired sample size is desired_n_clusters times this metric's avg_cluster_size."
             )
         ),
     ] = None
@@ -803,7 +835,7 @@ class Filter(ApiBaseModel):
     DATE, DATETIME or TIMESTAMP-type columns support INCLUDES/EXCLUDES/BETWEEN, similar to numerics.
 
     Values must be expressed as ISO8601 datetime strings compatible with Python's datetime.fromisoformat()
-    (https://docs.python.org/3/library/datetime.html#datetime.datetime.fromisoformat).
+    (https://docs.python.org/3/library/datetime.html#dt.datetime.fromisoformat).
 
     If a timezone is provided, it must be UTC.
     """
@@ -899,8 +931,8 @@ class BaseDesignSpec(ApiBaseModel):
         Field(description="Optional URL to a more detailed experiment design doc."),
     ] = None
 
-    start_date: datetime.datetime
-    end_date: datetime.datetime
+    start_date: dt.datetime
+    end_date: dt.datetime
 
     # arms (at least two)
     arms: Annotated[Sequence[Arm], Field(..., min_length=2, max_length=MAX_NUMBER_OF_ARMS)]
@@ -1033,9 +1065,9 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
     ] = 0.6
 
     @field_serializer("start_date", "end_date", when_used="json")
-    def serialize_dt(self, dt: datetime.datetime, _info):
+    def serialize_dt(self, value: dt.datetime, _info):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
-        return dt.isoformat()
+        return value.isoformat()
 
     @model_validator(mode="after")
     def validate_strata(self) -> Self:
@@ -1561,7 +1593,7 @@ class Assignment(ApiBaseModel):
         ),
     ]
     created_at: Annotated[
-        datetime.datetime | None,
+        dt.datetime | None,
         Field(description="The date and time the assignment was created."),
     ] = None
 
@@ -1579,7 +1611,7 @@ class Assignment(ApiBaseModel):
 
     # -- Bandit-specific fields --
     observed_at: Annotated[
-        datetime.datetime | None,
+        dt.datetime | None,
         Field(description="The date and time the outcome was recorded."),
     ] = None
 
@@ -1712,7 +1744,7 @@ class ExperimentConfig(ApiBaseModel):
     datasource_id: str
     state: Annotated[ExperimentState, Field(description="Current state of this experiment.")]
     stopped_assignments_at: Annotated[
-        datetime.datetime | None,
+        dt.datetime | None,
         Field(
             description="The date and time assignments were stopped. Null if assignments are still allowed to be made."
         ),

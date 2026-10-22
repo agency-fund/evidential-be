@@ -49,7 +49,7 @@ dev = [
     "pytest-mock>=3.15.1,<4",
     "pytest-randomly>=4.0.1",
     "pytest>=9.0.3,<10",
-    "ruff==0.15.12",
+    "ruff==0.17.1",
     "scipy-stubs>=1.16.2,<2",
     "types-cachetools>=6.0.0.20250525",
     "types-psycopg2>=2.9.10,<3",
@@ -57,7 +57,7 @@ dev = [
 ]
 
 [build-system]
-requires = ["uv_build>=0.13.4"]
+requires = ["uv_build>=0.13.5"]
 build-backend = "uv_build"
 
 [project.scripts]
@@ -147,6 +147,8 @@ ignore = [
     "PLR6301", # method could be a function, class method, or static method
     "PT011", # pytest.raises(_) is too broad, set the `match` parameter or use a more specific exception
     "PT018", # Assertion should be broken down into multiple parts
+    "RUF105", # Prefer `ruff: ignore` over `noqa` comments (opinionated)
+    "RUF201", # Prefer rule names over codes in config (opinionated)
     "S101", # Use of `assert` detected
     "SIM108", # Use ternary operator instead of `if`-`else`-block
     "TRY003", # Raised bare custom exception with long message
@@ -193,6 +195,7 @@ max-statements = 54
     "PLR6201",  # Use a set literal when testing for membership: Generated code uses tuple membership tests.
     "RUF027",   # Possible f-strings without an f prefix: Generated code performs its own interpolation.
     "RUF100",   # The generator's `# noqa: ANN401` reads as unused here (ANN not enabled); don't fight it.
+    "UP052",    # Generator emits `Iterator` return types for context managers.
 ]
 
 [tool.ruff.lint.flake8-import-conventions]
@@ -215,7 +218,7 @@ banned-from = [
 "xngin.apiserver.routers.integrations.integrations_dependencies" = "ideps"
 
 [tool.uv]
-required-version = ">=0.13.4"
+required-version = ">=0.13.5"
 environments = [
     "sys_platform == 'darwin'",
     "sys_platform == 'linux'",

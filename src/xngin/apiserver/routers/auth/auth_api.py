@@ -1,7 +1,7 @@
 """Implements an OIDC relying party for a single configured identity provider (authorization code flow with PKCE)."""
 
 import asyncio
-import datetime
+import datetime as dt
 import json
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -31,7 +31,7 @@ from xngin.apiserver.routers.auth.principal import Principal
 
 # The identity provider and this server may disagree slightly about the wall clock. PyJWT applies this leeway to the
 # iat, nbf, and exp claims.
-CLOCK_SKEW_LEEWAY = datetime.timedelta(seconds=15)
+CLOCK_SKEW_LEEWAY = dt.timedelta(seconds=15)
 
 # OpenID Connect Core requires iss, sub, aud, exp, and iat in every ID token. We also require email because it is the
 # key used to look up invited users. email_verified is also required, but some providers publish it only from the

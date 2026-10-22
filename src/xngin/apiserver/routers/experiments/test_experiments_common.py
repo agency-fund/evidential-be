@@ -1,6 +1,7 @@
 import threading
 import time
 from collections import defaultdict
+from collections.abc import Sequence
 from contextlib import AbstractContextManager
 from contextlib import nullcontext as does_not_raise
 from dataclasses import dataclass
@@ -1008,6 +1009,63 @@ def test_analyze_experiment_freq_impl_with_cluster_key(
     assert hc1_treatment.std_error > 0
     assert crse_treatment.estimate == hc1_treatment.estimate
     assert crse_treatment.std_error > hc1_treatment.std_error
+
+
+def _insert_arm_assignments(xngin_session: Session, experiment_id: str, rows: Sequence[tuple[str, str, str | None]]):
+    """Inserts (arm_id, participant_id, cluster_key) rows into arm_assignments."""
+    xngin_session.execute(
+        insert(tables.ArmAssignment),
+        [
+            {
+                "experiment_id": experiment_id,
+                "arm_id": arm_id,
+                "participant_id": participant_id,
+                "cluster_key": cluster_key,
+                "strata": [],
+            }
+            for arm_id, participant_id, cluster_key in rows
+        ],
+    )
+    xngin_session.commit()
+
+
+def test_read_assignments_efficiently(xngin_session: Session):
+    experiment_id = tables.experiment_id_factory()
+    rows = [("arm_0", "p0", None), ("arm_1", "p1", None), ("arm_0", "p2", None), ("arm_1", "p3", None)]
+    _insert_arm_assignments(xngin_session, experiment_id, rows)
+
+    read_ids, df = experiments_common.read_assignments_efficiently(xngin_session, experiment_id)
+
+    assert sorted(read_ids) == ["p0", "p1", "p2", "p3"]
+    assert list(df.columns) == ["arm_id", "participant_id"]
+    assert sorted(zip(df["arm_id"], df["participant_id"], strict=True)) == sorted((a, p) for a, p, _ in rows)
+    # The participant ID list shares string objects with the DataFrame, and each arm ID is stored once.
+    assert all(a is b for a, b in zip(read_ids, df["participant_id"], strict=True))
+    assert len({id(arm_id) for arm_id in df["arm_id"]}) == 2
+
+
+def test_read_assignments_efficiently_returns_null_cluster_keys_as_none(xngin_session: Session):
+    experiment_id = tables.experiment_id_factory()
+    _insert_arm_assignments(xngin_session, experiment_id, [("arm_0", "p1", None), ("arm_1", "p2", "c2")])
+
+    _, df = experiments_common.read_assignments_efficiently(xngin_session, experiment_id, include_cluster_key=True)
+
+    assert list(df.columns) == ["arm_id", "participant_id", "cluster_key"]
+    assert dict(zip(df["participant_id"], df["cluster_key"], strict=True)) == {"p1": None, "p2": "c2"}
+
+
+@pytest.mark.parametrize("include_cluster_key", [False, True])
+def test_read_assignments_efficiently_with_no_assignments(xngin_session: Session, include_cluster_key: bool):
+    read_ids, df = experiments_common.read_assignments_efficiently(
+        xngin_session, tables.experiment_id_factory(), include_cluster_key=include_cluster_key
+    )
+
+    assert read_ids == []
+    assert df.empty
+    expected_columns = ["arm_id", "participant_id"]
+    if include_cluster_key:
+        expected_columns.append("cluster_key")
+    assert list(df.columns) == expected_columns
 
 
 def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
