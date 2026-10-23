@@ -13,6 +13,7 @@ import psycopg
 import psycopg2
 import sqlalchemy
 import typer
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import make_url
 
 from xngin.apiserver.dwh import dwh_utils
@@ -24,6 +25,25 @@ if TYPE_CHECKING:
     from sqlalchemy.sql.compiler import IdentifierPreparer
 
 _TESTING_DWH_RAW_DATA = Path(__file__).resolve().parent.parent.parent / "apiserver/testdata/testing_dwh.csv.zst"
+
+
+class _TemplateTable(BaseModel):
+    """One table of a --template file."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Path to the CSV, relative to the template file.
+    src: str
+    table_name: str
+    views: list[str] = []
+
+
+class _Template(BaseModel):
+    """The tables to load, as read from a --template file such as apiserver/testdata/warehouses.json."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tables: list[_TemplateTable] = Field(min_length=1)
 
 
 def _truncate_with_ellipsis(value: str) -> str:
@@ -333,12 +353,11 @@ def create_testing_dwh(
         ),
     ] = None,
     table_name: Annotated[
-        str,
+        str | None,
         typer.Option(
-            envvar="XNGIN_CLI_TABLE_NAME",
-            help="Desired name of the data warehouse table. This will be replaced if it already exists.",
+            help="Desired name of the data warehouse table (default: dwh). This will be replaced if it already exists.",
         ),
-    ] = "dwh",
+    ] = None,
     bucket: Annotated[
         str | None,
         typer.Option(
@@ -370,10 +389,20 @@ def create_testing_dwh(
             "Only supported on Postgres and Redshift."
         ),
     ] = None,
+    template: Annotated[
+        Path | None,
+        typer.Option(
+            help="JSON file listing several tables to load, each with its CSV (relative to the file), table name, "
+            "and views; e.g. src/xngin/apiserver/testdata/warehouses.json. Replaces --src, --table-name, and --views.",
+            exists=True,
+            dir_okay=False,
+        ),
+    ] = None,
 ):
     """Loads the testing data warehouse CSV into a database.
 
-    Any existing table will be replaced unless --allow-existing is used.
+    Any existing table will be replaced unless --allow-existing is used. With --template, each of the tables listed in
+    the template file is loaded in turn.
 
     For Postgres and Redshift (psycopg or psycopg2) connections, the table DDL will be read from a
     .{postgres|redshift}.ddl file in the same directory as the source CSV, or inferred via Pandas if
@@ -390,29 +419,47 @@ def create_testing_dwh(
 
     This command does not support schemas or non-trivial database names or table names consistently.
     """
-    source = _build_source(src=src, nrows=nrows)
-    dest = _build_dest(
-        dsn=dsn,
-        schema_name=schema_name,
-        table_name=table_name,
-        password=password,
-        views=views,
-    )
+    if template is None:
+        tables = [(src, table_name or "dwh", views)]
+    else:
+        if table_name is not None:
+            fail("--template cannot be combined with --table-name.", code=2)
+        try:
+            parsed = _Template.model_validate_json(template.read_text())
+        except (OSError, ValidationError) as exc:
+            fail(f"could not read --template {template}: {exc}", code=2)
+        tables = [
+            (_validate_src(template.parent / t.src), t.table_name, ",".join(t.views) or None) for t in parsed.tables
+        ]
+
+    dests = [
+        (
+            _build_source(src=table_src, nrows=nrows),
+            _build_dest(
+                dsn=dsn,
+                schema_name=schema_name,
+                table_name=table_table_name,
+                password=password,
+                views=table_views,
+            ),
+        )
+        for table_src, table_table_name, table_views in tables
+    ]
 
     if create_db:
-        create_database_if_absent(dest.url)
+        create_database_if_absent(dests[0][1].url)
 
-    if allow_existing and _table_is_populated(dest):
-        return
-
-    if dwh_utils.is_redshift(dest.url):
-        _load_redshift(source, dest, bucket=bucket, iam_role=iam_role)
-    elif dwh_utils.is_bigquery(dest.url):
-        _load_bigquery(source, dest)
-    elif dwh_utils.is_postgres(dest.url):
-        _load_postgres(source, dest)
-    else:
-        fail("Unrecognized database driver.", code=2)
+    for source, dest in dests:
+        if allow_existing and _table_is_populated(dest):
+            continue
+        if dwh_utils.is_redshift(dest.url):
+            _load_redshift(source, dest, bucket=bucket, iam_role=iam_role)
+        elif dwh_utils.is_bigquery(dest.url):
+            _load_bigquery(source, dest)
+        elif dwh_utils.is_postgres(dest.url):
+            _load_postgres(source, dest)
+        else:
+            fail("Unrecognized database driver.", code=2)
 
 
 def register(app: typer.Typer) -> None:
