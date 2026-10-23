@@ -2306,7 +2306,7 @@ def test_update_arm(testing_experiment, aclient: AdminAPIClient):
     assert arm.arm_description == "updated desc"
 
 
-def test_update_arm_invalid(testing_datasource, testing_experiment, aclient: AdminAPIClient, use_deterministic_random):
+def test_update_arm_invalid(use_deterministic_random, testing_datasource, testing_experiment, aclient: AdminAPIClient):
     """Test arm update validation checks.
 
     The 10-participant experiment created below is sampled with SQL random(). Some samples leave a
@@ -2345,7 +2345,7 @@ def test_update_arm_invalid(testing_datasource, testing_experiment, aclient: Adm
         )
 
 
-def test_freq_experiments_analyze(testing_experiment, aclient: AdminAPIClient, use_deterministic_random):
+def test_freq_experiments_analyze(use_deterministic_random, testing_experiment, aclient: AdminAPIClient):
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
 
