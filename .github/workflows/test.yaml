@@ -187,25 +187,30 @@ jobs:
         id: filter
         with:
           filters: |
+            common: &common
+              - 'uv.lock'
             ruffannotations:
+              - *common
               - '*.py'
               - '**/*.py'
               - 'pyproject.toml'
-              - 'uv.lock'
             pydependencies:
+              - *common
               - 'pyproject.toml'
-              - 'uv.lock'
             migrations:
+              - *common
               - 'migrations/**'
             queries:
+              - *common
               - 'src/xngin/apiserver/dwh/**'
               - 'src/xngin/apiserver/conftest.py'
             bigquery:
+              - *common
               - 'src/xngin/cli/**'
             openapi:
+              - *common
               - 'src/**/*.py'
               - 'pyproject.toml'
-              - 'uv.lock'
 
   osx-setup:
     needs: changes
@@ -269,7 +274,7 @@ jobs:
     runs-on: ubuntu-24.04
     services:
       postgres:
-        image: postgres:17
+        image: postgres:18
         env:
           POSTGRES_DB: postgres
           POSTGRES_PASSWORD: postgres
@@ -323,7 +328,7 @@ jobs:
       QUERIES_DATASET_NAME: bqintegration_${{ github.run_id }}_${{ github.run_attempt }}_q
     services:
       postgres:
-        image: postgres:17
+        image: postgres:18
         env:
           POSTGRES_DB: postgres
           POSTGRES_PASSWORD: postgres

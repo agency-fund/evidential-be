@@ -1,7 +1,7 @@
 """Jobs, experiments, and status readers shared by the worker tests."""
 
 import time
-from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
+from collections.abc import Callable, Collection, Generator, Iterable, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -230,7 +230,7 @@ class Pause:
 
 
 @contextmanager
-def paused_attempt(jobs: Sequence[Job], pause: Pause, experiment_id: str) -> Iterator[Future[FinishedAttempt]]:
+def paused_attempt(jobs: Sequence[Job], pause: Pause, experiment_id: str) -> Generator[Future[FinishedAttempt]]:
     """Start attempt_experiment on a thread and yield its future once the job reaches the pause.
 
     Leaving the block resumes the job and waits for the attempt to finish. If the job raised, that exception is

@@ -32,14 +32,14 @@ hooks = [
 
 [[repos]]
 repo = "https://github.com/astral-sh/uv-pre-commit"
-rev = "a1a56a60ddf7e9ba639fdd9f00f852d63ede4c04"  # frozen: 0.10.10
+rev = "eeca16c54e09b4d9a848259e46bae14737944348"  # frozen: 0.13.5
 hooks = [
   { id = "uv-lock" }
 ]
 
 [[repos]]
 repo = "https://github.com/astral-sh/ruff-pre-commit"
-rev = "6fec9b7edb08fd9989088709d864a7826dc74e80"  # frozen: v0.15.12
+rev = "38bfb07c0c64c304f47eb52090f8288150c77730"  # frozen: v0.17.1
 hooks = [
   {
     id = "ruff-check",

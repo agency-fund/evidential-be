@@ -14,7 +14,6 @@ from xngin.apiserver.dwh.participant_metrics_queries import (
     make_participant_chunks,
     to_np_int_arr,
 )
-from xngin.apiserver.routers.common_api_types import DesignSpecMetricRequest
 
 pytest_plugins = ("xngin.apiserver.dwh.dwh_test_support",)
 
@@ -96,10 +95,7 @@ def test_get_participant_metrics(queries_dwh_session, shared_sample_tables):
     rows = get_participant_metrics(
         queries_dwh_session,
         shared_sample_tables.sample_table,
-        [
-            DesignSpecMetricRequest(field_name="float_col", metric_pct_change=0.1),
-            DesignSpecMetricRequest(field_name="bool_col", metric_pct_change=0.1),
-        ],
+        ["float_col", "bool_col"],
         unique_id_field="id",
         participant_ids=participant_ids,
     )
@@ -136,10 +132,7 @@ def test_build_participant_metrics_query_plans_batches_sorted_ids(shared_sample_
 
     query_plan_set = build_participant_metrics_plan(
         shared_sample_tables.sample_table,
-        [
-            DesignSpecMetricRequest(field_name="float_col", metric_pct_change=0.1),
-            DesignSpecMetricRequest(field_name="bool_col", metric_pct_change=0.1),
-        ],
+        ["float_col", "bool_col"],
         unique_id_field="id",
         participant_ids=participant_ids,
     )
@@ -160,10 +153,7 @@ def test_build_participant_metrics_query_plans_batches_integer_ranges(shared_sam
 
     query_plan_set = build_participant_metrics_plan(
         shared_sample_tables.sample_table,
-        [
-            DesignSpecMetricRequest(field_name="float_col", metric_pct_change=0.1),
-            DesignSpecMetricRequest(field_name="bool_col", metric_pct_change=0.1),
-        ],
+        ["float_col", "bool_col"],
         unique_id_field="id",
         participant_ids=participant_ids,
     )
@@ -186,10 +176,7 @@ def test_build_participant_metrics_query_plans_coalesces_between_filters(shared_
 
     query_plans = build_participant_metrics_plan(
         shared_sample_tables.sample_table,
-        [
-            DesignSpecMetricRequest(field_name="float_col", metric_pct_change=0.1),
-            DesignSpecMetricRequest(field_name="bool_col", metric_pct_change=0.1),
-        ],
+        ["float_col", "bool_col"],
         unique_id_field="id",
         participant_ids=participant_ids,
     ).plans
@@ -205,10 +192,7 @@ def test_build_participant_metrics_query_plans_keeps_single_large_between_range(
 
     query_plan_set = build_participant_metrics_plan(
         shared_sample_tables.sample_table,
-        [
-            DesignSpecMetricRequest(field_name="float_col", metric_pct_change=0.1),
-            DesignSpecMetricRequest(field_name="bool_col", metric_pct_change=0.1),
-        ],
+        ["float_col", "bool_col"],
         unique_id_field="id",
         participant_ids=participant_ids,
     )

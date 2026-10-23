@@ -48,7 +48,7 @@ def capture_snapshot(session: Session, experiment_id: str, *, dwh_timeout: float
         # after losing the transaction that owns this experiment.
         if not session.is_active or session.connection().invalidated:
             raise
-        logger.opt(exception=exc).info("Snapshot analysis failed.")
+        logger.opt(exception=exc).warning("Snapshot analysis failed.")
         snapshot = tables.Snapshot(experiment_id=experiment_id, status="failed", message=f"{type(exc).__name__}: {exc}")
         error: Exception | None = exc
     else:

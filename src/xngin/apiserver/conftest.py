@@ -6,7 +6,7 @@ import contextlib
 import dataclasses
 import enum
 import os
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +14,7 @@ from typing import Any, assert_never, cast
 
 import pytest
 import sqlalchemy
+from loguru import logger
 from sqlalchemy import delete, make_url
 from sqlalchemy.dialects.postgresql import psycopg
 from sqlalchemy.engine.interfaces import Dialect
@@ -22,7 +23,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy_bigquery import dialect as bigquery_dialect
 from starlette.testclient import TestClient
 
-from xngin.apiserver import database, flags, settings
+from xngin.apiserver import database, flags, request_context_middleware, settings
 from xngin.apiserver.dependencies import (
     random_seed_dependency,
 )
@@ -67,7 +68,7 @@ class RowProtocolMixin:
     @property
     def _mapping(self) -> Mapping[str, Any]:
         if dataclasses.is_dataclass(self):
-            return dataclasses.asdict(self)
+            return dataclasses.asdict(self)  # type: ignore[unreachable]
         raise RuntimeError("RowProtocolMixin is only defined for use with dataclasses.")
 
 
@@ -188,6 +189,16 @@ def fixture_override_app_dependencies():
     auth_dependencies.enable_testing_tokens()
 
 
+@pytest.fixture
+def records():
+    """Captures the Loguru records emitted during the test, with request context applied as in production."""
+    logger.configure(patcher=request_context_middleware.add_request_context)
+    captured = []
+    handler_id = logger.add(lambda message: captured.append(message.record), level="INFO")
+    yield captured
+    logger.remove(handler_id)
+
+
 @pytest.fixture(name="client")
 def fixture_client(xngin_session):
     """Returns a FastAPI TestClient.
@@ -294,6 +305,9 @@ def delete_seeded_users(xngin_session: Session):
 def fixture_use_deterministic_random():
     """Tests that want deterministic SQL random() behavior can request this fixture. This will only affect
     SQLAlchemy expressions that use custom_functions.our_random().
+
+    pytest sets up fixtures in the order a test requests them, so request this one before fixtures that create
+    experiments, such as testing_experiment; otherwise their participants are sampled randomly.
     """
     original = custom_functions.USE_DETERMINISTIC_RANDOM
     try:
@@ -472,7 +486,7 @@ def expect_status_code(
     detail_contains: str | None = None,
     detail_eq: str | None = None,
     text: str | None = None,
-) -> Iterator[StatusCodeMatcher]:
+) -> Generator[StatusCodeMatcher]:
     """Like pytest.raises(), but for checking the non-default response codes of an AdminAPIClient request."""
     match = StatusCodeMatcher()
     with pytest.raises((

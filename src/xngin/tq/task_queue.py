@@ -117,7 +117,7 @@ class TaskQueue:
                 t"""
                 UPDATE tasks
                 SET status = 'running', updated_at = NOW()
-                WHERE id IN (
+                WHERE id = (
                     SELECT id FROM tasks
                     WHERE status = 'pending'
                     AND embargo_until <= NOW()

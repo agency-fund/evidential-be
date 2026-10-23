@@ -1563,6 +1563,30 @@ def test_power_check_answers_504_when_the_warehouse_stalls(testing_datasource, a
         release.set()
 
 
+def test_power_check_rejects_nodwh_datasource(aclient: AdminAPIClient):
+    org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="nodwh power check")).data.id
+    nodwh_ds_id = aclient.get_organization(organization_id=org_id).data.datasources[0].id
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test power check on nodwh",
+        description="Power checks require a data warehouse.",
+        table_name="dwh",
+        primary_key="id",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="control", arm_description="Control group"),
+            Arm(arm_name="treatment", arm_description="Treatment group"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+    )
+
+    with expect_status_code(400, text="not supported for datasources without a data warehouse"):
+        aclient.power_check(datasource_id=nodwh_ds_id, body=design_spec_to_power_request(design_spec))
+
+
 def test_power_check_validations(testing_datasource, aclient: AdminAPIClient):
     """Test power check validations."""
     ds_id = testing_datasource.datasource_id
@@ -2283,7 +2307,7 @@ def test_update_arm(testing_experiment, aclient: AdminAPIClient):
     assert arm.arm_description == "updated desc"
 
 
-def test_update_arm_invalid(testing_datasource, testing_experiment, aclient: AdminAPIClient, use_deterministic_random):
+def test_update_arm_invalid(use_deterministic_random, testing_datasource, testing_experiment, aclient: AdminAPIClient):
     """Test arm update validation checks.
 
     The 10-participant experiment created below is sampled with SQL random(). Some samples leave a
@@ -2322,7 +2346,7 @@ def test_update_arm_invalid(testing_datasource, testing_experiment, aclient: Adm
         )
 
 
-def test_freq_experiments_analyze(testing_experiment, aclient: AdminAPIClient, use_deterministic_random):
+def test_freq_experiments_analyze(use_deterministic_random, testing_experiment, aclient: AdminAPIClient):
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
 

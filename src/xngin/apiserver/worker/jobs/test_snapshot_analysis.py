@@ -52,11 +52,13 @@ def make_experiment(
     field_type_map: dict[str, DataType] | None
     match design_spec:
         case PreassignedFrequentistExperimentSpec() | OnlineFrequentistExperimentSpec():
-            field_type_map = fetch_fields_or_raise(datasource, design_spec)
+            with DwhSession.open(datasource.get_config().dwh) as dwh:
+                field_type_map = fetch_fields_or_raise(dwh, design_spec)
         case MABExperimentSpec() | CMABExperimentSpec():
             field_type_map = None
         case MABDwhExperimentSpec():
-            field_type_map = fetch_mab_dwh_fields_or_raise(datasource, design_spec)
+            with DwhSession.open(datasource.get_config().dwh) as dwh:
+                field_type_map = fetch_mab_dwh_fields_or_raise(dwh, design_spec)
         case _:
             assert_never(design_spec)
 

@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 import json
 import secrets
 import time
@@ -13,6 +13,7 @@ from sqlalchemy.sql.functions import count
 
 from xngin.apiserver import flags
 from xngin.apiserver.dependencies import xngin_sync_db_session
+from xngin.apiserver.request_context_middleware import add_request_fields
 from xngin.apiserver.routers.auth.discovery import LOGIN_UNAVAILABLE_DETAIL, get_oidc_discovery
 from xngin.apiserver.routers.auth.oidc_settings import get_oidc_settings
 from xngin.apiserver.routers.auth.principal import Principal
@@ -22,7 +23,7 @@ from xngin.apiserver.storage.bootstrap import create_entities_for_first_time_use
 from xngin.xsecrets import chafernet
 
 # The length of time that a session token is considered valid.
-SESSION_TOKEN_LIFETIME = datetime.timedelta(hours=12).seconds
+SESSION_TOKEN_LIFETIME = dt.timedelta(hours=12).seconds
 SESSION_TOKEN_LOCAL_KEYSET_FILE = ".xngin_session_token_keyset"  # noqa: S105
 SESSION_TOKEN_PREFIX = "xa_"  # noqa: S105
 SESSION_TOKEN_AAD_VERSION = "xngin-session-v1"  # noqa: S105
@@ -142,9 +143,13 @@ def require_user_from_token(
     session: Annotated[Session, Depends(xngin_sync_db_session)],
     principal: Annotated[Principal, Depends(require_valid_session_token)],
 ) -> tables.User:
-    """Dependency for fetching the User record matching the authenticated user's email."""
+    """Dependency for fetching the User record matching the authenticated user's email.
+
+    Adds the user's ID to the request's log context as user_id.
+    """
     user = _lookup_or_create(session, principal)
     if user:
+        add_request_fields(user_id=user.id)
         return user
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
