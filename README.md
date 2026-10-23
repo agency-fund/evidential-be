@@ -8,7 +8,7 @@
 | src/xngin/apiserver/benchmarks/test\_draws\_perf.py                                |       95 |       66 |     31% |48, 52-93, 111-128, 143-159, 163, 171, 177-180, 192-215, 228-251, 264-282 |
 | src/xngin/apiserver/certs/certs.py                                                 |       16 |        9 |     44% |19-23, 37-44 |
 | src/xngin/apiserver/common\_field\_types.py                                        |       12 |        1 |     92% |        13 |
-| src/xngin/apiserver/conftest.py                                                    |      251 |       25 |     90% |72, 91, 106, 108, 119, 162, 166, 168, 172, 405, 422-436, 451, 468, 471, 506 |
+| src/xngin/apiserver/conftest.py                                                    |      251 |       25 |     90% |72, 91, 106, 108, 119, 162, 166, 168, 172, 408, 425-439, 454, 471, 474, 509 |
 | src/xngin/apiserver/customlogging.py                                               |       71 |       12 |     83% |25-26, 77, 87-88, 95, 130-139 |
 | src/xngin/apiserver/database.py                                                    |       50 |        5 |     90% |29, 40, 57, 63, 70 |
 | src/xngin/apiserver/dependencies.py                                                |       12 |        1 |     92% |        12 |
