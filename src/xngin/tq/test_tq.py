@@ -10,8 +10,6 @@ from xngin.tq import task_queue as task_queue_module
 from xngin.tq.task_queue import Task, TaskQueue
 from xngin.tq.tq_test_support import insert_task, tq_runner, wait_for_task_status
 
-pytest_plugins = ("xngin.apiserver.conftest",)
-
 
 def test_task_queue_processes_pending_task_successfully(xngin_session: Session, tq_dsn: str):
     task_queue = TaskQueue(dsn=tq_dsn, max_retries=1, poll_interval_secs=1)

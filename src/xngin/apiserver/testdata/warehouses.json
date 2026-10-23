@@ -1,0 +1,18 @@
+{
+  "tables": [
+    {
+      "src": "testing_dwh.csv.zst",
+      "table_name": "dwh",
+      "views": ["a_dwh", "z_dwh"]
+    },
+    {
+      "src": "wide_dwh.csv.zst",
+      "table_name": "wide_dwh",
+      "views": ["a_wide_dwh", "z_wide_dwh"]
+    },
+    {
+      "src": "clustered_dwh.csv.zst",
+      "table_name": "clustered_dwh"
+    }
+  ]
+}
