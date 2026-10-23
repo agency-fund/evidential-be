@@ -203,7 +203,8 @@ jobs:
             queries:
               - *common
               - 'src/xngin/apiserver/dwh/**'
-              - 'src/xngin/apiserver/conftest.py'
+              - 'src/xngin/conftest.py'
+              - 'src/xngin/apiserver/testing/helpers.py'
             bigquery:
               - *common
               - 'src/xngin/cli/**'

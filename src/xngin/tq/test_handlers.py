@@ -13,8 +13,6 @@ from xngin.tq.task_payload_types import TURN_JOURNEYS_CHANGED_TASK_TYPE, WEBHOOK
 from xngin.tq.task_queue import TaskQueue
 from xngin.tq.tq_test_support import insert_task, tq_runner, wait_for_task_status
 
-pytest_plugins = ("xngin.apiserver.conftest",)
-
 
 def _create_organization(aclient: AdminAPIClient, name: str) -> str:
     return aclient.create_organizations(body=CreateOrganizationRequest(name=name)).data.id
