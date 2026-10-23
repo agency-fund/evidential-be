@@ -61,7 +61,9 @@ env:
   XNGIN_DEVDWH_DSN: "postgresql+psycopg://postgres:postgres@localhost:5499/dwh?sslmode=disable"
 
   # Datasource for tests of the xngin app database that use the xngin_db_session dependency or the xngin_session
-  # test fixture.
+  # test fixture. Tests append a suffix identifying the test run and pytest-xdist worker to this database
+  # name (and to that of XNGIN_QUERIES_TEST_URI), so that concurrent runs can share one Postgres instance; see
+  # xngin.apiserver.testing.pg_helpers.
   DATABASE_URL_FOR_TEST: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
 
   # Datasource for the tests using the xngin.apiserver.dwh.test_queries.fixture_queries_dwh_session fixture.
@@ -230,6 +232,10 @@ tasks:
       task test -- -k tests_matching_some_string_expression -rA    # run subset of tests, show all output in summary
       task test -- -m integration                                  # run tests annotated with @pytest.mark.integration
       task test -- --lf                                            # only re-run failed tests
+
+      When tests fail, their databases are kept for inspection (their names are printed just before the short test
+      summary) and dropped by test runs a day later. Each test clears the tables when it starts, so a kept database
+      shows the last test that used it: re-run just the failures to inspect them, e.g. task test -- --lf.
     interactive: true
     env:
       DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"
@@ -334,9 +340,20 @@ tasks:
       - bootstrap-app-database
     cmd: psql "{{.XNGIN_DEVAPP_STANDARD_DSN}}"
   drop-databases:
-    desc: "Forcibly remove the local development databases."
+    desc: >-
+      Forcibly remove the local development databases, including the per-worker test databases and their templates
+      (for every checkout sharing this Postgres instance).
     interactive: true
-    cmd: uv run xngin-cli drop-database --dsn "{{.XNGIN_LOCALPG_DSN}}" dwh migration_lint test_xngin {{.XNGIN_DEVAPPDB_NAME}}
+    cmd: |
+      uv run xngin-cli drop-database --dsn "{{.XNGIN_LOCALPG_DSN}}" \
+        dwh \
+        migration_lint \
+        test_xngin \
+        test_queries \
+        {{.XNGIN_DEVAPPDB_NAME}} \
+        --prefix test_xngin_ \
+        --prefix test_queries_ \
+        --prefix xngin_tmpl_
   create-database:
     desc: "Create an empty database with the supplied name. Useful for prepping a pg_restore of your local database after dropping it."
     interactive: true

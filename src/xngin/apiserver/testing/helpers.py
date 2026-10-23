@@ -26,6 +26,7 @@ from xngin.apiserver.dwh import dwh_utils
 from xngin.apiserver.routers.admin import admin_api_types as aapi
 from xngin.apiserver.settings import Dsn
 from xngin.apiserver.sqla import tables
+from xngin.apiserver.testing.pg_helpers import with_database_suffix
 
 
 class RowProtocolMixin:
@@ -76,12 +77,17 @@ class TestUriInfo:
 def get_queries_test_uri() -> TestUriInfo:
     """Gets the DSN of the testing data warehouse to use in tests.
 
+    A Postgres database name is suffixed to be unique to this test run and worker; see pg_helpers.
+
     See xngin.apiserver.dwh.test_queries.fixture_queries_dwh_session.
     """
     connection_uri = os.environ.get("XNGIN_QUERIES_TEST_URI", "")
     if not connection_uri:
         raise ValueError("XNGIN_QUERIES_TEST_URI must be set.")
-    return get_test_uri_info(connection_uri)
+    info = get_test_uri_info(connection_uri)
+    if info.db_type == DbType.PG:
+        info = get_test_uri_info(with_database_suffix(connection_uri))
+    return info
 
 
 def get_test_uri_info(connection_uri: str) -> TestUriInfo:

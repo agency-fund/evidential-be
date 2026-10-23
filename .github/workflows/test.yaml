@@ -205,6 +205,8 @@ jobs:
               - 'src/xngin/apiserver/dwh/**'
               - 'src/xngin/conftest.py'
               - 'src/xngin/apiserver/testing/helpers.py'
+              - 'src/xngin/apiserver/testing/pg_helpers.py'
+              - 'src/xngin/apiserver/testing/database_plugin.py'
             bigquery:
               - *common
               - 'src/xngin/cli/**'

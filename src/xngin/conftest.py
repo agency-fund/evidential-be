@@ -42,7 +42,7 @@ from xngin.apiserver.testing.helpers import (
     get_queries_test_uri,
     get_test_uri_info,
 )
-from xngin.apiserver.testing.pg_helpers import create_database_if_not_exists_pg
+from xngin.apiserver.testing.pg_helpers import create_test_database_pg
 from xngin.db_extensions import custom_functions
 
 # Gives the assertions in the helpers that tests import pytest's detailed failure messages, as in test modules.
@@ -166,11 +166,14 @@ def fixture_integrations_api_client(xngin_session):
 
 @pytest.fixture(scope="session")
 def fixture_initialize_xngin_db_schema():
-    """Create the application schema once for the test session."""
+    """Create a fresh application database for the test session from a template having the current schema.
+
+    The application database engine is held open for the whole session so that its connection pool is reused across
+    tests; the database.setup() call made by the FastAPI lifespan reuses it.
+    """
     with database.setup():
-        create_database_if_not_exists_pg(database.get_sqlalchemy_database_url())
-        with database.get_engine().begin() as conn:
-            tables.Base.metadata.create_all(conn)
+        create_test_database_pg(database.get_sqlalchemy_database_url(), tables.Base.metadata)
+        yield
 
 
 @pytest.fixture(name="xngin_session")
@@ -185,22 +188,18 @@ def fixture_xngin_db_session(fixture_initialize_xngin_db_schema):
     Where possible, prefer using the API methods to test functionality rather than touching the database
     directly.
     """
-    with database.setup():
-        with database.get_engine().begin() as conn:
-            for table in reversed(tables.Base.metadata.sorted_tables):
-                conn.execute(sqlalchemy.delete(table))
-        with database.get_session() as session:
-            session.add_all([
-                tables.User(email=PRIVILEGED_EMAIL, is_privileged=True),
-                tables.User(email=UNPRIVILEGED_EMAIL, is_privileged=False),
-                tables.User(email=UNPRIVILEGED_EMAIL_2, is_privileged=False),
-            ])
-            session.commit()
-        with database.get_session() as sess:
-            try:
-                yield sess
-            finally:
-                sess.close()
+    with database.get_engine().begin() as conn:
+        for table in reversed(tables.Base.metadata.sorted_tables):
+            conn.execute(sqlalchemy.delete(table))
+    with database.get_session() as session:
+        session.add_all([
+            tables.User(email=PRIVILEGED_EMAIL, is_privileged=True),
+            tables.User(email=UNPRIVILEGED_EMAIL, is_privileged=False),
+            tables.User(email=UNPRIVILEGED_EMAIL_2, is_privileged=False),
+        ])
+        session.commit()
+    with database.get_session() as sess:
+        yield sess
 
 
 @pytest.fixture(name="use_deterministic_random")

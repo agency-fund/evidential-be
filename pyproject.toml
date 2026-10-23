@@ -77,7 +77,7 @@ markers = [
     "integration: integration tests that rely on remote resources",
     "benchmark: performance benchmarks; opt-in via -m benchmark"
 ]
-addopts = "-m 'not integration and not benchmark'"
+addopts = "-m 'not integration and not benchmark' -p xngin.apiserver.testing.database_plugin"
 # filtewarnings can be used to silence warnings during tests.
 # format is: action:message:category:module
 filterwarnings = [

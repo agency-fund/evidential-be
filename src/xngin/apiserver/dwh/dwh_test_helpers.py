@@ -3,14 +3,14 @@ from datetime import date, datetime
 from typing import NamedTuple
 
 import pytest
-import sqlalchemy
-from sqlalchemy import Table, create_engine, make_url, text
+from sqlalchemy import Table, create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, mapped_column
 from sqlalchemy.types import Boolean, Date, DateTime, Float, Integer, String
 
 from xngin.apiserver.dwh.dwh_utils import extra_engine_setup
 from xngin.apiserver.settings import SA_LOGGER_NAME_FOR_DWH
 from xngin.apiserver.testing.helpers import DbType, get_queries_test_uri
+from xngin.apiserver.testing.pg_helpers import create_empty_test_database_pg
 
 
 class Base(DeclarativeBase):
@@ -181,20 +181,7 @@ def fixture_queries_dwh_engine():
     """Yield a SQLAlchemy engine for DWH query tests."""
     test_db = get_queries_test_uri()
     if test_db.db_type == DbType.PG:
-        management_db = make_url(test_db.connect_url)._replace(database=None)
-        default_engine = create_engine(
-            management_db,
-            logging_name=SA_LOGGER_NAME_FOR_DWH,
-            poolclass=sqlalchemy.pool.NullPool,
-            execution_options={"logging_token": "dwh"},
-        )
-        with default_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
-            for stmt in (
-                f"DROP DATABASE IF EXISTS {test_db.connect_url.database}",
-                f"CREATE DATABASE {test_db.connect_url.database}",
-            ):
-                conn.execute(text(stmt))
-        default_engine.dispose()
+        create_empty_test_database_pg(test_db.connect_url)
 
     engine = create_engine(
         test_db.connect_url,
