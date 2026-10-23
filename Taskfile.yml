@@ -212,7 +212,8 @@ tasks:
     deps:
       - bootstrap-dwh-database
     cmds:
-      - uv run coverage run -m pytest {{.CLI_ARGS}}
+      # -n0 comes last so that it wins: coverage only measures the pytest process it starts, not pytest-xdist workers.
+      - uv run coverage run -m pytest {{.CLI_ARGS}} -n0
       - uv run coverage html
       - uv run coverage report
       - echo "Open the HTML report at file://{{.USER_WORKING_DIR}}/htmlcov/index.html"
@@ -232,24 +233,30 @@ tasks:
       task test -- -k tests_matching_some_string_expression -rA    # run subset of tests, show all output in summary
       task test -- -m integration                                  # run tests annotated with @pytest.mark.integration
       task test -- --lf                                            # only re-run failed tests
+      task test -- -n0                                             # run serially (tests run in parallel by default)
 
-      When tests fail, their databases are kept for inspection (their names are printed just before the short test
-      summary) and dropped by test runs a day later. Each test clears the tables when it starts, so a kept database
-      shows the last test that used it: re-run just the failures to inspect them, e.g. task test -- --lf.
+      Parallel runs use one worker fewer than the CPU cores, up to 8 (each holds a few Postgres connections; see
+      max_connections in tools/localpg.py). Runs filtered with -k or --lf use 2 workers, and runs of named tests
+      (path::test_name) run serially; see xngin.apiserver.testing.xdist_plugin.
+
+      When tests fail, the databases of the workers that ran them are kept for inspection (their names are printed just
+      before the short test summary) and dropped by test runs a day later. Each test clears the tables when it starts,
+      so a kept database shows the last test its worker ran: re-run just the failures serially to inspect them, e.g.
+      task test -- --lf -n0.
     interactive: true
     env:
       DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"
     deps:
       - bootstrap-dwh-database
     cmds:
-      - uv run pytest {{.CLI_ARGS}}
+      - uv run pytest -n auto {{.CLI_ARGS}}
   test-only:
     desc: "Runs unit tests without boostrapping the DWH database."
     interactive: true
     env:
       DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"
     cmds:
-      - uv run pytest {{.CLI_ARGS}}
+      - uv run pytest -n auto {{.CLI_ARGS}}
   test-airplane:
     desc: "Run unit tests (in airplane mode)."
     interactive: true
