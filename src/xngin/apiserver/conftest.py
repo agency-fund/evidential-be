@@ -305,6 +305,9 @@ def delete_seeded_users(xngin_session: Session):
 def fixture_use_deterministic_random():
     """Tests that want deterministic SQL random() behavior can request this fixture. This will only affect
     SQLAlchemy expressions that use custom_functions.our_random().
+
+    pytest sets up fixtures in the order a test requests them, so request this one before fixtures that create
+    experiments, such as testing_experiment; otherwise their participants are sampled randomly.
     """
     original = custom_functions.USE_DETERMINISTIC_RANDOM
     try:
