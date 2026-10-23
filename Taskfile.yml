@@ -47,7 +47,7 @@ env:
   #XNGIN_OIDC_CLIENT_ID: "314428509782-j8fgiq5dvoic01432s2bcu3isinc9kam.apps.googleusercontent.com"
 
   # Configure customlogging.py to log dwh SQL to the custom log.
-  LOG_SQL_DWH: "true"
+  LOG_SQL_DWH: "false"
 
   # Configure customlogging.py to log app SQL to the custom log.
   LOG_SQL_APP_DB: "false"
