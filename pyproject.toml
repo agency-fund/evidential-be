@@ -264,7 +264,7 @@ disallow_untyped_defs = false
 plugins = ['pydantic.mypy']
 
 [[tool.mypy.overrides]]
-module = ["deepdiff", "parsy", "statsmodels.*", "patsy.*", "sqlalchemy_bigquery.*", "pandas_gbq.*", "xdist.*"]
+module = ["deepdiff", "statsmodels.*", "patsy.*", "sqlalchemy_bigquery.*", "pandas_gbq.*", "xdist.*"]
 ignore_missing_imports = true
 
 [tool.coverage.run]
