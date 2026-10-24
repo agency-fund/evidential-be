@@ -396,6 +396,55 @@ NULLABLE_CASES = [
         expected=True,
         description="null_date_between_with_null_allowed",
     ),
+    Case(
+        props={"age": None},
+        fields={"age": DataType.INTEGER},
+        filters=[Filter(field_name="age", relation=Relation.BETWEEN, value=[20, 30])],
+        expected=False,
+        description="null_between_without_null_allowed",
+    ),
+    Case(
+        props={"age": None},
+        fields={"age": DataType.INTEGER},
+        filters=[Filter(field_name="age", relation=Relation.BETWEEN, value=[20, None])],
+        expected=False,
+        description="null_gte_without_null_allowed",
+    ),
+    Case(
+        props={"age": 25},
+        fields={"age": DataType.INTEGER},
+        filters=[Filter(field_name="age", relation=Relation.BETWEEN, value=[20, 30, None])],
+        expected=True,
+        description="value_between_with_null_allowed_in_range",
+    ),
+    Case(
+        props={"age": 99},
+        fields={"age": DataType.INTEGER},
+        filters=[Filter(field_name="age", relation=Relation.BETWEEN, value=[20, 30, None])],
+        expected=False,
+        description="value_between_with_null_allowed_out_of_range",
+    ),
+    Case(
+        props={"age": 25},
+        fields={"age": DataType.INTEGER},
+        filters=[Filter(field_name="age", relation=Relation.BETWEEN, value=[None, 30, None])],
+        expected=True,
+        description="value_lte_with_null_allowed_match",
+    ),
+    Case(
+        props={"age": 10},
+        fields={"age": DataType.INTEGER},
+        filters=[Filter(field_name="age", relation=Relation.BETWEEN, value=[20, None, None])],
+        expected=False,
+        description="value_gte_with_null_allowed_no_match",
+    ),
+    Case(
+        props={"birth_date": "2000-06-15"},
+        fields={"birth_date": DataType.DATE},
+        filters=[Filter(field_name="birth_date", relation=Relation.BETWEEN, value=["2000-01-01", "2000-12-31", None])],
+        expected=True,
+        description="date_between_with_null_allowed_in_range",
+    ),
 ]
 
 
