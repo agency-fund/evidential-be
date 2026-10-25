@@ -14,19 +14,35 @@ from typing import ClassVar
 
 import sentry_sdk
 from loguru import logger
-from sqlalchemy import ColumnElement, false, func, select
+from sqlalchemy import ColumnElement, and_, exists, false, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from xngin.apiserver.dwh.dwh_session import DwhSession
-from xngin.apiserver.routers.common_enums import ExperimentsType
+from xngin.apiserver.routers.common_enums import ExperimentState, ExperimentsType
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.worker.jobs.bandit_outcomes import Outcome, OutcomeReport, apply_outcomes
 from xngin.apiserver.worker.jobs.base import (
     Backoff,
     JobResult,
     JobSucceeded,
-    periodic_next_run_at,
+    next_run_in_window,
 )
+
+# How long pulls continue after the end date whatever the draws' state. This guarantees a pull after the last draw,
+# including any still committing at the end date, before compute_next_run_at decides from the pending draws whether
+# to keep pulling. Nothing else reschedules the job, so without it a draw made just before the end could go unpulled.
+PULL_AFTER_END = timedelta(days=1)
+
+# How long pulls continue after PULL_AFTER_END while any draw still has no outcome. Outcomes for draws made near the
+# end date can land in the warehouse days later, after a slow ETL or a warehouse outage, and PULL_AFTER_END alone
+# would stop pulling before they arrive. The grace also lets the worker catch up after an outage of its own. Pulls end
+# earlier once every draw has an outcome, so the grace only costs warehouse queries for experiments still missing
+# outcomes, and only for this long, even if the warehouse never fills them.
+LATE_OUTCOME_GRACE = timedelta(days=7)
+
+
+def _is_pending_draw(experiment_id: str) -> ColumnElement[bool]:
+    return and_(tables.Draw.experiment_id == experiment_id, tables.Draw.outcome.is_(None))
 
 
 def pull_one_experiment(session: Session, experiment_id: str, *, dwh_timeout: float) -> OutcomeReport:
@@ -75,10 +91,7 @@ def pull_one_experiment(session: Session, experiment_id: str, *, dwh_timeout: fl
     pending_ids = list(
         session.scalars(
             select(tables.Draw.participant_id)
-            .where(
-                tables.Draw.experiment_id == experiment_id,
-                tables.Draw.outcome.is_(None),
-            )
+            .where(_is_pending_draw(experiment_id))
             .order_by(tables.Draw.created_at)
             .with_for_update(of=tables.Draw, key_share=True)
         )
@@ -111,6 +124,13 @@ def pull_one_experiment(session: Session, experiment_id: str, *, dwh_timeout: fl
 
 @dataclass(slots=True)
 class DwhPullJob:
+    """Pull each committed MAB_ONLINE_DWH experiment's outcomes every interval.
+
+    Pulls start at the experiment's start date, not a day earlier as snapshots do, because there are rarely draws to
+    pull before then. They run until PULL_AFTER_END past the end date, and then continue for up to LATE_OUTCOME_GRACE
+    while any draw still has no outcome.
+    """
+
     name: ClassVar[str] = "dwh_pull"
     interval: timedelta
     dwh_timeout: float
@@ -122,7 +142,10 @@ class DwhPullJob:
     def compute_next_run_at(
         self, session: Session, experiment: tables.Experiment, status: tables.JobStatus, now: datetime
     ) -> datetime | None:
-        if experiment.experiment_type != ExperimentsType.MAB_ONLINE_DWH:
+        if (
+            experiment.experiment_type != ExperimentsType.MAB_ONLINE_DWH
+            or experiment.state != ExperimentState.COMMITTED
+        ):
             return None
         last_success_at = status.last_success_at
         if last_success_at is None:
@@ -132,7 +155,21 @@ class DwhPullJob:
             last_success_at = session.scalar(
                 select(func.max(tables.Draw.observed_at)).where(tables.Draw.experiment_id == experiment.id)
             )
-        return periodic_next_run_at(experiment, last_success_at, now, self.interval)
+        pulls_close = experiment.end_date + PULL_AFTER_END
+        run_at = next_run_in_window(
+            last_success_at, now, self.interval, opens=experiment.start_date, closes=pulls_close
+        )
+        # The API stops assigning at the end date, so after PULL_AFTER_END pending draws can only resolve, and
+        # no other change needs to reschedule the job: needs_refresh can stay false.
+        if run_at is None and session.scalar(select(exists().where(_is_pending_draw(experiment.id)))):
+            run_at = next_run_in_window(
+                last_success_at,
+                now,
+                self.interval,
+                opens=experiment.start_date,
+                closes=pulls_close + LATE_OUTCOME_GRACE,
+            )
+        return run_at
 
     def execute(self, session: Session, experiment_id: str) -> JobResult:
         report = pull_one_experiment(session, experiment_id, dwh_timeout=self.dwh_timeout)

@@ -80,7 +80,7 @@ class AutofailJob:
         # Inserting draws does not update the experiment, so the refresh must find the first pending draw itself.
         # Later draws expire after the earliest pending one, so they never move a stored run time earlier. The
         # rest is the SQL form of compute_next_run_at's checks, so it returns a time whenever this matches. There
-        # is deliberately no end date check: draws can expire after the maintenance buffer closes.
+        # is deliberately no end date check: draws can expire long after the end date.
         return and_(
             tables.JobStatus.next_run_at.is_(None),
             tables.Experiment.state == ExperimentState.COMMITTED,

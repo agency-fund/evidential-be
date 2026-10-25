@@ -7,11 +7,7 @@ from typing import ClassVar, Protocol
 from sqlalchemy import ColumnElement
 from sqlalchemy.orm import Session
 
-from xngin.apiserver.routers.common_enums import ExperimentState
 from xngin.apiserver.sqla import tables
-
-# Periodic jobs run from this long before an experiment starts until this long after it ends.
-MAINTENANCE_BUFFER = timedelta(days=1)
 
 
 @dataclass(slots=True, frozen=True)
@@ -119,23 +115,16 @@ class Job(Protocol):
         ...
 
 
-def periodic_next_run_at(
-    experiment: tables.Experiment, last_success_at: datetime | None, now: datetime, interval: timedelta
+def next_run_in_window(
+    last_success_at: datetime | None, now: datetime, interval: timedelta, *, opens: datetime, closes: datetime
 ) -> datetime | None:
-    """Return when a periodic job, such as a snapshot or warehouse pull, should next run for an experiment.
+    """Return when a job that runs every interval between opens and closes should next run.
 
-    SnapshotJob and DwhPullJob call this from compute_next_run_at, and the caller then delays the result by any
-    retry backoff. Only committed experiments run, and only within +/- 1 day on both sides of the experiment.
-
-    Experiments without a last_success_at are due immediately. Experiments that haven't started yet will run
-    one day before its start date.
-
-    Returns None once no run fits before the buffer closes.
+    A job without a last_success_at is due immediately, but no earlier than opens. Returns None once no run fits
+    before closes.
     """
-    if experiment.state != ExperimentState.COMMITTED:
-        return None
-    if experiment.end_date + MAINTENANCE_BUFFER < now:
+    if closes < now:
         return None
     run_at = last_success_at + interval if last_success_at else now
-    run_at = max(run_at, experiment.start_date - MAINTENANCE_BUFFER)
-    return run_at if run_at <= experiment.end_date + MAINTENANCE_BUFFER else None
+    run_at = max(run_at, opens)
+    return run_at if run_at <= closes else None

@@ -11,11 +11,12 @@ from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.routers.admin.test_admin_api import (
     make_bandit_online_experiment,
 )
-from xngin.apiserver.routers.common_enums import ExperimentState
+from xngin.apiserver.routers.common_enums import ExperimentState, ExperimentsType, LikelihoodTypes, PriorTypes
 from xngin.apiserver.routers.experiments.experiments_common import (
     create_assignment_for_participant,
     update_bandit_arm_with_outcome_impl,
 )
+from xngin.apiserver.routers.experiments.test_experiments_common import make_create_online_bandit_experiment_request
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.worker_helpers import (
@@ -135,6 +136,65 @@ def test_future_activation_and_date_invalidation(xngin_session, testing_datasour
     refresh_stale_experiments((SNAPSHOT,))
     assert due_experiment_ids((SNAPSHOT,), now=NOW) == ()
     assert status_for(experiment.id, SNAPSHOT).next_run_at == NOW + timedelta(days=3)
+
+
+def test_dwh_pull_waits_for_the_start_date(xngin_session, testing_datasource):
+    experiment = make_dwh_experiment(xngin_session, testing_datasource.ds)
+    experiment.start_date = NOW + timedelta(days=3)
+    experiment.end_date = NOW + timedelta(days=10)
+    xngin_session.commit()
+    refresh_stale_experiments((PULL, SNAPSHOT))
+    assert status_for(experiment.id, PULL).next_run_at == NOW + timedelta(days=3)
+    assert status_for(experiment.id, SNAPSHOT).next_run_at == NOW + timedelta(days=2)
+
+
+@pytest.mark.parametrize(
+    ("days_since_end", "resolved", "scheduled"),
+    [
+        (3, False, True),
+        (3, True, False),
+        (9, False, False),
+    ],
+)
+def test_dwh_pull_continues_after_the_buffer_while_draws_are_pending(
+    xngin_session, testing_datasource, days_since_end, resolved, scheduled
+):
+    experiment = make_dwh_experiment(xngin_session, testing_datasource.ds)
+    experiment.end_date = datetime.now(UTC) - timedelta(days=days_since_end)
+    if resolved:
+        update_bandit_arm_with_outcome_impl(xngin_session, experiment, "1", 1.0)
+    xngin_session.commit()
+    refresh_stale_experiments((PULL, SNAPSHOT))
+    assert (status_for(experiment.id, PULL).next_run_at is not None) == scheduled
+    assert status_for(experiment.id, SNAPSHOT).next_run_at is None
+
+
+def test_autofail_catches_up_after_an_outage(xngin_session, testing_datasource):
+    experiment = make_autofail_experiment(xngin_session, testing_datasource.ds, participants=("1", "2", "3", "4", "5"))
+    refresh_stale_experiments((AUTOFAIL,))
+    assert status_for(experiment.id, AUTOFAIL).next_run_at is not None
+
+    # The worker is down for a month, long past the end of the experiment. Keeping
+    # updated_at leaves the stored run time as the only thing that brings the experiment back.
+    month_ago = datetime.now(UTC) - timedelta(days=30)
+    xngin_session.execute(
+        update(tables.Experiment)
+        .where(tables.Experiment.id == experiment.id)
+        .values(start_date=month_ago - timedelta(days=7), end_date=month_ago, updated_at=tables.Experiment.updated_at)
+    )
+    xngin_session.execute(
+        update(tables.Draw)
+        .where(tables.Draw.experiment_id == experiment.id)
+        .values(created_at=month_ago - timedelta(days=1))
+    )
+    xngin_session.commit()
+    assert stale_among((AUTOFAIL,), experiment) == set()
+
+    # Five overdue draws take three batches of two.
+    for remaining in (3, 1, 0):
+        assert ran_successfully(attempt_due((AUTOFAIL,)), AUTOFAIL)
+        assert list(read_outcomes(xngin_session, experiment.id).values()).count(None) == remaining
+    assert status_for(experiment.id, AUTOFAIL).next_run_at is None
 
 
 def test_autofail_one_batch_and_overdue_work_past_horizon(xngin_session, testing_datasource):
@@ -591,6 +651,32 @@ def test_refresh_revisits_only_new_and_edited_experiments(xngin_session, testing
     assert stale_among((SNAPSHOT,), current, ended, draft) == {draft.id}
     refresh_stale_experiments((SNAPSHOT,))
     assert status_for(draft.id, SNAPSHOT).next_run_at is not None
+
+
+def test_committing_a_draft_through_the_api_schedules_its_jobs(testing_datasource, aclient: AdminAPIClient):
+    jobs = (SNAPSHOT, PULL)
+    datasource_id = testing_datasource.datasource_id
+    request = make_create_online_bandit_experiment_request(
+        experiment_type=ExperimentsType.MAB_ONLINE_DWH,
+        reward_type=LikelihoodTypes.BERNOULLI,
+        prior_type=PriorTypes.BETA,
+    )
+    experiment_id = aclient.create_experiment(
+        datasource_id=datasource_id, body=request, random_state=42
+    ).data.experiment_id
+
+    # The draft gets a status row for every job, none of them scheduled, and later refreshes leave it alone.
+    refresh_stale_experiments(jobs)
+    assert all(status_for(experiment_id, job).next_run_at is None for job in jobs)
+    with database.get_session() as session:
+        assert experiment_id not in _stale_experiment_ids(session, jobs)
+
+    # Committing changes updated_at, which the refresh notices.
+    aclient.commit_experiment(datasource_id=datasource_id, experiment_id=experiment_id)
+    with database.get_session() as session:
+        assert experiment_id in _stale_experiment_ids(session, jobs)
+    refresh_stale_experiments(jobs)
+    assert all(status_for(experiment_id, job).next_run_at is not None for job in jobs)
 
 
 def test_refresh_ends_early_once_stop_is_set(xngin_session, testing_datasource):
