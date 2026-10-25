@@ -1340,7 +1340,6 @@ def test_create_freq_online_experiment_impl_experiments_fields_are_correctly_sto
     assert unique_id_field.data_type == "bigint"
     assert unique_id_field.is_unique_id
     assert unique_id_field.is_filter
-    assert unique_id_field.experiment_filters is not None
     assert unique_id_field.experiment_filters[0].relation == Relation.EXCLUDES
     assert unique_id_field.experiment_filters[0].numeric_values == [(2 << 52) + 1, None]
     assert unique_id_field.experiment_filters[0].position == 4
@@ -1349,7 +1348,6 @@ def test_create_freq_online_experiment_impl_experiments_fields_are_correctly_sto
     assert current_income_field.is_metric
     assert current_income_field.is_primary_metric
     assert current_income_field.is_filter
-    assert current_income_field.experiment_filters is not None
     assert current_income_field.experiment_filters[0].relation == Relation.BETWEEN
     assert current_income_field.experiment_filters[0].numeric_values == [0.0, 100000.0]
     assert current_income_field.experiment_filters[0].position == 2
@@ -1358,7 +1356,6 @@ def test_create_freq_online_experiment_impl_experiments_fields_are_correctly_sto
     assert is_engaged_field.is_metric
     assert not is_engaged_field.is_primary_metric
     assert is_engaged_field.is_filter
-    assert is_engaged_field.experiment_filters is not None
     assert is_engaged_field.experiment_filters[0].relation == Relation.INCLUDES
     assert is_engaged_field.experiment_filters[0].boolean_values == [1, None]
     assert is_engaged_field.experiment_filters[0].position == 3
@@ -1373,21 +1370,18 @@ def test_create_freq_online_experiment_impl_experiments_fields_are_correctly_sto
     gender_field = next(f for f in experiment.experiment_fields if f.field_name == "gender")
     assert gender_field.data_type == "character varying"
     assert gender_field.is_filter
-    assert gender_field.experiment_filters is not None
     assert gender_field.experiment_filters[0].relation == Relation.INCLUDES
     assert gender_field.experiment_filters[0].string_values == ["Male"]
     assert gender_field.experiment_filters[0].position == 1
     sample_date_field = next(f for f in experiment.experiment_fields if f.field_name == "sample_date")
     assert sample_date_field.data_type == "date"
     assert sample_date_field.is_filter
-    assert sample_date_field.experiment_filters is not None
     assert sample_date_field.experiment_filters[0].relation == Relation.BETWEEN
     assert sample_date_field.experiment_filters[0].string_values == ["2024-01-01", "2026-01-01"]
     assert sample_date_field.experiment_filters[0].position == 5
     uuid_filter_field = next(f for f in experiment.experiment_fields if f.field_name == "uuid_filter")
     assert uuid_filter_field.data_type == "uuid"
     assert uuid_filter_field.is_filter
-    assert uuid_filter_field.experiment_filters is not None
     assert uuid_filter_field.experiment_filters[0].relation == Relation.EXCLUDES
     assert uuid_filter_field.experiment_filters[0].string_values == ["123e4567-e89b-12d3-a456-426614174000"]
     assert uuid_filter_field.experiment_filters[0].position == 6
