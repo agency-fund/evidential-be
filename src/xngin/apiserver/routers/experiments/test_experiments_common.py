@@ -473,12 +473,7 @@ def _make_experiment_field(
     metric_pct_change: float | None = None,
     filters: list[tables.ExperimentFilter] | None = None,
 ) -> tables.ExperimentField:
-    """Build a detached ExperimentField suitable for unit-testing without a DB session.
-
-    Don't pass experiment_filters in the constructor for non-filter fields — on a
-    detached (sessionless) instance the attribute stays None, so is_filter returns False.
-    Only pass an explicit list when the field should act as a filter.
-    """
+    """Build a detached ExperimentField suitable for unit-testing without a DB session."""
     field = tables.ExperimentField(
         field_name=field_name,
         data_type=data_type.value,
@@ -567,8 +562,10 @@ def test_make_schema_from_experiment_builds_participants_schema():
     assert field_names == ["country", "id", "revenue"]  # sorted by name
     id_fd = next(f for f in result.fields if f.field_name == "id")
     assert id_fd.is_unique_id is True
+    assert id_fd.is_filter is False
     revenue_fd = next(f for f in result.fields if f.field_name == "revenue")
     assert revenue_fd.is_metric is True
+    assert revenue_fd.is_filter is False
     country_fd = next(f for f in result.fields if f.field_name == "country")
     assert country_fd.is_strata is True
     assert country_fd.is_filter is True
@@ -1368,9 +1365,11 @@ def test_create_freq_online_experiment_impl_experiments_fields_are_correctly_sto
     ethnicity_field = next(f for f in experiment.experiment_fields if f.field_name == "ethnicity")
     assert ethnicity_field.data_type == "character varying"
     assert ethnicity_field.is_strata
+    assert not ethnicity_field.is_filter
     baseline_income_field = next(f for f in experiment.experiment_fields if f.field_name == "baseline_income")
     assert baseline_income_field.data_type == "numeric"
     assert baseline_income_field.is_strata
+    assert not baseline_income_field.is_filter
     gender_field = next(f for f in experiment.experiment_fields if f.field_name == "gender")
     assert gender_field.data_type == "character varying"
     assert gender_field.is_filter
