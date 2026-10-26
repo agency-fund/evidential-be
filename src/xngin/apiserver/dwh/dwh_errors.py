@@ -7,9 +7,12 @@ DwhError, or None when the exception may be our own doing. It never raises.
 import re
 from collections.abc import Iterator
 
+import google.api_core.exceptions
+import google.auth.exceptions
 import psycopg
 import psycopg.errors
 import psycopg2
+import requests.exceptions
 import sqlalchemy.dialects.postgresql
 import sqlalchemy.exc
 
@@ -27,7 +30,7 @@ from xngin.apiserver.exceptions_common import (
     DwhQueryError,
     DwhTimeoutError,
 )
-from xngin.apiserver.settings import Dsn, Dwh
+from xngin.apiserver.settings import BqDsn, Dsn, Dwh
 
 HINT_RUN_STATEMENT = "Ask your database administrator to run the following statement."
 HINT_CHECK_SEARCH_PATH = "Check the search_path in the data source configuration."
@@ -37,6 +40,8 @@ HINT_CHECK_CONNECTION = "Check the host, port, and network settings in the data 
 HINT_CHECK_CREDENTIALS = "Check the username and password in the data source configuration."
 HINT_CHECK_DATABASE = "Check the database name in the data source configuration."
 HINT_CHECK_COLUMN = "Check the column name, and the columns in the table, and try again."
+HINT_CHECK_BQ_CREDENTIALS = "Check the service account credentials in the data source configuration."
+HINT_CHECK_BQ_DATASET = "Check the project and dataset in the data source configuration."
 HINT_TRY_AGAIN_LATER = "Try again later."
 HINT_STATEMENT_TIMEOUT = "Try again, or ask your database administrator to raise the statement timeout."
 
@@ -59,6 +64,16 @@ _PG_CONNECT_PREFIX = "connection failed: "
 # primary messages describe the server's state, not the query's data.
 _PG_WAREHOUSE_SIDE_CLASSES = ("40", "53", "58")
 
+# BigQuery messages for a missing or unreadable table name it as project:dataset.table.
+_BQ_TABLE_RE = re.compile(r"Table (?P<project>[^\s:]+):(?P<dataset>[^\s.]+)\.(?P<table>[^\s:]+)")
+_BQ_PROJECT_RE = re.compile(r"Project (?P<project>[^\s:]+):")
+# "Unrecognized name: col at [1:8]" or "Unrecognized name: col; Did you mean cola? at [1:8]".
+_BQ_UNRECOGNIZED_NAME_RE = re.compile(r"Unrecognized name: (?P<name>[^\s;]+)")
+# google.api_core builds REST error messages as "{METHOD} {url}: {server message}".
+_BQ_HTTP_PREFIX_RE = re.compile(r"^(?:GET|POST|PUT|PATCH|DELETE) https?://\S+: ")
+# QueryJob appends "\n\nLocation: {location}\nJob ID: {job_id}\n" to the message of a failed job.
+_BQ_JOB_FOOTER = "\n\nLocation: "
+
 
 def classify_dwh_error(exc: BaseException, dwh_config: Dwh) -> DwhError | None:
     """Returns the DwhError that describes exc, or None when the caller should re-raise exc unchanged.
@@ -70,7 +85,9 @@ def classify_dwh_error(exc: BaseException, dwh_config: Dwh) -> DwhError | None:
     so the caller re-raises it as a 500 that reaches Sentry, and classified errors are never re-wrapped.
 
     The driver's error is found by looking at exc itself, then at the DBAPI exception SQLAlchemy wrapped
-    (exc.orig), then at exc.__cause__.
+    (exc.orig), then at what that wrapped in turn (orig.args[0]), then at exc.__cause__. The args[0] step matters
+    for BigQuery, whose DB-API raises DatabaseError(google_exc) without `from`, so the Google exception is not a
+    __cause__.
 
     The returned message never contains SQL text or bind parameters; dwh_message carries the driver's primary
     message only for categories whose messages name schema objects, hosts, or endpoints rather than data.
@@ -106,7 +123,10 @@ def _candidates(exc: BaseException) -> Iterator[BaseException]:
     """Yields exc and the exceptions it wraps, nearest first."""
     yield exc
     if isinstance(exc, sqlalchemy.exc.DBAPIError) and exc.orig is not None:
-        yield exc.orig
+        orig = exc.orig
+        yield orig
+        if orig.args and isinstance(orig.args[0], BaseException):
+            yield orig.args[0]
     if exc.__cause__ is not None:
         yield exc.__cause__
 
@@ -120,6 +140,23 @@ def _classify_one(exc: BaseException, dwh_config: Dwh) -> DwhError | None:
         return CannotFindTableError(str(exc))
     if isinstance(exc, psycopg.Error | psycopg2.Error):
         return _classify_postgres(exc, dwh_config)
+    if isinstance(exc, google.api_core.exceptions.GoogleAPIError):
+        return _classify_google_api(exc, dwh_config)
+    # TransportError is a GoogleAuthError, so it must be recognized before the credential failures.
+    if isinstance(exc, google.auth.exceptions.TransportError):
+        return DwhConnectionError(
+            "Could not reach Google to authenticate the BigQuery credentials.",
+            hint=HINT_TRY_AGAIN_LATER,
+            dwh_message=_first_line(exc),
+        )
+    if isinstance(exc, google.auth.exceptions.GoogleAuthError):
+        return DwhAuthenticationError(
+            "Google rejected the configured BigQuery credentials.",
+            hint=HINT_CHECK_BQ_CREDENTIALS,
+            dwh_message=_first_line(exc),
+        )
+    if isinstance(exc, requests.exceptions.RequestException):
+        return DwhConnectionError("Could not reach BigQuery.", hint=HINT_TRY_AGAIN_LATER, dwh_message=_first_line(exc))
     return None
 
 
@@ -291,6 +328,128 @@ def _libpq_reason(text: str) -> str:
     if not fatal:
         reason = text.removeprefix(_PG_CONNECT_PREFIX)
     return reason.strip().rstrip(".")
+
+
+def _classify_google_api(exc: google.api_core.exceptions.GoogleAPIError, dwh_config: Dwh) -> DwhError | None:
+    text = _google_text(exc)
+    project = dwh_config.project_id if isinstance(dwh_config, BqDsn) else None
+    dataset = dwh_config.dataset_id if isinstance(dwh_config, BqDsn) else None
+    where = f"{project}.{dataset}" if project and dataset else "the configured dataset"
+    reason = _google_reason(exc)
+    if isinstance(exc, google.api_core.exceptions.Forbidden):
+        # BigQuery also answers 403 for quota, rate limit, and billing problems; only accessDenied is about access.
+        if reason is not None and reason != "accessDenied":
+            return _google_rejected(exc, reason, text)
+        if "bigquery.jobs.create" in text:
+            # The account cannot run queries at all in the project it was configured with, whatever its dataset
+            # access: "Access Denied: Project p: User does not have bigquery.jobs.create permission in project p."
+            project_match = _BQ_PROJECT_RE.search(text)
+            job_project = project_match["project"] if project_match else project or "the configured project"
+            return DwhPermissionDeniedError(
+                f"The configured BigQuery credentials cannot run queries in the project {job_project}.",
+                hint=f"Grant the service account the BigQuery Job User role on the project {job_project}.",
+                dwh_message=text,
+            )
+        table_match = _BQ_TABLE_RE.search(text)
+        table = table_match["table"] if table_match else None
+        if table_match:
+            project = table_match["project"]
+            dataset = table_match["dataset"]
+            where = f"{project}.{dataset}"
+        what = f'the table "{table}" in {where}' if table else where
+        if project and dataset:
+            hint = (
+                f"Grant the service account the BigQuery Data Viewer role on the dataset {dataset} in the project "
+                f"{project}."
+            )
+        else:
+            hint = "Grant the service account the BigQuery Data Viewer role on the dataset."
+        return DwhPermissionDeniedError(
+            f"The configured BigQuery credentials do not have permission to read {what}.",
+            hint=hint,
+            dwh_message=text,
+            table_name=table,
+        )
+    if isinstance(exc, google.api_core.exceptions.Unauthorized):
+        return DwhAuthenticationError(
+            "BigQuery rejected the configured credentials.", hint=HINT_CHECK_BQ_CREDENTIALS, dwh_message=text
+        )
+    if isinstance(exc, google.api_core.exceptions.NotFound):
+        # Reflection turns a missing table into NoSuchTableError, but a query against one arrives as NotFound.
+        table_match = _BQ_TABLE_RE.search(text) if "Not found: Table" in text else None
+        if table_match:
+            error = CannotFindTableError(table_match["table"])
+            error.dwh_message = text
+            return error
+        return DwhDatabaseDoesNotExistError(
+            f"The BigQuery dataset {where} does not exist.", hint=HINT_CHECK_BQ_DATASET, dwh_message=text
+        )
+    if isinstance(exc, google.api_core.exceptions.BadRequest):
+        name_match = _BQ_UNRECOGNIZED_NAME_RE.search(text)
+        if name_match:
+            return DwhColumnNotFoundError(
+                f'The column "{name_match["name"]}" does not exist.', hint=HINT_CHECK_COLUMN, dwh_message=text
+            )
+        # An invalid query may be a bug in the SQL we generated, and its message may quote the query's values.
+        if reason is None or reason in {"invalid", "invalidQuery"}:
+            return None
+        return _google_rejected(exc, reason, text)
+    if isinstance(exc, google.api_core.exceptions.DeadlineExceeded):
+        return DwhTimeoutError("The BigQuery request did not finish before its deadline.")
+    if isinstance(exc, google.api_core.exceptions.ServiceUnavailable):
+        return DwhConnectionError("BigQuery is unavailable.", hint=HINT_TRY_AGAIN_LATER, dwh_message=text)
+    if isinstance(exc, google.api_core.exceptions.RetryError):
+        if isinstance(exc.cause, google.api_core.exceptions.DeadlineExceeded):
+            return DwhTimeoutError("The BigQuery request did not finish before its deadline.")
+        return DwhConnectionError("Could not reach BigQuery.", hint=HINT_TRY_AGAIN_LATER, dwh_message=text)
+    return _google_rejected(exc, reason, text)
+
+
+def _google_rejected(exc: google.api_core.exceptions.GoogleAPIError, reason: str | None, text: str) -> DwhQueryError:
+    """Reports BigQuery's own reason code and message rather than explaining each one.
+
+    Only used for reasons that describe the project's state (a quota, billing, an overloaded backend), never the
+    query, so the server's message is safe to show.
+    """
+    return DwhQueryError(f"BigQuery rejected the request ({reason or type(exc).__name__}).", dwh_message=text)
+
+
+def _google_first_error(exc: google.api_core.exceptions.GoogleAPIError) -> dict | None:
+    """The first structured error of a REST response, if any; gRPC-origin exceptions carry other objects here."""
+    errors = getattr(exc, "errors", None)
+    if isinstance(errors, list | tuple) and errors and isinstance(errors[0], dict):
+        return errors[0]
+    return None
+
+
+def _google_reason(exc: google.api_core.exceptions.GoogleAPIError) -> str | None:
+    """BigQuery's machine-readable reason code, such as accessDenied or quotaExceeded."""
+    first = _google_first_error(exc)
+    reason = first.get("reason") if first else None
+    return reason if isinstance(reason, str) and reason else None
+
+
+def _google_text(exc: google.api_core.exceptions.GoogleAPIError) -> str:
+    """The server's own message for a Google exception, without the decoration the client libraries add.
+
+    Real exceptions differ from ones constructed directly: google.api_core prefixes REST error messages with the
+    HTTP method and URL, and a failed QueryJob appends its location and job ID. The raw server message is kept in
+    the first entry of ``errors`` when the response carried one, so prefer that, then strip the decoration from
+    ``message`` otherwise.
+    """
+    first = _google_first_error(exc)
+    if first is not None:
+        server_message = first.get("message")
+        if isinstance(server_message, str) and server_message:
+            return _strip_google_decoration(server_message)
+    message = getattr(exc, "message", None)
+    text = message if isinstance(message, str) and message else _first_line(exc)
+    return _strip_google_decoration(text)
+
+
+def _strip_google_decoration(text: str) -> str:
+    text = text.split(_BQ_JOB_FOOTER, 1)[0]
+    return _BQ_HTTP_PREFIX_RE.sub("", text, count=1).strip()
 
 
 def _first_line(exc: BaseException) -> str:

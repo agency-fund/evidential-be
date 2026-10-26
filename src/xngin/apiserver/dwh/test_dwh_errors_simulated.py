@@ -4,12 +4,16 @@ Prefer real server coverage in test_dwh_errors_postgres.py. Keep simulated excep
 those integration tests cannot exercise.
 """
 
+import google.api_core.exceptions
+import google.auth.exceptions
 import psycopg
 import psycopg.errors
 import psycopg2
 import psycopg2.errors
 import pytest
+import requests.exceptions
 import sqlalchemy.exc
+from google.cloud.bigquery.dbapi import exceptions as dbapi_exceptions
 
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, DnsLookupUnsafeError
 from xngin.apiserver.dwh.dwh_errors import (
@@ -27,7 +31,7 @@ from xngin.apiserver.exceptions_common import (
     DwhQueryError,
     DwhTimeoutError,
 )
-from xngin.apiserver.settings import Dsn
+from xngin.apiserver.settings import BqDsn, Dsn, GcpServiceAccountFile
 
 STATEMENT = "SELECT secret FROM t WHERE a = %(a)s"
 PARAMS = {"a": "BIND_VALUE"}
@@ -39,6 +43,12 @@ PG_DSN = Dsn(
     password="pw",
     dbname="warehouse",
     sslmode="require",
+)
+BQ_DSN = BqDsn(
+    driver="bigquery",
+    project_id="my-project",
+    dataset_id="my_dataset",
+    credentials=GcpServiceAccountFile(type="serviceaccountfile", path="/dev/null"),
 )
 
 PG3_CONNECT = 'connection failed: connection to server at "127.0.0.1", port 5499 failed: '
@@ -59,6 +69,11 @@ def _pg2(code: str, message: str) -> psycopg2.Error:
 def _wrapped(orig: BaseException) -> sqlalchemy.exc.DBAPIError:
     """Wraps a driver error the way SQLAlchemy does, with the statement and parameters attached."""
     return sqlalchemy.exc.DBAPIError.instance(STATEMENT, PARAMS, orig, Exception)  # type: ignore[return-value]
+
+
+def _bq_wrapped(google_exc: BaseException) -> sqlalchemy.exc.DatabaseError:
+    """Mirrors the BigQuery DB-API cursor, which raises DatabaseError(exc) with no `from`."""
+    return sqlalchemy.exc.DatabaseError("stmt", {}, dbapi_exceptions.DatabaseError(google_exc))
 
 
 def _with_cause(exc: BaseException, cause: BaseException) -> BaseException:
@@ -161,6 +176,101 @@ MAPPING = [
         id="pg2-connect-timeout",
     ),
     pytest.param(
+        google.api_core.exceptions.Unauthorized("Request had invalid authentication credentials."),
+        BQ_DSN,
+        DwhAuthenticationError,
+        DwhErrorCode.AUTHENTICATION,
+        None,
+        id="bq-unauthorized-raw",
+    ),
+    pytest.param(
+        _bq_wrapped(google.api_core.exceptions.Unauthorized("Request had invalid authentication credentials.")),
+        BQ_DSN,
+        DwhAuthenticationError,
+        DwhErrorCode.AUTHENTICATION,
+        None,
+        id="bq-unauthorized-wrapped",
+    ),
+    pytest.param(
+        _bq_wrapped(
+            google.api_core.exceptions.BadRequest(
+                "Resources exceeded during query execution.",
+                errors=[{"reason": "resourcesExceeded", "message": "Resources exceeded during query execution."}],
+            )
+        ),
+        BQ_DSN,
+        DwhQueryError,
+        DwhErrorCode.QUERY_FAILED,
+        None,
+        id="bq-badrequest-resources-exceeded",
+    ),
+    pytest.param(
+        _bq_wrapped(google.api_core.exceptions.DeadlineExceeded("Deadline Exceeded")),
+        BQ_DSN,
+        DwhTimeoutError,
+        DwhErrorCode.TIMEOUT,
+        None,
+        id="bq-deadline-exceeded",
+    ),
+    pytest.param(
+        google.api_core.exceptions.ServiceUnavailable("The service is currently unavailable."),
+        BQ_DSN,
+        DwhConnectionError,
+        DwhErrorCode.CONNECTION,
+        None,
+        id="bq-service-unavailable",
+    ),
+    pytest.param(
+        _bq_wrapped(google.api_core.exceptions.InternalServerError("Internal error encountered.")),
+        BQ_DSN,
+        DwhQueryError,
+        DwhErrorCode.QUERY_FAILED,
+        None,
+        id="bq-other-google-api-error",
+    ),
+    pytest.param(
+        google.auth.exceptions.DefaultCredentialsError("Your default credentials were not found."),
+        BQ_DSN,
+        DwhAuthenticationError,
+        DwhErrorCode.AUTHENTICATION,
+        None,
+        id="bq-default-credentials-error",
+    ),
+    pytest.param(
+        google.auth.exceptions.TransportError("Failed to retrieve a token."),
+        BQ_DSN,
+        DwhConnectionError,
+        DwhErrorCode.CONNECTION,
+        None,
+        id="bq-transport-error",
+    ),
+    pytest.param(
+        requests.exceptions.ConnectionError("HTTPSConnectionPool(host='bigquery.googleapis.com', port=443)"),
+        BQ_DSN,
+        DwhConnectionError,
+        DwhErrorCode.CONNECTION,
+        None,
+        id="bq-requests-connection-error",
+    ),
+    pytest.param(
+        google.api_core.exceptions.RetryError(
+            "retry failed", cause=google.api_core.exceptions.DeadlineExceeded("Deadline Exceeded")
+        ),
+        BQ_DSN,
+        DwhTimeoutError,
+        DwhErrorCode.TIMEOUT,
+        None,
+        id="bq-retry-error-deadline",
+    ),
+    pytest.param(
+        google.api_core.exceptions.RetryError("retry failed", cause=ConnectionResetError("reset")),
+        BQ_DSN,
+        DwhConnectionError,
+        DwhErrorCode.CONNECTION,
+        None,
+        id="bq-retry-error-other",
+    ),
+    pytest.param(
         _with_cause(ValueError("reflection failed"), sqlalchemy.exc.NoSuchTableError("no_such_table_xyz")),
         PG_DSN,
         CannotFindTableError,
@@ -186,6 +296,26 @@ def test_classify_dwh_error_mapping(exc, dwh_config, expected_cls, code, table_n
         pytest.param(TypeError("our own bug"), id="type-error"),
         pytest.param(_wrapped(Exception("some driver error")), id="unknown-dbapi-error"),
         pytest.param(_wrapped(psycopg.InterfaceError("the connection is closed")), id="pg3-client-side-wrapped"),
+        pytest.param(
+            _bq_wrapped(google.api_core.exceptions.BadRequest("Syntax error: Unexpected keyword SELEC at [1:1]")),
+            id="bq-badrequest-without-reason",
+        ),
+        pytest.param(
+            google.api_core.exceptions.BadRequest(
+                "No matching signature for operator = for argument types: INT64, STRING",
+                errors=[{"reason": "invalidQuery", "message": "No matching signature for operator ="}],
+            ),
+            id="bq-badrequest-invalid-query-raw",
+        ),
+        pytest.param(
+            _bq_wrapped(
+                google.api_core.exceptions.BadRequest(
+                    "No matching signature for operator = for argument types: INT64, STRING",
+                    errors=[{"reason": "invalidQuery", "message": "No matching signature for operator ="}],
+                )
+            ),
+            id="bq-badrequest-invalid-query-wrapped",
+        ),
         pytest.param(TimeoutError("deadline"), id="builtin-timeout"),
         pytest.param(DwhQueryError("already classified"), id="dwh-error"),
         pytest.param(DwhTimeoutError("already classified"), id="dwh-timeout-error"),
@@ -225,3 +355,62 @@ def test_dns_errors_carry_the_host_and_a_hint():
     assert plain.dwh_message == unsafe.dwh_message == "db.example.com"
     assert plain.hint == HINT_CHECK_HOSTNAME
     assert unsafe.hint == HINT_UNSAFE_HOSTNAME
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+@pytest.mark.parametrize(
+    ("reason", "message"),
+    [
+        ("quotaExceeded", "Quota exceeded: Your project exceeded quota for free query bytes scanned."),
+        ("billingNotEnabled", "Billing has not been enabled for this project."),
+        ("rateLimitExceeded", "Exceeded rate limits: too many api requests per user per method."),
+    ],
+)
+def test_bigquery_forbidden_non_permission_reasons_pass_through(reason, message, wrapped):
+    exc = google.api_core.exceptions.Forbidden(
+        f"POST https://bigquery.googleapis.com/query: {message}",
+        errors=[{"reason": reason, "message": message}],
+    )
+    result = classify_dwh_error(_bq_wrapped(exc) if wrapped else exc, BQ_DSN)
+    assert isinstance(result, DwhQueryError)
+    assert result.message == f"BigQuery rejected the request ({reason})."
+    assert result.dwh_message == message
+    assert result.hint is None
+    assert result.hint_command is None
+    assert result.table_name is None
+
+
+def test_bigquery_forbidden_from_grpc_without_structured_errors():
+    """gRPC-origin errors carry the RPC error in errors rather than a dict, which must not break classification."""
+    exc = google.api_core.exceptions.PermissionDenied("Access Denied", errors=(RuntimeError("rpc error"),))
+    result = classify_dwh_error(exc, BQ_DSN)
+    assert isinstance(result, DwhPermissionDeniedError)
+    assert result.dwh_message == "Access Denied"
+
+
+@pytest.mark.parametrize(
+    ("config", "where", "hint_target"),
+    [
+        (BQ_DSN, "my-project.my_dataset", "the dataset my_dataset in the project my-project"),
+        (PG_DSN, "the configured dataset", "the dataset"),
+    ],
+)
+def test_bigquery_forbidden_without_a_table_uses_configured_dataset(config, where, hint_target):
+    result = classify_dwh_error(google.api_core.exceptions.Forbidden("Access Denied"), config)
+    assert isinstance(result, DwhPermissionDeniedError)
+    assert result.message == f"The configured BigQuery credentials do not have permission to read {where}."
+    assert result.hint == f"Grant the service account the BigQuery Data Viewer role on {hint_target}."
+    assert result.table_name is None
+
+
+def test_google_message_decoration_is_removed_without_structured_errors():
+    """Keep fallback coverage for errors without the structured message returned by ordinary REST failures."""
+    server_text = "Not found: Table my-project:my_dataset.t was not found in location US"
+    exc = google.api_core.exceptions.NotFound(
+        f"POST https://bigquery.googleapis.com/query: {server_text}\n\nLocation: US\nJob ID: job_abc123\n"
+    )
+    for candidate in (exc, _bq_wrapped(exc)):
+        result = classify_dwh_error(candidate, BQ_DSN)
+        assert isinstance(result, CannotFindTableError)
+        assert result.table_name == "t"
+        assert result.dwh_message == server_text
