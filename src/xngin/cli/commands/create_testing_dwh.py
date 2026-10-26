@@ -329,7 +329,7 @@ def _load_bigquery(source: _Source, dest: _Dest) -> None:
         else:
             staged.writelines(itertools.islice(reader, source.nrows + 1))  # header + nrows
         print(f"Uploading {staged.tell() / (1 << 20):.1f} MiB of CSV to BigQuery...")
-        job = client.load_table_from_file(staged, f"{dest.url.host}.{table}", job_config=job_config, rewind=True)
+        job = client.load_table_from_file(staged, f"{client.project}.{table}", job_config=job_config, rewind=True)
         job.result()
     print(f"Loaded {job.output_rows} rows into {table}.")
 
