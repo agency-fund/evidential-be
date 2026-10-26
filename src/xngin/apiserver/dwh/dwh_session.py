@@ -70,6 +70,19 @@ class CannotFindTableError(Exception):
         return self.message
 
 
+def _mark_bigquery_timestamps_as_aware(table: sqlalchemy.Table) -> None:
+    """Reports BigQuery TIMESTAMP columns as timezone-aware.
+
+    A BigQuery TIMESTAMP is an instant in UTC and the driver returns timezone-aware datetimes for it, but
+    sqlalchemy-bigquery reflects it as sqlalchemy.TIMESTAMP with timezone=False, indistinguishable from DATETIME (which
+    really is naive). Flip the flag so the column is reported as a TIMESTAMP_WITH_TIMEZONE, matching the values the
+    driver returns.
+    """
+    for column in table.columns:
+        if type(column.type) is sqlalchemy.sql.sqltypes.TIMESTAMP and not column.type.timezone:
+            column.type = sqlalchemy.TIMESTAMP(timezone=True)
+
+
 class DwhSession:
     """Deadline-bounded context manager for customer data warehouse connections.
 
@@ -186,7 +199,10 @@ class DwhSession:
         metadata = sqlalchemy.MetaData()
         try:
             if use_sa_autoload:
-                return sqlalchemy.Table(table_name, metadata, autoload_with=self._engine, quote=False)
+                table = sqlalchemy.Table(table_name, metadata, autoload_with=self._engine, quote=False)
+                if dwh_utils.is_bigquery(self._engine.url):
+                    _mark_bigquery_timestamps_as_aware(table)
+                return table
             # This method of introspection should only be used if the db dialect doesn't support Sqlalchemy2 reflection.
             return self._inspect_table_from_cursor_blocking(self._engine, table_name)
         except sqlalchemy.exc.ProgrammingError:
@@ -240,6 +256,8 @@ class DwhSession:
                             sa_type = sqlalchemy.Date
                         case 1114:  # TIMESTAMP / timestamp without time zone
                             sa_type = sqlalchemy.DateTime
+                        case 1184:  # TIMESTAMPTZ / timestamp with time zone
+                            sa_type = sqlalchemy.DateTime(timezone=True)
                         case 1700:  # NUMERIC / numeric
                             sa_type = sqlalchemy.Numeric(precision, scale)
                         case _:  # type_code == 25
