@@ -47,7 +47,7 @@ env:
   #XNGIN_OIDC_CLIENT_ID: "314428509782-j8fgiq5dvoic01432s2bcu3isinc9kam.apps.googleusercontent.com"
 
   # Configure customlogging.py to log dwh SQL to the custom log.
-  LOG_SQL_DWH: "true"
+  LOG_SQL_DWH: "false"
 
   # Configure customlogging.py to log app SQL to the custom log.
   LOG_SQL_APP_DB: "false"
@@ -61,7 +61,9 @@ env:
   XNGIN_DEVDWH_DSN: "postgresql+psycopg://postgres:postgres@localhost:5499/dwh?sslmode=disable"
 
   # Datasource for tests of the xngin app database that use the xngin_db_session dependency or the xngin_session
-  # test fixture.
+  # test fixture. Tests append a suffix identifying the test run and pytest-xdist worker to this database
+  # name (and to that of XNGIN_QUERIES_TEST_URI), so that concurrent runs can share one Postgres instance; see
+  # xngin.apiserver.testing.pg_helpers.
   DATABASE_URL_FOR_TEST: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
 
   # Datasource for the tests using the xngin.apiserver.dwh.test_queries.fixture_queries_dwh_session fixture.
@@ -134,21 +136,12 @@ tasks:
     interactive: true
     deps:
       - start-localpg
-    cmds:
-      - uv run xngin-cli create-testing-dwh --dsn "$XNGIN_DEVDWH_DSN" --allow-existing --create-db --views a_dwh,z_dwh
-      - >-
-        uv run xngin-cli create-testing-dwh
-        --dsn "$XNGIN_DEVDWH_DSN"
-        --src src/xngin/apiserver/testdata/wide_dwh.csv.zst
-        --table-name wide_dwh
-        --allow-existing
-        --views a_wide_dwh,z_wide_dwh
-      - >-
-        uv run xngin-cli create-testing-dwh
-        --dsn "$XNGIN_DEVDWH_DSN"
-        --src src/xngin/apiserver/testdata/clustered_dwh.csv.zst
-        --table-name clustered_dwh
-        --allow-existing
+    cmd: >-
+      uv run xngin-cli create-testing-dwh
+      --dsn "$XNGIN_DEVDWH_DSN"
+      --template src/xngin/apiserver/testdata/warehouses.json
+      --allow-existing
+      --create-db
   bootstrap-app-database:
     interactive: true
     desc: >-
@@ -219,7 +212,8 @@ tasks:
     deps:
       - bootstrap-dwh-database
     cmds:
-      - uv run coverage run -m pytest {{.CLI_ARGS}}
+      # -n0 comes last so that it wins: coverage only measures the pytest process it starts, not pytest-xdist workers.
+      - uv run coverage run -m pytest {{.CLI_ARGS}} -n0
       - uv run coverage html
       - uv run coverage report
       - echo "Open the HTML report at file://{{.USER_WORKING_DIR}}/htmlcov/index.html"
@@ -239,20 +233,30 @@ tasks:
       task test -- -k tests_matching_some_string_expression -rA    # run subset of tests, show all output in summary
       task test -- -m integration                                  # run tests annotated with @pytest.mark.integration
       task test -- --lf                                            # only re-run failed tests
+      task test -- -n0                                             # run serially (tests run in parallel by default)
+
+      Parallel runs use one worker fewer than the CPU cores, up to 8 (each holds a few Postgres connections; see
+      max_connections in tools/localpg.py). Runs filtered with -k or --lf use 2 workers, and runs of named tests
+      (path::test_name) run serially; see xngin.apiserver.testing.xdist_plugin.
+
+      When tests fail, the databases of the workers that ran them are kept for inspection (their names are printed just
+      before the short test summary) and dropped by test runs a day later. Each test clears the tables when it starts,
+      so a kept database shows the last test its worker ran: re-run just the failures serially to inspect them, e.g.
+      task test -- --lf -n0.
     interactive: true
     env:
       DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"
     deps:
       - bootstrap-dwh-database
     cmds:
-      - uv run pytest {{.CLI_ARGS}}
+      - uv run pytest -n auto {{.CLI_ARGS}}
   test-only:
     desc: "Runs unit tests without boostrapping the DWH database."
     interactive: true
     env:
       DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"
     cmds:
-      - uv run pytest {{.CLI_ARGS}}
+      - uv run pytest -n auto {{.CLI_ARGS}}
   test-airplane:
     desc: "Run unit tests (in airplane mode)."
     interactive: true
@@ -343,9 +347,20 @@ tasks:
       - bootstrap-app-database
     cmd: psql "{{.XNGIN_DEVAPP_STANDARD_DSN}}"
   drop-databases:
-    desc: "Forcibly remove the local development databases."
+    desc: >-
+      Forcibly remove the local development databases, including the per-worker test databases and their templates
+      (for every checkout sharing this Postgres instance).
     interactive: true
-    cmd: uv run xngin-cli drop-database --dsn "{{.XNGIN_LOCALPG_DSN}}" dwh migration_lint test_xngin {{.XNGIN_DEVAPPDB_NAME}}
+    cmd: |
+      uv run xngin-cli drop-database --dsn "{{.XNGIN_LOCALPG_DSN}}" \
+        dwh \
+        migration_lint \
+        test_xngin \
+        test_queries \
+        {{.XNGIN_DEVAPPDB_NAME}} \
+        --prefix test_xngin_ \
+        --prefix test_queries_ \
+        --prefix xngin_tmpl_
   create-database:
     desc: "Create an empty database with the supplied name. Useful for prepping a pg_restore of your local database after dropping it."
     interactive: true
