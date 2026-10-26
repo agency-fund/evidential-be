@@ -18,6 +18,7 @@ from sqlalchemy import ColumnElement, and_, exists, false, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from xngin.apiserver.dwh.dwh_session import DwhSession
+from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_enums import ExperimentState, ExperimentsType
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.worker.jobs.bandit_outcomes import Outcome, OutcomeReport, apply_outcomes
@@ -78,7 +79,9 @@ def pull_one_experiment(session: Session, experiment_id: str, *, dwh_timeout: fl
     target_field = next((ef for ef in experiment.experiment_fields if ef.is_target), None)
     if experiment.datasource_table is None or unique_id_field is None or target_field is None:
         # Unreachable through the API, which requires all three when creating a MAB-DWH experiment.
-        raise AssertionError("MAB-DWH experiment is missing its datasource table, unique id field, or target field.")
+        raise LateValidationError(
+            "MAB-DWH experiment is missing its datasource table, unique id field, or target field."
+        )
     dsconfig = experiment.datasource.get_config()
     table_name = experiment.datasource_table
     unique_id_field_name = unique_id_field.field_name

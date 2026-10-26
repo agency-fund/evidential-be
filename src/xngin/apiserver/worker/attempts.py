@@ -137,14 +137,18 @@ def attempt_experiment(jobs: Sequence[Job], experiment_id: str) -> FinishedAttem
             result = _execute_job(session, job, experiment_id)
             finished_at = database_now(session)
             _record_run(session, job, experiment, status, result, started_at=now, finished_at=finished_at)
-        _report_job_metrics(job, result, time.monotonic() - started, now, scheduled_at)
-        if isinstance(result, JobDeferred):
-            return FinishedAttempt(experiment_id, AttemptResult.NOTHING_READY)
-        return FinishedAttempt(experiment_id, AttemptResult.JOB_RAN)
     except Exception as exc:
         logger.opt(exception=exc).error("Worker attempt aborted.")
         sentry_sdk.capture_exception(exc)
         return FinishedAttempt(experiment_id, AttemptResult.ABORTED)
+    # The run has committed, so a failure to report its metrics must not turn it into an abort.
+    try:
+        _report_job_metrics(job, result, time.monotonic() - started, now, scheduled_at)
+    except Exception as exc:
+        logger.opt(exception=exc).warning("Reporting job metrics failed.")
+    if isinstance(result, JobDeferred):
+        return FinishedAttempt(experiment_id, AttemptResult.NOTHING_READY)
+    return FinishedAttempt(experiment_id, AttemptResult.JOB_RAN)
 
 
 def claim_experiment(session: Session, experiment_id: str) -> tables.Experiment | None:

@@ -307,6 +307,14 @@ def test_attempt_that_fails_before_claiming_aborts(xngin_session, mocker):
     assert attempt_experiment((FakeJob(),), "e") == FinishedAttempt("e", AttemptResult.ABORTED)
 
 
+def test_metrics_failure_after_commit_does_not_abort_the_attempt(xngin_session, testing_datasource, mocker):
+    experiment = make_push_experiment(xngin_session, testing_datasource.ds)
+    job = FakeJob()
+    refresh_stale_experiments((job,))
+    mocker.patch("xngin.apiserver.worker.attempts._report_job_metrics", side_effect=RuntimeError("sentry"))
+    assert ran_successfully(attempt_experiment((job,), experiment.id), job)
+
+
 def test_api_assignment_commits_during_maintenance(xngin_session, testing_datasource):
     experiment = make_autofail_experiment(xngin_session, testing_datasource.ds, participants=())
     pause = Pause()
