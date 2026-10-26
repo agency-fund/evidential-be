@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, TypeIs
 import pytest
 from pydantic import TypeAdapter
 
-from xngin.apiserver.conftest import DatasourceMetadata
 from xngin.apiserver.routers.common_api_types import (
     AnyBanditDesignSpec,
     AnyFrequentistDesignSpec,
@@ -47,6 +46,7 @@ from xngin.apiserver.routers.experiments.test_experiments_common import insert_e
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.admin_api_client import AdminAPIClientHTTPValidationError
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClientNotDefaultStatusError
+from xngin.apiserver.testing.helpers import DatasourceMetadata
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
 from xngin.stats.bandit_sampling import update_arm
 
