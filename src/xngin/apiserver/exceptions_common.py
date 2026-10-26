@@ -35,7 +35,8 @@ class DwhErrorCode(StrEnum):
     # The warehouse could not complete a query for reasons of its own, such as exhausted resources, a quota, or
     # billing; the message carries the warehouse's own code. Errors that may come from our own SQL are not DwhErrors.
     QUERY_FAILED = "dwh_query_failed"
-    # A data source setting, such as its search_path, cannot be applied.
+    # A data source setting cannot be applied: SQLSTATE 22023 for an invalid search_path, or 3F000 for a search_path
+    # schema that Redshift cannot find.
     CONFIGURATION = "dwh_configuration"
 
 

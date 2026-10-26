@@ -34,6 +34,10 @@ from xngin.apiserver.settings import BqDsn, Dsn, Dwh
 
 HINT_RUN_STATEMENT = "Ask your database administrator to run the following statement."
 HINT_CHECK_SEARCH_PATH = "Check the search_path in the data source configuration."
+HINT_CHECK_SEARCH_PATH_SCHEMA = (
+    "Check the search_path in the data source configuration. Redshift stores schema names in lowercase unless "
+    "enable_case_sensitive_identifier is on, so a quoted schema name must be spelled in lowercase."
+)
 HINT_CHECK_HOSTNAME = "Check the hostname in the data source configuration."
 HINT_UNSAFE_HOSTNAME = "The hostname resolves to a private or reserved address, which Evidential does not connect to."
 HINT_CHECK_CONNECTION = "Check the host, port, and network settings in the data source configuration."
@@ -52,6 +56,7 @@ _PG_COLUMN_RE = re.compile(
 )
 _PG_DENIED_RE = re.compile(r"permission denied for (?P<kind>table|relation|view|materialized view|schema) (?P<name>.+)")
 _PG_DATABASE_RE = re.compile(r'database "(?P<name>[^"]+)" does not exist')
+_PG_SCHEMA_RE = re.compile(r'schema "(?P<name>[^"]+)" does not exist')
 _PG_IDENTIFIER_PREPARER = sqlalchemy.dialects.postgresql.dialect().identifier_preparer
 # Connect-time failures carry no SQLSTATE, only libpq's text. These phrases identify the rejected-credentials ones.
 _PG_AUTH_PHRASES = ("password authentication failed", "no pg_hba.conf entry", "authentication failed")
@@ -211,6 +216,16 @@ def _classify_postgres(exc: psycopg.Error | psycopg2.Error, dwh_config: Dwh) -> 
         # own setting, so the server's message, which echoes it, is safe to show.
         return DwhConfigurationError(
             "The configured search_path is not valid.", hint=HINT_CHECK_SEARCH_PATH, dwh_message=primary
+        )
+    if sqlstate == "3F000":
+        # DwhSession never qualifies a name with a schema, so a missing schema is one the data source's search_path
+        # names. Redshift, unlike Postgres, refuses to apply such a search_path, which fails every connection.
+        match = _PG_SCHEMA_RE.search(primary)
+        schema = f': "{match["name"]}"' if match else ""
+        return DwhConfigurationError(
+            f"The configured search_path names a schema the data warehouse could not find{schema}.",
+            hint=HINT_CHECK_SEARCH_PATH_SCHEMA,
+            dwh_message=primary,
         )
     # Anything else, such as a syntax error, an undefined function, or a value of the wrong type, may be a bug in
     # the SQL we generated.

@@ -12,18 +12,22 @@ import psycopg2
 import psycopg2.errors
 import pytest
 import requests.exceptions
+import sqlalchemy
 import sqlalchemy.exc
 from google.cloud.bigquery.dbapi import exceptions as dbapi_exceptions
 
+from xngin.apiserver import flags
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, DnsLookupUnsafeError
 from xngin.apiserver.dwh.dwh_errors import (
     HINT_CHECK_HOSTNAME,
     HINT_UNSAFE_HOSTNAME,
     classify_dwh_error,
 )
+from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.exceptions_common import (
     CannotFindTableError,
     DwhAuthenticationError,
+    DwhConfigurationError,
     DwhConnectionError,
     DwhDatabaseDoesNotExistError,
     DwhErrorCode,
@@ -414,3 +418,49 @@ def test_google_message_decoration_is_removed_without_structured_errors():
         assert isinstance(result, CannotFindTableError)
         assert result.table_name == "t"
         assert result.dwh_message == server_text
+
+
+# Redshift refuses to apply a search_path that names a schema it cannot find, with SQLSTATE 3F000, where Postgres
+# skips the entry. With enable_case_sensitive_identifier off (the default), that includes a schema created as
+# "QB Space", which Redshift stores as qb space. These are the code and message a real Redshift Serverless workgroup
+# returned (QUOTING-BUGS.md, bug 4); Postgres cannot produce them, so they are simulated.
+REDSHIFT_MISSING_SCHEMA = 'schema "QB Space" does not exist'
+
+
+@pytest.mark.parametrize(
+    "orig",
+    [
+        pytest.param(_pg2("3F000", REDSHIFT_MISSING_SCHEMA), id="psycopg2"),
+        pytest.param(psycopg.errors.InvalidSchemaName(REDSHIFT_MISSING_SCHEMA), id="psycopg"),
+    ],
+)
+def test_a_search_path_schema_the_warehouse_cannot_find_is_a_configuration_error(orig):
+    result = classify_dwh_error(_wrapped(orig), PG_DSN)
+    assert isinstance(result, DwhConfigurationError)
+    assert result.code == DwhErrorCode.CONFIGURATION
+    assert result.message == 'The configured search_path names a schema the data warehouse could not find: "QB Space".'
+    assert result.hint is not None and "stores schema names in lowercase" in result.hint
+    assert result.dwh_message == REDSHIFT_MISSING_SCHEMA
+
+
+def test_a_search_path_redshift_refuses_while_connecting_is_reported_as_a_configuration_error(monkeypatch):
+    """Redshift raises the error while DwhSession applies the search_path to a new connection, before any query."""
+
+    def refuse_search_path(_dbapi_connection, _connection_record):
+        raise _pg2("3F000", REDSHIFT_MISSING_SCHEMA)
+
+    original = DwhSession._extra_engine_setup
+
+    def extra_engine_setup(self, engine: sqlalchemy.Engine):
+        original(self, engine)
+        sqlalchemy.event.listen(engine, "connect", refuse_search_path, insert=True)
+
+    monkeypatch.setattr(DwhSession, "_extra_engine_setup", extra_engine_setup)
+    # Redshift is always reached through psycopg2.
+    dsn: Dsn = Dsn.from_url(flags.XNGIN_DEVDWH_DSN).model_copy(
+        update={"driver": "postgresql+psycopg2", "search_path": '"QB Space"'}
+    )
+    with DwhSession.open(dsn) as dwh, pytest.raises(DwhConfigurationError) as excinfo:
+        dwh.connectivity_check()
+    assert excinfo.value.dwh_message == REDSHIFT_MISSING_SCHEMA
+    assert isinstance(excinfo.value.__cause__, sqlalchemy.exc.ProgrammingError)
