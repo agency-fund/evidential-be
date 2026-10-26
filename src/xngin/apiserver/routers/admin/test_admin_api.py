@@ -19,6 +19,7 @@ from pydantic import HttpUrl
 
 from xngin.apiserver import flags
 from xngin.apiserver.dns import safe_resolve
+from xngin.apiserver.dwh.dwh_errors import HINT_CHECK_BQ_CREDENTIALS
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.request_context_middleware import REQUEST_ID_HEADER
 from xngin.apiserver.routers.admin.admin_api_converters import CREDENTIALS_UNAVAILABLE_MESSAGE
@@ -502,7 +503,7 @@ def test_create_datasource_with_connectivity_check_connection_failure(aclient: A
         body=CreateOrganizationRequest(name="test_create_datasource_with_preflight")
     ).data.id
 
-    with expect_status_code(424, message_contains="password authentication failed", code_eq="dwh_connection"):
+    with expect_status_code(424, message_contains="password authentication failed", code_eq="dwh_authentication"):
         aclient.create_datasource(
             body=CreateDatasourceRequest(
                 name="test_create_datasource",
@@ -551,7 +552,7 @@ def test_create_datasource_with_connectivity_check_can_be_enabled(aclient: Admin
         body=CreateOrganizationRequest(name="test_create_datasource_connectivity_check_enabled")
     ).data.id
 
-    with expect_status_code(424, message_contains="password authentication failed", code_eq="dwh_connection"):
+    with expect_status_code(424, message_contains="password authentication failed", code_eq="dwh_authentication"):
         aclient.create_datasource(
             body=CreateDatasourceRequest(
                 name="test_create_datasource",
@@ -825,7 +826,7 @@ def test_datasource_errors(aclient: AdminAPIClient):
         )
     ).data.id
 
-    with expect_status_code(424, message_contains="CONNECTION ERROR", code_eq="dwh_connection"):
+    with expect_status_code(424, message_contains="connection to the data warehouse failed", code_eq="dwh_connection"):
         aclient.inspect_datasource(datasource_id=ds_id)
 
     # Test connection Error (502) - PostgreSQL with wrong port
@@ -845,7 +846,7 @@ def test_datasource_errors(aclient: AdminAPIClient):
         )
     ).data.id
 
-    with expect_status_code(424, message_contains="CONNECTION ERROR", code_eq="dwh_connection"):
+    with expect_status_code(424, message_contains="connection to the data warehouse failed", code_eq="dwh_connection"):
         aclient.inspect_datasource(datasource_id=ds_id)
 
     # Test credential Error (502) - BigQuery with invalid service account
@@ -862,9 +863,13 @@ def test_datasource_errors(aclient: AdminAPIClient):
         )
     ).data.id
 
-    # Inspect datasource should report credential errors as a warehouse connection failure.
-    with expect_status_code(424, message_contains="CONNECTION ERROR", code_eq="dwh_connection"):
+    # The BigQuery dialect parses the key while building the engine, so this fails before any request to Google;
+    # DwhSession._create_engine reports it as a credentials problem rather than a connection problem.
+    with expect_status_code(
+        424, message_contains="The service account key could not be read.", code_eq="dwh_authentication"
+    ) as match:
         aclient.inspect_datasource(datasource_id=ds_id)
+    assert match.http_response().json()["hint"] == HINT_CHECK_BQ_CREDENTIALS
 
 
 def test_delete_datasource(testing_datasource, aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
@@ -3035,7 +3040,7 @@ def test_snapshots(aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
     assert failed_snapshot.experiment_id == experiment_id
     assert failed_snapshot.status == SnapshotStatus.FAILED
     assert failed_snapshot.data is None
-    assert failed_snapshot.details is not None and "OperationalError: " in failed_snapshot.details["message"]
+    assert failed_snapshot.details is not None and "DwhConnectionError: " in failed_snapshot.details["message"]
 
     for status_filter, expected_ids in [
         (SnapshotStatus.SUCCESS, [second.id, first.id]),

@@ -6,23 +6,25 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Self
 
-import google.api_core.exceptions
 import sqlalchemy
 from loguru import logger
 from sqlalchemy import ColumnElement, Engine, Inspector, event, text
 from sqlalchemy.engine.interfaces import DBAPIConnection
 from sqlalchemy.engine.row import RowMapping
-from sqlalchemy.exc import NoSuchTableError, OperationalError
+from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags
 from xngin.apiserver.dns.safe_resolve import safe_resolve
 from xngin.apiserver.dwh import dwh_utils, participant_metrics_queries, queries, query_constructors
 from xngin.apiserver.dwh.analysis_types import ParticipantOutcome
+from xngin.apiserver.dwh.dwh_errors import HINT_CHECK_BQ_CREDENTIALS, classify_dwh_error
 from xngin.apiserver.exceptions_common import (
     CannotFindTableError,
+    DwhAuthenticationError,
     DwhConnectionError,
     DwhDatabaseDoesNotExistError,
+    DwhError,
     DwhTimeoutError,
     UnsupportedTableNameError,
 )
@@ -38,16 +40,6 @@ from xngin.apiserver.settings import (
 from xngin.ops.threads import ThreadTimeout, timeout_thread
 
 
-def _is_postgres_database_not_found_error(exc: OperationalError) -> bool:
-    """Returns true when the exception indicates a Postgres database does not exist."""
-    return (
-        len(exc.args) > 0
-        and isinstance(exc.args[0], str)
-        and "FATAL:  database" in exc.args[0]
-        and "does not exist" in exc.args[0]
-    )
-
-
 def _safe_url(url: sqlalchemy.engine.url.URL) -> sqlalchemy.engine.url.URL:
     """Prepares a URL for presentation or capture in logs by stripping sensitive values."""
     cleaned = url.set(password="redacted")  # noqa: S106
@@ -55,6 +47,11 @@ def _safe_url(url: sqlalchemy.engine.url.URL) -> sqlalchemy.engine.url.URL:
         if cleaned.query.get(qp):
             cleaned = cleaned.update_query_dict({qp: "redacted"})
     return cleaned
+
+
+def _pg_sqlstate(exc: sqlalchemy.exc.DBAPIError) -> str | None:
+    """The SQLSTATE of the driver error SQLAlchemy wrapped; psycopg 3 calls it sqlstate and psycopg2 pgcode."""
+    return getattr(exc.orig, "sqlstate", None) or getattr(exc.orig, "pgcode", None)
 
 
 @dataclass
@@ -173,11 +170,25 @@ class DwhSession:
         self._timeout.submit(self._close_blocking).add_done_callback(self._log_close_failure)
 
     def _on_worker[T, **P](self, label: str, fn: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs) -> T:
-        """Run one warehouse interaction on the helper thread, under this block's deadline."""
+        """Run one warehouse interaction on the helper thread, under this block's deadline.
+
+        This is the one place warehouse errors are translated to DwhError: every public method dispatches
+        through here, so a driver or network failure anywhere in fn surfaces as the DwhError subclass that
+        classify_dwh_error picks. Exceptions it does not recognize propagate unchanged, so our own bugs stay
+        visible as 500s rather than being dressed up as warehouse failures. The original exception is kept as
+        __cause__ for logs and Sentry.
+        """
         try:
             return self._timeout.run(fn, *args, **kwargs)
+        except DwhError:
+            raise
         except TimeoutError as exc:
             raise DwhTimeoutError(f"The data warehouse did not finish {label} within {self._timeout_secs:g}s.") from exc
+        except Exception as exc:
+            classified = classify_dwh_error(exc, self._dwh_config)
+            if classified is None:
+                raise
+            raise classified from exc
 
     def _inspect_table_blocking(self, table_name: str, *, use_sa_autoload: bool | None = None) -> sqlalchemy.Table:
         """Returns the Table for table_name, inspecting the DWH only the first time it is requested."""
@@ -211,9 +222,6 @@ class DwhSession:
                 return table
             # This method of introspection should only be used if the db dialect doesn't support Sqlalchemy2 reflection.
             return self._inspect_table_from_cursor_blocking(self._engine, table_name)
-        except sqlalchemy.exc.ProgrammingError:
-            logger.exception("Failed to create a Table! use_sa_autoload: {}", use_sa_autoload)
-            raise
         except NoSuchTableError as nste:
             # Do not reflect the rest of the warehouse here to suggest alternatives: that fetches every
             # table's schema and has blown the DWH deadline on datasets with a few hundred tables.
@@ -282,13 +290,16 @@ class DwhSession:
                         )
                     )
                 return sqlalchemy.Table(table_name, metadata, *columns)
+        except sqlalchemy.exc.ProgrammingError as exc:
+            # This path runs a real SELECT rather than reflecting, so a missing table arrives as the driver's
+            # UndefinedTable (SQLSTATE 42P01) wrapped in ProgrammingError. classify_dwh_error would also map it
+            # to CannotFindTableError, but parsing the name back out of the message is less reliable than using
+            # the one we were given. The NoSuchTableError clause below covers a dialect that raises it instead.
+            if _pg_sqlstate(exc) == "42P01":
+                raise CannotFindTableError(table_name) from exc
+            raise
         except NoSuchTableError as nste:
             raise CannotFindTableError(table_name) from nste
-        except sqlalchemy.exc.ProgrammingError as pe:
-            # The query names a table that does not exist: SQLSTATE 42P01, undefined_table.
-            if getattr(pe.orig, "pgcode", None) == "42P01" or getattr(pe.orig, "sqlstate", None) == "42P01":
-                raise CannotFindTableError(table_name) from pe
-            raise
 
     def inspect_table(self, table_name: str, use_sa_autoload: bool | None = None) -> sqlalchemy.Table:
         """Inspect table structure using a variety of backend-specific workarounds.
@@ -566,30 +577,21 @@ class DwhSession:
         )
 
     def _list_tables_blocking(self) -> list[str]:
-        try:
-            # Hack for redshift's lack of reflection support.
-            if isinstance(self._dwh_config, Dsn) and self._dwh_config.is_redshift():
-                query = text(
-                    "SELECT table_name FROM information_schema.tables "
-                    "WHERE table_schema = ANY(current_schemas(false)) "
-                    "AND table_type IN ('BASE TABLE', 'VIEW') "
-                    "ORDER BY table_name"
-                )
-                result = self._session.execute(query)
-                return list(result.scalars().all())
-            inspected = sqlalchemy.inspect(self._engine)
+        # Hack for redshift's lack of reflection support.
+        if isinstance(self._dwh_config, Dsn) and self._dwh_config.is_redshift():
+            query = text(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = ANY(current_schemas(false)) "
+                "AND table_type IN ('BASE TABLE', 'VIEW') "
+                "ORDER BY table_name"
+            )
+            result = self._session.execute(query)
+            return list(result.scalars().all())
+        inspected = sqlalchemy.inspect(self._engine)
 
-            if not isinstance(inspected, Inspector):
-                raise TypeError(f"Unexpected type of inspector: {type(inspected)}")
-            return list(sorted(inspected.get_table_names() + inspected.get_view_names()))
-
-        except OperationalError as exc:
-            if _is_postgres_database_not_found_error(exc):
-                raise DwhDatabaseDoesNotExistError(str(exc)) from exc
-            raise DwhConnectionError(f"CONNECTION ERROR: {type(exc).__name__} | {exc!s}") from exc
-        except google.api_core.exceptions.NotFound as exc:
-            # Google returns a 404 when authentication succeeds but when the specified datasource does not exist.
-            raise DwhDatabaseDoesNotExistError(str(exc)) from exc
+        if not isinstance(inspected, Inspector):
+            raise TypeError(f"Unexpected type of inspector: {type(inspected)}")
+        return list(sorted(inspected.get_table_names() + inspected.get_view_names()))
 
     def list_tables(self) -> list[str]:
         """Get a list of table names from the data warehouse.
@@ -598,23 +600,22 @@ class DwhSession:
             List of table names (strings) available in the data warehouse
 
         Raises:
-            DwhDatabaseDoesNotExistError: When the target database/dataset does not exist
+            DwhError: A subclass describing the warehouse failure, e.g. DwhDatabaseDoesNotExistError when the
+                target database or dataset does not exist. See _on_worker.
         """
         return self._on_worker("listing tables", self._list_tables_blocking)
 
     def _connectivity_check_blocking(self) -> None:
         """Runs a minimal query to validate database connectivity and credentials."""
-        try:
-            self._session.execute(text("SELECT 1"))
-        except OperationalError as exc:
-            if _is_postgres_database_not_found_error(exc):
-                raise DwhDatabaseDoesNotExistError(str(exc)) from exc
-            raise DwhConnectionError(f"CONNECTION ERROR: {type(exc).__name__} | {exc!s}") from exc
-        except google.api_core.exceptions.NotFound as exc:
-            raise DwhDatabaseDoesNotExistError(str(exc)) from exc
+        self._session.execute(text("SELECT 1"))
 
     def connectivity_check(self) -> None:
-        """Validate that the configured warehouse is reachable and credentials are valid."""
+        """Validate that the configured warehouse is reachable and credentials are valid.
+
+        Raises:
+            DwhError: A subclass describing why the warehouse could not be reached or refused the credentials.
+                See _on_worker.
+        """
         self._on_worker("a connectivity check", self._connectivity_check_blocking)
 
     def _create_engine(self) -> Engine:
@@ -622,7 +623,7 @@ class DwhSession:
         url = self._dwh_config.to_sqlalchemy_url()
         if url.host is None:
             # This should never happen, but check just in case.
-            raise DwhDatabaseDoesNotExistError(f"No host found in URL: {url}")
+            raise DwhDatabaseDoesNotExistError(f"No host found in URL: {_safe_url(url)}")
 
         connect_args: dict = {}
 
@@ -651,7 +652,24 @@ class DwhSession:
                 poolclass=sqlalchemy.pool.NullPool,
             )
         except Exception as exc:
-            raise DwhConnectionError(f"CONNECTION ERROR: {type(exc).__name__} | {exc!s}") from exc
+            # With NullPool, create_engine does not connect; the first query does. So today this only sees URL
+            # and dialect construction errors. It is retained because a future pooling configuration might open
+            # connections during engine creation, and such failures must still surface as a DwhError rather
+            # than a bare 500. Classifying first means a pre-connect that fails on credentials is reported as
+            # an authentication error rather than a generic connection error.
+            classified = classify_dwh_error(exc, self._dwh_config)
+            if classified is None and isinstance(self._dwh_config, BqDsn) and isinstance(exc, ValueError):
+                # sqlalchemy-bigquery parses the service account key here, and cryptography reports a malformed
+                # one as a plain ValueError (observed: "Unable to load PEM file. ... InvalidData(...)") rather
+                # than a GoogleAuthError, so classify_dwh_error cannot tell it from our own bugs elsewhere.
+                classified = DwhAuthenticationError(
+                    "The service account key could not be read.",
+                    hint=HINT_CHECK_BQ_CREDENTIALS,
+                    dwh_message=str(exc),
+                )
+            raise (
+                classified or DwhConnectionError(f"Could not set up the data warehouse connection: {exc!s}")
+            ) from exc
 
         self._extra_engine_setup(engine)
         return engine

@@ -5,8 +5,15 @@ import pytest
 import sqlalchemy
 from sqlalchemy import text
 
+from xngin.apiserver import flags
+from xngin.apiserver.dwh.dwh_errors import HINT_CHECK_SEARCH_PATH
 from xngin.apiserver.dwh.dwh_session import DwhSession
-from xngin.apiserver.exceptions_common import CannotFindTableError, DwhTimeoutError
+from xngin.apiserver.exceptions_common import (
+    CannotFindTableError,
+    DwhConfigurationError,
+    DwhTimeoutError,
+)
+from xngin.apiserver.settings import Dsn
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
 
 
@@ -189,3 +196,51 @@ def test_bind_parameters_appear_in_exception_text_only_in_dev(dwh_config, monkey
             lambda: dwh._session.execute(text("SELECT CAST(:a AS text), 1 / 0"), {"a": "SECRET_VALUE"}),
         )
     assert ("SECRET_VALUE" in str(excinfo.value)) is shows_parameters
+
+
+def test_a_warehouse_error_is_classified_and_keeps_its_cause(dwh_config):
+    with DwhSession.open(dwh_config) as dwh, pytest.raises(CannotFindTableError) as excinfo:
+        dwh._on_worker("select", lambda: dwh._session.execute(text("SELECT 1 FROM no_such_table_xyz")))
+    assert excinfo.value.table_name == "no_such_table_xyz"
+    assert isinstance(excinfo.value.__cause__, sqlalchemy.exc.ProgrammingError)
+
+
+def test_inspecting_a_missing_table_from_the_cursor_names_that_table(dwh_config):
+    """The cursor path (Redshift) runs a SELECT, so a missing table is a ProgrammingError, not NoSuchTableError."""
+    with DwhSession.open(dwh_config) as dwh, pytest.raises(CannotFindTableError) as excinfo:
+        dwh.inspect_table("no_such_table_xyz", use_sa_autoload=False)
+    assert excinfo.value.table_name == "no_such_table_xyz"
+    assert isinstance(excinfo.value.__cause__, sqlalchemy.exc.ProgrammingError)
+
+
+def test_an_exception_that_is_not_the_warehouses_doing_propagates_unchanged(dwh_config):
+    """Our own bugs must stay visible as 500s rather than being dressed up as warehouse failures."""
+    with DwhSession.open(dwh_config) as dwh, pytest.raises(ZeroDivisionError):
+        dwh._on_worker("dividing by zero", lambda: 1 / 0)
+
+
+def _admin_dsn(search_path: str, driver: str = "postgresql+psycopg") -> Dsn:
+    dsn: Dsn = Dsn.from_url(flags.XNGIN_DEVDWH_DSN)
+    return dsn.model_copy(update={"search_path": search_path, "driver": driver})
+
+
+def test_search_path_resolves_tables_in_another_schema(dwh_schema: str):
+    with DwhSession.open(_admin_dsn(dwh_schema)) as dwh:
+        assert "participants" in dwh.list_tables()
+        assert {c.name for c in dwh.inspect_table("participants").columns} == {"id", "is_engaged"}
+        count = dwh._on_worker(
+            "query", lambda: dwh._session.execute(text("SELECT count(*) FROM participants")).scalar_one()
+        )
+    assert count == 2
+
+
+def test_a_malformed_search_path_is_reported():
+    with (
+        DwhSession.open(_admin_dsn('public"; DROP TABLE users; --')) as dwh,
+        pytest.raises(DwhConfigurationError) as excinfo,
+    ):
+        dwh.connectivity_check()
+    assert isinstance(excinfo.value.__cause__, sqlalchemy.exc.DataError)
+    assert excinfo.value.hint == HINT_CHECK_SEARCH_PATH
+    assert excinfo.value.dwh_message is not None
+    assert "search_path" in excinfo.value.dwh_message
