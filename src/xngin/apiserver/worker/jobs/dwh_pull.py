@@ -19,8 +19,9 @@ from loguru import logger
 from sqlalchemy import ColumnElement, case, literal, select
 from sqlalchemy.orm import Session
 
-from xngin.apiserver.dwh.dwh_session import CannotFindTableError, DwhSession
+from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.exceptions_common import (
+    CannotFindTableError,
     DwhConnectionError,
     DwhDatabaseDoesNotExistError,
     DwhTimeoutError,
@@ -53,6 +54,7 @@ class WarehouseReadError(Exception):
 # classifies, and the database driver's own errors during the read. Anything else is a bug and should alert.
 # See EVE-267.
 WAREHOUSE_FAILURES = (
+    CannotFindTableError,
     CannotFindTableError,
     DwhConnectionError,
     DwhDatabaseDoesNotExistError,

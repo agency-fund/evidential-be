@@ -20,6 +20,7 @@ from pydantic import HttpUrl
 from xngin.apiserver import flags
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.dwh.dwh_session import DwhSession
+from xngin.apiserver.request_context_middleware import REQUEST_ID_HEADER
 from xngin.apiserver.routers.admin.admin_api_converters import CREDENTIALS_UNAVAILABLE_MESSAGE
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddExperimentCreatedWebhookRequest,
@@ -501,7 +502,7 @@ def test_create_datasource_with_connectivity_check_connection_failure(aclient: A
         body=CreateOrganizationRequest(name="test_create_datasource_with_preflight")
     ).data.id
 
-    with expect_status_code(502, message_contains="password authentication failed"):
+    with expect_status_code(424, message_contains="password authentication failed", code_eq="dwh_connection"):
         aclient.create_datasource(
             body=CreateDatasourceRequest(
                 name="test_create_datasource",
@@ -550,7 +551,7 @@ def test_create_datasource_with_connectivity_check_can_be_enabled(aclient: Admin
         body=CreateOrganizationRequest(name="test_create_datasource_connectivity_check_enabled")
     ).data.id
 
-    with expect_status_code(502, message_contains="password authentication failed"):
+    with expect_status_code(424, message_contains="password authentication failed", code_eq="dwh_connection"):
         aclient.create_datasource(
             body=CreateDatasourceRequest(
                 name="test_create_datasource",
@@ -803,7 +804,9 @@ def test_datasource_errors(aclient: AdminAPIClient):
         )
     ).data.id
 
-    with expect_status_code(404, message_contains='database "nonexistent_db" does not exist'):
+    with expect_status_code(
+        424, message_contains='database "nonexistent_db" does not exist', code_eq="dwh_database_not_found"
+    ):
         aclient.inspect_datasource(datasource_id=ds_id)
 
     # Test connection Error (502) - RedShift with wrong port
@@ -822,7 +825,7 @@ def test_datasource_errors(aclient: AdminAPIClient):
         )
     ).data.id
 
-    with expect_status_code(502, message_contains="CONNECTION ERROR"):
+    with expect_status_code(424, message_contains="CONNECTION ERROR", code_eq="dwh_connection"):
         aclient.inspect_datasource(datasource_id=ds_id)
 
     # Test connection Error (502) - PostgreSQL with wrong port
@@ -842,7 +845,7 @@ def test_datasource_errors(aclient: AdminAPIClient):
         )
     ).data.id
 
-    with expect_status_code(502, message_contains="CONNECTION ERROR"):
+    with expect_status_code(424, message_contains="CONNECTION ERROR", code_eq="dwh_connection"):
         aclient.inspect_datasource(datasource_id=ds_id)
 
     # Test credential Error (502) - BigQuery with invalid service account
@@ -859,8 +862,8 @@ def test_datasource_errors(aclient: AdminAPIClient):
         )
     ).data.id
 
-    # Inspect datasource should return 502 for credential errors
-    with expect_status_code(502, message_contains="CONNECTION ERROR"):
+    # Inspect datasource should report credential errors as a warehouse connection failure.
+    with expect_status_code(424, message_contains="CONNECTION ERROR", code_eq="dwh_connection"):
         aclient.inspect_datasource(datasource_id=ds_id)
 
 
@@ -1556,7 +1559,7 @@ def test_power_check_answers_504_when_the_warehouse_stalls(testing_datasource, a
     mocker.patch.object(DwhSession, "_inspect_table_blocking", stall)
     mocker.patch("xngin.apiserver.flags.DWH_TIMEOUT_SECS", 0.05)
     try:
-        with expect_status_code(504, message_contains="did not finish inspecting a table"):
+        with expect_status_code(424, message_contains="did not finish inspecting a table", code_eq="dwh_timeout"):
             aclient.power_check(
                 datasource_id=testing_datasource.datasource_id, body=design_spec_to_power_request(design_spec)
             )
@@ -1615,10 +1618,17 @@ def test_power_check_validations(testing_datasource, aclient: AdminAPIClient):
     assert power_response.analyses[0].target_n is not None
 
     # Now check various failure scenarios
-    with expect_status_code(404, message_contains="The table '' does not exist."):
+    aclient.client.headers[REQUEST_ID_HEADER] = "power-check-missing-table"
+    with expect_status_code(
+        424, message_contains="The table '' does not exist.", code_eq="dwh_table_not_found"
+    ) as match:
         bad_design_spec = design_spec.model_copy(deep=True)
         bad_design_spec.table_name = ""
         aclient.power_check(datasource_id=ds_id, body=design_spec_to_power_request(bad_design_spec))
+    del aclient.client.headers[REQUEST_ID_HEADER]
+    body = match.http_response().json()
+    assert body["request_id"] == "power-check-missing-table"
+    assert body["table_name"] == ""
 
     with expect_status_code(422, detail_contains="columns that do not exist in the table: bad_filter, bad_metric"):
         bad_design_spec = design_spec.model_copy(deep=True)
@@ -4602,7 +4612,9 @@ def test_org_scoped_routes_reject_datasource_from_another_organization(
 
 def test_inspecting_a_schema_qualified_table_does_not_reach_the_schema(testing_datasource, aclient: AdminAPIClient):
     """On Postgres, the dot is part of the quoted table name; public.dwh does not name the dwh table in public."""
-    with expect_status_code(404, message_contains="The table 'public.dwh' does not exist"):
+    with expect_status_code(
+        424, message_contains="The table 'public.dwh' does not exist", code_eq="dwh_table_not_found"
+    ):
         aclient.inspect_table_in_datasource(datasource_id=testing_datasource.datasource_id, table_name="public.dwh")
 
 

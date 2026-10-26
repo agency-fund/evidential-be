@@ -19,7 +19,13 @@ from xngin.apiserver import flags
 from xngin.apiserver.dns.safe_resolve import safe_resolve
 from xngin.apiserver.dwh import dwh_utils, participant_metrics_queries, queries, query_constructors
 from xngin.apiserver.dwh.analysis_types import ParticipantOutcome
-from xngin.apiserver.exceptions_common import DwhConnectionError, DwhDatabaseDoesNotExistError, DwhTimeoutError
+from xngin.apiserver.exceptions_common import (
+    CannotFindTableError,
+    DwhConnectionError,
+    DwhDatabaseDoesNotExistError,
+    DwhTimeoutError,
+    UnsupportedTableNameError,
+)
 from xngin.apiserver.routers.common_api_types import DesignSpecMetricRequest, Filter
 from xngin.apiserver.settings import (
     SA_LOGGER_NAME_FOR_DWH,
@@ -57,35 +63,6 @@ class GetParticipantsResult:
 
     sa_table: sqlalchemy.Table
     participants: list
-
-
-class CannotFindTableError(Exception):
-    """Raised when we cannot find a table in the database.
-
-    The message names only the missing table. It must never list the other tables in the warehouse:
-    their names are customer data and this message ends up in logs, Sentry titles and API responses.
-    """
-
-    def __init__(self, table_name: str):
-        self.table_name = table_name
-        self.message = (
-            f"The table '{table_name}' does not exist. Check the table name, and the tables in the database, "
-            f"and try again."
-        )
-
-    def __str__(self):
-        return self.message
-
-
-class UnsupportedTableNameError(CannotFindTableError):
-    """Raised for a table name that the backend does not allow.
-
-    BigQuery: BigQuery does not allow table names with a dot because it would be ambiguous with a dataset-scoped table.
-    """
-
-    def __init__(self, table_name: str):
-        super().__init__(table_name)
-        self.message = f"The table name '{table_name}' is not a valid BigQuery table name."
 
 
 def _mark_bigquery_timestamps_as_aware(table: sqlalchemy.Table) -> None:
@@ -609,7 +586,7 @@ class DwhSession:
         except OperationalError as exc:
             if _is_postgres_database_not_found_error(exc):
                 raise DwhDatabaseDoesNotExistError(str(exc)) from exc
-            raise DwhConnectionError(exc) from exc
+            raise DwhConnectionError(f"CONNECTION ERROR: {type(exc).__name__} | {exc!s}") from exc
         except google.api_core.exceptions.NotFound as exc:
             # Google returns a 404 when authentication succeeds but when the specified datasource does not exist.
             raise DwhDatabaseDoesNotExistError(str(exc)) from exc
@@ -632,7 +609,7 @@ class DwhSession:
         except OperationalError as exc:
             if _is_postgres_database_not_found_error(exc):
                 raise DwhDatabaseDoesNotExistError(str(exc)) from exc
-            raise DwhConnectionError(exc) from exc
+            raise DwhConnectionError(f"CONNECTION ERROR: {type(exc).__name__} | {exc!s}") from exc
         except google.api_core.exceptions.NotFound as exc:
             raise DwhDatabaseDoesNotExistError(str(exc)) from exc
 
@@ -674,7 +651,7 @@ class DwhSession:
                 poolclass=sqlalchemy.pool.NullPool,
             )
         except Exception as exc:
-            raise DwhConnectionError(exc) from exc
+            raise DwhConnectionError(f"CONNECTION ERROR: {type(exc).__name__} | {exc!s}") from exc
 
         self._extra_engine_setup(engine)
         return engine

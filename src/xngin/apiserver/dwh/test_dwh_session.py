@@ -5,8 +5,8 @@ import pytest
 import sqlalchemy
 from sqlalchemy import text
 
-from xngin.apiserver.dwh.dwh_session import CannotFindTableError, DwhSession
-from xngin.apiserver.exceptions_common import DwhTimeoutError
+from xngin.apiserver.dwh.dwh_session import DwhSession
+from xngin.apiserver.exceptions_common import CannotFindTableError, DwhTimeoutError
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
 
 
