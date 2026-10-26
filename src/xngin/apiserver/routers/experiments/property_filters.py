@@ -1,5 +1,5 @@
 import uuid
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 
 from xngin.apiserver.exceptions_common import LateValidationError
@@ -11,57 +11,44 @@ type DateTarget = Literal["date", "datetime", "datetimetz"]
 
 def str_to_date_or_datetime(
     col_name: str,
-    s: float | str | date | datetime | None,
+    s: PropertyValueTypes,
     target_type: DateTarget,
 ) -> date | datetime | None:
     """Convert an ISO8601 string to a date or datetime based on target_type.
 
-    LateValidationError is raised if the ISO8601 string specifies a non-UTC timezone.
+    LateValidationError is raised if `s` is not an ISO8601 string or specifies a non-UTC timezone.
 
     For "datetime": microseconds are truncated to zero for maximum compatibility between backends, and the result is
-        naive (a timezone-aware input is converted to UTC first). If `s` is already a datetime, it is returned with
-        microseconds set to zero.
+        naive.
     For "datetimetz": as "datetime", but the result is timezone-aware in UTC and a naive input is taken to be UTC. This
         is what TIMESTAMP WITH TIME ZONE columns need: a naive value would otherwise be interpreted in the warehouse
         session's time zone.
     For "date": datetime strings are converted to dates, dropping time information.
-        If `s` is already a date, it is returned as-is.
     """
     if s is None:
         return None
 
     kind = "date" if target_type == "date" else "datetime"
-    if isinstance(s, datetime):
-        parsed = s.replace(microsecond=0)
-    elif isinstance(s, date):
-        if target_type == "date":
-            return s
-        # convert date to datetime at midnight if target_type is a datetime
-        parsed = datetime.combine(s, time.min)
-    elif isinstance(s, str):
-        # Always parse as datetime first to validate timezone
-        try:
-            parsed = datetime.fromisoformat(s).replace(microsecond=0)
-        except (ValueError, TypeError) as exc:
-            raise LateValidationError(
-                f"{col_name}: {kind}-type filter values must be strings containing an ISO8601 formatted date."
-            ) from exc
-        if parsed.tzinfo and parsed.tzinfo.utcoffset(parsed) != timedelta():  # 0 timedelta is equivalent to UTC
-            raise LateValidationError(
-                f"{col_name}: {kind}-type filter values must be in UTC, and not include timezone offsets: {s}"
-            )
-    else:
+    if not isinstance(s, str):
         raise LateValidationError(
             f"{col_name}: {kind}-type filter values must be strings containing an ISO8601 formatted date."
         )
 
+    # Always parse as datetime first to validate timezone
+    try:
+        parsed = datetime.fromisoformat(s).replace(microsecond=0)
+    except ValueError as exc:
+        raise LateValidationError(
+            f"{col_name}: {kind}-type filter values must be strings containing an ISO8601 formatted date."
+        ) from exc
+    if parsed.tzinfo and parsed.tzinfo.utcoffset(parsed) != timedelta():  # 0 timedelta is equivalent to UTC
+        raise LateValidationError(
+            f"{col_name}: {kind}-type filter values must be in UTC, and not include timezone offsets: {s}"
+        )
+
     if target_type == "date":
         return parsed.date()
-    if parsed.tzinfo is not None:
-        parsed = parsed.astimezone(UTC)
-    if target_type == "datetimetz":
-        return parsed.replace(tzinfo=UTC)
-    return parsed.replace(tzinfo=None)
+    return parsed.replace(tzinfo=UTC if target_type == "datetimetz" else None)
 
 
 def passes_filters(props: dict[str, PropertyValueTypes], fields: dict[str, DataType], filters: list[Filter]) -> bool:
