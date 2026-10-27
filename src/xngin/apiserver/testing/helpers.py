@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, assert_never, cast
 
+import pytest
 import sqlalchemy
 from sqlalchemy import delete, make_url
 from sqlalchemy.dialects.postgresql import psycopg
@@ -175,3 +176,11 @@ def convert_dwh_to_create_api_dsn(dwh: settings.Dwh) -> aapi.Dsn:
             )
         case _:
             raise TypeError(f"Unsupported DWH type for test datasource creation: {type(dwh).__name__}")
+
+
+# The service account key file that BigQuery integration tests authenticate with.
+GCP_CREDENTIALS_VAR = "XNGIN_DEVDWH_GCP_CREDENTIALS"
+
+skip_unless_gcp_credentials = pytest.mark.skipif(
+    not os.environ.get(GCP_CREDENTIALS_VAR), reason=f"{GCP_CREDENTIALS_VAR} is required for BigQuery integration tests"
+)

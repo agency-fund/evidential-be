@@ -254,7 +254,7 @@ jobs:
       - name: integration tests
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         run: |
-          export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/service_account.json
+          export XNGIN_DEVDWH_GCP_CREDENTIALS=$HOME/.config/service_account.json
           task test-integration
       - run: task test-coverage
         env:
