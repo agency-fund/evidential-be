@@ -281,6 +281,10 @@ class DwhSession:
                             sa_type = sqlalchemy.DateTime
                         case 1184:  # TIMESTAMPTZ / timestamp with time zone
                             sa_type = sqlalchemy.DateTime(timezone=True)
+                        case 1083:  # TIME / time without time zone
+                            sa_type = sqlalchemy.Time
+                        case 1266:  # TIMETZ / time with time zone
+                            sa_type = sqlalchemy.Time(timezone=True)
                         case 1700:  # NUMERIC / numeric
                             sa_type = sqlalchemy.Numeric(precision, scale)
                         case _:  # type_code == 25
