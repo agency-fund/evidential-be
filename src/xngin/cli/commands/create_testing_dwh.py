@@ -2,6 +2,7 @@
 
 import base64
 import contextlib
+import csv
 import io
 import itertools
 import json
@@ -29,7 +30,6 @@ from xngin.cli.common import cli_engine, fail
 
 if TYPE_CHECKING:
     from pandas import DataFrame
-    from sqlalchemy.sql.compiler import IdentifierPreparer
 
 _TESTING_DWH_RAW_DATA = Path(__file__).resolve().parent.parent.parent / "apiserver/testdata/testing_dwh.csv.zst"
 
@@ -41,6 +41,14 @@ class _TemplateTable(BaseModel):
 
     # Path to the CSV, relative to the template file.
     src: str
+    # Path to the file to load instead of src into BigQuery, relative to the template file; e.g. newline-delimited JSON
+    # for a table with RECORD or REPEATED columns, which BigQuery cannot load from CSV.
+    bigquery_src: str | None = None
+    # Path to the CSV to load instead of src into Redshift, relative to the template file; e.g. one whose SUPER values
+    # are JSON where Postgres's CSV has array literals.
+    redshift_src: str | None = None
+    # The table's schema on Postgres and Redshift, overriding --schema-name. BigQuery uses the DSN's dataset.
+    schema_name: str | None = None
     table_name: str
     views: list[str] = []
 
@@ -60,19 +68,23 @@ def _truncate_with_ellipsis(value: str) -> str:
 
 
 def _validate_src(v: Path) -> Path:
-    allowed_extensions = (".csv", ".csv.zst")
+    allowed_extensions = (".csv", ".csv.zst", ".jsonl", ".jsonl.zst")
     for ext in allowed_extensions:
         if str(v).endswith(ext):
             return v
-    raise typer.BadParameter("--src must end in .csv or .csv.zst")
+    raise typer.BadParameter("--src must end in .csv, .csv.zst, .jsonl or .jsonl.zst")
 
 
-def _df_to_ddl(
-    df: DataFrame,
-    *,
-    table_name: str,
-    quoter: IdentifierPreparer,
-) -> str:
+def _quote(name: str) -> str:
+    """Quotes an identifier for Postgres or Redshift.
+
+    SQLAlchemy's quoting for these dialects also writes "%" as "%%", which only the drivers' parameter substitution
+    collapses; the statements here are executed without parameters, so a "%" must stay as it is.
+    """
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _df_to_ddl(df: DataFrame, *, table_name: str) -> str:
     """Helper to transform a DataFrame into a CREATE TABLE statement."""
     # TODO: replace these types with more generic/widely supported defaults.
     default_sql_type = "VARCHAR(255)"
@@ -103,18 +115,17 @@ def _df_to_ddl(
             except ValueError, AttributeError, TypeError:
                 pass  # Not a UUID
     # Now generate the DDL.
-    columns = [
-        f"{quoter.quote(str(col))} {type_map.get(str(dtype), default_sql_type)}" for col, dtype in df_dtypes.items()
-    ]
+    columns = [f"{_quote(str(col))} {type_map.get(str(dtype), default_sql_type)}" for col, dtype in df_dtypes.items()]
     return f"""CREATE TABLE {table_name} ({",\n    ".join(columns)});"""
 
 
 @dataclass(frozen=True)
 class _Source:
-    """The CSV file being loaded."""
+    """The CSV or newline-delimited JSON file being loaded."""
 
     path: Path
     is_compressed: bool
+    is_jsonl: bool
     nrows: int | None
 
 
@@ -132,7 +143,12 @@ class _Dest:
 
 
 def _build_source(*, src: Path, nrows: int | None) -> _Source:
-    return _Source(path=src, is_compressed=src.suffix == ".zst", nrows=nrows)
+    return _Source(
+        path=src,
+        is_compressed=src.suffix == ".zst",
+        is_jsonl=re.search(r"[.]jsonl([.]zst)?$", str(src)) is not None,
+        nrows=nrows,
+    )
 
 
 def _build_dest(
@@ -152,13 +168,13 @@ def _build_dest(
     if password is not None and url.username is not None:
         url = url.set(password=password)
 
-    full_table_name = f"{schema_name}.{table_name}" if schema_name else table_name
+    full_table_name = f"{_quote(schema_name)}.{_quote(table_name)}" if schema_name else _quote(table_name)
     return _Dest(
         url=url,
         schema_name=schema_name,
         table_name=table_name,
         full_table_name=full_table_name,
-        create_schema_ddl=f"CREATE SCHEMA IF NOT EXISTS {schema_name}" if schema_name else "",
+        create_schema_ddl=f"CREATE SCHEMA IF NOT EXISTS {_quote(schema_name)}" if schema_name else "",
         # CASCADE drops the table's views, which are created again after loading.
         drop_table_ddl=f"DROP TABLE IF EXISTS {full_table_name} CASCADE",
         views=views,
@@ -172,20 +188,23 @@ def _read_csv(source: _Source) -> DataFrame:
 
 
 def _provided_ddl(source: _Source, flavor: str, table_name: str) -> str | None:
-    """Returns the hard-coded DDL for this flavor of warehouse if a .{flavor}.ddl file sits next to the CSV."""
-    ddl_file = Path(re.sub(r"[.]csv([.]zst)?$", f".{flavor}.ddl", str(source.path)))
+    """Returns the hard-coded DDL for this flavor of warehouse if a .{flavor}.ddl file sits next to the source.
+
+    A flavor-specific source, such as x.redshift.csv.zst, shares x.redshift.ddl with x.csv.zst.
+    """
+    ddl_file = Path(re.sub(rf"([.]{flavor})?[.](csv|jsonl)([.]zst)?$", f".{flavor}.ddl", str(source.path)))
     if not ddl_file.exists():
         return None
     print(f"Using provided DDL from {ddl_file}")
     return ddl_file.read_text().replace("{{table_name}}", table_name)
 
 
-def _get_ddl_magic(source: _Source, dest: _Dest, quoter: IdentifierPreparer, flavor: str) -> str:
+def _get_ddl_magic(source: _Source, dest: _Dest, flavor: str) -> str:
     """Gets the hard-coded DDL if available, or infers it using Pandas."""
     ddl = _provided_ddl(source, flavor, dest.full_table_name)
     if ddl is None:
         print("Using inferred DDL (warning: may lose fidelity!)")
-        ddl = _df_to_ddl(_read_csv(source), table_name=dest.full_table_name, quoter=quoter)
+        ddl = _df_to_ddl(_read_csv(source), table_name=dest.full_table_name)
     return ddl
 
 
@@ -210,7 +229,9 @@ def _maybe_create_views(cur, dest: _Dest) -> None:
     view_names = [s.strip() for s in dest.views.split(",")]
     print(f"Creating views: {', '.join(sorted(view_names))}...")
     for view_name in view_names:
-        qualified_view_name = f"{dest.schema_name}.{view_name}" if dest.schema_name else view_name
+        qualified_view_name = (
+            f"{_quote(dest.schema_name)}.{_quote(view_name)}" if dest.schema_name else _quote(view_name)
+        )
         cur.execute(
             f"CREATE OR REPLACE VIEW {qualified_view_name} AS SELECT * FROM {dest.full_table_name}"  # noqa: S608
         )
@@ -271,10 +292,6 @@ def _load_redshift(source: _Source, dest: _Dest, *, bucket: str | None, iam_role
         fail("--bucket is required when importing into Redshift.", code=2)
     if not iam_role:
         fail("--iam-role is required when importing into Redshift.", code=2)
-    # Workaround: Despite using a direct psycopg2 connection for Redshift, we use SQLAlchemy's quoter.
-    engine = cli_engine(dest.url)
-    quoter = engine.dialect.identifier_preparer
-    engine.dispose()
     with (
         psycopg2.connect(
             database=dest.url.database,
@@ -287,7 +304,7 @@ def _load_redshift(source: _Source, dest: _Dest, *, bucket: str | None, iam_role
         ) as conn,
         conn.cursor() as cur,
     ):
-        ddl = _get_ddl_magic(source, dest, quoter, "redshift")
+        ddl = _get_ddl_magic(source, dest, "redshift")
         _drop_and_create(cur, dest, ddl)
         key = source.path.name
         print(f"Uploading to s3://{bucket}/{key}...")
@@ -300,7 +317,7 @@ def _load_redshift(source: _Source, dest: _Dest, *, bucket: str | None, iam_role
                 f"COPY {dest.full_table_name} FROM 's3://{bucket}/{key}' "
                 f"IAM_ROLE '{iam_role}' FORMAT CSV IGNOREHEADER 1 TIMEFORMAT 'auto' {compression_hint};"
             )
-            _count(cur, dest)
+            print(f"Loaded {_count(cur, dest)} rows into {dest.full_table_name}.")
         finally:
             print("Deleting temporary file...")
             s3.delete_object(Bucket=bucket, Key=key)
@@ -321,7 +338,7 @@ def _bigquery_client(url: sqlalchemy.URL):
 
 
 def _open_binary(source: _Source) -> io.BufferedIOBase:
-    """Opens the CSV for reading bytes, decompressing on the fly when needed."""
+    """Opens the source for reading bytes, decompressing on the fly when needed."""
     return zstd.open(source.path, "rb") if source.is_compressed else source.path.open("rb")
 
 
@@ -329,6 +346,8 @@ def _load_bigquery(source: _Source, dest: _Dest) -> None:
     table = f"{dest.url.database}.{dest.table_name}"
     ddl = _provided_ddl(source, "bigquery", f"`{table}`")
     if ddl is None:
+        if source.is_jsonl:
+            fail(f"Loading {source.path} into BigQuery requires a .bigquery.ddl file next to it.", code=2)
         import pandas_gbq  # noqa: PLC0415
 
         print("Loading using an inferred schema (warning: may lose fidelity!)...")
@@ -340,19 +359,28 @@ def _load_bigquery(source: _Source, dest: _Dest) -> None:
     client = _bigquery_client(dest.url)
     client.query(f"DROP TABLE IF EXISTS `{table}`").result()
     client.query(ddl).result()
-    # The table created from the DDL supplies the schema; the load job only parses the CSV values against it.
-    # BigQuery's CSV reader does not understand zstd, so the CSV is decompressed into a temporary file first.
-    job_config = bigquery.LoadJobConfig(
-        source_format=bigquery.SourceFormat.CSV,
-        skip_leading_rows=1,
-        write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
-    )
+    # The table created from the DDL supplies the schema; the load job only parses the values against it. BigQuery's
+    # readers do not understand zstd, so the source is decompressed into a temporary file first.
+    if source.is_jsonl:
+        # Unlike CSV, newline-delimited JSON can populate RECORD and REPEATED columns.
+        job_config = bigquery.LoadJobConfig(
+            source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+            write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+        )
+        header_lines = 0
+    else:
+        job_config = bigquery.LoadJobConfig(
+            source_format=bigquery.SourceFormat.CSV,
+            skip_leading_rows=1,
+            write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+        )
+        header_lines = 1
     with tempfile.TemporaryFile() as staged, _open_binary(source) as reader:
         if source.nrows is None:
             shutil.copyfileobj(reader, staged, 1 << 20)
         else:
-            staged.writelines(itertools.islice(reader, source.nrows + 1))  # header + nrows
-        print(f"Uploading {staged.tell() / (1 << 20):.1f} MiB of CSV to BigQuery...")
+            staged.writelines(itertools.islice(reader, source.nrows + header_lines))
+        print(f"Uploading {staged.tell() / (1 << 20):.1f} MiB of {job_config.source_format} to BigQuery...")
         job = client.load_table_from_file(staged, f"{client.project}.{table}", job_config=job_config, rewind=True)
         job.result()
     print(f"Loaded {job.output_rows} rows into {table}.")
@@ -360,30 +388,42 @@ def _load_bigquery(source: _Source, dest: _Dest) -> None:
 
 def _load_postgres(source: _Source, dest: _Dest) -> None:
     engine = cli_engine(dest.url)
-    ddl = _get_ddl_magic(source, dest, engine.dialect.identifier_preparer, "postgres")
-    with engine.begin() as conn:
-        cursor = conn.connection.cursor()
-        _drop_and_create(cursor, dest, ddl)
-        opener = (lambda x: zstd.open(x, "rt")) if source.is_compressed else open
-        if dest.url.get_driver_name() == "psycopg":
-            print("Loading via psycopg3 COPY FROM STDIN...")
+    ddl = _get_ddl_magic(source, dest, "postgres")
+    try:
+        with engine.begin() as conn:
+            cursor = conn.connection.cursor()
+            _drop_and_create(cursor, dest, ddl)
+            opener = (lambda x: zstd.open(x, "rt", encoding="utf-8")) if source.is_compressed else open
             with opener(source.path) as reader:
-                cols = [h.strip() for h in reader.readline().split(",")]
-                sql = f"COPY {dest.full_table_name} ({', '.join(cols)}) FROM STDIN (FORMAT CSV, DELIMITER ',')"
+                cols = next(csv.reader([reader.readline()]))
+                sql = (
+                    f"COPY {dest.full_table_name} ({', '.join(_quote(c) for c in cols)}) "
+                    "FROM STDIN (FORMAT CSV, DELIMITER ',')"
+                )
                 print(f"SQL: {_truncate_with_ellipsis(sql)}")
-                with cursor.copy(sql) as copy:
-                    while data := reader.read(1 << 20):
-                        copy.write(data)
-        else:
-            print("Loading via psycopg2 copy_expert...")
-            with opener(source.path) as reader:
-                cols = [h.strip() for h in reader.readline().split(",")]
-                sql = f"COPY {dest.full_table_name} ({', '.join(cols)}) FROM STDIN (FORMAT CSV, DELIMITER ',')"
-                print(f"SQL: {_truncate_with_ellipsis(sql)}")
-                cursor.copy_expert(sql, reader)
+                if dest.url.get_driver_name() == "psycopg":
+                    print("Loading via psycopg3 COPY FROM STDIN...")
+                    with cursor.copy(sql) as copy:
+                        while data := reader.read(1 << 20):
+                            copy.write(data)
+                else:
+                    print("Loading via psycopg2 copy_expert...")
+                    cursor.copy_expert(sql, reader)
 
-        print(f"Loaded {cursor.rowcount} rows into {dest.full_table_name}.")
-        _maybe_create_views(cursor, dest)
+            print(f"Loaded {cursor.rowcount} rows into {dest.full_table_name}.")
+            _maybe_create_views(cursor, dest)
+    finally:
+        # Closes the pooled connection now, rather than whenever the engine is garbage collected.
+        engine.dispose()
+
+
+def _template_src(table: _TemplateTable, url: sqlalchemy.URL) -> str:
+    """The source a template table loads from into the warehouse at url."""
+    if dwh_utils.is_bigquery(url) and table.bigquery_src:
+        return table.bigquery_src
+    if dwh_utils.is_redshift(url) and table.redshift_src:
+        return table.redshift_src
+    return table.src
 
 
 def create_testing_dwh(
@@ -391,8 +431,8 @@ def create_testing_dwh(
     src: Annotated[
         Path,
         typer.Option(
-            help="Local path to the testing data warehouse CSV. This may be zstd-compressed and "
-            "must end in .csv or .csv.zst.",
+            help="Local path to the testing data warehouse CSV, or newline-delimited JSON for BigQuery. This may be "
+            "zstd-compressed and must end in .csv, .csv.zst, .jsonl, or .jsonl.zst.",
             callback=_validate_src,
         ),
     ] = _TESTING_DWH_RAW_DATA,
@@ -451,7 +491,8 @@ def create_testing_dwh(
         Path | None,
         typer.Option(
             help="JSON file listing several tables to load, each with its CSV (relative to the file), table name, "
-            "and views; e.g. src/xngin/apiserver/testdata/warehouses.json. Replaces --src, --table-name, and --views.",
+            "and views, and optionally a schema and separate sources for BigQuery and Redshift; e.g. "
+            "src/xngin/apiserver/testdata/warehouses.json. Replaces --src, --table-name, and --views.",
             exists=True,
             dir_okay=False,
         ),
@@ -460,7 +501,14 @@ def create_testing_dwh(
     """Loads the testing data warehouse CSV into a database.
 
     Any existing table will be replaced unless --allow-existing is used. With --template, each of the tables listed in
-    the template file is loaded in turn.
+    the template file is loaded in turn. Each entry of the template's "tables" list has:
+
+      src           the CSV, relative to the template file
+      table_name    the table to create
+      views         (optional) names of views to create as aliases of the table
+      schema_name   (optional) the table's schema on Postgres and Redshift, overriding --schema-name
+      bigquery_src  (optional) the file to load instead of src into BigQuery, e.g. newline-delimited JSON
+      redshift_src  (optional) the CSV to load instead of src into Redshift
 
     For Postgres and Redshift (psycopg or psycopg2) connections, the table DDL will be read from a
     .{postgres|redshift}.ddl file in the same directory as the source CSV, or inferred via Pandas if
@@ -470,6 +518,9 @@ def create_testing_dwh(
     CSV is parsed by a BigQuery load job against that schema. If that file does not exist, the CSV is parsed by Pandas
     and the schema inferred by pandas-gbq (dates, timestamps and UUIDs become STRING; DECIMAL becomes FLOAT64).
 
+    A newline-delimited JSON source (.jsonl or .jsonl.zst) can be loaded only into BigQuery, and requires the
+    .bigquery.ddl file. Unlike CSV, it can populate RECORD and REPEATED columns.
+
     Postgres connections may be specified with postgresql://, postgresql+psycopg://, or postgresql+psycopg2:// prefixes.
 
     Redshift connections must be specified with postgresql+psycopg2:// prefix.
@@ -477,10 +528,11 @@ def create_testing_dwh(
     Due to variations in all of the above, the loaded data may vary in small ways when loaded with different data
     stores. E.g. floats may not roundtrip.
 
-    This command does not support schemas or non-trivial database names or table names consistently.
+    Schema, table, view and column names are quoted, so they may contain spaces and punctuation. Redshift (with
+    enable_case_sensitive_identifier off, the default) stores them in lowercase nonetheless.
     """
     if template is None:
-        tables = [(src, table_name or "dwh", views)]
+        tables = [(src, schema_name, table_name or "dwh", views)]
     else:
         if table_name is not None:
             fail("--template cannot be combined with --table-name.", code=2)
@@ -488,8 +540,15 @@ def create_testing_dwh(
             parsed = _Template.model_validate_json(template.read_text())
         except (OSError, ValidationError) as exc:
             fail(f"could not read --template {template}: {exc}", code=2)
+        url = make_url(dsn)
         tables = [
-            (_validate_src(template.parent / t.src), t.table_name, ",".join(t.views) or None) for t in parsed.tables
+            (
+                _validate_src(template.parent / _template_src(t, url)),
+                t.schema_name or schema_name,
+                t.table_name,
+                ",".join(t.views) or None,
+            )
+            for t in parsed.tables
         ]
 
     dests = [
@@ -497,19 +556,21 @@ def create_testing_dwh(
             _build_source(src=table_src, nrows=nrows),
             _build_dest(
                 dsn=dsn,
-                schema_name=schema_name,
+                schema_name=table_schema_name,
                 table_name=table_table_name,
                 password=password,
                 views=table_views,
             ),
         )
-        for table_src, table_table_name, table_views in tables
+        for table_src, table_schema_name, table_table_name, table_views in tables
     ]
 
     if create_db:
         create_database_if_absent(dests[0][1].url)
 
     for source, dest in dests:
+        if source.is_jsonl and not dwh_utils.is_bigquery(dest.url):
+            fail(f"{source.path} is newline-delimited JSON, which can only be loaded into BigQuery.", code=2)
         if allow_existing and _table_is_populated(dest):
             continue
         if dwh_utils.is_redshift(dest.url):
