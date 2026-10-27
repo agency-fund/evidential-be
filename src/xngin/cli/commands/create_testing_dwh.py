@@ -22,6 +22,7 @@ import typer
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import make_url
 
+from xngin.apiserver.certs import get_amazon_trust_ca_bundle_path
 from xngin.apiserver.dwh import dwh_utils
 from xngin.cli.commands.databases import create_database_if_absent
 from xngin.cli.common import cli_engine, fail
@@ -158,7 +159,8 @@ def _build_dest(
         table_name=table_name,
         full_table_name=full_table_name,
         create_schema_ddl=f"CREATE SCHEMA IF NOT EXISTS {schema_name}" if schema_name else "",
-        drop_table_ddl=f"DROP TABLE IF EXISTS {full_table_name}",
+        # CASCADE drops the table's views, which are created again after loading.
+        drop_table_ddl=f"DROP TABLE IF EXISTS {full_table_name} CASCADE",
         views=views,
     )
 
@@ -280,6 +282,8 @@ def _load_redshift(source: _Source, dest: _Dest, *, bucket: str | None, iam_role
             password=dest.url.password,
             port=dest.url.port,
             user=dest.url.username,
+            sslmode="verify-full",
+            sslrootcert=get_amazon_trust_ca_bundle_path(),
         ) as conn,
         conn.cursor() as cur,
     ):
@@ -294,7 +298,7 @@ def _load_redshift(source: _Source, dest: _Dest, *, bucket: str | None, iam_role
             compression_hint = "ZSTD" if source.is_compressed else ""
             cur.execute(
                 f"COPY {dest.full_table_name} FROM 's3://{bucket}/{key}' "
-                f"IAM_ROLE '{iam_role}' FORMAT CSV IGNOREHEADER 1 {compression_hint};"
+                f"IAM_ROLE '{iam_role}' FORMAT CSV IGNOREHEADER 1 TIMEFORMAT 'auto' {compression_hint};"
             )
             _count(cur, dest)
         finally:

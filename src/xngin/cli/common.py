@@ -10,6 +10,7 @@ import typer
 from rich.console import Console
 from sqlalchemy import create_engine
 
+from xngin.apiserver.certs import get_amazon_trust_ca_bundle_path
 from xngin.apiserver.dwh import dwh_utils
 
 SA_LOGGER_NAME_FOR_CLI = "cli_dwh"
@@ -56,11 +57,15 @@ def fail(message: str, *, code: int = 1) -> NoReturn:
 def cli_connect_args(url: sqlalchemy.URL) -> dict:
     """Returns the connect_args identifying this process to the server, for dialects that accept them.
 
-    Only the Postgres drivers understand application_name.
+    Only the Postgres drivers understand application_name. Redshift connections verify the server against Amazon's CA
+    bundle, as data sources do (see Dsn.to_sqlalchemy_url), rather than whatever ~/.postgresql/root.crt holds.
     """
-    if dwh_utils.is_postgres(url):
-        return {"application_name": CLI_DB_APPLICATION_NAME}
-    return {}
+    if not dwh_utils.is_postgres(url):
+        return {}
+    args = {"application_name": CLI_DB_APPLICATION_NAME}
+    if dwh_utils.is_redshift(url):
+        args["sslrootcert"] = get_amazon_trust_ca_bundle_path()
+    return args
 
 
 def cli_engine(url: sqlalchemy.URL | str, *, connect_args: dict | None = None, echo: bool = False) -> sqlalchemy.Engine:
