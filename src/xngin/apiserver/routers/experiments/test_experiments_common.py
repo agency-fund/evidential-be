@@ -1,6 +1,7 @@
 import threading
 import time
 from collections import defaultdict
+from collections.abc import Sequence
 from contextlib import AbstractContextManager
 from contextlib import nullcontext as does_not_raise
 from dataclasses import dataclass
@@ -16,7 +17,6 @@ from sqlalchemy import Boolean, Column, MetaData, String, Table, insert, select
 from sqlalchemy.orm import Session, selectinload
 
 from xngin.apiserver import database
-from xngin.apiserver.conftest import RowProtocolMixin
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import (
@@ -70,6 +70,7 @@ from xngin.apiserver.routers.experiments.experiments_common_csv import get_exper
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.assertions import assert_dates_equal
+from xngin.apiserver.testing.helpers import RowProtocolMixin
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
 from xngin.stats.assignment import AssignmentResult
 
@@ -367,10 +368,12 @@ def make_insertable_experiment(
     field_type_map = None
     if experiment_type in {ExperimentsType.FREQ_PREASSIGNED, ExperimentsType.FREQ_ONLINE}:
         assert isinstance(design_spec, PreassignedFrequentistExperimentSpec | OnlineFrequentistExperimentSpec)
-        field_type_map = fetch_fields_or_raise(datasource, design_spec)
+        with DwhSession.open(datasource.get_config().dwh) as dwh:
+            field_type_map = fetch_fields_or_raise(dwh, design_spec)
     elif experiment_type == ExperimentsType.MAB_ONLINE_DWH:
         assert isinstance(design_spec, MABDwhExperimentSpec)
-        field_type_map = fetch_mab_dwh_fields_or_raise(datasource, design_spec)
+        with DwhSession.open(datasource.get_config().dwh) as dwh:
+            field_type_map = fetch_mab_dwh_fields_or_raise(dwh, design_spec)
 
     experiment_converter = ExperimentStorageConverter.init_from_components(
         datasource_id=datasource.id,
@@ -591,7 +594,8 @@ def test_create_preassigned_experiment_impl(
         ]
     )
 
-    field_type_map = fetch_fields_or_raise(testing_datasource.ds, spec)
+    with DwhSession.open(testing_datasource.ds.get_config().dwh) as dwh:
+        field_type_map = fetch_fields_or_raise(dwh, spec)
 
     response = create_preassigned_experiment_impl(
         request=request.model_copy(deep=True),  # we'll use the original request for assertions
@@ -737,11 +741,11 @@ def test_create_preassigned_experiment_impl_cluster_assignment(xngin_session, te
     """Preassigned create with cluster_key assigns all members of a cluster to the same arm."""
     design_spec = make_design_spec_clustered()
     request = CreateExperimentRequest(design_spec=design_spec)
-    field_type_map = fetch_fields_or_raise(testing_datasource.ds, design_spec)
     assert design_spec.desired_n is not None
     assert design_spec.cluster_key is not None
 
     with DwhSession.open(testing_datasource.ds.get_config().dwh) as dwh:
+        field_type_map = fetch_fields_or_raise(dwh, design_spec)
         participant_result = dwh.get_participants(
             design_spec.table_name,
             select_columns={design_spec.primary_key, design_spec.cluster_key, "test_score"},
@@ -845,6 +849,25 @@ def test_create_experiment_impl_clustered_rejects_empty_eligible_cohort(xngin_se
         )
 
 
+def test_create_experiment_impl_uses_one_warehouse_session(xngin_session, testing_datasource, mocker):
+    """Field validation and the participants query share one connection and one reflection."""
+    connect = mocker.spy(DwhSession, "_connect_blocking")
+    reflect = mocker.spy(DwhSession, "_reflect_table_blocking")
+    design_spec = make_design_spec_clustered(cluster_key="cluster_equal", desired_n=999, desired_n_clusters=3)
+
+    create_experiment_impl(
+        request=CreateExperimentRequest(design_spec=design_spec),
+        datasource=testing_datasource.ds,
+        xngin_session=xngin_session,
+        stratify_on_metrics=False,
+        random_state=42,
+        validated_webhooks=[],
+    )
+
+    assert connect.call_count == 1
+    assert reflect.call_count == 1
+
+
 def test_create_experiment_impl_clustered_samples_clusters(xngin_session, testing_datasource):
     """Clustered preassigned creation samples clusters, then includes every participant in each sampled cluster."""
     design_spec = make_design_spec_clustered(
@@ -911,13 +934,13 @@ def _create_clustered_preassigned_experiment(
 ) -> tables.Experiment:
     design_spec = make_design_spec_clustered(cluster_key=cluster_key)
     request = CreateExperimentRequest(design_spec=design_spec)
-    field_type_map = fetch_fields_or_raise(testing_datasource.ds, design_spec)
     assert design_spec.desired_n is not None
 
     select_columns = {design_spec.primary_key, metric_name}
     if cluster_key is not None:
         select_columns.add(cluster_key)
     with DwhSession.open(testing_datasource.ds.get_config().dwh) as dwh:
+        field_type_map = fetch_fields_or_raise(dwh, design_spec)
         participant_result = dwh.get_participants(
             design_spec.table_name,
             select_columns=select_columns,
@@ -988,6 +1011,63 @@ def test_analyze_experiment_freq_impl_with_cluster_key(
     assert crse_treatment.std_error > hc1_treatment.std_error
 
 
+def _insert_arm_assignments(xngin_session: Session, experiment_id: str, rows: Sequence[tuple[str, str, str | None]]):
+    """Inserts (arm_id, participant_id, cluster_key) rows into arm_assignments."""
+    xngin_session.execute(
+        insert(tables.ArmAssignment),
+        [
+            {
+                "experiment_id": experiment_id,
+                "arm_id": arm_id,
+                "participant_id": participant_id,
+                "cluster_key": cluster_key,
+                "strata": [],
+            }
+            for arm_id, participant_id, cluster_key in rows
+        ],
+    )
+    xngin_session.commit()
+
+
+def test_read_assignments_efficiently(xngin_session: Session):
+    experiment_id = tables.experiment_id_factory()
+    rows = [("arm_0", "p0", None), ("arm_1", "p1", None), ("arm_0", "p2", None), ("arm_1", "p3", None)]
+    _insert_arm_assignments(xngin_session, experiment_id, rows)
+
+    read_ids, df = experiments_common.read_assignments_efficiently(xngin_session, experiment_id)
+
+    assert sorted(read_ids) == ["p0", "p1", "p2", "p3"]
+    assert list(df.columns) == ["arm_id", "participant_id"]
+    assert sorted(zip(df["arm_id"], df["participant_id"], strict=True)) == sorted((a, p) for a, p, _ in rows)
+    # The participant ID list shares string objects with the DataFrame, and each arm ID is stored once.
+    assert all(a is b for a, b in zip(read_ids, df["participant_id"], strict=True))
+    assert len({id(arm_id) for arm_id in df["arm_id"]}) == 2
+
+
+def test_read_assignments_efficiently_returns_null_cluster_keys_as_none(xngin_session: Session):
+    experiment_id = tables.experiment_id_factory()
+    _insert_arm_assignments(xngin_session, experiment_id, [("arm_0", "p1", None), ("arm_1", "p2", "c2")])
+
+    _, df = experiments_common.read_assignments_efficiently(xngin_session, experiment_id, include_cluster_key=True)
+
+    assert list(df.columns) == ["arm_id", "participant_id", "cluster_key"]
+    assert dict(zip(df["participant_id"], df["cluster_key"], strict=True)) == {"p1": None, "p2": "c2"}
+
+
+@pytest.mark.parametrize("include_cluster_key", [False, True])
+def test_read_assignments_efficiently_with_no_assignments(xngin_session: Session, include_cluster_key: bool):
+    read_ids, df = experiments_common.read_assignments_efficiently(
+        xngin_session, tables.experiment_id_factory(), include_cluster_key=include_cluster_key
+    )
+
+    assert read_ids == []
+    assert df.empty
+    expected_columns = ["arm_id", "participant_id"]
+    if include_cluster_key:
+        expected_columns.append("cluster_key")
+    assert list(df.columns) == expected_columns
+
+
 def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
     xngin_session: Session,
     testing_datasource,
@@ -1004,7 +1084,8 @@ def test_create_preassigned_experiment_impl_raises_on_duplicate_ids(
     ]
 
     spec = cast(PreassignedFrequentistExperimentSpec, request.design_spec)
-    field_type_map = fetch_fields_or_raise(testing_datasource.ds, spec)
+    with DwhSession.open(testing_datasource.ds.get_config().dwh) as dwh:
+        field_type_map = fetch_fields_or_raise(dwh, spec)
 
     with pytest.raises(LateValidationError, match="Duplicate participant ID found after filtering:"):
         create_preassigned_experiment_impl(
@@ -1033,7 +1114,8 @@ def test_create_preassigned_experiment_impl_with_unbalanced_arms(
     spec.arms[0].arm_weight = expected_weights[0]
     spec.arms[1].arm_weight = expected_weights[1]
 
-    field_type_map = fetch_fields_or_raise(testing_datasource.ds, spec)
+    with DwhSession.open(testing_datasource.ds.get_config().dwh) as dwh:
+        field_type_map = fetch_fields_or_raise(dwh, spec)
 
     response = create_preassigned_experiment_impl(
         request=request,
@@ -1094,7 +1176,8 @@ def test_create_preassigned_experiment_impl_with_three_unbalanced_arms(
     spec.arms[1].arm_weight = expected_weights[1]
     spec.arms[2].arm_weight = expected_weights[2]
 
-    field_type_map = fetch_fields_or_raise(testing_datasource.ds, spec)
+    with DwhSession.open(testing_datasource.ds.get_config().dwh) as dwh:
+        field_type_map = fetch_fields_or_raise(dwh, spec)
 
     response = create_preassigned_experiment_impl(
         request=request,

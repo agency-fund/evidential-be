@@ -48,8 +48,9 @@ dev = [
     "pytest-env>=1.7.0,<2",
     "pytest-mock>=3.15.1,<4",
     "pytest-randomly>=4.0.1",
+    "pytest-xdist>=3.8,<4",
     "pytest>=9.0.3,<10",
-    "ruff==0.15.12",
+    "ruff==0.17.1",
     "scipy-stubs>=1.16.2,<2",
     "types-cachetools>=6.0.0.20250525",
     "types-psycopg2>=2.9.10,<3",
@@ -57,7 +58,7 @@ dev = [
 ]
 
 [build-system]
-requires = ["uv_build>=0.13.4"]
+requires = ["uv_build>=0.13.5"]
 build-backend = "uv_build"
 
 [project.scripts]
@@ -77,7 +78,7 @@ markers = [
     "integration: integration tests that rely on remote resources",
     "benchmark: performance benchmarks; opt-in via -m benchmark"
 ]
-addopts = "-m 'not integration and not benchmark'"
+addopts = "-m 'not integration and not benchmark' -p xngin.apiserver.testing.database_plugin -p xngin.apiserver.testing.xdist_plugin"
 # filtewarnings can be used to silence warnings during tests.
 # format is: action:message:category:module
 filterwarnings = [
@@ -90,7 +91,13 @@ filterwarnings = [
     "ignore:Cannot create BigQuery Storage client, the dependency google-cloud-bigquery-storage is not installed:UserWarning:google.cloud.bigquery.client",
 ]
 env = [
-    "SENTRY_DSN="  # Disable Sentry in unit tests.
+    "SENTRY_DSN=",  # Disable Sentry in unit tests.
+    # Unless overridden, keep OpenBLAS (used by numpy and scipy) and the Arrow thread pool (used by pandas) from starting
+    # a thread per CPU in every pytest-xdist worker, which triples the CPU cost of importing them and oversubscribes the
+    # CPUs. This is too late for the main pytest process, as pytest-randomly has already imported numpy, but the
+    # workers inherit it before they import anything.
+    "D:OPENBLAS_NUM_THREADS=1",
+    "D:OMP_NUM_THREADS=1",
 ]
 
 [tool.ruff]
@@ -147,6 +154,8 @@ ignore = [
     "PLR6301", # method could be a function, class method, or static method
     "PT011", # pytest.raises(_) is too broad, set the `match` parameter or use a more specific exception
     "PT018", # Assertion should be broken down into multiple parts
+    "RUF105", # Prefer `ruff: ignore` over `noqa` comments (opinionated)
+    "RUF201", # Prefer rule names over codes in config (opinionated)
     "S101", # Use of `assert` detected
     "SIM108", # Use ternary operator instead of `if`-`else`-block
     "TRY003", # Raised bare custom exception with long message
@@ -193,6 +202,7 @@ max-statements = 54
     "PLR6201",  # Use a set literal when testing for membership: Generated code uses tuple membership tests.
     "RUF027",   # Possible f-strings without an f prefix: Generated code performs its own interpolation.
     "RUF100",   # The generator's `# noqa: ANN401` reads as unused here (ANN not enabled); don't fight it.
+    "UP052",    # Generator emits `Iterator` return types for context managers.
 ]
 
 [tool.ruff.lint.flake8-import-conventions]
@@ -215,7 +225,7 @@ banned-from = [
 "xngin.apiserver.routers.integrations.integrations_dependencies" = "ideps"
 
 [tool.uv]
-required-version = ">=0.13.4"
+required-version = ">=0.13.5"
 environments = [
     "sys_platform == 'darwin'",
     "sys_platform == 'linux'",
@@ -254,7 +264,7 @@ disallow_untyped_defs = false
 plugins = ['pydantic.mypy']
 
 [[tool.mypy.overrides]]
-module = ["deepdiff", "parsy", "statsmodels.*", "patsy.*", "sqlalchemy_bigquery.*", "pandas_gbq.*"]
+module = ["deepdiff", "statsmodels.*", "patsy.*", "sqlalchemy_bigquery.*", "pandas_gbq.*", "xdist.*"]
 ignore_missing_imports = true
 
 [tool.coverage.run]

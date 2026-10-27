@@ -1,3 +1,9 @@
+"""Aggregate queries behind DwhSession.get_raw_metric_stats and DwhSession.get_cluster_sufficient_stats.
+
+The Session these take is DwhSession's own, handed over on its helper thread. Application code
+reaches these only through the DwhSession methods; tests call them directly with a test Session.
+"""
+
 from collections.abc import Mapping, Sequence
 
 from sqlalchemy import (

@@ -1,26 +1,26 @@
 """Context manager for data warehouse connections."""
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator, Mapping, Sequence
 from concurrent.futures import Future
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Concatenate, Self
+from typing import Self
 
 import google.api_core.exceptions
 import sqlalchemy
 from loguru import logger
 from sqlalchemy import ColumnElement, Engine, Inspector, event, text
 from sqlalchemy.engine.interfaces import DBAPIConnection
+from sqlalchemy.engine.row import RowMapping
 from sqlalchemy.exc import NoSuchTableError, OperationalError
 from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags
 from xngin.apiserver.dns.safe_resolve import safe_resolve
-from xngin.apiserver.dwh import dwh_utils, query_constructors
-from xngin.apiserver.dwh.inspection_types import FieldDescriptor
-from xngin.apiserver.dwh.inspections import generate_field_descriptors
+from xngin.apiserver.dwh import dwh_utils, participant_metrics_queries, queries, query_constructors
+from xngin.apiserver.dwh.analysis_types import ParticipantOutcome
 from xngin.apiserver.exceptions_common import DwhConnectionError, DwhDatabaseDoesNotExistError, DwhTimeoutError
-from xngin.apiserver.routers.common_api_types import Filter
+from xngin.apiserver.routers.common_api_types import DesignSpecMetricRequest, Filter
 from xngin.apiserver.settings import SA_LOGGER_NAME_FOR_DWH, TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES, Dsn, Dwh
 from xngin.ops.threads import ThreadTimeout, timeout_thread
 
@@ -52,14 +52,6 @@ class GetParticipantsResult:
     participants: list
 
 
-@dataclass
-class InspectTableWithDescriptorsResult:
-    """Result of inspecting table structure."""
-
-    sa_table: sqlalchemy.Table
-    db_schema: dict[str, FieldDescriptor]
-
-
 class CannotFindTableError(Exception):
     """Raised when we cannot find a table in the database.
 
@@ -81,14 +73,15 @@ class CannotFindTableError(Exception):
 class DwhSession:
     """Deadline-bounded context manager for customer data warehouse connections.
 
-    This class defines most of the interactions we have with customer data warehouses. Their drivers
-    are blocking and not all of them have async equivalents, so every interaction runs on one helper
-    thread this object owns, and all of them share one deadline that starts when the block is
-    entered:
+    This class defines every interaction the application has with customer data warehouses. Each one
+    is a named public method. All interactions with the customer DWH should be implemented on this class.
+
+    The warehouse drivers are blocking and not all of them have async equivalents, so every
+    interaction runs on one helper thread this object owns, and all of them share one deadline that
+    starts when the block is entered:
 
         with DwhSession.open(dwh_config, timeout=30) as dwh:
-            sa_table = dwh.inspect_table("participants")
-            outcomes = dwh.run(get_participant_metrics, sa_table, metrics, "uid", ids)
+            outcomes = dwh.get_participant_metrics("participants", ...)
 
     Each DwhSession manages a single thread, and runs all the DWH queries on that thread. This allows
     us to detect that the DWH interactions are not responding within a timeout, and raise an exception when
@@ -103,7 +96,8 @@ class DwhSession:
     commitments.
 
     Each warehouse interaction is implemented as a pair: a private _x_blocking() running the query itself, and a
-    public x() that dispatches it onto the helper thread.
+    public x() that dispatches it onto the helper thread. Larger queries live in the queries and
+    participant_metrics_queries modules and are passed the Session by their _x_blocking() method.
     """
 
     # Set by _connect_blocking, which open() runs before handing the object to anyone.
@@ -112,7 +106,7 @@ class DwhSession:
 
     @classmethod
     @contextmanager
-    def open(cls, dwh_config: Dwh, *, timeout: float | None = None) -> Iterator[Self]:
+    def open(cls, dwh_config: Dwh, *, timeout: float | None = None) -> Generator[Self]:
         """Connect to a warehouse for the duration of the block.
 
         Args:
@@ -137,6 +131,7 @@ class DwhSession:
         self._dwh_config = dwh_config
         self._timeout = deadline
         self._timeout_secs = timeout_secs
+        self._inspected_tables: dict[tuple[str, bool], sqlalchemy.Table] = {}
 
     def _connect_blocking(self) -> None:
         self._engine = self._create_engine()
@@ -176,22 +171,18 @@ class DwhSession:
         except TimeoutError as exc:
             raise DwhTimeoutError(f"The data warehouse did not finish {label} within {self._timeout_secs:g}s.") from exc
 
-    def run[T, **P](self, fn: Callable[Concatenate[Session, P], T], /, *args: P.args, **kwargs: P.kwargs) -> T:
-        """Call fn(warehouse_session, *args, **kwargs) under this block's deadline.
-
-        For queries that live outside this class because they are substantial enough to deserve
-        their own modules. fn runs on the helper thread and must touch nothing but the Session it is
-        handed: an application-database Session, or an ORM object belonging to the caller, would end
-        up in use from two threads at once.
-
-        The Session is never returned to callers, only passed to fn, so that no one can hold it
-        past the deadline or use it off the helper thread.
-        """
-        return self._on_worker(getattr(fn, "__name__", "a query"), fn, self._session, *args, **kwargs)
-
     def _inspect_table_blocking(self, table_name: str, *, use_sa_autoload: bool | None = None) -> sqlalchemy.Table:
+        """Returns the Table for table_name, inspecting the DWH only the first time it is requested."""
         if use_sa_autoload is None:
             use_sa_autoload = self._dwh_config.supports_sa_autoload()
+        key = (table_name, use_sa_autoload)
+        sa_table = self._inspected_tables.get(key)
+        if sa_table is None:
+            sa_table = self._reflect_table_blocking(table_name, use_sa_autoload=use_sa_autoload)
+            self._inspected_tables[key] = sa_table
+        return sa_table
+
+    def _reflect_table_blocking(self, table_name: str, *, use_sa_autoload: bool) -> sqlalchemy.Table:
         metadata = sqlalchemy.MetaData()
         try:
             if use_sa_autoload:
@@ -270,7 +261,8 @@ class DwhSession:
         """Inspect table structure using a variety of backend-specific workarounds.
 
         The only fields guaranteed to be set on the the returned Table.columns field are
-        .name, .type, and .nullable.
+        .name, .type, and .nullable. Inspecting the same table again on this DwhSession returns the
+        same Table without contacting the DWH.
 
         Args:
             table_name: Name of the table to inspect. Only unqualified table names are supported.
@@ -284,34 +276,6 @@ class DwhSession:
             self._inspect_table_blocking,
             table_name,
             use_sa_autoload=use_sa_autoload,
-        )
-
-    def _inspect_table_with_descriptors_blocking(
-        self, table_name: str, unique_id_field: str, use_sa_autoload: bool | None = None
-    ) -> InspectTableWithDescriptorsResult:
-        sa_table = self._inspect_table_blocking(table_name, use_sa_autoload=use_sa_autoload)
-        db_schema = generate_field_descriptors(sa_table, unique_id_field)
-        return InspectTableWithDescriptorsResult(sa_table=sa_table, db_schema=db_schema)
-
-    def inspect_table_with_descriptors(
-        self, table_name: str, unique_id_field: str, use_sa_autoload: bool | None = None
-    ) -> InspectTableWithDescriptorsResult:
-        """Convenience method combining table inspection and field descriptor generation.
-
-        Args:
-            table_name: Name of the table to inspect
-            unique_id_field: The column name to use as a participant's unique identifier
-            use_sa_autoload: If not None, overrides the configuration's default behavior.
-
-        Returns:
-            InspectTableWithDescriptorsResult containing both the SQLAlchemy Table and field descriptors
-        """
-        return self._on_worker(
-            "inspecting a table",
-            self._inspect_table_with_descriptors_blocking,
-            table_name,
-            unique_id_field,
-            use_sa_autoload,
         )
 
     def _get_result_blocking(
@@ -439,6 +403,133 @@ class DwhSession:
             desired_n_clusters,
             cluster_key,
             use_sa_autoload,
+        )
+
+    def _get_participant_metrics_blocking(
+        self,
+        table_name: str,
+        metric_names: list[str],
+        unique_id_field: str,
+        participant_ids: list[str],
+        use_sa_autoload: bool | None,
+    ) -> list[ParticipantOutcome]:
+        sa_table = self._inspect_table_blocking(table_name, use_sa_autoload=use_sa_autoload)
+        return participant_metrics_queries.get_participant_metrics(
+            self._session, sa_table, metric_names, unique_id_field, participant_ids
+        )
+
+    def get_participant_metrics(
+        self,
+        table_name: str,
+        *,
+        metric_names: list[str],
+        unique_id_field: str,
+        participant_ids: list[str],
+        use_sa_autoload: bool | None = None,
+    ) -> list[ParticipantOutcome]:
+        """Read the values of metric columns for specific participants.
+
+        Args:
+            table_name: Name of the table to read. Only unqualified table names are supported.
+            metric_names: The metric columns to read.
+            unique_id_field: The column holding participant identifiers.
+            participant_ids: The participants to read.
+            use_sa_autoload: Whether to use SQLAlchemy reflection. If None, uses config default.
+
+        Returns:
+            One ParticipantOutcome per participant found in the table, with a MetricValue per metric.
+            Participants absent from the table are omitted.
+
+        Raises:
+            CannotFindTableError: If the table does not exist.
+            LateValidationError: If a metric or the unique id column is missing from the table.
+        """
+        return self._on_worker(
+            "reading participant metrics",
+            self._get_participant_metrics_blocking,
+            table_name,
+            metric_names,
+            unique_id_field,
+            participant_ids,
+            use_sa_autoload,
+        )
+
+    def _get_raw_metric_stats_blocking(
+        self, sa_table: sqlalchemy.Table, metrics: list[DesignSpecMetricRequest], filters: list[Filter]
+    ) -> RowMapping:
+        return queries.get_raw_metric_stats(self._session, sa_table, metrics, filters)
+
+    def get_raw_metric_stats(
+        self, sa_table: sqlalchemy.Table, *, metrics: list[DesignSpecMetricRequest], filters: list[Filter]
+    ) -> RowMapping:
+        """Read aggregate statistics of metric columns over the rows matching filters.
+
+        Args:
+            sa_table: The table to read, as returned by inspect_table().
+            metrics: The metric columns to summarize. Only field_name is used.
+            filters: Row filters applied before aggregating.
+
+        Returns:
+            One row with ``rows__count`` (rows matching the filters) and, per metric, ``{name}__mean``,
+            ``{name}__stddev`` and ``{name}__count`` over its non-null values. power_adapters.build_metric_stats
+            turns the row into DesignSpecMetric objects.
+        """
+        return self._on_worker(
+            "reading metric statistics",
+            self._get_raw_metric_stats_blocking,
+            sa_table,
+            metrics,
+            filters,
+        )
+
+    def _get_cluster_sufficient_stats_blocking(
+        self,
+        sa_table: sqlalchemy.Table,
+        cluster_column_name: str,
+        outcome_column_names: Sequence[str],
+        filters: list[Filter],
+        outcome_shifts: Mapping[str, float] | None,
+    ) -> Sequence[RowMapping]:
+        return queries.get_cluster_sufficient_stats(
+            self._session, sa_table, cluster_column_name, outcome_column_names, filters, outcome_shifts
+        )
+
+    def get_cluster_sufficient_stats(
+        self,
+        sa_table: sqlalchemy.Table,
+        *,
+        cluster_column_name: str,
+        outcome_column_names: Sequence[str],
+        filters: list[Filter],
+        outcome_shifts: Mapping[str, float] | None = None,
+    ) -> Sequence[RowMapping]:
+        """Read per-cluster sufficient statistics of outcome columns, for cluster power calculations.
+
+        Args:
+            sa_table: The table to read, as returned by inspect_table().
+            cluster_column_name: The column identifying each row's cluster. Rows with a null cluster are skipped.
+            outcome_column_names: The outcome columns to summarize.
+            filters: Row filters applied before grouping.
+            outcome_shifts: Constant to subtract from each outcome before summing, typically its approximate
+                mean, for numerical stability. The ICC is unaffected.
+
+        Returns:
+            One row per cluster with ``rows__count`` (every row in the cluster, including rows whose outcomes
+            are null) and, per outcome, ``{name}__count``, ``{name}__sum`` and ``{name}__sumsq`` over its
+            non-null values. power_adapters.calculate_cluster_stats turns the rows into ICC and cluster-size
+            statistics.
+
+        Raises:
+            LateValidationError: If a named column is missing, or no clusters match.
+        """
+        return self._on_worker(
+            "reading cluster statistics",
+            self._get_cluster_sufficient_stats_blocking,
+            sa_table,
+            cluster_column_name,
+            outcome_column_names,
+            filters,
+            outcome_shifts,
         )
 
     def _list_tables_blocking(self) -> list[str]:

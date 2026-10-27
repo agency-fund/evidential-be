@@ -1,6 +1,6 @@
 """Utilities for boostrapping entities in our app db."""
 
-import datetime
+import datetime as dt
 
 from sqlalchemy import update
 from sqlalchemy.orm import Session
@@ -60,7 +60,7 @@ def _create_draws(
     experiment: tables.Experiment,
     participant_ids: list[str],
     *,
-    created_at: datetime.datetime | None = None,
+    created_at: dt.datetime | None = None,
 ):
     """Assigns each participant to an arm. created_at backdates the draws, e.g. past the autofail window."""
     for i, participant_id in enumerate(participant_ids):
@@ -106,7 +106,7 @@ def _maybe_create_developer_samples(session: Session, organization: tables.Organ
     )
     session.flush()
 
-    now = datetime.datetime.now(datetime.UTC)
+    now = dt.datetime.now(dt.UTC)
     preassigned = _create_and_commit_experiment(
         session,
         datasource,
@@ -116,8 +116,8 @@ def _maybe_create_developer_samples(session: Session, organization: tables.Organ
                 description="Hypothesis",
                 table_name=TESTING_DWH_TABLE_NAME,
                 primary_key="id",
-                start_date=now - datetime.timedelta(days=7),
-                end_date=now + datetime.timedelta(days=7),
+                start_date=now - dt.timedelta(days=7),
+                end_date=now + dt.timedelta(days=7),
                 arms=[
                     Arm(arm_name="Control", arm_description="First arm"),
                     Arm(arm_name="Treatment", arm_description="Second arm"),
@@ -140,8 +140,8 @@ def _maybe_create_developer_samples(session: Session, organization: tables.Organ
                 description="Hypothesis",
                 table_name=TESTING_DWH_TABLE_NAME,
                 primary_key="id",
-                start_date=now - datetime.timedelta(days=7),
-                end_date=now + datetime.timedelta(days=7),
+                start_date=now - dt.timedelta(days=7),
+                end_date=now + dt.timedelta(days=7),
                 arms=[
                     Arm(arm_name="Control", arm_description="First arm"),
                     Arm(arm_name="Treatment", arm_description="Second arm"),
@@ -164,8 +164,8 @@ def _maybe_create_developer_samples(session: Session, organization: tables.Organ
                 description="Hypothesis",
                 table_name=TESTING_DWH_TABLE_NAME,
                 primary_key="id",
-                start_date=now - datetime.timedelta(days=7),
-                end_date=now + datetime.timedelta(days=7),
+                start_date=now - dt.timedelta(days=7),
+                end_date=now + dt.timedelta(days=7),
                 arms=[
                     Arm(arm_name="Control", arm_description="First arm"),
                     Arm(arm_name="Treatment", arm_description="Second arm"),
@@ -184,8 +184,8 @@ def _maybe_create_developer_samples(session: Session, organization: tables.Organ
             design_spec=MABExperimentSpec(
                 experiment_name="MAB",
                 description="Hypothesis",
-                start_date=now - datetime.timedelta(days=7),
-                end_date=now + datetime.timedelta(days=7),
+                start_date=now - dt.timedelta(days=7),
+                end_date=now + dt.timedelta(days=7),
                 prior_type=PriorTypes.BETA,
                 reward_type=LikelihoodTypes.BERNOULLI,
                 enable_autofail=True,
@@ -203,7 +203,7 @@ def _maybe_create_developer_samples(session: Session, organization: tables.Organ
         session,
         mab,
         ["stale-1", "stale-2", "stale-3"],
-        created_at=now - datetime.timedelta(days=2),
+        created_at=now - dt.timedelta(days=2),
     )
     _create_draws(session, mab, ["fresh-1", "fresh-2"])
 
@@ -214,8 +214,8 @@ def _maybe_create_developer_samples(session: Session, organization: tables.Organ
             design_spec=CMABExperimentSpec(
                 experiment_name="CMAB",
                 description="Hypothesis",
-                start_date=now - datetime.timedelta(days=7),
-                end_date=now + datetime.timedelta(days=7),
+                start_date=now - dt.timedelta(days=7),
+                end_date=now + dt.timedelta(days=7),
                 prior_type=PriorTypes.NORMAL,
                 reward_type=LikelihoodTypes.NORMAL,
                 arms=[
@@ -245,8 +245,8 @@ def _maybe_create_developer_samples(session: Session, organization: tables.Organ
                 description="Hypothesis",
                 table_name=WIDE_DWH_TABLE_NAME,
                 primary_key="id",
-                start_date=now - datetime.timedelta(days=7),
-                end_date=now + datetime.timedelta(days=7),
+                start_date=now - dt.timedelta(days=7),
+                end_date=now + dt.timedelta(days=7),
                 arms=[
                     Arm(arm_name="Control", arm_description="First arm"),
                     Arm(arm_name="Treatment", arm_description="Second arm"),
@@ -269,8 +269,8 @@ def _maybe_create_developer_samples(session: Session, organization: tables.Organ
                 table_name=WIDE_DWH_TABLE_NAME,
                 primary_key="id",
                 target_field_name="converted",
-                start_date=now - datetime.timedelta(days=7),
-                end_date=now + datetime.timedelta(days=7),
+                start_date=now - dt.timedelta(days=7),
+                end_date=now + dt.timedelta(days=7),
                 prior_type=PriorTypes.BETA,
                 reward_type=LikelihoodTypes.BERNOULLI,
                 arms=[

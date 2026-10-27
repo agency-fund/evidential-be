@@ -18,7 +18,6 @@ from deepdiff import DeepDiff
 from pydantic import HttpUrl
 
 from xngin.apiserver import flags
-from xngin.apiserver.conftest import convert_dwh_to_create_api_dsn, expect_status_code
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.routers.admin.admin_api_converters import CREDENTIALS_UNAVAILABLE_MESSAGE
@@ -91,10 +90,12 @@ from xngin.apiserver.routers.experiments.test_experiments_common import (
 )
 from xngin.apiserver.settings import Dsn
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
+from xngin.apiserver.testing.assertions import expect_status_code
 from xngin.apiserver.testing.experiments_api_client import (
     ExperimentsAPIClient,
     ExperimentsAPIClientNotDefaultStatusError,
 )
+from xngin.apiserver.testing.helpers import convert_dwh_to_create_api_dsn
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
 from xngin.apiserver.testing.wide_dwh_def import WIDE_DWH_TABLE_NAME
 
@@ -2305,7 +2306,7 @@ def test_update_arm(testing_experiment, aclient: AdminAPIClient):
     assert arm.arm_description == "updated desc"
 
 
-def test_update_arm_invalid(testing_datasource, testing_experiment, aclient: AdminAPIClient, use_deterministic_random):
+def test_update_arm_invalid(use_deterministic_random, testing_datasource, testing_experiment, aclient: AdminAPIClient):
     """Test arm update validation checks.
 
     The 10-participant experiment created below is sampled with SQL random(). Some samples leave a
@@ -2344,7 +2345,7 @@ def test_update_arm_invalid(testing_datasource, testing_experiment, aclient: Adm
         )
 
 
-def test_freq_experiments_analyze(testing_experiment, aclient: AdminAPIClient, use_deterministic_random):
+def test_freq_experiments_analyze(use_deterministic_random, testing_experiment, aclient: AdminAPIClient):
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
 
