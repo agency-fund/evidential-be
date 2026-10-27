@@ -86,6 +86,18 @@ def safe_resolve_testing_mode():
     safe_resolve.INTERCEPT_DNS_FOR_TESTING = True
 
 
+@pytest.fixture(autouse=True)
+def fixture_without_cloud_dev_warehouses(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keeps tests other than integration tests from reaching the cloud warehouses a developer's environment names.
+
+    A dev environment's first user gets a data source for each warehouse that XNGIN_DEVDWH_GCP_BIGQUERY_DSN and
+    XNGIN_DEVDWH_AWS_REDSHIFT_DSN name, which would make tests that create a first user depend on them.
+    """
+    if request.node.get_closest_marker("integration") is None:
+        monkeypatch.setattr(flags, "XNGIN_DEVDWH_GCP_BIGQUERY_DSN", "")
+        monkeypatch.setattr(flags, "XNGIN_DEVDWH_AWS_REDSHIFT_DSN", "")
+
+
 @pytest.fixture(scope="session", autouse=True)
 def fixture_override_app_dependencies():
     """Configures FastAPI dependencies for testing.

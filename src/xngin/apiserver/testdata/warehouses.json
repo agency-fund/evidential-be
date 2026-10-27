@@ -13,6 +13,13 @@
     {
       "src": "clustered_dwh.csv.zst",
       "table_name": "clustered_dwh"
+    },
+    {
+      "src": "stress_dwh.csv.zst",
+      "bigquery_src": "stress_dwh.jsonl.zst",
+      "redshift_src": "stress_dwh.redshift.csv.zst",
+      "schema_name": "Stress Schema",
+      "table_name": "Participant Data-2026"
     }
   ]
 }

@@ -11,3 +11,50 @@ This directory contains assets used in developer environments and in automated t
 | clustered_dwh.\*.ddl  | DDL for loading clustered data into the testing data warehouse (see generate_clustered_dwh.py).                |
 | clustered_dwh.csv.zst | Clustered dataset for testing stats logic in cluster experiment designs (see generate_clustered_dwh.py).       |
 | warehouses.json       | The tables (with their CSVs and views) that `xngin-cli create-testing-dwh --template` loads; see Taskfile.yml. |
+| stress_dwh.\*         | The stress test table: CSVs for Postgres and Redshift, JSONL for BigQuery, and DDL for each (see below).       |
+
+## Stress testing warehouses
+
+The stress test table has 100 rows, and table, schema and column names that need quoting (spaces, dashes, dots,
+mixed case, accents, `%`, `$`, `"`, reserved words). Its columns use less common types: `UUID`, `JSONB` and arrays on
+Postgres; `SUPER` on Redshift; `NUMERIC`, `BIGNUMERIC`, `JSON`, `GEOGRAPHY`, RECORD and REPEATED fields on BigQuery.
+Its dates and times cover timestamps with and without a time zone (`DATETIME` on BigQuery), `TIME` (and `TIMETZ` on
+Postgres and Redshift), dates before 1970, a leap day, timestamps after 2038 and in a daylight saving time gap,
+fractional seconds, UTC offsets that are not whole hours, and NULLs.
+`xngin/apiserver/testing/stress_dwh_def.py` defines the rows (generated from a fixed seed) and each warehouse's names
+and types. After changing it, regenerate the `stress_dwh.*` files:
+
+```shell
+uv run python tools/generate_stress_dwh.py
+```
+
+`warehouses.json` loads the table with `xngin-cli create-testing-dwh --template`, along with the other tables. On Postgres and Redshift, the
+table `Participant Data-2026` is created in the schema `Stress Schema`, from `stress_dwh.csv.zst` on Postgres and from
+`stress_dwh.redshift.csv.zst` on Redshift, which parses a `SUPER` value in a CSV as JSON, and so needs the array column
+`tags` as a JSON array rather than as a Postgres array literal. On BigQuery, the table is created in the DSN's dataset
+from `stress_dwh.jsonl.zst`, since BigQuery cannot load RECORD and REPEATED columns from CSV. With `enable_case_sensitive_identifier` off (the default), Redshift also stores every name in lowercase:
+the schema is `stress schema`.
+
+The first user of a dev environment gets a data source for each warehouse holding the table, with a preassigned
+experiment on it:
+
+| Warehouse | Loading                                                                                                       | Data source                                            |
+| --------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Postgres  | `task bootstrap-dwh-database` loads it into the local testing DWH.                                            | "pgstress", always.                                    |
+| BigQuery  | `task bootstrap-cloud-dwh` loads every table in `warehouses.json`, if `XNGIN_DEVDWH_GCP_BIGQUERY_DSN` is set. | "bqstress", if `XNGIN_DEVDWH_GCP_BIGQUERY_DSN` is set. |
+| Redshift  | `task bootstrap-cloud-dwh` loads every table in `warehouses.json`, if `XNGIN_DEVDWH_AWS_REDSHIFT_DSN` is set. | "rsstress", if `XNGIN_DEVDWH_AWS_REDSHIFT_DSN` is set. |
+
+To use BigQuery or Redshift, set these variables in `.env` before running `task bootstrap-cloud-dwh` and before the
+first sign-in (or `xngin-cli add-user`):
+
+- `XNGIN_DEVDWH_GCP_BIGQUERY_DSN`: `bigquery://<project>/<dataset>?credentials_path=<key file>`, naming an existing dataset
+  that the service account whose key file it names can run jobs in and write to. The data source stores the key file's
+  content.
+- `XNGIN_DEVDWH_AWS_REDSHIFT_DSN`:
+  `postgresql+psycopg2://<user>:<password>@<host>:5439/<database>?sslmode=verify-full`, for a user with a static
+  password that may create schemas, such as the namespace's admin. It both loads the table and signs in for the data
+  source. Percent-encode special characters in the user name and password.
+- `XNGIN_DEVDWH_AWS_BUCKET`: an S3 bucket that your AWS credentials can write to and delete from, for staging the
+  CSV.
+- `XNGIN_DEVDWH_AWS_REDSHIFT_IAM_ROLE`: the ARN of an IAM role, associated with the Redshift namespace, that may read that
+  bucket.

@@ -142,6 +142,29 @@ tasks:
       --template src/xngin/apiserver/testdata/warehouses.json
       --allow-existing
       --create-db
+  bootstrap-cloud-dwh:
+    desc: >-
+      Loads the sample data warehouses into your cloud data warehouses (BigQuery and Redshift), replacing them. A
+      warehouse is skipped when its variables are unset. See src/xngin/apiserver/testdata/README.md.
+    interactive: true
+    dotenv:
+      - .env
+    cmds:
+      - |
+        if [ -z "$XNGIN_DEVDWH_GCP_BIGQUERY_DSN" ]; then
+          echo "Skipping BigQuery: XNGIN_DEVDWH_GCP_BIGQUERY_DSN is not set."
+        else
+          uv run xngin-cli create-testing-dwh --dsn "$XNGIN_DEVDWH_GCP_BIGQUERY_DSN" \
+            --template src/xngin/apiserver/testdata/warehouses.json
+        fi
+      - |
+        if [ -z "$XNGIN_DEVDWH_AWS_REDSHIFT_DSN" ]; then
+          echo "Skipping Redshift: XNGIN_DEVDWH_AWS_REDSHIFT_DSN is not set."
+        else
+          uv run xngin-cli create-testing-dwh --dsn "$XNGIN_DEVDWH_AWS_REDSHIFT_DSN" \
+            --bucket "$XNGIN_DEVDWH_AWS_BUCKET" --iam-role "$XNGIN_DEVDWH_AWS_REDSHIFT_IAM_ROLE" \
+            --template src/xngin/apiserver/testdata/warehouses.json
+        fi
   bootstrap-app-database:
     interactive: true
     desc: >-

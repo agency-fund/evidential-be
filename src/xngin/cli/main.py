@@ -196,6 +196,23 @@ def add_user(
             envvar="XNGIN_DEVDWH_DSN",
         ),
     ] = None,
+    bigquery_dwh: Annotated[
+        str | None,
+        typer.Option(
+            help="bigquery://<project>/<dataset>?credentials_path=<key file> of a BigQuery dataset holding the "
+            "stress test table (see src/xngin/apiserver/testdata/README.md), to be added to the user's "
+            "organization.",
+            envvar="XNGIN_DEVDWH_GCP_BIGQUERY_DSN",
+        ),
+    ] = None,
+    redshift_dwh: Annotated[
+        str | None,
+        typer.Option(
+            help="The SQLAlchemy URI of a Redshift database holding the stress test table (see "
+            "src/xngin/apiserver/testdata/README.md), to be added to the user's organization.",
+            envvar="XNGIN_DEVDWH_AWS_REDSHIFT_DSN",
+        ),
+    ] = None,
 ):
     """Adds a new user to the database.
 
@@ -225,7 +242,13 @@ def add_user(
     engine = cli_engine(database_url)
     with Session(engine) as session:
         try:
-            user = create_entities_for_first_time_user(session, tables.User(email=email, is_privileged=privileged), dwh)
+            user = create_entities_for_first_time_user(
+                session,
+                tables.User(email=email, is_privileged=privileged),
+                dwh,
+                bigquery_dsn=bigquery_dwh,
+                redshift_dsn=redshift_dwh,
+            )
             session.commit()
             session.refresh(user)
             console.print("\n[bold green]User added successfully:[/bold green]")
