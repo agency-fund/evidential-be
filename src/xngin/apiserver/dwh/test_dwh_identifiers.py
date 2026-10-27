@@ -1,8 +1,25 @@
 """Tests of the table, schema and column names DwhSession can use, on Postgres, Redshift and BigQuery."""
 
+from dataclasses import astuple
+
 import pytest
 
 from xngin.apiserver.dwh import dwh_utils
+from xngin.apiserver.routers.common_api_types import (
+    DesignSpecMetricRequest,
+    Filter,
+)
+from xngin.apiserver.routers.common_enums import Relation
+from xngin.apiserver.testing.dwh_identifiers_helpers import (
+    BQ_QUOTED_COLUMNS,
+    PG_QUOTED_COLUMNS,
+)
+
+
+@pytest.mark.parametrize("name", sorted({*astuple(PG_QUOTED_COLUMNS), *astuple(BQ_QUOTED_COLUMNS)}))
+def test_column_names_that_need_quoting_are_accepted_as_fields(name: str):
+    assert Filter(field_name=name, relation=Relation.INCLUDES, value=["a"]).field_name == name
+    assert DesignSpecMetricRequest(field_name=name, metric_pct_change=0.1).field_name == name
 
 
 @pytest.mark.parametrize(

@@ -137,10 +137,11 @@ def compose_cluster_query(
         raise ValueError(f"Column {cluster_key} not found in schema.")
     columns = _resolve_columns(sa_table, select_columns)
 
-    # Sample the clusters from those that have at least one row matching the filters.
+    # Sample the clusters from those that have at least one row matching the filters. We label the cluster key because
+    # limitations of the SQLAlchemy API prevent subquery references containing a dot, such as BigQuery sub-fields.
     cluster_col = sa_table.c[cluster_key]
-    eligible_clusters = select(cluster_col).filter(*filters).group_by(cluster_col).subquery()
-    sampled_cluster_col = eligible_clusters.c[cluster_key]
+    eligible_clusters = select(cluster_col.label("cluster_key")).filter(*filters).group_by(cluster_col).subquery()
+    sampled_cluster_col = eligible_clusters.c.cluster_key
     sampled_clusters = (
         select(sampled_cluster_col)
         .order_by(custom_functions.Random(sa_table=eligible_clusters))

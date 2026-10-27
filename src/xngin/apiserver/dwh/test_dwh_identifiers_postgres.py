@@ -5,13 +5,17 @@ Postgres testing warehouse.
 from collections.abc import Iterator
 
 import pytest
+import sqlalchemy
+from sqlalchemy import text
 
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.assertions import expect_status_code
 from xngin.apiserver.testing.dwh_identifiers_helpers import (
     PG_OTHER_SCHEMA,
+    PG_QUOTED_COLUMNS,
     PG_SCHEMAS,
     PG_TABLE_NAMES,
+    QUOTED_COLUMNS_TABLE,
     create_datasource,
     exercise_through_api,
     expect_unusable_table_name,
@@ -35,6 +39,12 @@ def fixture_pg_schemas() -> Iterator[None]:
 def test_postgres_reads_tables_whose_names_need_quoting(aclient: AdminAPIClient, schema: str, table_name: str):
     # The search_path is the customer's own value, so names that need quoting arrive quoted.
     exercise_through_api(aclient, pg_dsn("postgresql+psycopg", pg_quote(with_name_suffix(schema))), table_name)
+
+
+@pytest.mark.parametrize("driver", ["postgresql+psycopg", "postgresql+psycopg2"])
+def test_postgres_reads_columns_whose_names_need_quoting(aclient: AdminAPIClient, driver: str):
+    dsn = pg_dsn(driver, pg_quote(with_name_suffix("dwh_tn_plain")))
+    exercise_through_api(aclient, dsn, QUOTED_COLUMNS_TABLE, PG_QUOTED_COLUMNS, exact_fields=True)
 
 
 def test_postgres_search_path_entries_after_the_first_are_searched(aclient: AdminAPIClient):
@@ -65,3 +75,16 @@ def test_postgres_dotted_names_do_not_reach_other_schemas(aclient: AdminAPIClien
         table_name = table_name.replace(schema, with_name_suffix(schema))
     dsn = pg_dsn("postgresql+psycopg", pg_quote(with_name_suffix("dwh_tn_plain")))
     expect_unusable_table_name(aclient, dsn, table_name, "does not exist")
+
+
+def test_postgres_leaves_out_columns_whose_names_have_control_characters(aclient: AdminAPIClient):
+    schema = with_name_suffix("dwh_tn_plain")
+    admin = sqlalchemy.create_engine(pg_dsn("postgresql+psycopg", None).to_sqlalchemy_url())
+    try:
+        with admin.begin() as conn:
+            conn.execute(text(f'CREATE TABLE {pg_quote(schema)}.control_chars (id int, "a\tb" int, "c\nd" int)'))
+    finally:
+        admin.dispose()
+    datasource_id = create_datasource(aclient, pg_dsn("postgresql+psycopg", pg_quote(schema)))
+    inspected = aclient.inspect_table_in_datasource(datasource_id=datasource_id, table_name="control_chars").data
+    assert [f.field_name for f in inspected.fields] == ["id"]

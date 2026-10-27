@@ -1,11 +1,9 @@
 """Methods for converting SQLAlchemy metadata into our application-specific types."""
 
-import re
-
 import sqlalchemy
 from sqlalchemy_bigquery import STRUCT
 
-from xngin.apiserver.common_field_types import VALID_SQL_COLUMN_REGEX
+from xngin.apiserver.common_field_types import has_control_characters
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.admin.admin_api_types import FieldMetadata, InspectDatasourceTableResponse
 from xngin.apiserver.routers.common_enums import DataType
@@ -16,8 +14,9 @@ def create_inspect_table_response_from_table(
 ) -> InspectDatasourceTableResponse:
     """Creates an InspectDatasourceTableResponse from a sqlalchemy.Table.
 
-    Columns whose names cannot be used as a FieldName (a Postgres column named "a.b", say) are left
-    out, as are columns with unsupported data types.
+    The response lists each column whose data type is supported, under the name the warehouse reports, including
+    names that need quoting in SQL, such as a Postgres column named "a.b". Names with control characters, which
+    Postgres and Redshift allow, are left out, since they cannot be field names.
 
     Raises:
         LateValidationError: When the table has nested columns, which we do not support.
@@ -29,7 +28,7 @@ def create_inspect_table_response_from_table(
             "Create a view that exposes the fields you need as top-level columns, then select that view."
         )
 
-    usable_columns = [c for c in table.columns.values() if re.match(VALID_SQL_COLUMN_REGEX, c.name)]
+    usable_columns = [c for c in table.columns.values() if not has_control_characters(c.name)]
     possible_id_columns = {
         c.name
         for c in usable_columns

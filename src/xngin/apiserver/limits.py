@@ -13,6 +13,9 @@ MAX_LENGTH_OF_URL_VALUE = 500
 # Maximum length of fields that contain names of things (such as experiment name, participant types, Arm names).
 MAX_LENGTH_OF_NAME_VALUE = 100
 
+# Maximum length of a data warehouse column name: BigQuery allows 300 characters, Postgres 63 bytes and Redshift 127.
+MAX_LENGTH_OF_FIELD_NAME = 300
+
 # Maximum length of fields that contain unique identifiers for participants.
 MAX_LENGTH_OF_PARTICIPANT_ID_VALUE = 64
 

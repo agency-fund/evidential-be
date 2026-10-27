@@ -111,6 +111,11 @@ def test_bigquery_reads_tables_whose_names_need_quoting(
     exercise_through_api(aclient, dsn, table_name)
 
 
+def test_bigquery_reads_columns_whose_names_need_quoting(aclient: AdminAPIClient, bq_datasets: tuple[BqDsn, str]):
+    dsn, _ = bq_datasets
+    exercise_through_api(aclient, dsn, QUOTED_COLUMNS_TABLE, BQ_QUOTED_COLUMNS, exact_fields=True)
+
+
 def test_bigquery_refuses_dataset_qualified_table_names(aclient: AdminAPIClient, bq_datasets: tuple[BqDsn, str]):
     """Unrefused, the two-part name reflected and then read the other dataset's table."""
     dsn, other = bq_datasets

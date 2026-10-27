@@ -7,6 +7,7 @@ sslmode=verify-full.
 
 import os
 from collections.abc import Iterator
+from dataclasses import asdict
 
 import pytest
 
@@ -14,8 +15,11 @@ from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.settings import Dsn
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.dwh_identifiers_helpers import (
+    PG_QUOTED_COLUMNS,
     PG_SCHEMAS,
     PG_TABLE_NAMES,
+    QUOTED_COLUMNS_TABLE,
+    Columns,
     exercise_through_api,
     expect_unusable_table_name,
     pg_identifier_schemas,
@@ -27,6 +31,7 @@ from xngin.apiserver.testing.dwh_identifiers_helpers import (
 # so they read the lowercase names, and check that a mixed-case spelling still resolves.
 
 REDSHIFT_DSN_VAR = "XNGIN_DEVDWH_AWS_REDSHIFT_DSN"
+REDSHIFT_QUOTED_COLUMNS = Columns(**{key: name.lower() for key, name in asdict(PG_QUOTED_COLUMNS).items()})
 
 pytestmark = [
     pytest.mark.integration,
@@ -59,6 +64,12 @@ def fixture_real_dns(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.parametrize("table_name", PG_TABLE_NAMES)
 def test_redshift_reads_tables_whose_names_need_quoting(aclient: AdminAPIClient, schema: str, table_name: str):
     exercise_through_api(aclient, _redshift_dsn(schema), table_name.lower())
+
+
+def test_redshift_reads_columns_whose_names_need_quoting(aclient: AdminAPIClient):
+    exercise_through_api(
+        aclient, _redshift_dsn("dwh_tn_plain"), QUOTED_COLUMNS_TABLE, REDSHIFT_QUOTED_COLUMNS, exact_fields=True
+    )
 
 
 def test_redshift_resolves_a_mixed_case_name_to_its_lowercase_table(aclient: AdminAPIClient):
