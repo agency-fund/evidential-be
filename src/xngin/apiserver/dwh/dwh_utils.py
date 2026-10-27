@@ -1,6 +1,13 @@
+import unicodedata
+
 from sqlalchemy import URL, Engine
 
 REDSHIFT_HOSTNAME_SUFFIXES = ("redshift.amazonaws.com", "redshift-serverless.amazonaws.com")
+
+# BigQuery table names: letters (L), marks (M), numbers (N), connectors (Pc), dashes (Pd), and spaces (Zs), up to
+# 1,024 UTF-8 bytes. https://cloud.google.com/bigquery/docs/tables#table_naming
+_BQ_TABLE_NAME_CATEGORIES = frozenset({"Pc", "Pd", "Zs"})
+_BQ_TABLE_NAME_MAX_BYTES = 1024
 
 
 def is_redshift(host_or_url: str | URL) -> bool:
@@ -26,6 +33,19 @@ def is_postgres(driver_or_url: str | URL) -> bool:
     if isinstance(driver_or_url, str):
         return driver_or_url.startswith("postgresql")
     return driver_or_url.drivername in {"postgresql", "postgresql+psycopg", "postgresql+psycopg2"}
+
+
+def is_bigquery_table_name(name: str) -> bool:
+    """Whether name is a table name BigQuery could have created, which is safe inside a backtick-quoted identifier.
+
+    sqlalchemy-bigquery quotes identifiers with backticks but does not escape them, so a name must not contain
+    anything with meaning inside backticks: the closing backtick, the backslash escape, line breaks, the dot that
+    separates path components, the * that makes a wildcard table, and NUL, which BigQuery treats as the end of the
+    name. None of those can appear in a real table name.
+    """
+    return 0 < len(name.encode()) <= _BQ_TABLE_NAME_MAX_BYTES and all(
+        unicodedata.category(c)[0] in "LMN" or unicodedata.category(c) in _BQ_TABLE_NAME_CATEGORIES for c in name
+    )
 
 
 def extra_engine_setup(engine: Engine):

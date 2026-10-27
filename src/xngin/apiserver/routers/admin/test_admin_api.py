@@ -4713,3 +4713,9 @@ def test_org_scoped_routes_reject_datasource_from_another_organization(
         experiment_id=experiment_id,
     ).data
     assert listed.items == []
+
+
+def test_inspecting_a_schema_qualified_table_does_not_reach_the_schema(testing_datasource, aclient: AdminAPIClient):
+    """On Postgres, the dot is part of the quoted table name; public.dwh does not name the dwh table in public."""
+    with expect_status_code(404, message_contains="The table 'public.dwh' does not exist"):
+        aclient.inspect_table_in_datasource(datasource_id=testing_datasource.datasource_id, table_name="public.dwh")
