@@ -48,6 +48,7 @@ from xngin.db_extensions import custom_functions
 # Gives the assertions in the helpers that tests import pytest's detailed failure messages, as in test modules.
 pytest.register_assert_rewrite("xngin.apiserver.testing.assertions")
 pytest.register_assert_rewrite("xngin.apiserver.testing.dwh_identifiers_helpers")
+pytest.register_assert_rewrite("xngin.apiserver.testing.dwh_time_types_helpers")
 
 
 @pytest.fixture(scope="session", autouse=True)

@@ -20,7 +20,8 @@ mixed case, accents, `%`, `$`, `"`, reserved words). Its columns use less common
 Postgres; `SUPER` on Redshift; `NUMERIC`, `BIGNUMERIC`, `JSON`, `GEOGRAPHY`, RECORD and REPEATED fields on BigQuery.
 Its dates and times cover timestamps with and without a time zone (`DATETIME` on BigQuery), `TIME` (and `TIMETZ` on
 Postgres and Redshift), dates before 1970, a leap day, timestamps after 2038 and in a daylight saving time gap,
-fractional seconds, UTC offsets that are not whole hours, and NULLs.
+fractional seconds, UTC offsets that are not whole hours, and NULLs. The `test_dwh_time_types_*.py` tests load private
+copies of the table and check those types through the API.
 `xngin/apiserver/testing/stress_dwh_def.py` defines the rows (generated from a fixed seed) and each warehouse's names
 and types. After changing it, regenerate the `stress_dwh.*` files:
 
