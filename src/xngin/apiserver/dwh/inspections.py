@@ -1,10 +1,8 @@
 """Methods for converting SQLAlchemy metadata into our application-specific types."""
 
 import sqlalchemy
-from sqlalchemy_bigquery import STRUCT
 
 from xngin.apiserver.common_field_types import has_control_characters
-from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.admin.admin_api_types import FieldMetadata, InspectDatasourceTableResponse
 from xngin.apiserver.routers.common_enums import DataType
 
@@ -18,15 +16,10 @@ def create_inspect_table_response_from_table(
     names that need quoting in SQL, such as a Postgres column named "a.b". Names with control characters, which
     Postgres and Redshift allow, are left out, since they cannot be field names.
 
-    Raises:
-        LateValidationError: When the table has nested columns, which we do not support.
+    The BigQuery dialect reflects a RECORD column as a STRUCT column followed by one column per sub-field, named by its
+    path, such as "parent.child". The response includes the sub-fields but not the STRUCT, whose data type is not
+    supported. A REPEATED field is reflected as a single ARRAY column without sub-fields, so it is left out too.
     """
-    nested_columns = sorted(c.name for c in table.columns.values() if _is_nested_column(table, c))
-    if nested_columns:
-        raise LateValidationError(
-            f"Table '{table.name}' has nested columns ({', '.join(nested_columns)}), which are not supported. "
-            "Create a view that exposes the fields you need as top-level columns, then select that view."
-        )
 
     usable_columns = [c for c in table.columns.values() if not has_control_characters(c.name)]
     possible_id_columns = {
@@ -58,17 +51,3 @@ def create_inspect_table_response_from_table(
         detected_unique_id_fields=list(sorted(possible_id_columns)),
         fields=list(sorted(collected, key=lambda f: f.field_name)),
     )
-
-
-def _is_nested_column(table: sqlalchemy.Table, column: sqlalchemy.Column) -> bool:
-    """Whether column is a sub-field of a BigQuery RECORD column.
-
-    The BigQuery dialect reflects a RECORD column as a STRUCT column followed by one column per
-    sub-field, named "parent.child". Other dialects allow dots in ordinary column names, so a dot
-    alone does not make a column nested: its parent must be a STRUCT in the same table.
-    """
-    parent_name, dot, _ = column.name.partition(".")
-    if not dot:
-        return False
-    parent = table.columns.get(parent_name)
-    return parent is not None and isinstance(parent.type, STRUCT)
