@@ -2888,7 +2888,8 @@ def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_sessio
     assert len(metric_analysis.arm_analyses) == 2
     for arm_analysis in metric_analysis.arm_analyses:
         assert arm_analysis.arm_id in {arm1_id, arm2_id}
-        assert arm_analysis.estimate == 0
+        assert arm_analysis.estimate is not None and np.isnan(arm_analysis.estimate)
+        assert arm_analysis.mean is None
         assert arm_analysis.p_value is not None and np.isnan(arm_analysis.p_value)
         assert arm_analysis.t_stat is not None and np.isnan(arm_analysis.t_stat)
         assert arm_analysis.std_error is not None and np.isnan(arm_analysis.std_error)

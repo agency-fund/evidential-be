@@ -66,7 +66,10 @@ LATE_BREAKOUT = HistoricalSnapshotProfile(
 
 def recalculate_t_and_p(arm_analysis: ArmAnalysis, df: int = 100) -> None:
     """Recalculate t-stat and p-value after estimate/std-error changes."""
-    if arm_analysis.std_error is not None and arm_analysis.std_error != 0:
+    if arm_analysis.estimate is None:
+        arm_analysis.t_stat = None
+        arm_analysis.p_value = None
+    elif arm_analysis.std_error is not None and arm_analysis.std_error != 0:
         arm_analysis.t_stat = arm_analysis.estimate / arm_analysis.std_error
         arm_analysis.p_value = float(2 * (1 - stats.t.cdf(abs(arm_analysis.t_stat), df=df)))
     elif arm_analysis.estimate > 0:

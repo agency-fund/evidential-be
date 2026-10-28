@@ -1,4 +1,5 @@
 import dataclasses
+import math
 
 import pandas as pd
 import statsmodels.formula.api as smf
@@ -11,6 +12,8 @@ from xngin.stats.stats_errors import StatsAnalysisError
 @dataclasses.dataclass(slots=True)  # slots=True for performance
 class ArmAnalysisResult:
     is_baseline: bool
+    # The fields from estimate to ci_upper compare the arm to the baseline (for the baseline
+    # itself, they describe its mean). They are NaN when the baseline has no values.
     estimate: float
     p_value: float
     t_stat: float
@@ -18,7 +21,8 @@ class ArmAnalysisResult:
     # Confidence intervals for the estimated coefficient
     ci_lower: float
     ci_upper: float
-    # Confidence intervals for the mean of the arm
+    # The mean of the arm and its confidence interval
+    mean: float
     mean_ci_lower: float
     mean_ci_upper: float
     num_missing_values: int
@@ -52,6 +56,8 @@ def analyze_experiment(
     Returns:
         map of metric name => map of arm_id (may be partial or empty!) => analysis results
         - If an arm is missing for a metric, it's because it had no valid data to process.
+        - If the baseline arm is missing, the other arms' results only include their means and
+        mean CIs; the fields comparing them to the baseline are NaN.
         - If *zero* arm analyses exist for a metric (e.g. since zero non-null outcomes were found
         across all arms), the name will exist, but the inner dict will be empty.
     """
@@ -105,21 +111,27 @@ def analyze_experiment(
         # First init this metric's empty dict of arm analyses.
         arm_analyses: dict[str, ArmAnalysisResult] = {}
         metric_analyses[metric_name] = arm_analyses
+        metric_df = merged_df.dropna(subset=[metric_name])
         # If all arms have missing values for this metric, we can't perform the analysis.
         # Let callers deal with this case, since even treatment_assignments may not have all arms yet.
-        if sum(nan_counts_df[metric_name]) == len(merged_df):
+        if metric_df.empty:
             continue
+        # Drop arms left without any values: the regression would otherwise keep an empty arm as a
+        # level and report fabricated results for it.
+        metric_df = metric_df.assign(**{arm_col: metric_df[arm_col].cat.remove_unused_categories()})
+        # The baseline is the regression's reference level. If it has no values, the next arm silently
+        # becomes the reference, so the coefficients no longer compare arms to the baseline. Only each
+        # arm's own mean, which doesn't depend on the reference level, is reported then.
+        baseline = merged_df[arm_col].cat.categories[0] if baseline_arm_id is None else baseline_arm_id
+        has_baseline_values = baseline in metric_df[arm_col].cat.categories
 
-        # smf.ols internally actually drops missing values by default (see Model.from_formula),
-        # but make it explicit here for developer clarity.
         if cluster_col is not None:
-            merged_df_dropna = merged_df.dropna(subset=[metric_name])
-            model = smf.ols(f"{metric_name} ~ {arm_col}", data=merged_df_dropna).fit(
+            model = smf.ols(f"{metric_name} ~ {arm_col}", data=metric_df).fit(
                 cov_type="cluster",
-                cov_kwds={"groups": merged_df_dropna[cluster_col]},
+                cov_kwds={"groups": metric_df[cluster_col]},
             )
         else:
-            model = smf.ols(f"{metric_name} ~ {arm_col}", data=merged_df, missing="drop").fit(cov_type="HC1")
+            model = smf.ols(f"{metric_name} ~ {arm_col}", data=metric_df).fit(cov_type="HC1")
         arm_ids = model.model.data.design_info.factor_infos[EvalFactor(arm_col)].categories
 
         # Calculate CIs for coefficients
@@ -136,7 +148,7 @@ def analyze_experiment(
         # yet carries no variance information); NaNs from any other cause (e.g. zero residual
         # degrees of freedom) pass through so callers see them as null rather than a spuriously
         # confident zero-width CI.
-        arm_outcomes = merged_df.dropna(subset=[metric_name]).groupby(arm_col, observed=False)[metric_name]
+        arm_outcomes = metric_df.groupby(arm_col, observed=False)[metric_name]
         identical_arms = (arm_outcomes.nunique() == 1) & (arm_outcomes.count() >= 2)
         for ci_col in ("mean_ci_lower", "mean_ci_upper"):
             degenerate = pred_summary[ci_col].isna() & identical_arms.reindex(arm_ids).to_numpy()
@@ -146,17 +158,21 @@ def analyze_experiment(
             # Determine parameter name to use for lookingup the coefficient CIs
             param_name = "Intercept" if i == 0 else f"{arm_col}[T.{arm_id}]"
 
-            arm_analyses[arm_id] = ArmAnalysisResult(
-                is_baseline=i == 0 if baseline_arm_id is None else arm_id == baseline_arm_id,
+            result = ArmAnalysisResult(
+                is_baseline=arm_id == baseline,
                 estimate=float(model.params.iloc[i]),
                 p_value=float(model.pvalues.iloc[i]),
                 t_stat=float(model.tvalues.iloc[i]),
                 std_error=float(list(model.bse)[i]),
                 ci_lower=float(confidence_intervals.loc[param_name, 0]),
                 ci_upper=float(confidence_intervals.loc[param_name, 1]),
+                mean=float(pred_summary.iloc[i]["mean"]),
                 mean_ci_lower=float(pred_summary.iloc[i]["mean_ci_lower"]),
                 mean_ci_upper=float(pred_summary.iloc[i]["mean_ci_upper"]),
                 num_missing_values=nan_counts_df.loc[arm_id, metric_name],
             )
-        metric_analyses[metric_name] = arm_analyses
+            if not has_baseline_values:
+                result.estimate = result.p_value = result.t_stat = math.nan
+                result.std_error = result.ci_lower = result.ci_upper = math.nan
+            arm_analyses[arm_id] = result
     return metric_analyses

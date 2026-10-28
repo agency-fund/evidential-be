@@ -2367,10 +2367,12 @@ def test_freq_experiments_analyze(use_deterministic_random, testing_experiment, 
         for analysis in metric_analysis.arm_analyses:
             assert analysis.ci_lower is not None
             assert analysis.ci_upper is not None
+            assert analysis.estimate is not None
             assert analysis.ci_lower <= analysis.estimate <= analysis.ci_upper
             assert analysis.mean_ci_lower is not None
             assert analysis.mean_ci_upper is not None
-            assert analysis.mean_ci_lower <= analysis.mean_ci_upper
+            assert analysis.mean is not None
+            assert analysis.mean_ci_lower <= analysis.mean <= analysis.mean_ci_upper
 
 
 @pytest.mark.parametrize(
@@ -2672,7 +2674,8 @@ def test_analyze_experiment_with_no_assignments_in_one_arm_yet(
             assert analysis.std_error is not None
             assert analysis.num_missing_values == 0
         else:
-            assert analysis.estimate == 0
+            assert analysis.estimate is None
+            assert analysis.mean is None
             assert analysis.p_value is None
             assert analysis.t_stat is None
             assert analysis.std_error is None
