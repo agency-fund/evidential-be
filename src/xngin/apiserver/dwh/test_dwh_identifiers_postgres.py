@@ -94,12 +94,16 @@ def test_postgres_leaves_out_columns_whose_names_have_control_characters(aclient
 
 @pytest.mark.parametrize(
     ("role", "name"),
-    [("metric", name) for name in ["rows", "participant_id", "arm_id", "cluster_key"]],
+    [
+        *[("metric", name) for name in ["rows", "participant_id", "arm_id", "cluster_key", "treat", "Intercept"]],
+        *[("id", name) for name in ["treat", "stratum_id", "fake"]],
+        *[("cluster", name) for name in ["treat", "stratum_id", "fake", "_xngin_cluster_size"]],
+    ],
 )
 def test_postgres_reads_columns_named_like_columns_of_our_own(aclient: AdminAPIClient, role: str, name: str):
-    """Power checks and analysis put a table's values beside columns of their own, such as a row count.
+    """Power checks, assignment and analysis put a table's values beside columns of their own, such as a row count.
 
-    role is the use of the column named name.
+    role is the use of the column named name: the metric, the participant id, or the cluster, which is also a stratum.
     """
     schema = with_name_suffix("dwh_tn_plain")
     table_name = f"ours_{role}_{name}"
