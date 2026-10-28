@@ -256,6 +256,9 @@ jobs:
         run: |
           export XNGIN_DEVDWH_GCP_CREDENTIALS=$HOME/.config/service_account.json
           task test-integration
+        env:
+          # The integration tests that call the admin API use the application database.
+          DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
       - run: task test-coverage
         env:
           DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
