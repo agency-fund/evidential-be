@@ -16,9 +16,11 @@ from xngin.apiserver.testing.dwh_identifiers_helpers import (
     PG_SCHEMAS,
     PG_TABLE_NAMES,
     QUOTED_COLUMNS_TABLE,
+    Columns,
     create_datasource,
     exercise_through_api,
     expect_unusable_table_name,
+    pg_create_table,
     pg_dsn,
     pg_identifier_schemas,
     pg_quote,
@@ -88,3 +90,28 @@ def test_postgres_leaves_out_columns_whose_names_have_control_characters(aclient
     datasource_id = create_datasource(aclient, pg_dsn("postgresql+psycopg", pg_quote(schema)))
     inspected = aclient.inspect_table_in_datasource(datasource_id=datasource_id, table_name="control_chars").data
     assert [f.field_name for f in inspected.fields] == ["id"]
+
+
+@pytest.mark.parametrize(
+    ("role", "name"),
+    [
+        *[("metric", name) for name in ["rows", "participant_id", "arm_id", "cluster_key", "treat", "Intercept"]],
+        *[("id", name) for name in ["treat", "stratum_id", "fake"]],
+        *[("cluster", name) for name in ["treat", "stratum_id", "fake", "_xngin_cluster_size"]],
+    ],
+)
+def test_postgres_reads_columns_named_like_columns_of_our_own(aclient: AdminAPIClient, role: str, name: str):
+    """Power checks, assignment and analysis put a table's values beside columns of their own, such as a row count.
+
+    role is the use of the column named name: the metric, the participant id, or the cluster, which is also a stratum.
+    """
+    schema = with_name_suffix("dwh_tn_plain")
+    table_name = f"ours_{role}_{name}"
+    columns = Columns(**{role: name})
+    admin = sqlalchemy.create_engine(pg_dsn("postgresql+psycopg", None).to_sqlalchemy_url())
+    try:
+        with admin.begin() as conn:
+            pg_create_table(conn, schema, table_name, columns)
+    finally:
+        admin.dispose()
+    exercise_through_api(aclient, pg_dsn("postgresql+psycopg", pg_quote(schema)), table_name, columns)

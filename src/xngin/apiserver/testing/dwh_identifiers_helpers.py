@@ -98,8 +98,8 @@ def exercise_through_api(
     """Runs every read of table_name a customer can cause, through the admin API, using columns for every field.
 
     Covers listing and inspecting the table, power checks with filters and with clusters, an individual- and a
-    cluster-randomized experiment, analysis, and the assignments CSV. listed_as is the name the warehouse lists the
-    table under, when that differs from table_name. With exact_fields, inspection must offer exactly columns.
+    cluster-randomized experiment, analysis of each, and the assignments CSV. listed_as is the name the warehouse
+    lists the table under, when that differs from table_name. With exact_fields, inspection must offer exactly columns.
     """
     datasource_id = create_datasource(aclient, dwh_config)
     assert (listed_as or table_name) in aclient.inspect_datasource(datasource_id=datasource_id).data.tables
@@ -171,6 +171,11 @@ def exercise_through_api(
     ).data
     assert clustered.assign_summary is not None
     assert clustered.assign_summary.sample_size == len(ROWS) // 2
+    clustered_analysis = aclient.analyze_experiment(
+        datasource_id=datasource_id, experiment_id=clustered.experiment_id
+    ).data
+    assert isinstance(clustered_analysis, FreqExperimentAnalysisResponse)
+    assert [m.metric_name for m in clustered_analysis.metric_analyses] == [columns.metric]
 
 
 def expect_unusable_table_name(aclient: AdminAPIClient, dwh_config: Dsn | BqDsn, table_name: str, message: str) -> None:

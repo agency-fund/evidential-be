@@ -11,6 +11,7 @@ import numpy as np
 from sqlalchemy import Table
 from sqlalchemy.engine.row import RowMapping
 
+from xngin.apiserver.dwh.field_aliases import FieldAliases
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import DesignSpecMetric, DesignSpecMetricRequest
 from xngin.apiserver.routers.common_enums import MetricType
@@ -25,8 +26,10 @@ def build_metric_stats(
 ) -> list[DesignSpecMetric]:
     """Build DesignSpecMetric objects from the row returned by get_raw_metric_stats."""
     metrics_to_return = []
+    aliases = FieldAliases(m.field_name for m in metrics)
     for metric in metrics:
         field_name = metric.field_name
+        alias = aliases.alias(field_name)
         metric_type = MetricType.from_python_type(sa_table.c[field_name].type.python_type)
         metrics_to_return.append(
             DesignSpecMetric(
@@ -34,9 +37,9 @@ def build_metric_stats(
                 metric_pct_change=metric.metric_pct_change,
                 metric_target=metric.metric_target,
                 metric_type=metric_type,
-                metric_baseline=raw_stats[f"{field_name}__mean"],
-                metric_stddev=raw_stats[f"{field_name}__stddev"] if metric_type is MetricType.NUMERIC else None,
-                available_nonnull_n=raw_stats[f"{field_name}__count"],
+                metric_baseline=raw_stats[f"{alias}__mean"],
+                metric_stddev=raw_stats[f"{alias}__stddev"] if metric_type is MetricType.NUMERIC else None,
+                available_nonnull_n=raw_stats[f"{alias}__count"],
                 # This value is the same across all metrics, but we replicate for convenience:
                 available_n=raw_stats["rows__count"],
             )
@@ -56,7 +59,8 @@ def calculate_cluster_stats(
 
     Args:
         cluster_rows: One mapping per cluster with rows__count and per-outcome
-            {name}__count / {name}__sum / {name}__sumsq keys
+            {alias}__count / {alias}__sum / {alias}__sumsq keys, where alias is the outcome's
+            FieldAliases alias
         cluster_column: Cluster column name, used in error messages
         outcome_columns: Column names containing outcome values
 
@@ -74,10 +78,12 @@ def calculate_cluster_stats(
     cv = float(sizes.std() / sizes.mean())
 
     stats_by_outcome: dict[str, dict[str, float]] = {}
+    aliases = FieldAliases(outcome_columns)
     for outcome_column in outcome_columns:
+        alias = aliases.alias(outcome_column)
         # ICC uses only clusters with values for this outcome, mirroring the per-metric
         # "outcome IS NOT NULL" filter used when each metric was queried separately.
-        counts = np.array([row[f"{outcome_column}__count"] for row in cluster_rows], dtype=np.float64)
+        counts = np.array([row[f"{alias}__count"] for row in cluster_rows], dtype=np.float64)
         has_values = counts > 0
         if not has_values.any():
             raise LateValidationError(
@@ -86,10 +92,8 @@ def calculate_cluster_stats(
         try:
             icc = calculate_icc_from_sufficient_stats(
                 counts=counts[has_values],
-                sums=np.array([row[f"{outcome_column}__sum"] for row in cluster_rows], dtype=np.float64)[has_values],
-                sumsqs=np.array([row[f"{outcome_column}__sumsq"] for row in cluster_rows], dtype=np.float64)[
-                    has_values
-                ],
+                sums=np.array([row[f"{alias}__sum"] for row in cluster_rows], dtype=np.float64)[has_values],
+                sumsqs=np.array([row[f"{alias}__sumsq"] for row in cluster_rows], dtype=np.float64)[has_values],
             )
         except ValueError as verr:
             raise StatsPowerError.from_error(verr, outcome_column) from verr

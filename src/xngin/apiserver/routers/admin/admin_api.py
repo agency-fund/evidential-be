@@ -32,6 +32,7 @@ from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_sync_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.dwh.dwh_session import DwhSession
+from xngin.apiserver.dwh.field_aliases import FieldAliases
 from xngin.apiserver.dwh.inspections import create_inspect_table_response_from_table
 from xngin.apiserver.exceptionhandlers import XHTTPValidationError
 from xngin.apiserver.exceptions_common import LateValidationError
@@ -1687,12 +1688,17 @@ def power_check(
                 # sufficient-statistics query numerically stable. The mean comes from the raw
                 # query row for queried metrics and from the supplied baseline for echoed ones.
                 supplied_baselines = {m.field_name: m.metric_baseline for m in body.metrics if m.has_baseline_stats}
+                queried_aliases = FieldAliases(m.field_name for m in metrics_missing_stats)
                 outcome_shifts = {}
                 for field_name in db_derived_metrics:
                     if field_name in supplied_baselines:
                         mean = supplied_baselines[field_name]
                     else:
-                        mean = raw_metric_stats[f"{field_name}__mean"] if raw_metric_stats is not None else None
+                        mean = (
+                            raw_metric_stats[f"{queried_aliases.alias(field_name)}__mean"]
+                            if raw_metric_stats is not None
+                            else None
+                        )
                     if mean is not None:
                         outcome_shifts[field_name] = mean
                 raw_cluster_stats = dwh.get_cluster_sufficient_stats(

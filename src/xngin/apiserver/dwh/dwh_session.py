@@ -520,9 +520,9 @@ class DwhSession:
             filters: Row filters applied before aggregating.
 
         Returns:
-            One row with ``rows__count`` (rows matching the filters) and, per metric, ``{name}__mean``,
-            ``{name}__stddev`` and ``{name}__count`` over its non-null values. power_adapters.build_metric_stats
-            turns the row into DesignSpecMetric objects.
+            One row with ``rows__count`` (rows matching the filters) and, per metric, ``{alias}__mean``,
+            ``{alias}__stddev`` and ``{alias}__count`` over its non-null values, where alias is the metric's
+            FieldAliases alias. power_adapters.build_metric_stats turns the row into DesignSpecMetric objects.
         """
         return self._on_worker(
             "reading metric statistics",
@@ -565,9 +565,9 @@ class DwhSession:
 
         Returns:
             One row per cluster with ``rows__count`` (every row in the cluster, including rows whose outcomes
-            are null) and, per outcome, ``{name}__count``, ``{name}__sum`` and ``{name}__sumsq`` over its
-            non-null values. power_adapters.calculate_cluster_stats turns the rows into ICC and cluster-size
-            statistics.
+            are null) and, per outcome, ``{alias}__count``, ``{alias}__sum`` and ``{alias}__sumsq`` over its
+            non-null values, where alias is the outcome's FieldAliases alias. power_adapters.calculate_cluster_stats
+            turns the rows into ICC and cluster-size statistics.
 
         Raises:
             LateValidationError: If a named column is missing, or no clusters match.

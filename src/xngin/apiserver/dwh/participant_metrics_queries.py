@@ -17,6 +17,7 @@ from sqlalchemy import Float, Integer, Label, String, Table, cast, or_, select
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.dwh.analysis_types import MetricValue, ParticipantOutcome
+from xngin.apiserver.dwh.field_aliases import FieldAliases
 from xngin.apiserver.dwh.query_constructors import create_one_filter
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import Filter
@@ -99,7 +100,8 @@ class QueryPlan:
 
 @dataclass(frozen=True)
 class ParticipantMetricsPlans:
-    field_names: list[str]
+    # The metrics, whose aliases label their values in the queries.
+    metric_aliases: FieldAliases
     plans: list[QueryPlan]
 
 
@@ -214,17 +216,16 @@ def build_participant_metrics_plan(
     unique_id_col: sqlalchemy.Column = sa_table.c[unique_id_field]
     select_columns: list[Label] = [cast(unique_id_col, String).label("participant_id")]
 
-    # query for a participant_id column (the unique id column) and the metrics columns.
-    field_names = ["participant_id"]
-    for field_name in metric_names:
-        field_names.append(field_name)
+    # query for a participant_id column (the unique id column) and the metrics columns, labeled by alias.
+    metric_aliases = FieldAliases(metric_names)
+    for field_name, alias in metric_aliases.name_to_aliases():
         col = sa_table.c[field_name]
         # Coerce everything to Float to avoid Decimal/Integer/Boolean issues across backends.
         if MetricType.from_python_type(col.type.python_type) is MetricType.NUMERIC:
             cast_column = cast(col, Float)
         else:  # re: avg(boolean) doesn't work on pg-like backends
             cast_column = cast(cast(col, Integer), Float)
-        select_columns.append(cast_column.label(field_name))
+        select_columns.append(cast_column.label(alias))
 
     chunks = make_participant_chunks(unique_id_col, participant_ids)
     coalesced_chunks = coalesce_chunks_into_disjunctives(chunks)
@@ -244,7 +245,7 @@ def build_participant_metrics_plan(
         query_plans.append(QueryPlan(query=select(*select_columns).filter(group_filter), chunks=batch_chunks))
 
     return ParticipantMetricsPlans(
-        field_names=field_names,
+        metric_aliases=metric_aliases,
         plans=query_plans,
     )
 
@@ -278,23 +279,20 @@ def get_participant_metrics(
     participant_outcomes: list[ParticipantOutcome] = []
     for batch_index, plan in enumerate(pmplans.plans, start=1):
         logger.info("Running participant metrics batch {}/{}: {}", batch_index, len(pmplans.plans), plan.summary())
-        results = session.execute(plan.query)
+        results = session.execute(plan.query).mappings()
 
         batch_outcome_count = 0
         for result in results:
             metric_values: list[MetricValue] = []
-            participant_id = None
-            for i, field_name in enumerate(pmplans.field_names):
-                if field_name == "participant_id":
-                    participant_id = result[i]
-                else:
-                    value = result[i]
-                    metric_values.append(
-                        MetricValue(
-                            metric_name=field_name,
-                            metric_value=None if value is None else float(value),
-                        )
+            participant_id = result["participant_id"]
+            for field_name, alias in pmplans.metric_aliases.name_to_aliases():
+                value = result[alias]
+                metric_values.append(
+                    MetricValue(
+                        metric_name=field_name,
+                        metric_value=None if value is None else float(value),
                     )
+                )
             if participant_id is None:
                 # Should never happen as we filter on the participant_id field.
                 raise LateValidationError("Participant ID is required.")
