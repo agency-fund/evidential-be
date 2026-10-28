@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, assert_never, cast
 
+import pytest
 import sqlalchemy
 from sqlalchemy import delete, make_url
 from sqlalchemy.dialects.postgresql import psycopg
@@ -26,6 +27,7 @@ from xngin.apiserver.dwh import dwh_utils
 from xngin.apiserver.routers.admin import admin_api_types as aapi
 from xngin.apiserver.settings import Dsn
 from xngin.apiserver.sqla import tables
+from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.pg_helpers import with_database_suffix
 
 
@@ -175,3 +177,26 @@ def convert_dwh_to_create_api_dsn(dwh: settings.Dwh) -> aapi.Dsn:
             )
         case _:
             raise TypeError(f"Unsupported DWH type for test datasource creation: {type(dwh).__name__}")
+
+
+# The service account key file that BigQuery integration tests authenticate with.
+GCP_CREDENTIALS_VAR = "XNGIN_DEVDWH_GCP_CREDENTIALS"
+
+skip_unless_gcp_credentials = pytest.mark.skipif(
+    not os.environ.get(GCP_CREDENTIALS_VAR), reason=f"{GCP_CREDENTIALS_VAR} is required for BigQuery integration tests"
+)
+
+
+def stress_experiment_sample_size(aclient: AdminAPIClient, datasource_name: str) -> int:
+    """Returns how many participants the experiment on the named stress test data source assigned.
+
+    The first request of a fresh installation creates its caller's user, organization and samples, so call this after
+    delete_seeded_users().
+    """
+    (organization,) = aclient.list_organizations().data.items
+    datasources = aclient.list_organization_datasources(organization_id=organization.id).data.items
+    (datasource,) = [d for d in datasources if d.name == datasource_name]
+    experiments = aclient.list_organization_experiments(organization_id=organization.id).data.items
+    (experiment,) = [e for e in experiments if e.datasource_id == datasource.id]
+    assert experiment.assign_summary is not None
+    return experiment.assign_summary.sample_size

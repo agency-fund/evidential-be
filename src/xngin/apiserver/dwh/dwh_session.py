@@ -21,7 +21,7 @@ from xngin.apiserver.dwh import dwh_utils, participant_metrics_queries, queries,
 from xngin.apiserver.dwh.analysis_types import ParticipantOutcome
 from xngin.apiserver.exceptions_common import DwhConnectionError, DwhDatabaseDoesNotExistError, DwhTimeoutError
 from xngin.apiserver.routers.common_api_types import DesignSpecMetricRequest, Filter
-from xngin.apiserver.settings import SA_LOGGER_NAME_FOR_DWH, TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES, Dsn, Dwh
+from xngin.apiserver.settings import SA_LOGGER_NAME_FOR_DWH, TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES, BqDsn, Dsn, Dwh
 from xngin.ops.threads import ThreadTimeout, timeout_thread
 
 
@@ -68,6 +68,31 @@ class CannotFindTableError(Exception):
 
     def __str__(self):
         return self.message
+
+
+class UnsupportedTableNameError(CannotFindTableError):
+    """Raised for a BigQuery table name that BigQuery could not have created; see dwh_utils.is_bigquery_table_name.
+
+    Such names include dotted ones, which sqlalchemy-bigquery would read as dataset.table, reaching outside the data
+    source's dataset.
+    """
+
+    def __init__(self, table_name: str):
+        super().__init__(table_name)
+        self.message = f"The table name '{table_name}' is not a valid BigQuery table name."
+
+
+def _mark_bigquery_timestamps_as_aware(table: sqlalchemy.Table) -> None:
+    """Reports BigQuery TIMESTAMP columns as timezone-aware.
+
+    A BigQuery TIMESTAMP is an instant in UTC and the driver returns timezone-aware datetimes for it, but
+    sqlalchemy-bigquery reflects it as sqlalchemy.TIMESTAMP with timezone=False, indistinguishable from DATETIME (which
+    really is naive). Flip the flag so the column is reported as a TIMESTAMP_WITH_TIMEZONE, matching the values the
+    driver returns.
+    """
+    for column in table.columns:
+        if type(column.type) is sqlalchemy.sql.sqltypes.TIMESTAMP and not column.type.timezone:
+            column.type = sqlalchemy.TIMESTAMP(timezone=True)
 
 
 class DwhSession:
@@ -173,6 +198,7 @@ class DwhSession:
 
     def _inspect_table_blocking(self, table_name: str, *, use_sa_autoload: bool | None = None) -> sqlalchemy.Table:
         """Returns the Table for table_name, inspecting the DWH only the first time it is requested."""
+        self._check_table_name(table_name)
         if use_sa_autoload is None:
             use_sa_autoload = self._dwh_config.supports_sa_autoload()
         key = (table_name, use_sa_autoload)
@@ -182,11 +208,24 @@ class DwhSession:
             self._inspected_tables[key] = sa_table
         return sa_table
 
+    def _check_table_name(self, table_name: str) -> None:
+        """Refuses BigQuery table names that BigQuery could not have created, including dotted ones.
+
+        Every method that takes a table name inspects it first, so this is the one place names are checked. On
+        Postgres and Redshift, a table name is quoted as a single identifier, so a dot in it is part of the name and
+        cannot name a schema: the data source's search_path alone decides where tables are found.
+        """
+        if isinstance(self._dwh_config, BqDsn) and not dwh_utils.is_bigquery_table_name(table_name):
+            raise UnsupportedTableNameError(table_name)
+
     def _reflect_table_blocking(self, table_name: str, *, use_sa_autoload: bool) -> sqlalchemy.Table:
         metadata = sqlalchemy.MetaData()
         try:
             if use_sa_autoload:
-                return sqlalchemy.Table(table_name, metadata, autoload_with=self._engine, quote=False)
+                table = sqlalchemy.Table(table_name, metadata, autoload_with=self._engine)
+                if dwh_utils.is_bigquery(self._engine.url):
+                    _mark_bigquery_timestamps_as_aware(table)
+                return table
             # This method of introspection should only be used if the db dialect doesn't support Sqlalchemy2 reflection.
             return self._inspect_table_from_cursor_blocking(self._engine, table_name)
         except sqlalchemy.exc.ProgrammingError:
@@ -240,6 +279,12 @@ class DwhSession:
                             sa_type = sqlalchemy.Date
                         case 1114:  # TIMESTAMP / timestamp without time zone
                             sa_type = sqlalchemy.DateTime
+                        case 1184:  # TIMESTAMPTZ / timestamp with time zone
+                            sa_type = sqlalchemy.DateTime(timezone=True)
+                        case 1083:  # TIME / time without time zone
+                            sa_type = sqlalchemy.Time
+                        case 1266:  # TIMETZ / time with time zone
+                            sa_type = sqlalchemy.Time(timezone=True)
                         case 1700:  # NUMERIC / numeric
                             sa_type = sqlalchemy.Numeric(precision, scale)
                         case _:  # type_code == 25
@@ -253,9 +298,14 @@ class DwhSession:
                             nullable=null_ok if null_ok is not None else True,
                         )
                     )
-                return sqlalchemy.Table(table_name, metadata, *columns, quote=False)
+                return sqlalchemy.Table(table_name, metadata, *columns)
         except NoSuchTableError as nste:
             raise CannotFindTableError(table_name) from nste
+        except sqlalchemy.exc.ProgrammingError as pe:
+            # The query names a table that does not exist: SQLSTATE 42P01, undefined_table.
+            if getattr(pe.orig, "pgcode", None) == "42P01" or getattr(pe.orig, "sqlstate", None) == "42P01":
+                raise CannotFindTableError(table_name) from pe
+            raise
 
     def inspect_table(self, table_name: str, use_sa_autoload: bool | None = None) -> sqlalchemy.Table:
         """Inspect table structure using a variety of backend-specific workarounds.

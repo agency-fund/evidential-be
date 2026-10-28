@@ -110,16 +110,19 @@ def analyze_experiment(
         if sum(nan_counts_df[metric_name]) == len(merged_df):
             continue
 
+        # Metric names are column names, which may contain dots, spaces and other characters that a formula would
+        # parse, so the formula refers to the metric with patsy's Q(), which takes the name as a string literal.
+        formula = f"Q({metric_name!r}) ~ {arm_col}"
         # smf.ols internally actually drops missing values by default (see Model.from_formula),
         # but make it explicit here for developer clarity.
         if cluster_col is not None:
             merged_df_dropna = merged_df.dropna(subset=[metric_name])
-            model = smf.ols(f"{metric_name} ~ {arm_col}", data=merged_df_dropna).fit(
+            model = smf.ols(formula, data=merged_df_dropna).fit(
                 cov_type="cluster",
                 cov_kwds={"groups": merged_df_dropna[cluster_col]},
             )
         else:
-            model = smf.ols(f"{metric_name} ~ {arm_col}", data=merged_df, missing="drop").fit(cov_type="HC1")
+            model = smf.ols(formula, data=merged_df, missing="drop").fit(cov_type="HC1")
         arm_ids = model.model.data.design_info.factor_infos[EvalFactor(arm_col)].categories
 
         # Calculate CIs for coefficients
