@@ -31,6 +31,7 @@ dependencies = [
     "stochatreat @ git+https://github.com/agency-fund/stochatreat@prod",
     "typer>=0.26.7,<0.27",
     "uvicorn[standard]>=0.54.0",
+    "xxhash>=4.0.2",
 ]
 requires-python = ">=3.14,<3.15"
 
