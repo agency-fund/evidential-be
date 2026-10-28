@@ -7,6 +7,13 @@ from patsy.eval import EvalFactor
 from xngin.apiserver.dwh.analysis_types import ParticipantOutcome
 from xngin.stats.stats_errors import StatsAnalysisError
 
+# Patsy formulas refer to columns in the dataframes. The input dataframes have customer-provided column names,
+# and they could conflict with Patsy operators or built-ins. To avoid that, we compose a dataframe where the
+# arms and metrics are mapped to constant column names.
+MODEL_ARM_COL = "arm"
+MODEL_OUTCOME_COL = "outcome"
+MODEL_FORMULA = f"{MODEL_OUTCOME_COL} ~ {MODEL_ARM_COL}"
+
 
 @dataclasses.dataclass(slots=True)  # slots=True for performance
 class ArmAnalysisResult:
@@ -110,25 +117,25 @@ def analyze_experiment(
         if sum(nan_counts_df[metric_name]) == len(merged_df):
             continue
 
-        # Metric names are column names, which may contain dots, spaces and other characters that a formula would
-        # parse, so the formula refers to the metric with patsy's Q(), which takes the name as a string literal.
-        formula = f"Q({metric_name!r}) ~ {arm_col}"
+        model_df = pd.DataFrame(
+            {MODEL_ARM_COL: merged_df[arm_col], MODEL_OUTCOME_COL: merged_df[metric_name]}, copy=False
+        )
         # smf.ols internally actually drops missing values by default (see Model.from_formula),
         # but make it explicit here for developer clarity.
         if cluster_col is not None:
-            merged_df_dropna = merged_df.dropna(subset=[metric_name])
-            model = smf.ols(formula, data=merged_df_dropna).fit(
+            observed = model_df[MODEL_OUTCOME_COL].notna()
+            model = smf.ols(MODEL_FORMULA, data=model_df[observed]).fit(
                 cov_type="cluster",
-                cov_kwds={"groups": merged_df_dropna[cluster_col]},
+                cov_kwds={"groups": merged_df.loc[observed, cluster_col]},
             )
         else:
-            model = smf.ols(formula, data=merged_df, missing="drop").fit(cov_type="HC1")
-        arm_ids = model.model.data.design_info.factor_infos[EvalFactor(arm_col)].categories
+            model = smf.ols(MODEL_FORMULA, data=model_df, missing="drop").fit(cov_type="HC1")
+        arm_ids = model.model.data.design_info.factor_infos[EvalFactor(MODEL_ARM_COL)].categories
 
         # Calculate CIs for coefficients
         confidence_intervals = model.conf_int(alpha=alpha)
         # Calculate predicted means and their CIs (will be extracted from the summary frame)
-        pred_input = pd.DataFrame({arm_col: arm_ids})
+        pred_input = pd.DataFrame({MODEL_ARM_COL: arm_ids})
         predictions = model.get_prediction(pred_input)
         pred_summary = predictions.summary_frame(alpha=alpha)
         # When all outcomes in an arm are identical, the predicted-mean variance is mathematically
@@ -147,7 +154,7 @@ def analyze_experiment(
 
         for i, arm_id in enumerate(arm_ids):
             # Determine parameter name to use for lookingup the coefficient CIs
-            param_name = "Intercept" if i == 0 else f"{arm_col}[T.{arm_id}]"
+            param_name = "Intercept" if i == 0 else f"{MODEL_ARM_COL}[T.{arm_id}]"
 
             arm_analyses[arm_id] = ArmAnalysisResult(
                 is_baseline=i == 0 if baseline_arm_id is None else arm_id == baseline_arm_id,

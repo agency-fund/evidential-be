@@ -346,6 +346,20 @@ def test_analysis_with_multiple_metrics(test_assignments):
         assert sum(r.num_missing_values for r in metric_results.values()) == len(missing_ids)
 
 
+@pytest.mark.parametrize("metric_name", ["Q", "C", "I", "outcome", "arm", "a.b c-d ~ 1"])
+def test_analysis_of_a_metric_whose_name_a_formula_would_use(test_assignments, test_outcomes, metric_name):
+    """Patsy's functions (Q, C, I), the model's own column names, and formula syntax are all possible metric names."""
+    renamed = [
+        ParticipantOutcome(
+            participant_id=outcome.participant_id,
+            metric_values=[MetricValue(metric_name=metric_name, metric_value=outcome.metric_values[0].metric_value)],
+        )
+        for outcome in test_outcomes
+    ]
+    expected = analyze_experiment(test_assignments, test_outcomes)["bool_field"]
+    assert analyze_experiment(test_assignments, renamed) == {metric_name: expected}
+
+
 def test_analysis_rejects_assignments_with_extra_columns(test_assignments, test_outcomes):
     invalid_assignments = test_assignments.assign(strata=[[] for _ in range(len(test_assignments))])
 
