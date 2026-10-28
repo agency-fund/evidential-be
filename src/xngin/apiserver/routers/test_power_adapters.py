@@ -8,6 +8,7 @@ from sqlalchemy import Column, Float, Integer, MetaData, Table, create_engine
 from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags
+from xngin.apiserver.dwh.field_aliases import FieldAliases
 from xngin.apiserver.dwh.queries import get_cluster_sufficient_stats
 from xngin.apiserver.routers.common_api_types import DesignSpecMetricRequest, Filter
 from xngin.apiserver.routers.common_enums import Relation
@@ -250,7 +251,8 @@ def test_cluster_cvs(clustered_dwh_session):
 def test_build_metric_stats_keeps_toggle():
     # In-memory table definition only; build_metric_stats never queries it, it just reads column types.
     sa_table = Table("t", MetaData(), Column("id", Integer, primary_key=True), Column("income", Float))
-    raw_stats = {"income__mean": 50.0, "income__stddev": 10.0, "income__count": 800, "rows__count": 1000}
+    income = FieldAliases(["income"]).alias("income")
+    raw_stats = {f"{income}__mean": 50.0, f"{income}__stddev": 10.0, f"{income}__count": 800, "rows__count": 1000}
     request = DesignSpecMetricRequest(field_name="income", metric_pct_change=0.1, use_one_time_metric=True)
 
     (metric,) = build_metric_stats(raw_stats, sa_table, [request])

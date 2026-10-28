@@ -6,6 +6,7 @@ import statsmodels.formula.api as smf
 from patsy.eval import EvalFactor
 
 from xngin.apiserver.dwh.analysis_types import ParticipantOutcome
+from xngin.apiserver.dwh.field_aliases import FieldAliases
 from xngin.stats.stats_errors import StatsAnalysisError
 
 # Patsy formulas refer to columns in the dataframes. The input dataframes have customer-provided column names,
@@ -83,11 +84,13 @@ def analyze_experiment(
     if alpha is None:
         alpha = 0.05
 
+    # The frames hold each metric's values under its alias, so that no metric name can collide with an id column.
+    aliases = FieldAliases(mv.metric_name for po in participant_outcomes for mv in po.metric_values)
     rows = []
     for outcome in participant_outcomes:
         data_row: dict[str, float | str | None] = {unit_col: outcome.participant_id}
         for metric_value in outcome.metric_values:
-            data_row[metric_value.metric_name] = metric_value.metric_value
+            data_row[aliases.alias(metric_value.metric_name)] = metric_value.metric_value
         rows.append(data_row)
     outcomes_df = pd.DataFrame(rows)
 
@@ -101,28 +104,25 @@ def analyze_experiment(
         arm_ids.insert(0, baseline_arm_id)
         merged_df[arm_col] = merged_df[arm_col].cat.reorder_categories(arm_ids)
 
-    # Exclude various id columns
-    metric_columns = [col for col in merged_df.columns if col not in expected_id_columns]
-
     # Calculate NaN counts for all metrics. Since assignments_df may have participants that are not
     # yet in the dwh (e.g. in an online experiment) we're also counting missing participants as having NaN as well.
     # count() ignores NaN, so rows-per-arm minus non-null-values-per-arm is the number of missing values.
     grouped = merged_df.groupby(arm_col, observed=False)
-    nan_counts_df = grouped[metric_columns].count().rsub(grouped.size(), axis=0)
+    nan_counts_df = grouped[aliases.aliases()].count().rsub(grouped.size(), axis=0)
 
     # Prep our dict of analyses to return.
     metric_analyses: dict[str, dict[str, ArmAnalysisResult]] = {}
-    for metric_name in metric_columns:
+    for metric_name, metric_col in aliases.name_to_aliases():
         # First init this metric's empty dict of arm analyses.
         arm_analyses: dict[str, ArmAnalysisResult] = {}
         metric_analyses[metric_name] = arm_analyses
         # If all arms have missing values for this metric, we can't perform the analysis.
         # Let callers deal with this case, since even treatment_assignments may not have all arms yet.
-        if sum(nan_counts_df[metric_name]) == len(merged_df):
+        if sum(nan_counts_df[metric_col]) == len(merged_df):
             continue
 
         model_df = pd.DataFrame(
-            {MODEL_ARM_COL: merged_df[arm_col], MODEL_OUTCOME_COL: merged_df[metric_name]}, copy=False
+            {MODEL_ARM_COL: merged_df[arm_col], MODEL_OUTCOME_COL: merged_df[metric_col]}, copy=False
         )
         observed = model_df[MODEL_OUTCOME_COL].notna()
         # Disjoint arm indicators avoid covariance cancellation for zero-variance arm means.
@@ -160,6 +160,6 @@ def analyze_experiment(
                 ci_upper=float(confidence_intervals[i, 1]),
                 mean_ci_lower=float(mean_confidence_intervals.iloc[i, 0]),
                 mean_ci_upper=float(mean_confidence_intervals.iloc[i, 1]),
-                num_missing_values=nan_counts_df.loc[arm_id, metric_name],
+                num_missing_values=nan_counts_df.loc[arm_id, metric_col],
             )
     return metric_analyses
