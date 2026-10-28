@@ -53,7 +53,8 @@ def analyze_experiment(
         map of metric name => map of arm_id (may be partial or empty!) => analysis results
         - If an arm is missing for a metric, it's because it had no valid data to process.
         - If *zero* arm analyses exist for a metric (e.g. since zero non-null outcomes were found
-        across all arms), the name will exist, but the inner dict will be empty.
+        across all arms, or the baseline arm has none), the name will exist, but the inner dict will
+        be empty.
     """
     expected_id_columns = {unit_col, arm_col}
     if cluster_col is not None:
@@ -105,21 +106,27 @@ def analyze_experiment(
         # First init this metric's empty dict of arm analyses.
         arm_analyses: dict[str, ArmAnalysisResult] = {}
         metric_analyses[metric_name] = arm_analyses
+        metric_df = merged_df.dropna(subset=[metric_name])
         # If all arms have missing values for this metric, we can't perform the analysis.
         # Let callers deal with this case, since even treatment_assignments may not have all arms yet.
-        if sum(nan_counts_df[metric_name]) == len(merged_df):
+        if metric_df.empty:
+            continue
+        # Drop arms left without any values: the regression would otherwise keep an empty arm as a
+        # level and report fabricated results for it.
+        metric_df = metric_df.assign(**{arm_col: metric_df[arm_col].cat.remove_unused_categories()})
+        # The first arm is the regression's reference level, i.e. the baseline. If it has no values,
+        # there is nothing to compare the other arms against: the next arm would silently become the
+        # reference and the results would be mislabeled, so skip the metric instead.
+        if metric_df[arm_col].cat.categories[0] != merged_df[arm_col].cat.categories[0]:
             continue
 
-        # smf.ols internally actually drops missing values by default (see Model.from_formula),
-        # but make it explicit here for developer clarity.
         if cluster_col is not None:
-            merged_df_dropna = merged_df.dropna(subset=[metric_name])
-            model = smf.ols(f"{metric_name} ~ {arm_col}", data=merged_df_dropna).fit(
+            model = smf.ols(f"{metric_name} ~ {arm_col}", data=metric_df).fit(
                 cov_type="cluster",
-                cov_kwds={"groups": merged_df_dropna[cluster_col]},
+                cov_kwds={"groups": metric_df[cluster_col]},
             )
         else:
-            model = smf.ols(f"{metric_name} ~ {arm_col}", data=merged_df, missing="drop").fit(cov_type="HC1")
+            model = smf.ols(f"{metric_name} ~ {arm_col}", data=metric_df).fit(cov_type="HC1")
         arm_ids = model.model.data.design_info.factor_infos[EvalFactor(arm_col)].categories
 
         # Calculate CIs for coefficients
@@ -136,7 +143,7 @@ def analyze_experiment(
         # yet carries no variance information); NaNs from any other cause (e.g. zero residual
         # degrees of freedom) pass through so callers see them as null rather than a spuriously
         # confident zero-width CI.
-        arm_outcomes = merged_df.dropna(subset=[metric_name]).groupby(arm_col, observed=False)[metric_name]
+        arm_outcomes = metric_df.groupby(arm_col, observed=False)[metric_name]
         identical_arms = (arm_outcomes.nunique() == 1) & (arm_outcomes.count() >= 2)
         for ci_col in ("mean_ci_lower", "mean_ci_upper"):
             degenerate = pred_summary[ci_col].isna() & identical_arms.reindex(arm_ids).to_numpy()
