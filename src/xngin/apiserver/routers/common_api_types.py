@@ -340,8 +340,14 @@ class Arm(ApiBaseModel):
 
 class ArmAnalysis(Arm):
     estimate: Annotated[
-        float,
-        Field(description="The estimated treatment effect relative to the baseline arm."),
+        float | None,
+        Field(
+            description=(
+                "The estimated treatment effect relative to the baseline arm. For the baseline arm itself, "
+                "its mean. None when the baseline arm has no values for this metric, or when this arm's "
+                "analysis is not available."
+            )
+        ),
     ]
     p_value: Annotated[
         float | None,
@@ -370,6 +376,15 @@ class ArmAnalysis(Arm):
         float | None,
         Field(description="Confidence interval upper bound for the regression coefficient estimate."),
     ] = None
+    mean: Annotated[
+        float | None,
+        Field(
+            description=(
+                "The arm's mean value for this metric. Unlike the treatment effect, it is available even "
+                "when the baseline arm has no values. None when this arm's analysis is not available."
+            )
+        ),
+    ] = None
     mean_ci_lower: Annotated[
         float | None,
         Field(description="Confidence interval lower bound for the arm's mean."),
@@ -395,6 +410,8 @@ class ArmAnalysis(Arm):
     ]
 
     @field_serializer(
+        "estimate",
+        "mean",
         "t_stat",
         "p_value",
         "std_error",

@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 from xngin.apiserver.dwh.analysis_types import MetricValue, ParticipantOutcome
-from xngin.stats.analysis import analyze_experiment
+from xngin.stats.analysis import ArmAnalysisResult, analyze_experiment
 from xngin.stats.stats_errors import StatsAnalysisError
 
 
@@ -205,10 +205,19 @@ def test_analysis_with_one_arm_missing_all_outcomes(test_assignments, test_outco
     assert len(result["bool_field"]) == 0  # No arm analyses
 
 
+def assert_only_means_reported(arm_result: ArmAnalysisResult, values: list[float | None]):
+    """The arm's mean is reported, but none of the fields comparing it to the baseline."""
+    assert not arm_result.is_baseline
+    assert arm_result.mean == pytest.approx(pd.Series(values).mean())
+    assert arm_result.mean_ci_lower < arm_result.mean < arm_result.mean_ci_upper
+    for field in ("estimate", "p_value", "t_stat", "std_error", "ci_lower", "ci_upper"):
+        assert math.isnan(getattr(arm_result, field)), field
+
+
 @pytest.mark.parametrize("baseline_arm_id", [None, "0ffe0995-6404-4622-934a-0d5cccfe3a59"])
 def test_analysis_with_baseline_arm_missing_all_outcomes(test_assignments, test_outcomes, baseline_arm_id):
-    # Without baseline values there is nothing to compare the other arms against, so no arm is
-    # analyzed. With baseline_arm_id=None the baseline is the first arm in sorted order.
+    # Without baseline values the other arms can't be compared to it, so only their own means are
+    # reported. With baseline_arm_id=None the baseline is the first arm in sorted order.
     empty_arm_id = "0ffe0995-6404-4622-934a-0d5cccfe3a59"
     arm_map = test_assignments.set_index("participant_id")["arm_id"].to_dict()
     for outcome in test_outcomes:
@@ -217,7 +226,38 @@ def test_analysis_with_baseline_arm_missing_all_outcomes(test_assignments, test_
 
     result = analyze_experiment(test_assignments, test_outcomes, baseline_arm_id=baseline_arm_id)
 
-    assert result == {"bool_field": {}}
+    metric_results = result["bool_field"]
+    assert len(metric_results) == 2
+    assert empty_arm_id not in metric_results
+    for arm_id, arm_result in metric_results.items():
+        values = [o.metric_values[0].metric_value for o in test_outcomes if arm_map[o.participant_id] == arm_id]
+        assert_only_means_reported(arm_result, values)
+        assert arm_result.num_missing_values == 0
+
+
+def test_analysis_with_baseline_arm_never_assigned(test_assignments, test_outcomes):
+    # A baseline arm without any assignments (e.g. early in an online experiment) is handled like a
+    # baseline arm without values.
+    baseline_arm_id = "0ffe0995-6404-4622-934a-0d5cccfe3a59"
+    assignments = test_assignments[test_assignments["arm_id"] != baseline_arm_id]
+
+    result = analyze_experiment(assignments, test_outcomes, baseline_arm_id=baseline_arm_id)
+
+    metric_results = result["bool_field"]
+    assert len(metric_results) == 2
+    arm_map = assignments.set_index("participant_id")["arm_id"].to_dict()
+    for arm_id, arm_result in metric_results.items():
+        values = [o.metric_values[0].metric_value for o in test_outcomes if arm_map.get(o.participant_id) == arm_id]
+        assert_only_means_reported(arm_result, values)
+
+
+def test_analysis_mean_is_baseline_mean_plus_effect(test_assignments, test_outcomes):
+    result = analyze_experiment(test_assignments, test_outcomes)["bool_field"]
+
+    baseline = next(arm_result for arm_result in result.values() if arm_result.is_baseline)
+    for arm_result in result.values():
+        expected = baseline.estimate if arm_result.is_baseline else baseline.estimate + arm_result.estimate
+        assert arm_result.mean == pytest.approx(expected)
 
 
 def test_analysis_counts_participants_absent_from_outcomes(test_assignments, test_outcomes):
