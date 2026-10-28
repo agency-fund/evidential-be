@@ -297,6 +297,8 @@ tasks:
     interactive: true
     env:
       DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"
+    deps:
+      - bootstrap-dwh-database
     cmds:
       - uv run pytest -m integration
   make-migrations:
