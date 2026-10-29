@@ -675,7 +675,7 @@ def test_create_preassigned_experiment_impl(
     assert gender_field.data_type == "character varying"
     is_onboarded_field = next((f for f in experiment_fields if f.field_name == "is_onboarded"), None)
     assert is_onboarded_field is not None
-    assert is_onboarded_field.is_metric
+    assert is_onboarded_field.metric_pct_change == 0.1
     assert is_onboarded_field.data_type == "boolean"
 
     # Verify stats parameters were stored correctly
@@ -1344,14 +1344,14 @@ def test_create_freq_online_experiment_impl_experiments_fields_are_correctly_sto
     assert unique_id_field.experiment_filters[0].position == 4
     current_income_field = next(f for f in experiment.experiment_fields if f.field_name == "current_income")
     assert current_income_field.data_type == "double precision"
-    assert current_income_field.is_metric
+    assert current_income_field.metric_pct_change == 5
     assert current_income_field.is_primary_metric
     assert current_income_field.experiment_filters[0].relation == Relation.BETWEEN
     assert current_income_field.experiment_filters[0].numeric_values == [0.0, 100000.0]
     assert current_income_field.experiment_filters[0].position == 2
     is_engaged_field = next(f for f in experiment.experiment_fields if f.field_name == "is_engaged")
     assert is_engaged_field.data_type == "boolean"
-    assert is_engaged_field.is_metric
+    assert is_engaged_field.metric_target == 0.5
     assert not is_engaged_field.is_primary_metric
     assert is_engaged_field.experiment_filters[0].relation == Relation.INCLUDES
     assert is_engaged_field.experiment_filters[0].boolean_values == [1, None]
@@ -1421,7 +1421,7 @@ def test_create_experiment_impl_for_freq_online_with_unbalanced_arms(
     assert gender_field.data_type == "character varying"
     is_onboarded_field = next((f for f in experiment_fields if f.field_name == "is_onboarded"), None)
     assert is_onboarded_field is not None
-    assert is_onboarded_field.is_metric
+    assert is_onboarded_field.metric_pct_change == 0.1
     assert is_onboarded_field.data_type == "boolean"
 
     # Reorder arms as storage layout to break test assumptions.

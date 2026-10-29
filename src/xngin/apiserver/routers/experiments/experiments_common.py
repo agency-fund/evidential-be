@@ -120,7 +120,7 @@ def make_schema_from_experiment(experiment: tables.Experiment) -> ParticipantsSc
             schema[ef.field_name] = fd
         if ef.is_unique_id:
             fd.is_unique_id = True
-        if ef.is_metric:
+        if ef.is_primary_metric or ef.metric_pct_change is not None or ef.metric_target is not None:
             fd.is_metric = True
         if ef.experiment_filters:
             fd.is_filter = True

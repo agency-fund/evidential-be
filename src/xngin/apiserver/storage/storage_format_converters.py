@@ -196,7 +196,11 @@ class ExperimentStorageConverter:
         experiment_field: tables.ExperimentField,
     ) -> capi.DesignSpecMetricRequest | None:
         """Converts an ExperimentField to an API metric, or None if the field is not a metric."""
-        if experiment_field.is_metric:
+        if (
+            experiment_field.is_primary_metric
+            or experiment_field.metric_pct_change is not None
+            or experiment_field.metric_target is not None
+        ):
             return capi.DesignSpecMetricRequest(
                 field_name=experiment_field.field_name,
                 metric_pct_change=experiment_field.metric_pct_change,

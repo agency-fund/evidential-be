@@ -10,7 +10,6 @@ from pydantic import TypeAdapter
 from sqlalchemy import Boolean, CheckConstraint, Float, ForeignKey, ForeignKeyConstraint, Index, Numeric, String
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import ARRAY
-from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
 
@@ -673,10 +672,6 @@ class ExperimentField(Base):
     # optimises. The stored data_type is used to validate each outcome, pushed or pulled.
     is_target: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
     # Filters metadata: not here, but determined by joining with ExperimentFilter
-
-    @hybrid_property
-    def is_metric(self) -> bool:
-        return self.is_primary_metric or self.metric_pct_change is not None or self.metric_target is not None
 
     experiment: Mapped[Experiment] = relationship(back_populates="experiment_fields")
     experiment_filters: Mapped[list[ExperimentFilter]] = relationship(
