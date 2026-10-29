@@ -122,7 +122,7 @@ def make_schema_from_experiment(experiment: tables.Experiment) -> ParticipantsSc
             fd.is_unique_id = True
         if ef.is_metric:
             fd.is_metric = True
-        if ef.is_filter:
+        if ef.experiment_filters:
             fd.is_filter = True
         if ef.is_strata:
             fd.is_strata = True

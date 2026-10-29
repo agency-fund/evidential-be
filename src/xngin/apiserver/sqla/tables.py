@@ -674,15 +674,6 @@ class ExperimentField(Base):
     is_target: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
     # Filters metadata: not here, but determined by joining with ExperimentFilter
 
-    @property
-    def is_filter(self) -> bool:
-        """
-        Determine if this field is a filter by checking if it has any experiment_filters.
-
-        WARNING: The relation must already be loaded!
-        """
-        return bool(self.experiment_filters)
-
     @hybrid_property
     def is_metric(self) -> bool:
         return self.is_primary_metric or self.metric_pct_change is not None or self.metric_target is not None
