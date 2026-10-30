@@ -449,7 +449,6 @@ class Experiment(Base):
     prior_type: Mapped[str | None] = mapped_column()
     reward_type: Mapped[str | None] = mapped_column()
 
-    # enable_autofail must match draws.enable_autofail.
     enable_autofail: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
     autofail_window: Mapped[int] = mapped_column(server_default="24")
     autofail_outcome_value: Mapped[float] = mapped_column(server_default="0.0")
@@ -583,9 +582,6 @@ class Draw(Base):
     participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     arm_id: Mapped[str] = mapped_column(ForeignKey("arms.id", ondelete="CASCADE"))
     created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
-    # Denormalized enable_autofail column allows us to build a partial index containing only outcomes eligible for
-    # autofailing. This value must match experiment.enable_autofail.
-    enable_autofail: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
 
     # Observation data: these fields are set when an outcome is observed for this draw
     # after arm parameters are updated.
@@ -602,20 +598,17 @@ class Draw(Base):
     arm: Mapped[Arm] = relationship("Arm", back_populates="draws", lazy="joined")
     experiment: Mapped[Experiment] = relationship("Experiment", back_populates="draws", lazy="joined")
     __table_args__ = (
+        # Each arm's resolved draws, newest outcome first, for the arm's recent outcomes that every outcome report
+        # reads while it holds the arm's lock.
         Index(
-            "ix_draws_arm_id_created_at",
+            "ix_draws_resolved",
             arm_id,
-            created_at.desc(),
+            observed_at.desc(),
             postgresql_where=sqlalchemy.text("outcome IS NOT NULL"),
         ),
-        Index(
-            "ix_draws_pending_autofail",
-            experiment_id,
-            created_at,
-            postgresql_where=sqlalchemy.text("enable_autofail IS TRUE AND outcome IS NULL"),
-        ),
-        # Lets the worker check whether an experiment has any pending draw without reading its resolved ones.
-        Index("ix_draws_pending", experiment_id, postgresql_where=sqlalchemy.text("outcome IS NULL")),
+        # The worker's view of an experiment's draws without outcomes, oldest first: autofail reads their deadlines
+        # and DWH pulls read which ones to fill, without reading the resolved draws.
+        Index("ix_draws_pending", experiment_id, created_at, postgresql_where=sqlalchemy.text("outcome IS NULL")),
         CheckConstraint(
             "(outcome IS NULL) = (autofailed_outcome IS NULL)",
             name="ck_draws_outcome_autofailed_paired",

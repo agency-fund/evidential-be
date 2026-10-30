@@ -134,7 +134,7 @@ def test_autofail_eligibility_uses_window_boundary(
     assert [(assignment.participant_id, assignment.outcome) for assignment in assignments] == [("0", None), ("1", 0.0)]
 
 
-def test_autofail_skips_draws_without_autofail_flag_or_with_outcomes(
+def test_autofail_skips_draws_with_outcomes(
     xngin_session: Session,
     testing_datasource,
     aclient: AdminAPIClient,
@@ -143,12 +143,6 @@ def test_autofail_skips_draws_without_autofail_flag_or_with_outcomes(
     experiment_id = create_autofail_experiment(
         aclient, eclient, testing_datasource, participants=("0", "1", "2"), name="skip draws"
     )
-    xngin_session.execute(
-        update(tables.Draw)
-        .where(tables.Draw.experiment_id == experiment_id, tables.Draw.participant_id == "0")
-        .values(enable_autofail=False)
-    )
-    xngin_session.commit()
     eclient.update_bandit_arm_with_participant_outcome(
         api_key=testing_datasource.key,
         body=UpdateBanditArmOutcomeRequest(outcome=1.0),
@@ -164,7 +158,7 @@ def test_autofail_skips_draws_without_autofail_flag_or_with_outcomes(
     assert [
         (assignment.participant_id, assignment.outcome, assignment.autofailed_outcome) for assignment in assignments
     ] == [
-        ("0", None, None),
+        ("0", 0.0, True),
         ("1", 1.0, False),
         ("2", 0.0, True),
     ]
