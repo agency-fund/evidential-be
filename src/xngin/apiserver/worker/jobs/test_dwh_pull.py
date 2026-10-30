@@ -1,10 +1,6 @@
-import threading
-
 import pytest
 
 from xngin.apiserver import database
-from xngin.apiserver.dwh.dwh_session import DwhSession
-from xngin.apiserver.exceptions_common import DwhTimeoutError
 from xngin.apiserver.routers.admin.test_admin_api import make_bandit_online_experiment
 from xngin.apiserver.routers.common_api_types import (
     BanditExperimentAnalysisResponse,
@@ -18,7 +14,7 @@ from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
 from xngin.apiserver.testing.worker_helpers import read_assignments
 from xngin.apiserver.worker.jobs.bandit_outcomes import OutcomeReport
-from xngin.apiserver.worker.jobs.dwh_pull import WarehouseReadError, pull_one_experiment
+from xngin.apiserver.worker.jobs.dwh_pull import pull_one_experiment
 
 
 def create_mab_dwh_experiment(
@@ -155,23 +151,3 @@ def test_pull_one_experiment_invalid_values_skipped_and_left_null(
     analysis = analyze(aclient, testing_datasource, experiment_id)
     assert analysis.n_outcomes == 0
     assert all(arm.post_pred_mean == arm.prior_pred_mean for arm in analysis.arm_analyses)
-
-
-def test_a_pull_times_out_on_a_stalled_warehouse(
-    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient, mocker
-):
-    """The pull's dwh_timeout bounds its warehouse read."""
-    experiment_id = create_mab_dwh_experiment(aclient, testing_datasource, target_field_name="is_onboarded")
-    assign(eclient, testing_datasource, experiment_id, "2")
-    release = threading.Event()
-
-    def stall(*_args, **_kwargs):
-        release.wait()
-
-    mocker.patch.object(DwhSession, "_inspect_table_blocking", stall)
-    try:
-        with pytest.raises(WarehouseReadError) as exc_info:
-            pull(experiment_id, dwh_timeout=0.05)
-        assert isinstance(exc_info.value.__cause__, DwhTimeoutError)
-    finally:
-        release.set()

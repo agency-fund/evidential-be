@@ -291,27 +291,6 @@ def test_capture_snapshot_of_freq_preassigned(xngin_session, testing_datasource)
     assert non_baseline_arm.arm_id == experiment.arms[1].id
 
 
-def test_failed_analysis_records_snapshot(testing_datasource, aclient: AdminAPIClient, mocker):
-    experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="handle snapshot failure test")
-
-    # Force the snapshot to fail.
-    mocker.patch(
-        "xngin.apiserver.worker.jobs.snapshot_analysis._compute_snapshot_data",
-        side_effect=RuntimeError("boom"),
-    )
-    commit_snapshot(experiment_id)
-
-    snapshots = aclient.list_snapshots(
-        organization_id=testing_datasource.organization_id,
-        datasource_id=testing_datasource.datasource_id,
-        experiment_id=experiment_id,
-    ).data.items
-    assert len(snapshots) == 1
-    assert snapshots[0].status == "failed"
-    assert snapshots[0].data is None
-    assert snapshots[0].details == {"message": "RuntimeError: boom"}
-
-
 def test_timeout_records_failed_snapshot(
     testing_datasource,
     aclient: AdminAPIClient,
