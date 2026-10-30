@@ -4,17 +4,19 @@ import csv
 import io
 import math
 import re
-import time
 from dataclasses import dataclass
-from email.message import Message
-from email.utils import collapse_rfc2231_value
 from typing import Self, cast
-from urllib.parse import urljoin, urlsplit
 
+import gspread
 import requests
 import sqlalchemy as sa
+from google.auth.exceptions import GoogleAuthError
+from google.oauth2.service_account import Credentials
+from gspread.exceptions import APIError, SpreadsheetNotFound, WorksheetNotFound
+from gspread.utils import GridRangeType, ValueRenderOption
 from sqlalchemy import event
 
+from xngin.apiserver import flags
 from xngin.apiserver.common_field_types import VALID_SQL_COLUMN_REGEX
 from xngin.apiserver.exceptions_common import DwhConnectionError, LateValidationError
 from xngin.apiserver.limits import MAX_LENGTH_OF_NAME_VALUE
@@ -72,7 +74,7 @@ class PopulationStddev:
 @dataclass
 class SheetData:
     headers: list[str]
-    # Retain source row gaps in the assignment CSV imported into a separate outcome tab.
+    # Retain source row gaps in experiment outcome tabs.
     rows: list[tuple[int, list]]
 
     @classmethod
@@ -192,120 +194,181 @@ class SheetData:
         return output.getvalue()
 
 
+class SheetsHTTPClient(gspread.HTTPClient):
+    """Bound Google API responses before gspread decodes them."""
+
+    def __init__(self, auth, session=None):
+        super().__init__(auth, session)
+        self.session.trust_env = False
+        self.session.stream = True
+        # Hooks run before Requests prepares redirects or google-auth retries an error response.
+        self.session.hooks["response"].append(self._read_response)
+
+    @staticmethod
+    def _read_response(response: requests.Response, **_kwargs) -> requests.Response:
+        with response:
+            if response.is_redirect:
+                raise DwhConnectionError(ValueError("Google Sheets returned an unexpected redirect."))
+            payload = bytearray()
+            for chunk in response.iter_content(chunk_size=64 * 1024):
+                if len(payload) + len(chunk) > MAX_SHEET_BYTES:
+                    raise LateValidationError("Google Sheets API responses must be smaller than 8 MB.")
+                payload.extend(chunk)
+            # Cache the bounded body for gspread's response.json() and APIError handling.
+            response._content = bytes(payload)
+            return response
+
+
+class SheetsAccessError(DwhConnectionError):
+    """A sharing instruction that can be shown directly to the user."""
+
+    def __init__(self, service_account_email: str, *, editor: bool = False):
+        role = "Editor" if editor else "Viewer"
+        self.message = f"Please share this spreadsheet with {service_account_email} as {role}, then try again."
+        super().__init__(ValueError(self.message))
+
+    def __str__(self) -> str:
+        return self.message
+
+
 class GoogleSheetsClient:
+    """A spreadsheet connection whose tables are tabs, read once per tab per session.
+
+    The URL's gid selects the default source tab, exposed under its saved table name.
+    Other tabs can be selected by ID or title. Launched experiments use tab IDs so
+    renaming or removing the source tab does not affect their outcomes or recovery.
+    """
+
     def __init__(self, spreadsheet_url: str, table_name: str | None = None):
         spreadsheet_id, gid = parse_spreadsheet_url(spreadsheet_url)
-        self.http = requests.Session()
-        # Public downloads must never pick up server credentials from .netrc.
-        self.http.trust_env = False
-        try:
-            params = {"format": "csv", "_evidential": str(time.time_ns())}
-            if gid is not None:
-                params["gid"] = str(gid)
-            self.data, self.table_name = self._download(
-                f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/export", params, table_name
+        self.spreadsheet_id = spreadsheet_id
+        self._default_gid = gid
+        self._table_name = table_name
+        self._data: dict[int, SheetData] = {}
+        if not flags.GOOGLE_SHEETS_CREDENTIALS_FILE:
+            raise DwhConnectionError(
+                ValueError(
+                    "Google Sheets service-account credentials are not configured. "
+                    "Set XNGIN_GOOGLE_SHEETS_CREDENTIALS_FILE."
+                )
             )
-            self.sheets = [self.table_name]
+        try:
+            self.client = gspread.service_account(
+                filename=flags.GOOGLE_SHEETS_CREDENTIALS_FILE,
+                scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"],
+                http_client=SheetsHTTPClient,
+            )
+        except (OSError, ValueError, GoogleAuthError) as exc:
+            raise DwhConnectionError(
+                ValueError(
+                    "Could not load the Google Sheets service-account credentials. "
+                    "Check XNGIN_GOOGLE_SHEETS_CREDENTIALS_FILE."
+                )
+            ) from exc
+        self.client.set_timeout(10)
+        try:
+            self.spreadsheet = self.client.open_by_key(spreadsheet_id)
+        except (
+            PermissionError,
+            SpreadsheetNotFound,
+            APIError,
+            GoogleAuthError,
+            requests.RequestException,
+            ValueError,
+        ) as exc:
+            self.close()
+            raise self._connection_error(exc) from exc
         except Exception:
             self.close()
             raise
 
-    def close(self):
-        self.http.close()
+    @property
+    def table_name(self) -> str:
+        """The source tab's captured display name, retained for existing design requests."""
+        if self._table_name is None:
+            worksheet = self._worksheet()
+            name = f"{self.spreadsheet.title} - {worksheet.title}"
+            if len(name) > MAX_LENGTH_OF_NAME_VALUE:
+                raise LateValidationError(
+                    f"Google Sheets table names must be at most {MAX_LENGTH_OF_NAME_VALUE} characters. "
+                    "Shorten the spreadsheet or tab name before connecting."
+                )
+            self._table_name = name
+        return self._table_name
 
-    def _get_response(self, url: str, params: dict[str, str]) -> requests.Response:
-        for _ in range(31):
-            response = self.http.get(
-                url,
-                params=params,
-                timeout=10,
-                stream=True,
-                headers={"Cache-Control": "no-cache"},
-                allow_redirects=False,
-            )
-            if response.status_code not in {301, 302, 303, 307, 308} or "Location" not in response.headers:
-                return response
-            redirect_url = urljoin(url, response.headers["Location"])
-            response.close()
-            parsed = urlsplit(redirect_url)
-            host = parsed.hostname or ""
-            if (
-                parsed.scheme != "https"
-                or parsed.netloc != host
-                or not (host == "docs.google.com" or host.endswith(".googleusercontent.com"))
-            ):
-                raise DwhConnectionError(ValueError("Google Sheets redirected outside its public download hosts."))
-            url, params = redirect_url, {}
-        raise requests.TooManyRedirects("Google Sheets returned too many redirects.")
-
-    def _download(self, url: str, params: dict[str, str], table_name: str | None) -> tuple[SheetData, str]:
+    def _worksheet(self, table_name: str | None = None) -> gspread.Worksheet:
         try:
-            with self._get_response(url, params) as response:
-                if not response.ok:
-                    if response.status_code == 400 and "gid" in params:
-                        message = (
-                            "Google Sheets could not open the linked tab. Importing a CSV can replace a tab and "
-                            "change its ID. Open the intended tab, copy its current URL, and update "
-                            "its connection in Evidential."
-                        )
-                    elif response.status_code in {401, 403, 404}:
-                        message = (
-                            "Cannot read this Google Sheets tab. Set sharing to 'Anyone with the link: Viewer', "
-                            "allow viewers to download, and copy the tab's URL again."
-                        )
-                    elif response.status_code == 429:
-                        message = "Google Sheets rate limit reached. Try again in a minute."
-                    else:
-                        message = f"Google Sheets request failed (HTTP {response.status_code})."
-                    raise DwhConnectionError(ValueError(message))
-                payload = bytearray()
-                for chunk in response.iter_content(chunk_size=64 * 1024):
-                    payload.extend(chunk)
-                    if len(payload) > MAX_SHEET_BYTES:
-                        raise LateValidationError("Google Sheets CSV downloads must be smaller than 8 MB.")
-                content = payload.decode("utf-8-sig")
-                if "text/html" in response.headers.get("Content-Type", "").lower():
-                    raise DwhConnectionError(
-                        ValueError(
-                            "Google Sheets returned a sign-in page. Set sharing to 'Anyone with the link: Viewer'."
-                        )
-                    )
-                data = SheetData.from_values(list(csv.reader(io.StringIO(content), strict=True)))
-                if table_name is None:
-                    disposition = Message()
-                    disposition["Content-Disposition"] = response.headers.get("Content-Disposition", "")
-                    # email's stubs omit the RFC 2231 tuples returned for filename*.
-                    parameters = cast(
-                        list[tuple[str, str | tuple[str, str, str]]],
-                        disposition.get_params(header="content-disposition") or [],
-                    )
-                    filename = next(
-                        (
-                            collapse_rfc2231_value(value)
-                            for key, value in parameters
-                            if key == "filename" and isinstance(value, tuple)
-                        ),
-                        disposition.get_filename(),
-                    )
-                    if not filename or not (table_name := filename.removesuffix(".csv")):
-                        raise DwhConnectionError(
-                            ValueError("Google Sheets did not provide a CSV filename. Reconnect the spreadsheet tab.")
-                        )
-                    if len(table_name) > MAX_LENGTH_OF_NAME_VALUE:
-                        raise LateValidationError(
-                            f"Google Sheets table names must be at most {MAX_LENGTH_OF_NAME_VALUE} characters. "
-                            "Shorten the spreadsheet or tab name before connecting."
-                        )
-                return data, table_name
-        except requests.RequestException as exc:
-            raise DwhConnectionError(ValueError("Google Sheets did not respond. Please try again.")) from exc
-        except (UnicodeError, csv.Error) as exc:
-            raise DwhConnectionError(ValueError("Google Sheets returned an unreadable CSV download.")) from exc
+            if table_name is None or table_name == self._table_name:
+                worksheet = (
+                    self.spreadsheet.get_worksheet(0)
+                    if self._default_gid is None
+                    else self.spreadsheet.get_worksheet_by_id(self._default_gid)
+                )
+            elif table_name.isdecimal():
+                worksheet = self.spreadsheet.get_worksheet_by_id(int(table_name))
+            else:
+                try:
+                    worksheet = self.spreadsheet.worksheet(table_name)
+                except WorksheetNotFound:
+                    # Before a display alias is saved, accept the name returned by discovery.
+                    title = table_name.removeprefix(f"{self.spreadsheet.title} - ")
+                    if title == table_name:
+                        raise
+                    worksheet = self.spreadsheet.worksheet(title)
+        except WorksheetNotFound as exc:
+            raise DwhConnectionError(
+                ValueError(
+                    "Google Sheets could not open the selected tab. Restore the intended tab in the spreadsheet "
+                    "or select its current table reference."
+                )
+            ) from exc
+        except (
+            PermissionError,
+            SpreadsheetNotFound,
+            APIError,
+            GoogleAuthError,
+            requests.RequestException,
+            ValueError,
+        ) as exc:
+            raise self._connection_error(exc) from exc
+
+        if worksheet is None:
+            raise DwhConnectionError(ValueError("The Google Sheets spreadsheet has no source tab."))
+        return worksheet
+
+    def _connection_error(self, exc: Exception, *, editor: bool = False) -> DwhConnectionError:
+        if isinstance(exc, (PermissionError, SpreadsheetNotFound)) or (
+            isinstance(exc, APIError) and exc.response.status_code in {401, 403, 404}
+        ):
+            credentials = cast(Credentials, self.client.http_client.auth)
+            return SheetsAccessError(credentials.service_account_email, editor=editor)
+        if isinstance(exc, APIError):
+            message = (
+                "Google Sheets rate limit reached. Try again in a minute."
+                if exc.response.status_code == 429
+                else f"Google Sheets request failed (HTTP {exc.response.status_code})."
+            )
+        elif isinstance(exc, GoogleAuthError):
+            message = "Google Sheets could not authenticate the configured service account. Check its credentials."
+        else:
+            message = "Google Sheets did not return a readable response. Please try again."
+        return DwhConnectionError(ValueError(message))
+
+    def close(self):
+        self.client.http_client.session.close()
 
     def read(self, table_name: str) -> SheetData:
-        if table_name != self.table_name:
-            raise LateValidationError("Select the saved Google Sheets table to use the tab in the spreadsheet URL.")
-        return self.data
+        worksheet = self._worksheet(table_name)
+        if worksheet.id not in self._data:
+            try:
+                values = worksheet.get(
+                    value_render_option=ValueRenderOption.formatted,
+                    return_type=GridRangeType.ListOfLists,
+                )
+            except (APIError, GoogleAuthError, requests.RequestException, ValueError) as exc:
+                raise self._connection_error(exc) from exc
+            self._data[worksheet.id] = SheetData.from_values(values)
+        return self._data[worksheet.id]
 
     @staticmethod
     def create_engine() -> sa.Engine:

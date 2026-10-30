@@ -462,7 +462,9 @@ class DwhSession:
 
     def _list_tables_blocking(self) -> list[str]:
         if isinstance(self._dwh_config, GoogleSheetsDsn):
-            return sorted(self._sheets.sheets)
+            table_name = self._sheets.table_name
+            self._sheets.read(table_name)
+            return [table_name]
         try:
             # Hack for redshift's lack of reflection support.
             if isinstance(self._dwh_config, Dsn) and self._dwh_config.is_redshift():

@@ -1,15 +1,21 @@
-import csv
 import io
+import json
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import quote
 
+import gspread
 import numpy as np
 import pytest
+import requests
 import sqlalchemy as sa
+from google.auth.credentials import AnonymousCredentials
+from google.auth.exceptions import RefreshError
 
+from xngin.apiserver import flags
 from xngin.apiserver.dwh.dwh_session import DwhSession
-from xngin.apiserver.dwh.google_sheets import GoogleSheetsClient, SheetData
+from xngin.apiserver.dwh.google_sheets import MAX_SHEET_BYTES, GoogleSheetsClient, SheetData, SheetsHTTPClient
 from xngin.apiserver.dwh.participant_metrics_queries import get_participant_metrics
 from xngin.apiserver.dwh.queries import get_raw_metric_stats
 from xngin.apiserver.exceptions_common import DwhConnectionError, LateValidationError
@@ -17,15 +23,10 @@ from xngin.apiserver.limits import MAX_LENGTH_OF_NAME_VALUE
 from xngin.apiserver.routers.admin import admin_api_types as aapi
 from xngin.apiserver.routers.admin.admin_api_converters import settings_dwh_to_api_dsn
 from xngin.apiserver.routers.common_api_types import (
-    Arm,
-    CreateExperimentRequest,
     DesignSpecMetricRequest,
     Filter,
-    FreqExperimentAnalysisResponse,
-    PowerRequest,
-    PreassignedFrequentistExperimentSpec,
 )
-from xngin.apiserver.routers.common_enums import MetricPowerAnalysisMessageType, Relation
+from xngin.apiserver.routers.common_enums import Relation
 from xngin.apiserver.settings import GoogleSheetsDsn, RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
 
@@ -34,36 +35,58 @@ TAB = "Evidential Demo Sheet - Data"
 
 
 @pytest.fixture
-def sheets_http(mocker):
-    mocker.patch("google.auth.default", side_effect=AssertionError("Public sheets need no credentials"))
-    http = mocker.patch("xngin.apiserver.dwh.google_sheets.requests.Session").return_value
-    values: list[list] = [
+def sheets_api(mocker):
+    mocker.patch.object(flags, "GOOGLE_SHEETS_CREDENTIALS_FILE", "/configured/service-account.json")
+    values = [
         ["participant_id", "region", "outcome", "converted"],
-        ["001", "north", 10, True],
+        ["001", "north", "10", "TRUE"],
         [],
-        ["002", "south", "", False],
-        ["003", "north", 30, True],
+        ["002", "south", "", "FALSE"],
+        ["003", "north", "30", "TRUE"],
     ]
-    http.csv_tabs = {"42": values}
-    http.csv_headers = {"Content-Type": "text/csv", "Content-Disposition": f'attachment; filename="{TAB}.csv"'}
-    http.csv_tab_headers = {}
+    api = SimpleNamespace(
+        tabs={42: values},
+        titles={42: "Data"},
+        selected_gid=None,
+        client=mocker.MagicMock(),
+        spreadsheet=mocker.MagicMock(title="Evidential Demo Sheet"),
+    )
+    api.client.http_client.auth.service_account_email = "reader@evidential-tests.iam.gserviceaccount.com"
 
-    def download(url, **kwargs):
-        assert url == "https://docs.google.com/spreadsheets/d/demo_sheet/export"
-        assert kwargs["params"]["format"] == "csv"
-        gid = kwargs["params"]["gid"]
-        tab_values = http.csv_tabs[gid]
-        assert "auth" not in kwargs
-        assert "Authorization" not in kwargs["headers"]
-        content = io.StringIO(newline="")
-        csv.writer(content).writerows(tab_values)
-        response = mocker.MagicMock(ok=True, headers=http.csv_tab_headers.get(gid, http.csv_headers))
-        response.__enter__.return_value = response
-        response.iter_content.return_value = [content.getvalue().encode()]
-        return response
+    def read(gid):
+        api.selected_gid = gid
+        return deepcopy(api.tabs[gid])
 
-    http.get.side_effect = download
-    return http, values
+    api.read = mocker.Mock(side_effect=read)
+
+    def worksheet(gid):
+        if gid not in api.tabs:
+            raise gspread.WorksheetNotFound(str(gid))
+        return SimpleNamespace(id=gid, title=api.titles.get(gid, f"Outcomes {gid}"), get=lambda **_: api.read(gid))
+
+    def worksheet_by_title(title):
+        for gid in api.tabs:
+            if api.titles.get(gid) == title:
+                return worksheet(gid)
+        raise gspread.WorksheetNotFound(title)
+
+    api.spreadsheet.get_worksheet_by_id.side_effect = worksheet
+    api.spreadsheet.get_worksheet.side_effect = lambda index: worksheet(next(iter(api.tabs))) if index == 0 else None
+    api.spreadsheet.worksheet.side_effect = worksheet_by_title
+    api.client.open_by_key.return_value = api.spreadsheet
+    api.service_account = mocker.patch(
+        "xngin.apiserver.dwh.google_sheets.gspread.service_account", return_value=api.client
+    )
+    return api, values
+
+
+def google_api_error(status_code):
+    response = requests.Response()
+    response.status_code = status_code
+    response._content = json.dumps({
+        "error": {"code": status_code, "message": "PRIVATE-CREDENTIAL-CONTENT", "status": "ERROR"}
+    }).encode()
+    return gspread.exceptions.APIError(response)
 
 
 def test_dsn_roundtrip_and_storage():
@@ -110,8 +133,8 @@ def test_bad_headers_are_rejected(values):
         SheetData.from_values(values)
 
 
-def test_queries_use_typed_cells_and_refresh_each_session(sheets_http):
-    http, values = sheets_http
+def test_queries_use_typed_cells_and_refresh_each_session(sheets_api):
+    api, values = sheets_api
     metric = DesignSpecMetricRequest(field_name="outcome", metric_pct_change=0.1)
     with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL, table_name=TAB)) as dwh:
         assert dwh.list_tables() == [TAB]
@@ -130,48 +153,37 @@ def test_queries_use_typed_cells_and_refresh_each_session(sheets_http):
             filters=[Filter(field_name="region", relation=Relation.INCLUDES, value=["north"])],
         )
         assert {row.participant_id for row in result.participants} == {"001", "003"}
+        values[3][2] = "50"  # An in-flight Sheets edit must not change this session's snapshot.
         outcomes = dwh.run(get_participant_metrics, table, [metric], "participant_id", ["002"])
         assert outcomes[0].metric_values[0].metric_value is None
-        assert http.get.call_count == 1  # All queries in a request use one consistent snapshot.
-        assert http.trust_env is False
+        assert api.read.call_count == 1  # All queries in a request use one consistent snapshot.
     # A manual edit becomes visible on the next analysis request, without a schema-cache refresh.
-    values[3][2] = 50
     with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL, table_name=TAB)) as dwh:
         table = dwh.inspect_table(TAB)
         stats = dwh.run(get_raw_metric_stats, table, [metric], [])
         assert stats["outcome__count"] == 3
         assert stats["outcome__mean"] == 30
         assert stats["outcome__stddev"] == pytest.approx(np.std([10, 30, 50]))
-    assert http.get.call_count == 2
-    assert (
-        http.get.call_args_list[0].kwargs["params"]["_evidential"] != http.get.call_args.kwargs["params"]["_evidential"]
-    )
+    assert api.read.call_count == 2
 
 
 @pytest.mark.parametrize("connectivity_check", [False, True])
 @pytest.mark.parametrize(
-    ("disposition", "table_name"),
+    ("spreadsheet_title", "worksheet_title"),
     [
-        ('attachment; filename="My spreadsheet - Raw data.csv"', "My spreadsheet - Raw data"),
-        (
-            "attachment; filename=\"Cafe-Raw.csv\"; filename*=UTF-8''Caf%C3%A9%20-%20Raw%20data.csv",
-            "Café - Raw data",
-        ),
-        (
-            "attachment; filename*=UTF-8''Caf%C3%A9%20%2F%20Raw%3F%23%25%26%2B%20data.csv",
-            "Café / Raw?#%&+ data",
-        ),
-        (
-            f'attachment; filename="{"n" * MAX_LENGTH_OF_NAME_VALUE}.csv"',
-            "n" * MAX_LENGTH_OF_NAME_VALUE,
-        ),
+        ("My spreadsheet", "Raw data"),
+        ("Café", "Raw data"),
+        ("Café / Raw?#%&+", "data"),
+        ("n" * (MAX_LENGTH_OF_NAME_VALUE - len(" - Data")), "Data"),
     ],
 )
 def test_creation_captures_google_name_as_the_persisted_table(
-    sheets_http, aclient, xngin_session, disposition, table_name, connectivity_check
+    sheets_api, aclient, xngin_session, spreadsheet_title, worksheet_title, connectivity_check
 ):
-    http, _ = sheets_http
-    http.csv_headers["Content-Disposition"] = disposition
+    api, _ = sheets_api
+    api.spreadsheet.title = spreadsheet_title
+    api.titles[42] = worksheet_title
+    table_name = f"{spreadsheet_title} - {worksheet_title}"
     organization = aclient.create_organizations(body=aapi.CreateOrganizationRequest(name="Named sheet")).data
     datasource_id = aclient.create_datasource(
         body=aapi.CreateDatasourceRequest(
@@ -185,76 +197,49 @@ def test_creation_captures_google_name_as_the_persisted_table(
     assert datasource.config["dwh"]["table_name"] == table_name
     assert datasource.table_list == [table_name]
     assert datasource.table_list_updated is not None
-    assert http.get.call_count == 1
+    assert api.read.call_count == 1
     assert aclient.inspect_datasource(datasource_id=datasource_id).data.tables == [table_name]
-    assert http.get.call_count == 1
+    assert api.read.call_count == 1
     # Exercise the same single encoded path segment used by browser callers, including decoded slashes.
     inspection_url = f"/v1/m/datasources/{datasource_id}/inspect/{quote(table_name, safe='')}"
     inspection = aclient.client.get(inspection_url)
     assert inspection.status_code == 200
     assert "participant_id" in inspection.json()["detected_unique_id_fields"]
     assert "display_name" not in inspection.json()
-    assert http.get.call_count == 2
+    assert api.read.call_count == 2
     cached = xngin_session.get_one(tables.DatasourceTablesInspected, (datasource_id, table_name))
     assert cached.response == inspection.json()
     # An ordinary fresh inspection cache remains usable without display-name-specific validation.
-    http.csv_headers.pop("Content-Disposition")
+    api.spreadsheet.title = "A later Google rename"
     assert aclient.client.get(inspection_url).json() == inspection.json()
-    assert http.get.call_count == 2
+    assert api.read.call_count == 2
     refreshed = aclient.client.get(inspection_url, params={"refresh": True})
     assert refreshed.status_code == 200
     assert refreshed.json() == inspection.json()
-    assert http.get.call_count == 3
+    assert api.read.call_count == 3
     assert aclient.inspect_datasource(datasource_id=datasource_id, refresh=True).data.tables == [table_name]
-    assert http.get.call_count == 3
+    assert api.read.call_count == 3
     assert datasource.config["dwh"]["table_name"] == table_name
 
 
-@pytest.mark.parametrize(
-    "disposition",
-    [None, 'attachment; filename=""', 'attachment; filename=".csv"'],
-)
-@pytest.mark.parametrize("connectivity_check", [False, True])
-def test_creation_requires_a_google_csv_filename(sheets_http, aclient, xngin_session, disposition, connectivity_check):
-    http, _ = sheets_http
-    http.csv_headers.pop("Content-Disposition")
-    if disposition is not None:
-        http.csv_headers["Content-Disposition"] = disposition
-    organization = aclient.create_organizations(body=aapi.CreateOrganizationRequest(name="Unnamed sheet")).data
-    result = aclient.create_datasource(
-        body=aapi.CreateDatasourceRequest(
-            organization_id=organization.id, name="Cannot create", dsn=aapi.GoogleSheetsDsn(spreadsheet_url=URL)
-        ),
-        connectivity_check=connectivity_check,
-        raise_if_not_default_status=False,
-    )
-    assert result.status == 502
-    assert "CSV filename" in str(result.data)
-    assert not list(
-        xngin_session.scalars(sa.select(tables.Datasource).where(tables.Datasource.name == "Cannot create"))
-    )
+def test_captured_name_rejects_names_that_exceed_the_table_name_limit(sheets_api):
+    api, _ = sheets_api
+    api.spreadsheet.title = "n" * (MAX_LENGTH_OF_NAME_VALUE - len(" - Data") + 1)
+    with (
+        pytest.raises(LateValidationError, match=f"at most {MAX_LENGTH_OF_NAME_VALUE} characters"),
+        DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL)) as dwh,
+    ):
+        dwh.list_tables()
 
 
-def test_captured_name_rejects_names_that_exceed_the_table_name_limit(sheets_http):
-    http, _ = sheets_http
-    name = "n" * (MAX_LENGTH_OF_NAME_VALUE + 1)
-    http.csv_headers["Content-Disposition"] = f'attachment; filename="{name}.csv"'
-    with pytest.raises(LateValidationError, match=f"at most {MAX_LENGTH_OF_NAME_VALUE} characters"):
-        GoogleSheetsClient(URL)
-
-
-@pytest.mark.parametrize(
-    "later_disposition",
-    [None, 'attachment; filename="Renamed spreadsheet - Different tab.csv"'],
-)
-def test_saved_connection_does_not_rediscover_its_name(sheets_http, later_disposition):
-    http, values = sheets_http
+@pytest.mark.parametrize("later_title", ["Renamed spreadsheet", "n" * (MAX_LENGTH_OF_NAME_VALUE + 1)])
+def test_saved_connection_does_not_rediscover_its_name(sheets_api, later_title):
+    api, values = sheets_api
     with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL)) as discovery:
         captured_name = discovery.list_tables()[0]
     config = GoogleSheetsDsn(spreadsheet_url=URL, table_name=captured_name)
-    http.csv_headers.pop("Content-Disposition")
-    if later_disposition is not None:
-        http.csv_headers["Content-Disposition"] = later_disposition
+    api.spreadsheet.title = later_title
+    api.titles[42] = "Different tab"
     values[1][2] = 50
     with DwhSession.open(config) as dwh:
         assert dwh.list_tables() == [TAB]
@@ -264,17 +249,36 @@ def test_saved_connection_does_not_rediscover_its_name(sheets_http, later_dispos
             get_raw_metric_stats, table, [DesignSpecMetricRequest(field_name="outcome", metric_pct_change=0.1)], []
         )
         assert stats["outcome__mean"] == 40
-        for wrong_name in ("linked_sheet", "Renamed spreadsheet - Different tab"):
-            with pytest.raises(LateValidationError, match="saved Google Sheets table"):
-                dwh.inspect_table(wrong_name)
+        assert dwh.inspect_table("42").name == "42"
+        assert dwh.inspect_table("Different tab").name == "Different tab"
+        assert api.read.call_count == 2  # One read during discovery, one for all three aliases in this session.
+
+
+@pytest.mark.parametrize("table_reference", ["99", "Outcomes", "Evidential Demo Sheet - Outcomes"])
+def test_tables_are_selected_within_the_spreadsheet_without_reading_the_source(sheets_api, table_reference):
+    api, _ = sheets_api
+    api.tabs[99] = [["participant_id", "outcome"], ["001", "7"]]
+    api.titles[99] = "Outcomes" if table_reference == "99" else table_reference
+    del api.tabs[42], api.titles[42]
+    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL, table_name=TAB)) as dwh:
+        table = dwh.inspect_table(table_reference)
+        outcomes = dwh.run(
+            get_participant_metrics,
+            table,
+            [DesignSpecMetricRequest(field_name="outcome", metric_pct_change=0.1)],
+            "participant_id",
+            ["001"],
+        )
+    assert outcomes[0].metric_values[0].metric_value == 7
+    api.read.assert_called_once_with(99)
 
 
 @pytest.mark.parametrize("cached_tables", [None, ["Stale table name"]])
 @pytest.mark.parametrize("refresh", [False, True])
 def test_saved_table_list_needs_no_google_download_even_with_a_stale_cache(
-    sheets_http, aclient, xngin_session, refresh, cached_tables
+    sheets_api, aclient, xngin_session, refresh, cached_tables
 ):
-    http, _ = sheets_http
+    api, _ = sheets_api
     organization = aclient.create_organizations(body=aapi.CreateOrganizationRequest(name="Offline sheet")).data
     datasource_id = aclient.create_datasource(
         body=aapi.CreateDatasourceRequest(
@@ -286,33 +290,33 @@ def test_saved_table_list_needs_no_google_download_even_with_a_stale_cache(
     stale_updated = datetime.now(UTC) - timedelta(days=30)
     datasource.table_list_updated = stale_updated
     xngin_session.commit()
-    reads = http.get.call_count
-    http.get.side_effect = AssertionError("Listing a captured name must not contact Google")
+    reads = api.read.call_count
+    api.read.side_effect = AssertionError("Listing a captured name must not contact Google")
     assert aclient.inspect_datasource(datasource_id=datasource_id, refresh=refresh).data.tables == [TAB]
-    assert http.get.call_count == reads
+    assert api.read.call_count == reads
     xngin_session.expire_all()
     assert datasource.table_list == cached_tables
     assert datasource.table_list_updated == stale_updated
 
 
-def test_datasource_updates_preserve_the_saved_name_and_bind_the_new_url(sheets_http, aclient, xngin_session):
-    http, _ = sheets_http
+def test_datasource_updates_preserve_the_saved_name_and_bind_the_new_url(sheets_api, aclient, xngin_session):
+    api, _ = sheets_api
     organization = aclient.create_organizations(body=aapi.CreateOrganizationRequest(name="Editable sheet")).data
     datasource_id = aclient.create_datasource(
         body=aapi.CreateDatasourceRequest(
             organization_id=organization.id, name="Connector", dsn=aapi.GoogleSheetsDsn(spreadsheet_url=URL)
         ),
     ).data.id
-    http.csv_tabs["99"] = [["participant_id", "outcome"], ["001", 900], ["002", 100]]
-    http.csv_headers.pop("Content-Disposition")
-    reads = http.get.call_count
+    api.tabs[99] = [["participant_id", "outcome"], ["001", "900"], ["002", "100"]]
+    api.titles[99] = "A different tab must not replace the saved name"
+    reads = api.read.call_count
     aclient.update_datasource(datasource_id=datasource_id, body=aapi.UpdateDatasourceRequest(name="Renamed connector"))
     new_url = URL.replace("gid=42", "gid=99")
     aclient.update_datasource(
         datasource_id=datasource_id,
         body=aapi.UpdateDatasourceRequest(dsn=aapi.GoogleSheetsDsn(spreadsheet_url=new_url)),
     )
-    assert http.get.call_count == reads
+    assert api.read.call_count == reads
     xngin_session.expire_all()
     datasource = xngin_session.get_one(tables.Datasource, datasource_id)
     config = datasource.get_config().dwh
@@ -328,10 +332,10 @@ def test_datasource_updates_preserve_the_saved_name_and_bind_the_new_url(sheets_
             [],
         )
     assert stats["outcome__mean"] == 500
-    assert http.get.call_args.kwargs["params"]["gid"] == "99"
+    assert api.selected_gid == 99
 
 
-def test_switching_to_sheets_captures_a_name(sheets_http, aclient, xngin_session):
+def test_switching_to_sheets_captures_a_name(sheets_api, aclient, xngin_session):
     organization = aclient.create_organizations(body=aapi.CreateOrganizationRequest(name="Switch connector")).data
     datasource_id = aclient.create_datasource(
         body=aapi.CreateDatasourceRequest(organization_id=organization.id, name="Connector", dsn=aapi.ApiOnlyDsn())
@@ -345,8 +349,8 @@ def test_switching_to_sheets_captures_a_name(sheets_http, aclient, xngin_session
     assert datasource.table_list == [TAB]
 
 
-def test_empty_metric_is_numeric_and_zero_is_observed(sheets_http):
-    _, values = sheets_http
+def test_empty_metric_is_numeric_and_zero_is_observed(sheets_api):
+    _, values = sheets_api
     values[:] = [["id", "outcome"], ["001", ""], ["002", 0]]
     with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL, table_name=TAB)) as dwh:
         table = dwh.inspect_table(TAB)
@@ -363,119 +367,6 @@ def test_empty_metric_is_numeric_and_zero_is_observed(sheets_http):
         assert isinstance(dwh.inspect_table(TAB).c.outcome.type, sa.Double)
 
 
-def test_export_matches_ids_after_reordering_and_preserves_other_columns(sheets_http):
-    http, values = sheets_http
-    values[1], values[4] = values[4], values[1]
-    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL, table_name=TAB)) as dwh:
-        data = dwh.export_sheet_assignments(TAB, "participant_id", "demo-123", {"001": "Treatment", "003": "Control"})
-    assert list(csv.reader(io.StringIO(data))) == [
-        ["participant_id", "region", "outcome", "converted", "evidential_demo_123_arm"],
-        ["003", "north", "30", "True", "Control"],
-        ["", "", "", "", ""],
-        ["002", "south", "", "False", ""],
-        ["001", "north", "10", "True", "Treatment"],
-    ]
-    assert values[0] == ["participant_id", "region", "outcome", "converted"]
-    http.post.assert_not_called()
-
-
-def test_export_matches_numeric_ids_as_stored_without_changing_source_cells(sheets_http):
-    _, values = sheets_http
-    values[:] = [["reference", "outcome"], ["+1", "10"], [" 2 ", "20"], ["3", "30"]]
-    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL, table_name=TAB)) as dwh:
-        participants = dwh.get_participants(TAB, select_columns={"reference"}, n=3, filters=[]).participants
-        assignments = {str(row.reference): "Treatment" for row in participants}
-        exported = dwh.export_sheet_assignments(TAB, "reference", "demo", assignments)
-    assert list(csv.reader(io.StringIO(exported))) == [
-        ["reference", "outcome", "evidential_demo_arm"],
-        ["+1", "10", "Treatment"],
-        [" 2 ", "20", "Treatment"],
-        ["3", "30", "Treatment"],
-    ]
-
-
-def test_reexport_reuses_its_column(sheets_http):
-    _, values = sheets_http
-    values[0].append("evidential_demo_arm")
-    values[1].append("Old treatment name")
-    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL, table_name=TAB)) as dwh:
-        data = dwh.export_sheet_assignments(TAB, "participant_id", "demo", {"001": "Treatment"})
-    exported = list(csv.reader(io.StringIO(data)))
-    assert exported[0].count("evidential_demo_arm") == 1
-    assert exported[1][-1] == "Treatment"
-    assert values[1][-1] == "Old treatment name"
-
-
-def test_experiment_csv_keeps_selected_columns_and_matches_original_ids(sheets_http):
-    _, values = sheets_http
-    values[:] = [
-        ["notes", "outcome", "participant_id", "unused_metric", "evidential_other_arm"],
-        ["internal", "", "001", 20, "Old control"],
-        [],
-        ["internal", 0, "002", 30, "Old treatment"],
-        ["internal", 5, "003", 40, "Old control"],
-    ]
-    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL, table_name=TAB)) as dwh:
-        exported = dwh.export_sheet_assignments(
-            TAB, "participant_id", "demo", {"001": "Treatment", "003": "Control"}, field_names={"outcome"}
-        )
-    assert list(csv.reader(io.StringIO(exported))) == [
-        ["outcome", "participant_id", "evidential_demo_arm"],
-        ["", "001", "Treatment"],
-        ["", "", ""],
-        ["0", "002", ""],
-        ["5", "003", "Control"],
-    ]
-    assert values[0][0] == "notes"
-
-
-def test_experiment_csv_rejects_missing_selected_columns(sheets_http):
-    with (
-        pytest.raises(LateValidationError, match=r"Experiment columns are missing.*missing_metric"),
-        DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL, table_name=TAB)) as dwh,
-    ):
-        dwh.export_sheet_assignments(TAB, "participant_id", "demo", {}, field_names={"missing_metric"})
-
-
-@pytest.mark.parametrize(
-    ("mutation", "match"),
-    [
-        ("duplicate", "unique"),
-        ("missing", "missing"),
-        ("blank_id", "participant ID"),
-        ("missing_column", "column is missing"),
-    ],
-)
-def test_export_rejects_invalid_participant_ids(sheets_http, mutation, match):
-    http, values = sheets_http
-    if mutation == "duplicate":
-        values[4][0] = "001"
-    elif mutation == "missing":
-        values[1][0] = "new-id"
-    elif mutation == "blank_id":
-        values[4][0] = ""
-    else:
-        values[0][0] = "other_id"
-    with (
-        pytest.raises(LateValidationError, match=match),
-        DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL, table_name=TAB)) as dwh,
-    ):
-        dwh.export_sheet_assignments(TAB, "participant_id", "demo", {"001": "Treatment"})
-    http.post.assert_not_called()
-
-
-@pytest.mark.parametrize("status_code", [400, 403, 404, 429, 500])
-def test_google_errors_are_actionable(sheets_http, mocker, status_code):
-    http, _ = sheets_http
-    http.get.side_effect = None
-    response = mocker.MagicMock(ok=False, status_code=status_code)
-    response.__enter__.return_value = response
-    http.get.return_value = response
-    with pytest.raises(DwhConnectionError, match="Google Sheets"):
-        GoogleSheetsClient(URL)
-    http.close.assert_called_once()
-
-
 def test_sheet_limits_reject_data_instead_of_truncating():
     with pytest.raises(LateValidationError, match="5,000"):
         SheetData.from_values([["id"], *[[str(i)] for i in range(5_001)]])
@@ -483,460 +374,210 @@ def test_sheet_limits_reject_data_instead_of_truncating():
         SheetData.from_values([[f"col_{i}" for i in range(101)]])
 
 
-def test_sign_in_page_is_an_access_error(sheets_http, mocker):
-    http, _ = sheets_http
-    response = mocker.MagicMock(ok=True, headers={"Content-Type": "text/html; charset=utf-8"})
-    response.__enter__.return_value = response
-    response.iter_content.return_value = [b"<html>Sign in</html>"]
-    http.get.side_effect = None
-    http.get.return_value = response
-    with pytest.raises(DwhConnectionError):
+def test_sheet_limits_accept_the_full_supported_grid():
+    values = [[f"col_{i}" for i in range(100)], *[[str(i)] for i in range(5_000)]]
+    data = SheetData.from_values(values)
+    assert len(data.headers) == 100
+    assert len(data.rows) == 5_000
+    assert data.rows[-1][0] == 5_001
+    assert data.rows[-1][1] == ["4999", *[None] * 99]
+
+
+@pytest.fixture
+def sheets_transport(mocker):
+    sessions = []
+
+    def make_response(status_code, body, headers=None):
+        response = requests.Response()
+        response.status_code = status_code
+        response.headers.update(headers or {})
+        response.url = "https://sheets.googleapis.com/v4/spreadsheets/demo_sheet"
+        response.raw = io.BytesIO(body)
+        # Keep requests' real redirect handling and Response streaming/JSON decoding.
+        adapter = mocker.Mock(spec=requests.adapters.BaseAdapter)
+        adapter.send.return_value = response
+        session = requests.Session()
+        session.trust_env = False
+        session.mount("https://", adapter)
+        sessions.append(session)
+        return SheetsHTTPClient(AnonymousCredentials(), session=session), response.url
+
+    yield make_response
+    for session in sessions:
+        session.close()
+
+
+@pytest.mark.parametrize("location", ["https://sheets.googleapis.com/elsewhere", "https://evil.example/private"])
+def test_api_response_redirect_is_rejected(sheets_transport, location):
+    transport, url = sheets_transport(302, b"", {"Location": location})
+    with pytest.raises(DwhConnectionError, match="redirect"):
+        transport.request("get", url)
+
+
+@pytest.mark.parametrize("declared_length", [False, True])
+def test_api_response_size_limit_is_enforced_before_parsing(sheets_transport, declared_length):
+    headers = {"Content-Length": str(MAX_SHEET_BYTES + 1)} if declared_length else {}
+    transport, url = sheets_transport(200, b"[" + b" " * MAX_SHEET_BYTES + b"]", headers)
+    with pytest.raises(LateValidationError, match="8"):
+        transport.request("get", url)
+
+
+def test_api_response_at_byte_limit_is_available_for_json_decoding(sheets_transport):
+    body = json.dumps({"values": [["id"], ["001"]], "padding": ""}).encode()
+    body = body[:-2] + b"x" * (MAX_SHEET_BYTES - len(body)) + body[-2:]
+    transport, url = sheets_transport(200, body)
+    response = transport.request("get", url)
+    assert response.json()["values"] == [["id"], ["001"]]
+    assert len(response.content) == MAX_SHEET_BYTES
+
+
+def test_api_error_response_keeps_status_for_actionable_connection_errors(sheets_transport):
+    body = b'{"error": {"code": 429, "message": "Quota exceeded", "status": "RESOURCE_EXHAUSTED"}}'
+    transport, url = sheets_transport(429, body)
+    with pytest.raises(gspread.exceptions.APIError) as error:
+        transport.request("get", url)
+    assert error.value.response.status_code == 429
+
+
+@pytest.mark.parametrize("configured_path", [None, ""])
+def test_missing_credentials_explain_required_configuration(mocker, configured_path):
+    mocker.patch.object(flags, "GOOGLE_SHEETS_CREDENTIALS_FILE", configured_path)
+    with pytest.raises(DwhConnectionError, match="XNGIN_GOOGLE_SHEETS_CREDENTIALS_FILE"):
         GoogleSheetsClient(URL)
+
+
+@pytest.mark.parametrize("keyfile", ["missing", "malformed", "invalid_private_key"])
+def test_invalid_keyfile_reports_configuration_without_exposing_contents(mocker, tmp_path, keyfile):
+    path = tmp_path / "service-account.json"
+    secret = "PRIVATE-CREDENTIAL-CONTENT-MUST-NOT-LEAK"
+    if keyfile == "malformed":
+        path.write_text(f"not-json {secret}")
+    elif keyfile == "invalid_private_key":
+        path.write_text(
+            json.dumps({
+                "type": "service_account",
+                "client_email": "reader@example.iam.gserviceaccount.com",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "private_key": secret,
+            })
+        )
+    mocker.patch.object(flags, "GOOGLE_SHEETS_CREDENTIALS_FILE", str(path))
+    with pytest.raises(DwhConnectionError, match="XNGIN_GOOGLE_SHEETS_CREDENTIALS_FILE") as error:
+        GoogleSheetsClient(URL)
+    assert secret not in str(error.value)
+
+
+@pytest.mark.parametrize("error_type", [PermissionError, gspread.SpreadsheetNotFound])
+def test_inaccessible_spreadsheet_explains_service_account_sharing(sheets_api, error_type):
+    api, _ = sheets_api
+    api.client.open_by_key.side_effect = error_type("PRIVATE-CREDENTIAL-CONTENT")
+    with pytest.raises(DwhConnectionError) as error:
+        GoogleSheetsClient(URL)
+    assert api.client.http_client.auth.service_account_email in str(error.value)
+    assert "PRIVATE-CREDENTIAL-CONTENT" not in str(error.value)
+
+
+def test_datasource_access_error_identifies_the_configured_account(sheets_api, aclient):
+    api, _ = sheets_api
+    email = "different-reader@another-project.iam.gserviceaccount.com"
+    api.client.http_client.auth.service_account_email = email
+    api.client.open_by_key.side_effect = PermissionError("PRIVATE-CREDENTIAL-CONTENT")
+    organization = aclient.create_organizations(body=aapi.CreateOrganizationRequest(name="Sharing error")).data
+    response = aclient.create_datasource(
+        body=aapi.CreateDatasourceRequest(
+            organization_id=organization.id,
+            name="Private sheet",
+            dsn=aapi.GoogleSheetsDsn(spreadsheet_url=URL),
+        ),
+        connectivity_check=True,
+        raise_if_not_default_status=False,
+    )
+    assert response.status == 502
+    assert email in response.data.message
+    assert "CONNECTION ERROR" not in response.data.message
+    assert "PRIVATE-CREDENTIAL-CONTENT" not in response.data.message
+
+
+@pytest.mark.parametrize("status_code", [400, 401, 403, 404, 429, 500])
+@pytest.mark.parametrize("operation", ["open", "read"])
+def test_api_errors_are_actionable_without_leaking_remote_content(sheets_api, status_code, operation):
+    api, _ = sheets_api
+    response = requests.Response()
+    response.status_code = status_code
+    response._content = json.dumps({
+        "error": {"code": status_code, "message": "PRIVATE-CREDENTIAL-CONTENT", "status": "ERROR"}
+    }).encode()
+    failure = gspread.exceptions.APIError(response)
+    if operation == "open":
+        api.client.open_by_key.side_effect = failure
+    else:
+        api.read.side_effect = failure
+    expected = (
+        api.client.http_client.auth.service_account_email
+        if status_code in {401, 403, 404}
+        else "rate limit"
+        if status_code == 429
+        else f"HTTP {status_code}"
+    )
+    with (
+        pytest.raises(DwhConnectionError, match=expected) as error,
+        DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL)) as dwh,
+    ):
+        dwh.list_tables()
+    assert "PRIVATE-CREDENTIAL-CONTENT" not in str(error.value)
 
 
 @pytest.mark.parametrize(
-    "location",
-    [
-        "https://example.com/private",
-        "http://docs.google.com/spreadsheets/d/demo_sheet/export",
-        "https://docs.google.com.evil.com/export",
-        "https://user@docs.google.com/export",
-        "https://docs.google.com:443/export",
-    ],
+    "failure",
+    [RefreshError("PRIVATE-CREDENTIAL-CONTENT"), requests.Timeout("PRIVATE-CREDENTIAL-CONTENT")],
 )
-def test_download_rejects_redirects_outside_public_google_hosts(sheets_http, mocker, location):
-    http, _ = sheets_http
-    response = mocker.MagicMock(status_code=302, headers={"Location": location})
-    http.get.side_effect = None
-    http.get.return_value = response
-    with pytest.raises(DwhConnectionError, match="redirected outside"):
-        GoogleSheetsClient(URL)
-    http.get.assert_called_once()
-    assert http.get.call_args.kwargs["allow_redirects"] is False
-    response.close.assert_called_once()
-    http.close.assert_called_once()
+def test_authentication_and_transport_errors_do_not_expose_credentials(sheets_api, failure):
+    api, _ = sheets_api
+    api.read.side_effect = failure
+    with (
+        pytest.raises(DwhConnectionError, match="Google Sheets") as error,
+        DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL)) as dwh,
+    ):
+        dwh.list_tables()
+    assert "PRIVATE-CREDENTIAL-CONTENT" not in str(error.value)
 
 
-def test_download_follows_public_google_download_redirect(sheets_http, mocker):
-    http, _ = sheets_http
-    location = "https://doc-abc-sheets.googleusercontent.com/export/download.csv?token=public"
-    redirect = mocker.MagicMock(status_code=302, headers={"Location": location})
-    response = mocker.MagicMock(status_code=200, ok=True, headers=http.csv_headers)
-    response.__enter__.return_value = response
-    response.iter_content.return_value = [b"participant_id,outcome\n001,0\n"]
-    http.get.side_effect = [redirect, response]
-    client = GoogleSheetsClient(URL)
-    try:
-        assert client.read(TAB).rows == [(2, ["001", "0"])]
-        assert http.get.call_count == 2
-        assert http.get.call_args.args == (location,)
-        assert http.get.call_args.kwargs["params"] == {}
-        assert all(call.kwargs["allow_redirects"] is False for call in http.get.call_args_list)
-        redirect.close.assert_called_once()
-    finally:
-        client.close()
+def test_missing_worksheet_explains_how_to_reconnect_the_intended_tab(sheets_api):
+    with (
+        pytest.raises(DwhConnectionError, match="selected tab"),
+        DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL.replace("gid=42", "gid=999"))) as dwh,
+    ):
+        dwh.list_tables()
 
 
-@pytest.mark.parametrize("blank_outcomes", [False, True])
-@pytest.mark.parametrize("cluster_key", [None, "region"])
-def test_create_launch_export_import_and_analyze_a_sheet_experiment(
-    sheets_http, aclient, xngin_session, blank_outcomes, cluster_key
-):
-    http, values = sheets_http
-    examples = Path(__file__).parents[4] / "tools"
-    with (examples / "google_sheets_example.csv").open(newline="") as source:
-        observed_values = list(csv.reader(source))
-    if blank_outcomes:
-        values[:] = [observed_values[0].copy(), *[row[:2] + [""] * (len(row) - 2) for row in observed_values[1:]]]
-    else:
-        values[:] = observed_values
-    headers = values[0].copy()
-    metrics = [DesignSpecMetricRequest(field_name=name, metric_pct_change=0.1) for name in headers[2:]]
-    if cluster_key is not None:
-        metrics = [metrics[-1], *metrics[:-1]]  # Reproduce the initially blank onboarding primary metric.
-    population_size = len(values) - 1
-    org_id = aclient.create_organizations(body=aapi.CreateOrganizationRequest(name="Sheets demo")).data.id
-    datasource_id = aclient.create_datasource(
-        body=aapi.CreateDatasourceRequest(
-            organization_id=org_id, name="Demo sheet", dsn=aapi.GoogleSheetsDsn(spreadsheet_url=URL)
-        ),
-        connectivity_check=True,
-    ).data.id
-    assert aclient.inspect_datasource(datasource_id=datasource_id).data.tables == [TAB]
-    fields = aclient.inspect_table_in_datasource(datasource_id=datasource_id, table_name=TAB).data
-    assert "participant_id" in fields.detected_unique_id_fields
-    assert all(
-        field.data_type in {"bigint", "double precision"} for field in fields.fields if field.field_name in headers[2:]
-    )
-    power_request = PowerRequest(
-        table_name=TAB,
-        cluster_key=cluster_key,
-        metrics=metrics,
-        filters=[],
-        n_arms=2,
-        alpha=0.05,
-        power=0.8,
-    )
-    initial_power = aclient.power_check(datasource_id=datasource_id, body=power_request).data
-    for analysis in initial_power.analyses:
-        column_index = headers.index(analysis.metric_spec.field_name)
-        observed_count = sum(row[column_index] != "" for row in values[1:])
-        assert analysis.metric_spec.available_n == population_size
-        assert analysis.metric_spec.available_nonnull_n == observed_count
-        if observed_count == 0:
-            assert analysis.metric_spec.metric_baseline is None
-            assert analysis.msg is not None
-            assert analysis.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
-            assert analysis.target_n is None
-            if cluster_key is not None:
-                assert analysis.metric_spec.icc is None
-                assert analysis.metric_spec.avg_cluster_size == population_size / 4
-                assert analysis.metric_spec.cv == 0
-    # The wizard's maximum/custom-size choice works even without observations to estimate power.
-    power = aclient.power_check(
-        datasource_id=datasource_id,
-        body=power_request.model_copy(
-            update={"desired_n": population_size, "desired_n_clusters": 4 if cluster_key is not None else None}
-        ),
-    ).data
-    if blank_outcomes or cluster_key is not None:
-        assert power.analyses[0].pct_change_with_desired_n is None
-        assert power.analyses[0].msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
-    else:
-        assert power.analyses[0].metric_spec.metric_baseline == pytest.approx(
-            np.mean([float(row[2]) for row in values[1:]])
-        )
-    now = datetime.now(UTC)
-    experiment_id = aclient.create_experiment(
-        datasource_id=datasource_id,
-        random_state=42,
-        body=CreateExperimentRequest(
-            design_spec=PreassignedFrequentistExperimentSpec(
-                experiment_type="freq_preassigned",
-                experiment_name="Sheets demo",
-                description="Demo",
-                table_name=TAB,
-                primary_key="participant_id",
-                start_date=now - timedelta(days=1),
-                end_date=now + timedelta(days=1),
-                desired_n=population_size if cluster_key is None else None,
-                desired_n_clusters=4 if cluster_key is not None else None,
-                cluster_key=cluster_key,
-                metrics=metrics,
-                strata=[],
-                filters=[],
-                arms=[
-                    Arm(arm_name="Control", arm_description="Control"),
-                    Arm(arm_name="Treatment", arm_description="Treatment"),
-                ],
-            ),
-            power_analyses=power,
-        ),
-    ).data.experiment_id
-    reads_before_launch = http.get.call_count
-    aclient.commit_experiment(datasource_id=datasource_id, experiment_id=experiment_id)
-    assert http.get.call_count == reads_before_launch  # Launch never contacts Google or writes back.
-    assert values[0] == headers
-    values[1][0] = "changed-id"
-    invalid_export = aclient.get_experiment_assignments_as_csv_for_ui(
-        datasource_id=datasource_id, experiment_id=experiment_id, raise_if_not_default_status=False
-    )
-    assert invalid_export.status == 422
-    assert "missing" in str(invalid_export.data)
-    values[1][0] = "p001"
-    download = aclient.get_experiment_assignments_as_csv_for_ui(
-        datasource_id=datasource_id, experiment_id=experiment_id
-    )
-    # Import into a separate outcome tab without repointing the shared raw datasource.
-    imported = list(csv.reader(io.StringIO(b"".join(download.data).decode())))
-    expected_fields = {"participant_id", *(metric.field_name for metric in metrics)}
-    if cluster_key is not None:
-        expected_fields.add(cluster_key)
-    indices = [index for index, name in enumerate(headers) if name in expected_fields]
-    assert [row[:-1] for row in imported] == [[row[index] for index in indices] for row in values]
-    assert values[0] == headers
-    source_tab = [row.copy() for row in values]
-    http.csv_tabs["99"] = imported
-    xngin_session.get_one(tables.Experiment, experiment_id).google_sheets_experiment_url = URL.replace(
-        "gid=42", "gid=99"
-    )
-    xngin_session.commit()
-    values = imported
-    header = f"evidential_{experiment_id.replace('-', '_')}_arm"
-    assert values[0][-1] == header
-    assert {row[-1] for row in values[1:]} == {"Control", "Treatment"}
-    if cluster_key is not None:
-        assert all(
-            len({row[-1] for row in values[1:] if row[1] == region}) == 1 for region in {row[1] for row in values[1:]}
-        )
-    aclient.commit_experiment(datasource_id=datasource_id, experiment_id=experiment_id)
-    waiting = aclient.analyze_experiment(datasource_id=datasource_id, experiment_id=experiment_id).data
-    assert isinstance(waiting, FreqExperimentAnalysisResponse)
-    assert waiting.num_participants == population_size
-    onboarding_waiting = next(m for m in waiting.metric_analyses if m.metric_name == "onboarded_within_1_week")
-    assert all(arm.num_missing_values == -1 for arm in onboarding_waiting.arm_analyses)
-    if blank_outcomes:
-        assert all(arm.num_missing_values == -1 for metric in waiting.metric_analyses for arm in metric.arm_analyses)
-    # Observations in only one arm must not produce a fabricated control comparison.
-    onboarding_index = values[0].index("onboarded_within_1_week")
-    for row in values[1:]:
-        row[onboarding_index] = "1" if row[-1] == "Treatment" else ""
-    partial = aclient.analyze_experiment(datasource_id=datasource_id, experiment_id=experiment_id).data
-    assert isinstance(partial, FreqExperimentAnalysisResponse)
-    onboarding_partial = next(m for m in partial.metric_analyses if m.metric_name == "onboarded_within_1_week")
-    assert all(arm.num_missing_values == -1 for arm in onboarding_partial.arm_analyses)
-    for row in values[1:]:
-        row[onboarding_index] = "0" if row[-1] == "Control" else ""
-    partial = aclient.analyze_experiment(datasource_id=datasource_id, experiment_id=experiment_id).data
-    assert isinstance(partial, FreqExperimentAnalysisResponse)
-    onboarding_partial = next(m for m in partial.metric_analyses if m.metric_name == "onboarded_within_1_week")
-    control = next(arm for arm in onboarding_partial.arm_analyses if arm.is_baseline)
-    treatment = next(arm for arm in onboarding_partial.arm_analyses if not arm.is_baseline)
-    assert control.num_missing_values == 0
-    assert control.estimate == pytest.approx(0)
-    assert treatment.num_missing_values == -1
-    # Fill the initially blank onboarding column with observed 1/0 values using the existing numeric path.
-    observed_by_id = {
-        row[0]: dict(zip(headers[2:], [*row[2:-1], str(int(row[0][1:]) % 2)], strict=True))
-        for row in observed_values[1:]
+def test_url_without_gid_uses_first_tab_and_zero_selects_its_own_tab(sheets_api):
+    api, _ = sheets_api
+    api.tabs[0] = [["participant_id", "outcome"], ["different", "900"]]
+    api.titles[0] = "Zero tab"
+    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL.split("#", maxsplit=1)[0])) as dwh:
+        assert dwh.list_tables() == [TAB]
+        participants = dwh.get_participants(TAB, select_columns={"participant_id"}, n=10, filters=[]).participants
+        assert {row.participant_id for row in participants} == {"001", "002", "003"}
+    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL.replace("gid=42", "gid=0"))) as dwh:
+        name = "Evidential Demo Sheet - Zero tab"
+        participants = dwh.get_participants(name, select_columns={"participant_id"}, n=10, filters=[]).participants
+        assert [row.participant_id for row in participants] == ["different"]
+
+
+def test_formatted_cells_preserve_missing_zero_false_and_textual_ids(sheets_api):
+    _, values = sheets_api
+    values[:] = [
+        ["participant_id", "outcome", "converted"],
+        ["001", "", ""],
+        ["002", "0", "FALSE"],
+        ["003", "1", "TRUE"],
+    ]
+    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL, table_name=TAB)) as dwh:
+        participants = dwh.get_participants(
+            TAB, select_columns={"participant_id", "outcome", "converted"}, n=10, filters=[]
+        ).participants
+    assert {row.participant_id: (row.outcome, row.converted) for row in participants} == {
+        "001": (None, None),
+        "002": (0, False),
+        "003": (1, True),
     }
-    for row in values[1:]:
-        for metric in metrics:
-            row[values[0].index(metric.field_name)] = observed_by_id[row[0]][metric.field_name]
-    minutes_index = values[0].index("minutes_on_site_last_7_days")
-    if blank_outcomes:
-        values[1][minutes_index] = "0"  # Zero is observed, even when the other outcomes started blank.
-
-    def save_analysis():
-        snapshot_id = aclient.create_snapshot(
-            organization_id=org_id, datasource_id=datasource_id, experiment_id=experiment_id
-        ).data.id
-        snapshot = aclient.get_snapshot(
-            organization_id=org_id,
-            datasource_id=datasource_id,
-            experiment_id=experiment_id,
-            snapshot_id=snapshot_id,
-        ).data.snapshot
-        assert snapshot.status == "success", snapshot.details
-        return snapshot_id, FreqExperimentAnalysisResponse.model_validate(snapshot.data)
-
-    before_id, before = save_analysis()
-    # Reorder the spreadsheet and update treatment outcomes as a presenter would do in Sheets.
-    values[1:] = reversed(values[1:])
-    for row in values[1:]:
-        if row[-1] == "Treatment":
-            row[minutes_index] = str(float(row[minutes_index]) + 100)
-    after_id, after = save_analysis()
-    assert isinstance(before, FreqExperimentAnalysisResponse)
-    assert isinstance(after, FreqExperimentAnalysisResponse)
-    assert all(arm.num_missing_values == 0 for metric in before.metric_analyses for arm in metric.arm_analyses)
-    onboarding = next(m for m in before.metric_analyses if m.metric_name == "onboarded_within_1_week")
-    observed_rates = {
-        arm: np.mean([float(row[-2]) for row in values[1:] if row[-1] == arm]) for arm in ("Control", "Treatment")
-    }
-    for arm in onboarding.arm_analyses:
-        expected = (
-            observed_rates["Control"] if arm.is_baseline else observed_rates["Treatment"] - observed_rates["Control"]
-        )
-        assert arm.estimate == pytest.approx(expected)
-    before_minutes = next(m for m in before.metric_analyses if m.metric_name == "minutes_on_site_last_7_days")
-    after_minutes = next(m for m in after.metric_analyses if m.metric_name == "minutes_on_site_last_7_days")
-    before_treatment = next(a for a in before_minutes.arm_analyses if a.arm_name == "Treatment")
-    after_treatment = next(a for a in after_minutes.arm_analyses if a.arm_name == "Treatment")
-    assert after_treatment.estimate == pytest.approx(before_treatment.estimate + 100)
-    after_by_metric = {metric.metric_name: metric for metric in after.metric_analyses}
-    for previous in before.metric_analyses:
-        if previous.metric_name == "minutes_on_site_last_7_days":
-            continue
-        current = after_by_metric[previous.metric_name]
-        assert {arm.arm_name: arm.estimate for arm in current.arm_analyses} == pytest.approx({
-            arm.arm_name: arm.estimate for arm in previous.arm_analyses
-        })
-    saved = aclient.list_snapshots(
-        organization_id=org_id,
-        datasource_id=datasource_id,
-        experiment_id=experiment_id,
-        status_=[aapi.SnapshotStatus.SUCCESS],
-    ).data.items
-    assert [snapshot.id for snapshot in saved] == [after_id, before_id]
-    assert saved[0].updated_at > saved[1].updated_at
-    assert FreqExperimentAnalysisResponse.model_validate(saved[0].data) == after
-    assert FreqExperimentAnalysisResponse.model_validate(saved[1].data) == before
-    http.post.assert_not_called()
-    assert http.csv_tabs["42"] == source_tab
-    assert http.get.call_args.kwargs["params"]["gid"] == "99"
-
-
-@pytest.mark.parametrize("table_name", [TAB, "Café / Raw?#%&+ data"])
-def test_shared_raw_sheet_has_isolated_experiment_outcomes(sheets_http, aclient, xngin_session, table_name):
-    from xngin.apiserver.snapshots.snapshotter import (  # noqa: PLC0415
-        create_pending_snapshots,
-        process_pending_snapshots,
-    )
-
-    http, raw = sheets_http
-    http.csv_headers["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(table_name, safe='')}.csv"
-    raw[:] = [["participant_id", "outcome"], *[[f"{i:03}", i] for i in range(1, 21)]]
-    original_raw = [row.copy() for row in raw]
-    org_id = aclient.create_organizations(body=aapi.CreateOrganizationRequest(name="Shared sheet")).data.id
-    ds_id = aclient.create_datasource(
-        body=aapi.CreateDatasourceRequest(
-            organization_id=org_id, name="Raw participants", dsn=aapi.GoogleSheetsDsn(spreadsheet_url=URL)
-        ),
-        connectivity_check=True,
-    ).data.id
-    now = datetime.now(UTC)
-
-    def create(name):
-        response = aclient.create_experiment(
-            datasource_id=ds_id,
-            random_state=42,
-            body=CreateExperimentRequest(
-                design_spec=PreassignedFrequentistExperimentSpec(
-                    experiment_type="freq_preassigned",
-                    experiment_name=name,
-                    description="Shared raw source, independent outcomes",
-                    table_name=table_name,
-                    primary_key="participant_id",
-                    start_date=now - timedelta(days=1),
-                    end_date=now + timedelta(days=1),
-                    desired_n=20,
-                    metrics=[DesignSpecMetricRequest(field_name="outcome", metric_pct_change=0.1)],
-                    strata=[],
-                    filters=[],
-                    arms=[
-                        Arm(arm_name="Control", arm_description="Control"),
-                        Arm(arm_name="Treatment", arm_description="Treatment"),
-                    ],
-                )
-            ),
-        ).data
-        assert response.google_sheets_experiment_url is None
-        aclient.commit_experiment(datasource_id=ds_id, experiment_id=response.experiment_id)
-        return response.experiment_id
-
-    first, second = create("First"), create("Second")
-    assert {
-        xngin_session.get_one(tables.Experiment, experiment_id).datasource_table for experiment_id in (first, second)
-    } == {table_name}
-    # A Sheets rename and an explicit URL update must not change either experiment's saved table reference.
-    http.csv_headers["Content-Disposition"] = 'attachment; filename="Renamed raw spreadsheet - Data.csv"'
-    reads = http.get.call_count
-    aclient.update_datasource(
-        datasource_id=ds_id, body=aapi.UpdateDatasourceRequest(dsn=aapi.GoogleSheetsDsn(spreadsheet_url=URL))
-    )
-    assert http.get.call_count == reads
-    http.csv_headers.pop("Content-Disposition")
-
-    def export(experiment_id):
-        download = aclient.get_experiment_assignments_as_csv_for_ui(datasource_id=ds_id, experiment_id=experiment_id)
-        return list(csv.reader(io.StringIO(b"".join(download.data).decode())))
-
-    exports = {experiment_id: export(experiment_id) for experiment_id in (first, second)}
-    initial_assignments = list(
-        xngin_session.execute(
-            sa
-            .select(
-                tables.ArmAssignment.experiment_id, tables.ArmAssignment.participant_id, tables.ArmAssignment.arm_id
-            )
-            .where(tables.ArmAssignment.experiment_id.in_([first, second]))
-            .order_by(tables.ArmAssignment.experiment_id, tables.ArmAssignment.participant_id)
-        )
-    )
-    reads = http.get.call_count
-    missing = aclient.analyze_experiment(datasource_id=ds_id, experiment_id=first, raise_if_not_default_status=False)
-    assert missing.status == 422
-    assert http.get.call_count == reads
-    create_pending_snapshots(3600)
-    assert not list(
-        xngin_session.scalars(sa.select(tables.Snapshot.id).where(tables.Snapshot.experiment_id.in_([first, second])))
-    )
-
-    def connect(experiment_id, gid):
-        xngin_session.get_one(tables.Experiment, experiment_id).google_sheets_experiment_url = (
-            None if gid is None else URL.replace("gid=42", f"gid={gid}")
-        )
-        xngin_session.commit()
-        xngin_session.expire_all()
-        assert xngin_session.get_one(tables.Experiment, experiment_id).google_sheets_experiment_url == (
-            None if gid is None else URL.replace("gid=42", f"gid={gid}")
-        )
-        config = aclient.get_experiment_for_ui(datasource_id=ds_id, experiment_id=experiment_id).data.config
-        assert config.google_sheets_experiment_url == (None if gid is None else URL.replace("gid=42", f"gid={gid}"))
-
-    for experiment_id, gid, effect in [(first, "99", 100), (second, "100", 200)]:
-        tab = [row.copy() for row in exports[experiment_id]]
-        for i, row in enumerate(tab[1:]):
-            row[1] = str(i + (effect if row[-1] == "Treatment" else 0))
-        http.csv_tabs[gid] = tab
-        http.csv_tab_headers[gid] = {"Content-Type": "text/csv"}
-        if experiment_id == first:
-            http.csv_tab_headers[gid]["Content-Disposition"] = 'attachment; filename="First experiment - Outcomes.csv"'
-        connect(experiment_id, gid)
-
-    def treatment(experiment_id):
-        analysis = aclient.analyze_experiment(datasource_id=ds_id, experiment_id=experiment_id).data
-        assert isinstance(analysis, FreqExperimentAnalysisResponse)
-        return next(arm.estimate for arm in analysis.metric_analyses[0].arm_analyses if not arm.is_baseline)
-
-    first_result, second_result = treatment(first), treatment(second)
-    assert second_result == pytest.approx(first_result + 100)
-    create_pending_snapshots(3600)
-    process_pending_snapshots(90, max_jitter_secs=0)
-    xngin_session.expire_all()
-    saved_snapshots = list(
-        xngin_session.scalars(sa.select(tables.Snapshot).where(tables.Snapshot.experiment_id.in_([first, second])))
-    )
-    assert {snapshot.experiment_id for snapshot in saved_snapshots} == {first, second}
-    for snapshot in saved_snapshots:
-        assert snapshot.status == "success", snapshot.message
-        analysis = FreqExperimentAnalysisResponse.model_validate(snapshot.data)
-        estimate = next(arm.estimate for arm in analysis.metric_analyses[0].arm_analyses if not arm.is_baseline)
-        assert estimate == pytest.approx(first_result if snapshot.experiment_id == first else second_result)
-    saved_data = {(snapshot.experiment_id, snapshot.id): snapshot.data for snapshot in saved_snapshots}
-    aclient.update_experiment(
-        datasource_id=ds_id, experiment_id=first, body=aapi.UpdateExperimentRequest(name="Renamed")
-    )
-    assert treatment(first) == pytest.approx(first_result)  # Omitted URL is unchanged.
-    connect(first, "100")
-    assert treatment(first) == pytest.approx(second_result)
-    connect(first, None)
-    assert (
-        aclient.analyze_experiment(datasource_id=ds_id, experiment_id=first, raise_if_not_default_status=False).status
-        == 422
-    )
-    assert treatment(second) == pytest.approx(second_result)
-    for experiment_id in (first, second):
-        assert export(experiment_id) == exports[experiment_id]
-    assert raw == original_raw
-    datasource_config = xngin_session.get_one(tables.Datasource, ds_id).get_config().dwh
-    assert isinstance(datasource_config, GoogleSheetsDsn)
-    assert datasource_config.spreadsheet_url == URL
-    assert datasource_config.table_name == table_name
-    assert {
-        xngin_session.get_one(tables.Experiment, experiment_id).datasource_table for experiment_id in (first, second)
-    } == {table_name}
-    assert aclient.inspect_datasource(datasource_id=ds_id).data.tables == [table_name]
-    with DwhSession.open(xngin_session.get_one(tables.Datasource, ds_id).get_config().dwh) as dwh:
-        stats = dwh.run(
-            get_raw_metric_stats,
-            dwh.inspect_table(table_name),
-            [DesignSpecMetricRequest(field_name="outcome", metric_pct_change=0.1)],
-            [],
-        )
-    assert stats["outcome__count"] == 20
-    assert stats["outcome__mean"] == pytest.approx(10.5)
-    assert initial_assignments == list(
-        xngin_session.execute(
-            sa
-            .select(
-                tables.ArmAssignment.experiment_id, tables.ArmAssignment.participant_id, tables.ArmAssignment.arm_id
-            )
-            .where(tables.ArmAssignment.experiment_id.in_([first, second]))
-            .order_by(tables.ArmAssignment.experiment_id, tables.ArmAssignment.participant_id)
-        )
-    )
-    xngin_session.expire_all()
-    for snapshot_key, data in saved_data.items():
-        assert xngin_session.get_one(tables.Snapshot, snapshot_key).data == data
-    http.post.assert_not_called()
