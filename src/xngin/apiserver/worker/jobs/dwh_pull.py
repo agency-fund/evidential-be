@@ -169,7 +169,6 @@ class DwhPullJob:
                     self.interval,
                     opens=experiment.start_date,
                     closes=experiment.end_date + LATE_OUTCOME_GRACE,
-                    name="pull_window",
                 ),
             ),
         )

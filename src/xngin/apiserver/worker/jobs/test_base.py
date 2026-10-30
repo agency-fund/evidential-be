@@ -66,7 +66,5 @@ def test_next_run_in_window(xngin_session, testing_datasource, last_success_at, 
     def timestamp(value):
         return literal(value, DateTime(timezone=True))
 
-    run_at = next_run_in_window(
-        timestamp(now), timedelta(days=2), opens=timestamp(OPENS), closes=timestamp(CLOSES), name="window"
-    )
+    run_at = next_run_in_window(timestamp(now), timedelta(days=2), opens=timestamp(OPENS), closes=timestamp(CLOSES))
     assert xngin_session.scalar(select(run_at).where(tables.JobStatus.experiment_id == experiment.id)) == expected

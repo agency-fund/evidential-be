@@ -37,7 +37,6 @@ class SnapshotJob:
             self.interval,
             opens=tables.Experiment.start_date - SNAPSHOT_MARGIN,
             closes=tables.Experiment.end_date + SNAPSHOT_MARGIN,
-            name="snapshot_window",
         )
 
     def execute(self, session: Session, experiment: tables.Experiment) -> JobResult:

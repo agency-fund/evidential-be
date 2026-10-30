@@ -110,7 +110,6 @@ def next_run_in_window(
     *,
     opens: SQLColumnExpression[datetime],
     closes: SQLColumnExpression[datetime],
-    name: str,
 ) -> ColumnElement[datetime | None]:
     """Return SQL for when a job that runs every interval within a window should next run, or NULL if it shouldn't.
 
@@ -121,10 +120,6 @@ def next_run_in_window(
 
     Once the window has closed, a run that came due inside it still gets one attempt, however late, if none has
     started since it came due. There are no retries after the close.
-
-    The window is the caller's: a job can extend its runs past closes by evaluating another window, as DwhPullJob
-    does for its grace period. name is the window's alias in the generated SQL, which must differ between the
-    windows of one job.
     """
     last_success_at = tables.JobStatus.last_success_at
     last_run_at = tables.JobStatus.last_run_at
@@ -136,7 +131,7 @@ def next_run_in_window(
         column("opens", DateTime(timezone=True)),
         column("closes", DateTime(timezone=True)),
         column("after_success", DateTime(timezone=True)),
-        name=name,
+        name="run_window",
     ).data([(opens, closes, func.least(func.greatest(last_success_at + interval, opens), closes))])
     return (
         select(
