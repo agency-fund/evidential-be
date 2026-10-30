@@ -47,11 +47,86 @@ def sheets_api(mocker):
     api = SimpleNamespace(
         tabs={42: values},
         titles={42: "Data"},
+        metadata={},
+        grids={},
+        fail_request_at=None,
         selected_gid=None,
         client=mocker.MagicMock(),
+        writer=mocker.MagicMock(),
         spreadsheet=mocker.MagicMock(title="Evidential Demo Sheet"),
     )
     api.client.http_client.auth.service_account_email = "reader@evidential-tests.iam.gserviceaccount.com"
+    api.writer.http_client.auth = api.client.http_client.auth.with_scopes.return_value
+    api.writer.open_by_key.return_value = api.spreadsheet
+    api.authorize = mocker.patch("xngin.apiserver.dwh.google_sheets.gspread.authorize", return_value=api.writer)
+
+    def metadata(**_):
+        return {
+            "sheets": [
+                {
+                    "properties": {"sheetId": gid, "title": api.titles.get(gid, f"Outcomes {gid}")},
+                    "developerMetadata": deepcopy(api.metadata.get(gid, [])),
+                }
+                for gid in api.tabs
+            ]
+        }
+
+    def batch_update(body):
+        # Publish only once all requests validate, just like spreadsheets.batchUpdate.
+        tabs, titles = deepcopy(api.tabs), deepcopy(api.titles)
+        metadata, grids = deepcopy(api.metadata), deepcopy(api.grids)
+        for index, request in enumerate(body["requests"]):
+            if api.fail_request_at == index:
+                raise google_api_error(400)
+            if "addSheet" in request:
+                properties = request["addSheet"]["properties"]
+                gid, title = properties["sheetId"], properties["title"]
+                if gid in tabs or title in titles.values():
+                    raise google_api_error(400)
+                assert 0 <= gid < 2**31
+                grid = properties["gridProperties"]
+                assert grid["rowCount"] > 0 and grid["columnCount"] > 0
+                tabs[gid] = [[""] * grid["columnCount"] for _ in range(grid["rowCount"])]
+                titles[gid], grids[gid] = title, grid
+            elif "updateCells" in request:
+                update = request["updateCells"]
+                start = update["start"]
+                gid = start["sheetId"]
+                assert update["fields"] == "userEnteredValue"
+                for r, row in enumerate(update["rows"], start=start["rowIndex"]):
+                    for c, cell in enumerate(row["values"], start=start["columnIndex"]):
+                        value = cell.get("userEnteredValue", {})
+                        assert len(value) <= 1
+                        if "stringValue" in value:
+                            assert isinstance(value["stringValue"], str)
+                            tabs[gid][r][c] = value["stringValue"]
+                        elif "boolValue" in value:
+                            assert isinstance(value["boolValue"], bool)
+                            tabs[gid][r][c] = value["boolValue"]
+                        elif "numberValue" in value:
+                            assert isinstance(value["numberValue"], (int, float))
+                            assert not isinstance(value["numberValue"], bool)
+                            tabs[gid][r][c] = value["numberValue"]
+                        else:
+                            assert not value  # Formula interpretation is never permitted.
+                            tabs[gid][r][c] = ""
+            elif "createDeveloperMetadata" in request:
+                item = deepcopy(request["createDeveloperMetadata"]["developerMetadata"])
+                gid = item["location"]["sheetId"]
+                assert gid in tabs and item["visibility"] == "DOCUMENT"
+                item["location"]["locationType"] = "SHEET"
+                metadata.setdefault(gid, []).append(item)
+            else:
+                raise AssertionError(f"Unsupported Sheets operation: {request}")
+        api.tabs, api.titles, api.metadata, api.grids = tabs, titles, metadata, grids
+        # Keep the original raw list live so simulated edits remain visible.
+        values[:] = tabs[42]
+        api.tabs[42] = values
+        return {"spreadsheetId": "demo_sheet", "replies": [{} for _ in body["requests"]]}
+
+    api.spreadsheet.fetch_sheet_metadata.side_effect = metadata
+    api.atomic_batch = batch_update
+    api.spreadsheet.batch_update.side_effect = batch_update
 
     def read(gid):
         api.selected_gid = gid
@@ -367,6 +442,98 @@ def test_empty_metric_is_numeric_and_zero_is_observed(sheets_api):
         assert isinstance(dwh.inspect_table(TAB).c.outcome.type, sa.Double)
 
 
+def test_assignments_match_ids_after_reordering_and_preserve_other_columns(sheets_api):
+    _, values = sheets_api
+    values[1], values[4] = values[4], values[1]
+    data = SheetData.from_values(values).assignments_values(
+        "participant_id", "demo-123", {"001": "Treatment", "003": "Control"}
+    )
+    assert data == [
+        ["participant_id", "region", "outcome", "converted", "evidential_demo_123_arm"],
+        ["003", "north", 30, True, "Control"],
+        [None, None, None, None, None],
+        ["002", "south", None, False, None],
+        ["001", "north", 10, True, "Treatment"],
+    ]
+    assert values[0] == ["participant_id", "region", "outcome", "converted"]
+
+
+def test_assignments_match_numeric_ids_as_stored_without_changing_source_cells(sheets_api):
+    _, values = sheets_api
+    values[:] = [["reference", "outcome"], ["+1", "10"], [" 2 ", "20"], ["3", "30"]]
+    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL, table_name=TAB)) as dwh:
+        participants = dwh.get_participants(TAB, select_columns={"reference"}, n=3, filters=[]).participants
+        assignments = {str(row.reference): "Treatment" for row in participants}
+    data = SheetData.from_values(values).assignments_values("reference", "demo", assignments)
+    assert data == [
+        ["reference", "outcome", "evidential_demo_arm"],
+        ["+1", 10, "Treatment"],
+        [" 2 ", 20, "Treatment"],
+        ["3", 30, "Treatment"],
+    ]
+
+
+def test_assignments_reuse_their_column(sheets_api):
+    _, values = sheets_api
+    values[0].append("evidential_demo_arm")
+    values[1].append("Old treatment name")
+    data = SheetData.from_values(values).assignments_values("participant_id", "demo", {"001": "Treatment"})
+    assert data[0].count("evidential_demo_arm") == 1
+    assert data[1][-1] == "Treatment"
+    assert values[1][-1] == "Old treatment name"
+
+
+def test_experiment_tab_keeps_selected_columns_and_matches_original_ids(sheets_api):
+    _, values = sheets_api
+    values[:] = [
+        ["notes", "outcome", "participant_id", "unused_metric", "evidential_other_arm"],
+        ["internal", "", "001", 20, "Old control"],
+        [],
+        ["internal", 0, "002", 30, "Old treatment"],
+        ["internal", 5, "003", 40, "Old control"],
+    ]
+    data = SheetData.from_values(values).assignments_values(
+        "participant_id", "demo", {"001": "Treatment", "003": "Control"}, field_names={"outcome"}
+    )
+    assert data == [
+        ["outcome", "participant_id", "evidential_demo_arm"],
+        [None, "001", "Treatment"],
+        [None, None, None],
+        [0, "002", None],
+        [5, "003", "Control"],
+    ]
+    assert values[0][0] == "notes"
+
+
+def test_experiment_tab_rejects_missing_selected_columns(sheets_api):
+    _, values = sheets_api
+    with pytest.raises(LateValidationError, match=r"Experiment columns are missing.*missing_metric"):
+        SheetData.from_values(values).assignments_values("participant_id", "demo", {}, field_names={"missing_metric"})
+
+
+@pytest.mark.parametrize(
+    ("mutation", "match"),
+    [
+        ("duplicate", "unique"),
+        ("missing", "missing"),
+        ("blank_id", "participant ID"),
+        ("missing_column", "column is missing"),
+    ],
+)
+def test_experiment_tab_rejects_invalid_participant_ids(sheets_api, mutation, match):
+    _, values = sheets_api
+    if mutation == "duplicate":
+        values[4][0] = "001"
+    elif mutation == "missing":
+        values[1][0] = "new-id"
+    elif mutation == "blank_id":
+        values[4][0] = ""
+    else:
+        values[0][0] = "other_id"
+    with pytest.raises(LateValidationError, match=match):
+        SheetData.from_values(values).assignments_values("participant_id", "demo", {"001": "Treatment"})
+
+
 def test_sheet_limits_reject_data_instead_of_truncating():
     with pytest.raises(LateValidationError, match="5,000"):
         SheetData.from_values([["id"], *[[str(i)] for i in range(5_001)]])
@@ -581,3 +748,221 @@ def test_formatted_cells_preserve_missing_zero_false_and_textual_ids(sheets_api)
         "002": (0, False),
         "003": (1, True),
     }
+
+
+def test_atomic_writeback_preserves_cells_selected_columns_and_raw_tab(sheets_api, mocker):
+    api, raw = sheets_api
+    raw[:] = [
+        ["notes", "participant_id", "outcome", "converted", "unused_metric"],
+        ["omit", "001", "", False, 19],
+        [],
+        ["omit", "=2+2", 0, "FALSE", 23],
+        ["omit", "9007199254740993", "=SUM(A1:A2)", True, 29],
+        ["omit", "+1", "03", "", 31],
+    ]
+    original = deepcopy(raw)
+    mocker.patch("xngin.apiserver.dwh.google_sheets.secrets.randbelow", side_effect=[42, 0])
+    with DwhSession.open(GoogleSheetsDsn(spreadsheet_url=URL, table_name=TAB)) as dwh:
+        tab_id = dwh.create_sheet_experiment_tab(
+            TAB,
+            "participant_id",
+            "demo",
+            {"001": "=Treatment", "=2+2": "Control", "9007199254740993": "Control"},
+            field_names={"outcome", "converted"},
+        )
+    assert tab_id == "0"
+    assert raw == original and api.tabs[42] == original
+    assert api.tabs[0] == [
+        ["participant_id", "outcome", "converted", "evidential_demo_arm"],
+        ["001", "", False, "=Treatment"],
+        ["", "", "", ""],
+        ["=2+2", 0, False, "Control"],
+        ["9007199254740993", "=SUM(A1:A2)", True, "Control"],
+        ["+1", "03", "", ""],
+    ]
+    assert api.grids[0] == {"rowCount": 6, "columnCount": 4}
+    assert api.metadata[0] == [
+        {
+            "metadataKey": "evidential_experiment_id",
+            "metadataValue": "demo",
+            "location": {"sheetId": 0, "locationType": "SHEET"},
+            "visibility": "DOCUMENT",
+        }
+    ]
+    api.spreadsheet.batch_update.assert_called_once()
+    api.writer.http_client.session.close.assert_called_once()
+
+
+def test_writeback_uses_native_metric_types_without_converting_identifiers(sheets_api):
+    api, raw = sheets_api
+    raw[:] = [
+        ["reference", "cohort_id", "mean_task_time_mins", "converted"],
+        ["001", "0007", "5", "TRUE"],
+        [],
+        ["002", "0008", "6.5", "FALSE"],
+        ["003", "0009", "0", ""],
+        ["004", "0010", "", "TRUE"],
+    ]
+    original = deepcopy(raw)
+    client = GoogleSheetsClient(URL, TAB)
+    try:
+        tab_id = client.create_experiment_tab(TAB, "reference", "native", {"001": "Treatment", "002": "Control"})
+    finally:
+        client.close()
+    gid = int(tab_id)
+    assert api.tabs[gid] == [
+        ["reference", "cohort_id", "mean_task_time_mins", "converted", "evidential_native_arm"],
+        ["001", "0007", 5, True, "Treatment"],
+        ["", "", "", "", ""],
+        ["002", "0008", 6.5, False, "Control"],
+        ["003", "0009", 0, "", ""],
+        ["004", "0010", "", True, ""],
+    ]
+    assert isinstance(api.tabs[gid][1][2], (int, float))
+    assert isinstance(api.tabs[gid][1][3], bool)
+    assert raw == original
+
+
+def test_owned_tab_recovery_never_reads_a_deleted_source_tab(sheets_api):
+    api, _ = sheets_api
+    client = GoogleSheetsClient(URL, TAB)
+    try:
+        tab_id = client.create_experiment_tab(TAB, "participant_id", "demo", {"001": "Control"})
+    finally:
+        client.close()
+    gid = int(tab_id)
+    api.tabs[gid][1][2] = "1234"
+    api.titles[gid] = "Renamed by the spreadsheet owner"
+    outcomes = deepcopy(api.tabs[gid])
+    del api.tabs[42], api.titles[42]
+    api.read.reset_mock()
+    client = GoogleSheetsClient(URL, TAB)
+    try:
+        recovered = client.create_experiment_tab(
+            TAB, "participant_id", "demo", {"001": "New treatment"}, field_names={"deleted_column"}
+        )
+    finally:
+        client.close()
+    assert recovered == tab_id
+    assert api.tabs[gid] == outcomes
+    assert len(api.tabs) == 1
+    api.read.assert_not_called()
+    api.spreadsheet.batch_update.assert_called_once()
+
+
+def test_writeback_never_adopts_a_title_or_row_metadata_without_sheet_ownership(sheets_api):
+    api, raw = sheets_api
+    api.tabs[99] = [["private"], ["leave alone"]]
+    api.titles[99] = "Evidential demo"
+    api.metadata[99] = [
+        {
+            "metadataKey": "evidential_experiment_id",
+            "metadataValue": "demo",
+            "location": {"dimensionRange": {"sheetId": 99, "dimension": "ROWS", "startIndex": 0, "endIndex": 1}},
+        }
+    ]
+    original = deepcopy(api.tabs)
+    client = GoogleSheetsClient(URL, TAB)
+    try:
+        tab_id = client.create_experiment_tab(TAB, "participant_id", "demo", {"001": "Control"})
+    finally:
+        client.close()
+    gid = int(tab_id)
+    assert gid not in original
+    assert "demo" in api.titles[gid]
+    assert api.titles[gid] != api.titles[99]
+    assert api.tabs[99] == original[99] and raw == original[42]
+
+
+@pytest.mark.parametrize("failure_at", [0, 1, 2])
+def test_failed_atomic_batch_leaves_no_partial_tab_or_metadata(sheets_api, failure_at):
+    api, raw = sheets_api
+    original = deepcopy(raw)
+    api.fail_request_at = failure_at
+    client = GoogleSheetsClient(URL, TAB)
+    try:
+        with pytest.raises(DwhConnectionError, match="HTTP 400"):
+            client.create_experiment_tab(TAB, "participant_id", "demo", {"001": "Control"})
+    finally:
+        client.close()
+    assert api.tabs == {42: original}
+    assert api.metadata == {} and api.grids == {}
+    assert api.titles == {42: "Data"}
+    api.writer.http_client.session.close.assert_called_once()
+
+
+@pytest.mark.parametrize("operation", ["open", "metadata", "batch"])
+@pytest.mark.parametrize("status_code", [400, 401, 403, 404, 429, 500])
+def test_write_errors_are_actionable_and_do_not_expose_remote_content(sheets_api, operation, status_code):
+    api, _ = sheets_api
+    client = GoogleSheetsClient(URL, TAB)
+    operation_mock = {
+        "open": api.writer.open_by_key,
+        "metadata": api.spreadsheet.fetch_sheet_metadata,
+        "batch": api.spreadsheet.batch_update,
+    }[operation]
+    operation_mock.side_effect = google_api_error(status_code)
+    try:
+        with pytest.raises(DwhConnectionError) as error:
+            client.create_experiment_tab(TAB, "participant_id", "demo", {"001": "Control"})
+    finally:
+        client.close()
+    message = str(error.value)
+    assert "PRIVATE-CREDENTIAL-CONTENT" not in message
+    if status_code in {401, 403, 404}:
+        assert api.client.http_client.auth.service_account_email in message
+        assert "as Editor" in message and "share" in message.lower()
+        assert "CONNECTION ERROR" not in message
+    elif status_code == 429:
+        assert "rate limit" in message
+    else:
+        assert f"HTTP {status_code}" in message
+    assert set(api.tabs) == {42}
+    api.writer.http_client.session.close.assert_called_once()
+
+
+@pytest.mark.parametrize("error_type", [PermissionError, gspread.SpreadsheetNotFound, RefreshError, requests.Timeout])
+def test_write_authentication_and_transport_failures_are_safe(sheets_api, error_type):
+    api, _ = sheets_api
+    client = GoogleSheetsClient(URL, TAB)
+    api.writer.open_by_key.side_effect = error_type("PRIVATE-CREDENTIAL-CONTENT")
+    try:
+        with pytest.raises(DwhConnectionError) as error:
+            client.create_experiment_tab(TAB, "participant_id", "demo", {"001": "Control"})
+    finally:
+        client.close()
+    assert "PRIVATE-CREDENTIAL-CONTENT" not in str(error.value)
+    if error_type in {PermissionError, gspread.SpreadsheetNotFound}:
+        assert "as Editor" in str(error.value)
+    assert set(api.tabs) == {42}
+
+
+def test_assignment_column_is_unique_ignoring_case(sheets_api):
+    api, raw = sheets_api
+    raw[0].append("EVIDENTIAL_DEMO_ARM")
+    raw[1].append("Outdated assignment")
+    client = GoogleSheetsClient(URL, TAB)
+    try:
+        tab_id = client.create_experiment_tab(TAB, "participant_id", "demo", {"001": "Treatment"})
+    finally:
+        client.close()
+    gid = int(tab_id)
+    assert sum(name.lower() == "evidential_demo_arm" for name in api.tabs[gid][0]) == 1
+    assert api.tabs[gid][1][-1] == "Treatment"
+    assert raw[1][-1] == "Outdated assignment"
+
+
+@pytest.mark.parametrize("participant_value", [123, 123.0, "00123", "=1+2", "9007199254740993"])
+def test_written_participant_ids_are_always_literal_strings(sheets_api, participant_value):
+    api, raw = sheets_api
+    raw[:] = [["participant_id", "outcome"], [participant_value, 0]]
+    expected_id = "123" if participant_value == 123 else participant_value
+    client = GoogleSheetsClient(URL, TAB)
+    try:
+        tab_id = client.create_experiment_tab(TAB, "participant_id", "demo", {expected_id: "Control"})
+    finally:
+        client.close()
+    gid = int(tab_id)
+    assert api.tabs[gid][1] == [expected_id, 0, "Control"]
+    assert isinstance(api.tabs[gid][1][0], str)
+    assert raw[1][0] == participant_value

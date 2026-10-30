@@ -516,7 +516,7 @@ class DwhSession:
         """Validate that the configured warehouse is reachable and credentials are valid."""
         self._on_worker("a connectivity check", self._connectivity_check_blocking)
 
-    def export_sheet_assignments(
+    def create_sheet_experiment_tab(
         self,
         table_name: str,
         unique_id_field: str,
@@ -525,8 +525,8 @@ class DwhSession:
         field_names: set[str] | None = None,
     ) -> str:
         return self._on_worker(
-            "exporting spreadsheet assignments",
-            self._sheets.export_assignments,
+            "creating the experiment outcomes tab",
+            self._sheets.create_experiment_tab,
             table_name,
             unique_id_field,
             experiment_id,

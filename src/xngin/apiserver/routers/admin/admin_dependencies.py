@@ -252,7 +252,6 @@ experiment_for_analysis = _Experiment(
 )
 # commit_experiment_impl reads both of these to build the experiment.created event.
 experiment_for_commit = _Experiment(preload=[tables.Experiment.webhooks, tables.Experiment.datasource])
-experiment_for_csv_export = _Experiment(nested_preload=[EXPERIMENT_FIELDS_WITH_FILTERS])
 experiment_for_ui = _Experiment(
     preload=[tables.Experiment.webhooks, tables.Experiment.contexts],
     nested_preload=[EXPERIMENT_FIELDS_WITH_FILTERS],

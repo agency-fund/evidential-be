@@ -1547,14 +1547,12 @@ def get_experiment_for_ui(
 @router.get(
     "/datasources/{datasource_id}/experiments/{experiment_id}/assignments/csv",
     summary=(
-        "Export experiment assignments as CSV. Google Sheets exports include the source columns and an arm column. "
-        "Other datasource exports include participant_id,[cluster_key,]arm_id,arm_name,created_at,strata columns."
+        "Export experiment assignments as CSV: participant_id,[cluster_key,]arm_id,arm_name,created_at,strata columns."
     ),
     response_class=CsvStreamingResponse,
-    responses=DWH_CONNECTION_RESPONSES,
 )
 def get_experiment_assignments_as_csv_for_ui(
-    experiment: Annotated[tables.Experiment, Depends(adeps.experiment_for_csv_export)],
+    experiment: Annotated[tables.Experiment, Depends(adeps.experiment_for_analysis)],
     session: Annotated[Session, Depends(xngin_sync_db_session)],
 ) -> CsvStreamingResponse:
     # TODO: update for bandits

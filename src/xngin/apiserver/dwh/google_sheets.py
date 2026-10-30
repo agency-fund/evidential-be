@@ -1,9 +1,8 @@
 """Small Google Sheets snapshots adapted to the existing warehouse query path."""
 
-import csv
-import io
 import math
 import re
+import secrets
 from dataclasses import dataclass
 from typing import Self, cast
 
@@ -142,14 +141,14 @@ class SheetData:
                 connection.execute(table.insert(), records)
         return table
 
-    def assignments_csv(
+    def assignments_values(
         self,
         unique_id_field: str,
         experiment_id: str,
         assignments: dict[str, str],
         field_names: set[str] | None = None,
-    ) -> str:
-        """Preserve selected source columns and append arm names for an experiment tab."""
+    ) -> list[list]:
+        """Copy selected source cells and assignments using literal, typed Sheets values."""
         if unique_id_field not in self.headers:
             raise LateValidationError("The participant ID column is missing from the sheet.")
         id_col = self.headers.index(unique_id_field)
@@ -157,12 +156,10 @@ class SheetData:
         ids = set()
         for value in id_values:
             if value is None:
-                raise LateValidationError(
-                    "Every populated sheet row needs a participant ID before downloading the CSV."
-                )
+                raise LateValidationError("Every populated sheet row needs a participant ID before saving assignments.")
             pid = participant_id(value)
             if pid in ids:
-                raise LateValidationError("Participant IDs in the sheet must be unique before downloading the CSV.")
+                raise LateValidationError("Participant IDs in the sheet must be unique before saving assignments.")
             ids.add(pid)
         if assignments.keys() - ids:
             raise LateValidationError("Assigned participants are missing from the sheet. Restore their IDs first.")
@@ -173,25 +170,34 @@ class SheetData:
         headers = [
             name for name in self.headers if field_names is None or name in field_names or name == unique_id_field
         ]
-        if header not in headers:
+        arm_col = next((index for index, name in enumerate(headers) if name.lower() == header.lower()), None)
+        if arm_col is None:
+            arm_col = len(headers)
             headers.append(header)
         if len(headers) > MAX_SHEET_COLUMNS:
             raise LateValidationError("Leave space for an assignment column within the 100-column limit.")
-        arm_col = headers.index(header)
         source_indices = [self.headers.index(name) if name in self.headers else None for name in headers]
-        output = io.StringIO(newline="")
-        writer = csv.writer(output)
-        writer.writerow(headers)
+        output_id_col = headers.index(unique_id_field)
+        values: list[list] = [headers]
         next_row = 2
         for (row_number, original), value in zip(self.rows, id_values, strict=True):
             while next_row < row_number:
-                writer.writerow([None] * len(headers))
+                values.append([None] * len(headers))
                 next_row += 1
             row = [original[index] if index is not None else None for index in source_indices]
+            row[output_id_col] = participant_id(row[output_id_col])
             row[arm_col] = assignments.get(participant_id(value))
-            writer.writerow(row)
+            values.append(row)
             next_row = row_number + 1
-        return output.getvalue()
+        for output_col, source_col in enumerate(source_indices):
+            if source_col is None or output_col in {output_id_col, arm_col}:
+                continue
+            column_type, column_values = self._column_values(source_col)
+            if isinstance(column_type, sa.String):
+                continue
+            for (row_number, _), value in zip(self.rows, column_values, strict=True):
+                values[row_number - 1][output_col] = value
+        return values
 
 
 class SheetsHTTPClient(gspread.HTTPClient):
@@ -381,7 +387,7 @@ class GoogleSheetsClient:
 
         return engine
 
-    def export_assignments(
+    def create_experiment_tab(
         self,
         table_name: str,
         unique_id_field: str,
@@ -389,4 +395,96 @@ class GoogleSheetsClient:
         assignments: dict[str, str],
         field_names: set[str] | None = None,
     ) -> str:
-        return self.read(table_name).assignments_csv(unique_id_field, experiment_id, assignments, field_names)
+        """Return the outcomes tab ID, recovering an interrupted launch before reading source cells."""
+        credentials = cast(Credentials, self.client.http_client.auth)
+        writer = None
+        try:
+            writer = gspread.authorize(
+                credentials.with_scopes(["https://www.googleapis.com/auth/spreadsheets"]),
+                http_client=SheetsHTTPClient,
+            )
+            writer.set_timeout(10)
+            spreadsheet = writer.open_by_key(self.spreadsheet_id)
+            sheets = spreadsheet.fetch_sheet_metadata(params={"fields": "sheets(properties,developerMetadata)"}).get(
+                "sheets", []
+            )
+            for sheet in sheets:
+                sheet_id = sheet["properties"]["sheetId"]
+                if any(
+                    metadata.get("metadataKey") == "evidential_experiment_id"
+                    and metadata.get("metadataValue") == experiment_id
+                    and metadata.get("location", {}).get("sheetId") == sheet_id
+                    for metadata in sheet.get("developerMetadata", [])
+                ):
+                    return str(sheet_id)
+
+            values = self.read(table_name).assignments_values(unique_id_field, experiment_id, assignments, field_names)
+            existing_ids = {sheet["properties"]["sheetId"] for sheet in sheets}
+            sheet_id = secrets.randbelow(2**31)
+            while sheet_id in existing_ids:
+                sheet_id = secrets.randbelow(2**31)
+            title = f"Evidential {experiment_id}"
+            existing_titles = {sheet["properties"]["title"] for sheet in sheets}
+            if title in existing_titles:
+                suffix = 2
+                while f"{title} ({suffix})" in existing_titles:
+                    suffix += 1
+                title = f"{title} ({suffix})"
+            rows = []
+            for row in values:
+                cells = []
+                for value in row:
+                    if value is None:
+                        cell: dict[str, dict[str, str | int | float | bool]] = {}
+                    elif isinstance(value, bool):
+                        cell = {"userEnteredValue": {"boolValue": value}}
+                    elif isinstance(value, (int, float)):
+                        cell = {"userEnteredValue": {"numberValue": value}}
+                    else:
+                        cell = {"userEnteredValue": {"stringValue": value}}
+                    cells.append(cell)
+                rows.append({"values": cells})
+            spreadsheet.batch_update({
+                "requests": [
+                    {
+                        "addSheet": {
+                            "properties": {
+                                "sheetId": sheet_id,
+                                "title": title,
+                                "gridProperties": {"rowCount": len(values), "columnCount": len(values[0])},
+                            }
+                        }
+                    },
+                    {
+                        "updateCells": {
+                            "start": {"sheetId": sheet_id, "rowIndex": 0, "columnIndex": 0},
+                            "rows": rows,
+                            "fields": "userEnteredValue",
+                        }
+                    },
+                    {
+                        "createDeveloperMetadata": {
+                            "developerMetadata": {
+                                "metadataKey": "evidential_experiment_id",
+                                "metadataValue": experiment_id,
+                                "location": {"sheetId": sheet_id},
+                                "visibility": "DOCUMENT",
+                            }
+                        }
+                    },
+                ]
+            })
+        except (
+            PermissionError,
+            SpreadsheetNotFound,
+            APIError,
+            GoogleAuthError,
+            requests.RequestException,
+            ValueError,
+        ) as exc:
+            raise self._connection_error(exc, editor=True) from exc
+        else:
+            return str(sheet_id)
+        finally:
+            if writer is not None:
+                writer.http_client.session.close()
