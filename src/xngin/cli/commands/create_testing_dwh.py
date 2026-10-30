@@ -1,8 +1,14 @@
 """`create-testing-dwh` command: loads the testing CSV into a dev data warehouse."""
 
+import base64
 import contextlib
+import io
+import itertools
+import json
 import logging
 import re
+import shutil
+import tempfile
 import uuid
 from compression import zstd
 from dataclasses import dataclass
@@ -13,6 +19,7 @@ import psycopg
 import psycopg2
 import sqlalchemy
 import typer
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import make_url
 
 from xngin.apiserver.dwh import dwh_utils
@@ -24,6 +31,25 @@ if TYPE_CHECKING:
     from sqlalchemy.sql.compiler import IdentifierPreparer
 
 _TESTING_DWH_RAW_DATA = Path(__file__).resolve().parent.parent.parent / "apiserver/testdata/testing_dwh.csv.zst"
+
+
+class _TemplateTable(BaseModel):
+    """One table of a --template file."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Path to the CSV, relative to the template file.
+    src: str
+    table_name: str
+    views: list[str] = []
+
+
+class _Template(BaseModel):
+    """The tables to load, as read from a --template file such as apiserver/testdata/warehouses.json."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tables: list[_TemplateTable] = Field(min_length=1)
 
 
 def _truncate_with_ellipsis(value: str) -> str:
@@ -143,13 +169,19 @@ def _read_csv(source: _Source) -> DataFrame:
     return pd_read_csv(source.path, nrows=source.nrows)
 
 
+def _provided_ddl(source: _Source, flavor: str, table_name: str) -> str | None:
+    """Returns the hard-coded DDL for this flavor of warehouse if a .{flavor}.ddl file sits next to the CSV."""
+    ddl_file = Path(re.sub(r"[.]csv([.]zst)?$", f".{flavor}.ddl", str(source.path)))
+    if not ddl_file.exists():
+        return None
+    print(f"Using provided DDL from {ddl_file}")
+    return ddl_file.read_text().replace("{{table_name}}", table_name)
+
+
 def _get_ddl_magic(source: _Source, dest: _Dest, quoter: IdentifierPreparer, flavor: str) -> str:
     """Gets the hard-coded DDL if available, or infers it using Pandas."""
-    ddl_file = Path(re.sub(r"[.]csv([.]zst)?$", f".{flavor}.ddl", str(source.path)))
-    if ddl_file.exists():
-        print(f"Using provided DDL from {ddl_file}")
-        ddl = ddl_file.read_text().replace("{{table_name}}", dest.full_table_name)
-    else:
+    ddl = _provided_ddl(source, flavor, dest.full_table_name)
+    if ddl is None:
         print("Using inferred DDL (warning: may lose fidelity!)")
         ddl = _df_to_ddl(_read_csv(source), table_name=dest.full_table_name, quoter=quoter)
     return ddl
@@ -271,13 +303,55 @@ def _load_redshift(source: _Source, dest: _Dest, *, bucket: str | None, iam_role
         _maybe_create_views(cur, dest)
 
 
-def _load_bigquery(source: _Source, dest: _Dest) -> None:
-    import pandas_gbq  # noqa: PLC0415
+def _bigquery_client(url: sqlalchemy.URL):
+    """A BigQuery client using the credentials named in the sqlalchemy-bigquery URL, else Application Default."""
+    from google.cloud import bigquery  # noqa: PLC0415
+    from google.oauth2 import service_account  # noqa: PLC0415
 
-    df = _read_csv(source)
-    destination_table = f"{dest.url.database}.{dest.table_name}"
-    print("Loading using an inferred schema (warning: may lose fidelity!)...")
-    pandas_gbq.to_gbq(df, destination_table, project_id=dest.url.host, if_exists="replace")
+    credentials = None
+    if isinstance(encoded := url.query.get("credentials_base64"), str):
+        credentials = service_account.Credentials.from_service_account_info(json.loads(base64.b64decode(encoded)))
+    elif isinstance(path := url.query.get("credentials_path"), str):
+        credentials = service_account.Credentials.from_service_account_file(path)
+    return bigquery.Client(project=url.host, credentials=credentials)
+
+
+def _open_binary(source: _Source) -> io.BufferedIOBase:
+    """Opens the CSV for reading bytes, decompressing on the fly when needed."""
+    return zstd.open(source.path, "rb") if source.is_compressed else source.path.open("rb")
+
+
+def _load_bigquery(source: _Source, dest: _Dest) -> None:
+    table = f"{dest.url.database}.{dest.table_name}"
+    ddl = _provided_ddl(source, "bigquery", f"`{table}`")
+    if ddl is None:
+        import pandas_gbq  # noqa: PLC0415
+
+        print("Loading using an inferred schema (warning: may lose fidelity!)...")
+        pandas_gbq.to_gbq(_read_csv(source), table, project_id=dest.url.host, if_exists="replace")
+        return
+
+    from google.cloud import bigquery  # noqa: PLC0415
+
+    client = _bigquery_client(dest.url)
+    client.query(f"DROP TABLE IF EXISTS `{table}`").result()
+    client.query(ddl).result()
+    # The table created from the DDL supplies the schema; the load job only parses the CSV values against it.
+    # BigQuery's CSV reader does not understand zstd, so the CSV is decompressed into a temporary file first.
+    job_config = bigquery.LoadJobConfig(
+        source_format=bigquery.SourceFormat.CSV,
+        skip_leading_rows=1,
+        write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+    )
+    with tempfile.TemporaryFile() as staged, _open_binary(source) as reader:
+        if source.nrows is None:
+            shutil.copyfileobj(reader, staged, 1 << 20)
+        else:
+            staged.writelines(itertools.islice(reader, source.nrows + 1))  # header + nrows
+        print(f"Uploading {staged.tell() / (1 << 20):.1f} MiB of CSV to BigQuery...")
+        job = client.load_table_from_file(staged, f"{client.project}.{table}", job_config=job_config, rewind=True)
+        job.result()
+    print(f"Loaded {job.output_rows} rows into {table}.")
 
 
 def _load_postgres(source: _Source, dest: _Dest) -> None:
@@ -322,7 +396,7 @@ def create_testing_dwh(
         int | None,
         typer.Option(
             help="Limits the number of rows to load from the CSV. Does not apply to the data load "
-            "of Redshift or Postgres connections, but will be applied to schema inference."
+            "of Redshift or Postgres connections, but will be applied to schema inference and to BigQuery loads."
         ),
     ] = None,
     schema_name: Annotated[
@@ -333,12 +407,11 @@ def create_testing_dwh(
         ),
     ] = None,
     table_name: Annotated[
-        str,
+        str | None,
         typer.Option(
-            envvar="XNGIN_CLI_TABLE_NAME",
-            help="Desired name of the data warehouse table. This will be replaced if it already exists.",
+            help="Desired name of the data warehouse table (default: dwh). This will be replaced if it already exists.",
         ),
-    ] = "dwh",
+    ] = None,
     bucket: Annotated[
         str | None,
         typer.Option(
@@ -370,49 +443,79 @@ def create_testing_dwh(
             "Only supported on Postgres and Redshift."
         ),
     ] = None,
+    template: Annotated[
+        Path | None,
+        typer.Option(
+            help="JSON file listing several tables to load, each with its CSV (relative to the file), table name, "
+            "and views; e.g. src/xngin/apiserver/testdata/warehouses.json. Replaces --src, --table-name, and --views.",
+            exists=True,
+            dir_okay=False,
+        ),
+    ] = None,
 ):
     """Loads the testing data warehouse CSV into a database.
 
-    Any existing table will be replaced unless --allow-existing is used.
+    Any existing table will be replaced unless --allow-existing is used. With --template, each of the tables listed in
+    the template file is loaded in turn.
 
     For Postgres and Redshift (psycopg or psycopg2) connections, the table DDL will be read from a
     .{postgres|redshift}.ddl file in the same directory as the source CSV, or inferred via Pandas if
     that file does not exist.  The CSV file is parsed using their native server-side CSV parsers.
 
+    On BigQuery, the table DDL will be read from a .bigquery.ddl file in the same directory as the source CSV and the
+    CSV is parsed by a BigQuery load job against that schema. If that file does not exist, the CSV is parsed by Pandas
+    and the schema inferred by pandas-gbq (dates, timestamps and UUIDs become STRING; DECIMAL becomes FLOAT64).
+
     Postgres connections may be specified with postgresql://, postgresql+psycopg://, or postgresql+psycopg2:// prefixes.
 
     Redshift connections must be specified with postgresql+psycopg2:// prefix.
-
-    On BigQuery: CSV is parsed by Pandas. Table DDL is derived by pandas-gbq and written via to_gbq().
 
     Due to variations in all of the above, the loaded data may vary in small ways when loaded with different data
     stores. E.g. floats may not roundtrip.
 
     This command does not support schemas or non-trivial database names or table names consistently.
     """
-    source = _build_source(src=src, nrows=nrows)
-    dest = _build_dest(
-        dsn=dsn,
-        schema_name=schema_name,
-        table_name=table_name,
-        password=password,
-        views=views,
-    )
+    if template is None:
+        tables = [(src, table_name or "dwh", views)]
+    else:
+        if table_name is not None:
+            fail("--template cannot be combined with --table-name.", code=2)
+        try:
+            parsed = _Template.model_validate_json(template.read_text())
+        except (OSError, ValidationError) as exc:
+            fail(f"could not read --template {template}: {exc}", code=2)
+        tables = [
+            (_validate_src(template.parent / t.src), t.table_name, ",".join(t.views) or None) for t in parsed.tables
+        ]
+
+    dests = [
+        (
+            _build_source(src=table_src, nrows=nrows),
+            _build_dest(
+                dsn=dsn,
+                schema_name=schema_name,
+                table_name=table_table_name,
+                password=password,
+                views=table_views,
+            ),
+        )
+        for table_src, table_table_name, table_views in tables
+    ]
 
     if create_db:
-        create_database_if_absent(dest.url)
+        create_database_if_absent(dests[0][1].url)
 
-    if allow_existing and _table_is_populated(dest):
-        return
-
-    if dwh_utils.is_redshift(dest.url):
-        _load_redshift(source, dest, bucket=bucket, iam_role=iam_role)
-    elif dwh_utils.is_bigquery(dest.url):
-        _load_bigquery(source, dest)
-    elif dwh_utils.is_postgres(dest.url):
-        _load_postgres(source, dest)
-    else:
-        fail("Unrecognized database driver.", code=2)
+    for source, dest in dests:
+        if allow_existing and _table_is_populated(dest):
+            continue
+        if dwh_utils.is_redshift(dest.url):
+            _load_redshift(source, dest, bucket=bucket, iam_role=iam_role)
+        elif dwh_utils.is_bigquery(dest.url):
+            _load_bigquery(source, dest)
+        elif dwh_utils.is_postgres(dest.url):
+            _load_postgres(source, dest)
+        else:
+            fail("Unrecognized database driver.", code=2)
 
 
 def register(app: typer.Typer) -> None:

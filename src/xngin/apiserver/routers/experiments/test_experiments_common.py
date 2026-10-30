@@ -17,7 +17,6 @@ from sqlalchemy import Boolean, Column, MetaData, String, Table, insert, select
 from sqlalchemy.orm import Session, selectinload
 
 from xngin.apiserver import database
-from xngin.apiserver.conftest import RowProtocolMixin
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import (
@@ -71,6 +70,7 @@ from xngin.apiserver.routers.experiments.experiments_common_csv import get_exper
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.assertions import assert_dates_equal
+from xngin.apiserver.testing.helpers import RowProtocolMixin
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
 from xngin.stats.assignment import AssignmentResult
 
@@ -473,12 +473,7 @@ def _make_experiment_field(
     metric_pct_change: float | None = None,
     filters: list[tables.ExperimentFilter] | None = None,
 ) -> tables.ExperimentField:
-    """Build a detached ExperimentField suitable for unit-testing without a DB session.
-
-    Don't pass experiment_filters in the constructor for non-filter fields — on a
-    detached (sessionless) instance the attribute stays None, so is_filter returns False.
-    Only pass an explicit list when the field should act as a filter.
-    """
+    """Build a detached ExperimentField suitable for unit-testing without a DB session."""
     field = tables.ExperimentField(
         field_name=field_name,
         data_type=data_type.value,
@@ -567,8 +562,10 @@ def test_make_schema_from_experiment_builds_participants_schema():
     assert field_names == ["country", "id", "revenue"]  # sorted by name
     id_fd = next(f for f in result.fields if f.field_name == "id")
     assert id_fd.is_unique_id is True
+    assert id_fd.is_filter is False
     revenue_fd = next(f for f in result.fields if f.field_name == "revenue")
     assert revenue_fd.is_metric is True
+    assert revenue_fd.is_filter is False
     country_fd = next(f for f in result.fields if f.field_name == "country")
     assert country_fd.is_strata is True
     assert country_fd.is_filter is True
@@ -678,7 +675,7 @@ def test_create_preassigned_experiment_impl(
     assert gender_field.data_type == "character varying"
     is_onboarded_field = next((f for f in experiment_fields if f.field_name == "is_onboarded"), None)
     assert is_onboarded_field is not None
-    assert is_onboarded_field.is_metric
+    assert is_onboarded_field.metric_pct_change == 0.1
     assert is_onboarded_field.data_type == "boolean"
 
     # Verify stats parameters were stored correctly
@@ -1342,53 +1339,43 @@ def test_create_freq_online_experiment_impl_experiments_fields_are_correctly_sto
     unique_id_field = next(f for f in experiment.experiment_fields if f.field_name == "id")
     assert unique_id_field.data_type == "bigint"
     assert unique_id_field.is_unique_id
-    assert unique_id_field.is_filter
-    assert unique_id_field.experiment_filters is not None
     assert unique_id_field.experiment_filters[0].relation == Relation.EXCLUDES
     assert unique_id_field.experiment_filters[0].numeric_values == [(2 << 52) + 1, None]
     assert unique_id_field.experiment_filters[0].position == 4
     current_income_field = next(f for f in experiment.experiment_fields if f.field_name == "current_income")
     assert current_income_field.data_type == "double precision"
-    assert current_income_field.is_metric
+    assert current_income_field.metric_pct_change == 5
     assert current_income_field.is_primary_metric
-    assert current_income_field.is_filter
-    assert current_income_field.experiment_filters is not None
     assert current_income_field.experiment_filters[0].relation == Relation.BETWEEN
     assert current_income_field.experiment_filters[0].numeric_values == [0.0, 100000.0]
     assert current_income_field.experiment_filters[0].position == 2
     is_engaged_field = next(f for f in experiment.experiment_fields if f.field_name == "is_engaged")
     assert is_engaged_field.data_type == "boolean"
-    assert is_engaged_field.is_metric
+    assert is_engaged_field.metric_target == 0.5
     assert not is_engaged_field.is_primary_metric
-    assert is_engaged_field.is_filter
-    assert is_engaged_field.experiment_filters is not None
     assert is_engaged_field.experiment_filters[0].relation == Relation.INCLUDES
     assert is_engaged_field.experiment_filters[0].boolean_values == [1, None]
     assert is_engaged_field.experiment_filters[0].position == 3
     ethnicity_field = next(f for f in experiment.experiment_fields if f.field_name == "ethnicity")
     assert ethnicity_field.data_type == "character varying"
     assert ethnicity_field.is_strata
+    assert not ethnicity_field.experiment_filters
     baseline_income_field = next(f for f in experiment.experiment_fields if f.field_name == "baseline_income")
     assert baseline_income_field.data_type == "numeric"
     assert baseline_income_field.is_strata
+    assert not baseline_income_field.experiment_filters
     gender_field = next(f for f in experiment.experiment_fields if f.field_name == "gender")
     assert gender_field.data_type == "character varying"
-    assert gender_field.is_filter
-    assert gender_field.experiment_filters is not None
     assert gender_field.experiment_filters[0].relation == Relation.INCLUDES
     assert gender_field.experiment_filters[0].string_values == ["Male"]
     assert gender_field.experiment_filters[0].position == 1
     sample_date_field = next(f for f in experiment.experiment_fields if f.field_name == "sample_date")
     assert sample_date_field.data_type == "date"
-    assert sample_date_field.is_filter
-    assert sample_date_field.experiment_filters is not None
     assert sample_date_field.experiment_filters[0].relation == Relation.BETWEEN
     assert sample_date_field.experiment_filters[0].string_values == ["2024-01-01", "2026-01-01"]
     assert sample_date_field.experiment_filters[0].position == 5
     uuid_filter_field = next(f for f in experiment.experiment_fields if f.field_name == "uuid_filter")
     assert uuid_filter_field.data_type == "uuid"
-    assert uuid_filter_field.is_filter
-    assert uuid_filter_field.experiment_filters is not None
     assert uuid_filter_field.experiment_filters[0].relation == Relation.EXCLUDES
     assert uuid_filter_field.experiment_filters[0].string_values == ["123e4567-e89b-12d3-a456-426614174000"]
     assert uuid_filter_field.experiment_filters[0].position == 6
@@ -1434,7 +1421,7 @@ def test_create_experiment_impl_for_freq_online_with_unbalanced_arms(
     assert gender_field.data_type == "character varying"
     is_onboarded_field = next((f for f in experiment_fields if f.field_name == "is_onboarded"), None)
     assert is_onboarded_field is not None
-    assert is_onboarded_field.is_metric
+    assert is_onboarded_field.metric_pct_change == 0.1
     assert is_onboarded_field.data_type == "boolean"
 
     # Reorder arms as storage layout to break test assumptions.
@@ -2019,6 +2006,116 @@ def test_create_experiment_impl_no_metric_stratification(xngin_session, testing_
     num_control = sum(1 for a in assignments if a.arm_id == arm1_id)
     num_treat = sum(1 for a in assignments if a.arm_id == arm2_id)
     assert abs(num_control - num_treat) <= 1
+
+
+def make_one_time_metric_request(*, desired_n: int, use_one_time_metric: bool) -> CreateExperimentRequest:
+    """Preassigned request whose eligible pool is 100 rows with a null primary metric and 100 rows without.
+
+    In the testing DWH, is_onboarded_onetime is NULL for ids 1-500000 and set for ids 500001-1000000, so
+    filtering to ids around that boundary gives a pool that is half null, half non-null.
+    """
+    request_json = make_createexperimentrequest_json(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED, desired_n=desired_n
+    )
+    request_json["design_spec"]["filters"] = [{"field_name": "id", "relation": "between", "value": [499_901, 500_100]}]
+    request_json["design_spec"]["metrics"] = [
+        {"field_name": "is_onboarded_onetime", "metric_pct_change": 0.1, "use_one_time_metric": use_one_time_metric}
+    ]
+    return CreateExperimentRequest.model_validate(request_json)
+
+
+@pytest.mark.parametrize(
+    ("use_one_time_metric", "desired_n", "expected_null_n", "expected_nonnull_n"),
+    [
+        (True, 100, 100, 0),  # One-time mode: only the 100 null rows in the pool are eligible.
+        (False, 200, 100, 100),  # Default: the whole 200-row pool is eligible.
+    ],
+)
+def test_create_preassigned_experiment_impl_one_time_metric_assigns_only_null_rows(
+    xngin_session, testing_datasource, use_one_time_metric, desired_n, expected_null_n, expected_nonnull_n
+):
+    # Deliberately not using use_deterministic_random: it orders by id, and the lowest ids in the pool are the
+    # null ones, so a broken null filter would still pick only null rows. With real random sampling, a broken
+    # filter picks non-null rows from the mixed pool with near certainty.
+    request = make_one_time_metric_request(desired_n=desired_n, use_one_time_metric=use_one_time_metric)
+
+    response = create_experiment_impl(
+        request=request,
+        datasource=testing_datasource.ds,
+        random_state=42,
+        xngin_session=xngin_session,
+        stratify_on_metrics=False,
+        validated_webhooks=[],
+    )
+
+    assignments = xngin_session.scalars(
+        select(tables.ArmAssignment).where(tables.ArmAssignment.experiment_id == response.experiment_id)
+    ).all()
+    participant_ids = [int(a.participant_id) for a in assignments]
+    assert sum(pid <= 500_000 for pid in participant_ids) == expected_null_n
+    assert sum(pid > 500_000 for pid in participant_ids) == expected_nonnull_n
+
+    # The toggle is persisted, so the create response and a later read both report how the experiment was created.
+    assert isinstance(response.design_spec, PreassignedFrequentistExperimentSpec)
+    assert response.design_spec.metrics[0].use_one_time_metric == use_one_time_metric
+    experiment = get_experiment_preloaded(xngin_session, response.experiment_id)
+    rehydrated_design_spec = ExperimentStorageConverter(experiment).get_design_spec()
+    assert isinstance(rehydrated_design_spec, PreassignedFrequentistExperimentSpec)
+    assert rehydrated_design_spec.metrics[0].use_one_time_metric == use_one_time_metric
+
+
+def test_get_design_spec_metrics_puts_one_time_primary_metric_first():
+    # experiment_fields has no defined order. If the primary metric came back second, the "one-time mode only on
+    # the primary metric" validator would reject the stored experiment's own design spec.
+    experiment = tables.Experiment(
+        experiment_fields=[
+            tables.ExperimentField(
+                field_name="secondary",
+                data_type="boolean",
+                is_primary_metric=False,
+                metric_pct_change=0.1,
+                use_one_time_metric=False,
+            ),
+            tables.ExperimentField(
+                field_name="primary",
+                data_type="boolean",
+                is_primary_metric=True,
+                metric_pct_change=0.1,
+                use_one_time_metric=True,
+            ),
+        ]
+    )
+
+    metrics = ExperimentStorageConverter(experiment).get_design_spec_metrics()
+
+    assert [m.field_name for m in metrics] == ["primary", "secondary"]
+    assert [m.use_one_time_metric for m in metrics] == [True, False]
+
+
+def test_create_preassigned_experiment_impl_one_time_metric_rejects_too_few_null_rows(
+    xngin_session, testing_datasource
+):
+    # Only 100 null rows are eligible, but 200 are requested.
+    request = make_one_time_metric_request(desired_n=200, use_one_time_metric=True)
+
+    with pytest.raises(
+        LateValidationError,
+        match=(
+            r'only 100 participants have no value for "is_onboarded_onetime", '
+            r"fewer than the desired sample size of 200\. Turn off one-time mode"
+        ),
+    ):
+        create_experiment_impl(
+            request=request,
+            datasource=testing_datasource.ds,
+            random_state=42,
+            xngin_session=xngin_session,
+            stratify_on_metrics=False,
+            validated_webhooks=[],
+        )
+
+    # Nothing is persisted when creation is blocked.
+    assert xngin_session.scalars(select(tables.Experiment)).all() == []
 
 
 def test_get_experiment_impl_of_legacy_experiment(xngin_session, testing_datasource):
