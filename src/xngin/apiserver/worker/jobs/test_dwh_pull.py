@@ -18,7 +18,7 @@ from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
 from xngin.apiserver.testing.worker_helpers import read_assignments
 from xngin.apiserver.worker.jobs.bandit_outcomes import OutcomeReport
-from xngin.apiserver.worker.jobs.dwh_pull import pull_one_experiment
+from xngin.apiserver.worker.jobs.dwh_pull import WarehouseReadError, pull_one_experiment
 
 
 def create_mab_dwh_experiment(
@@ -170,7 +170,8 @@ def test_a_pull_times_out_on_a_stalled_warehouse(
 
     mocker.patch.object(DwhSession, "_inspect_table_blocking", stall)
     try:
-        with pytest.raises(DwhTimeoutError):
+        with pytest.raises(WarehouseReadError) as exc_info:
             pull(experiment_id, dwh_timeout=0.05)
+        assert isinstance(exc_info.value.__cause__, DwhTimeoutError)
     finally:
         release.set()

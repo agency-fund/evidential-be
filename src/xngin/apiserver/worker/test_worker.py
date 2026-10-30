@@ -471,6 +471,7 @@ def test_warehouse_timeout_releases_locks_and_allows_retry_while_helper_is_stall
         returned.set()
 
     stalled = mocker.patch.object(DwhSession, "_inspect_table_blocking", stall)
+    capture_exception = mocker.patch("xngin.apiserver.worker.attempts.sentry_sdk.capture_exception")
     started = datetime.now(UTC)
     finished = started + timedelta(seconds=17)
     with ThreadPoolExecutor(max_workers=1) as pool:
@@ -484,6 +485,8 @@ def test_warehouse_timeout_releases_locks_and_allows_retry_while_helper_is_stall
             assert status.last_success_at is None
             assert status.consecutive_failures == 1
             assert "DwhTimeoutError:" in status.last_error
+            # A customer's warehouse failing is not our bug, so it does not alert.
+            capture_exception.assert_not_called()
             retry_at = finished + job.backoff.delay_after(1)
             assert status.next_run_at == status.retry_not_before == retry_at
             assert read_outcomes(xngin_session, experiment.id) == {"1": None, "2": None}
@@ -538,6 +541,31 @@ def test_periodic_jobs_that_never_succeeded_follow_existing_snapshots_and_outcom
     refresh_stale_experiments((PULL, SNAPSHOT))
     assert status_for(experiment.id, SNAPSHOT).next_run_at == snapshot_at + SNAPSHOT.interval
     assert status_for(experiment.id, PULL).next_run_at == observed_at + PULL.interval
+
+
+def test_misconfigured_dwh_pull_fails_without_alerting(xngin_session, testing_datasource, mocker):
+    experiment = make_dwh_experiment(xngin_session, testing_datasource.ds)
+    experiment.datasource_table = None
+    xngin_session.commit()
+    capture_exception = mocker.patch("xngin.apiserver.worker.attempts.sentry_sdk.capture_exception")
+    refresh_stale_experiments((PULL,))
+    assert attempt_due((PULL,)).result is AttemptResult.JOB_RAN
+    status = status_for(experiment.id, PULL)
+    assert status.consecutive_failures == 1
+    assert status.last_error.startswith("LateValidationError: MAB-DWH experiment is missing")
+    capture_exception.assert_not_called()
+
+
+def test_a_bug_in_the_warehouse_read_alerts(xngin_session, testing_datasource, mocker):
+    experiment = make_dwh_experiment(xngin_session, testing_datasource.ds)
+    mocker.patch.object(DwhSession, "get_participant_metrics", side_effect=TypeError("bug"))
+    capture_exception = mocker.patch("xngin.apiserver.worker.attempts.sentry_sdk.capture_exception")
+    refresh_stale_experiments((PULL,))
+    assert attempt_due((PULL,)).result is AttemptResult.JOB_RAN
+    status = status_for(experiment.id, PULL)
+    assert status.consecutive_failures == 1
+    assert status.last_error == "TypeError: bug"
+    capture_exception.assert_called_once()
 
 
 def test_api_outcome_and_metadata_update_commit_during_worker_read(xngin_session, testing_datasource):
