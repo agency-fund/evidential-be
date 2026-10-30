@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_f486e4c3bcca4cb5_experiments_common_csv_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.0">coverage.py v7.17.0</a>,
-            created at 2026-10-30 11:04 +0000
+            created at 2026-10-30 22:40 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -160,7 +160,7 @@
     <p class="run"><span class="n"><a id="t78" href="#t78">78</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">stats</span><span class="op">.</span><span class="nam">bandit_analysis</span> <span class="key">import</span> <span class="nam">analyze_experiment</span> <span class="key">as</span> <span class="nam">analyze_bandit_experiment</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t79" href="#t79">79</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">stats</span><span class="op">.</span><span class="nam">bandit_sampling</span> <span class="key">import</span> <span class="nam">choose_arm</span> <span class="key">as</span> <span class="nam">choose_bandit_arm</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t80" href="#t80">80</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">stats</span><span class="op">.</span><span class="nam">bandit_sampling</span> <span class="key">import</span> <span class="nam">update_arm</span> <span class="key">as</span> <span class="nam">update_bandit_arm</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t81" href="#t81">81</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">stats</span><span class="op">.</span><span class="nam">stats_errors</span> <span class="key">import</span> <span class="nam">StatsAnalysisError</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t81" href="#t81">81</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">stats</span><span class="op">.</span><span class="nam">stats_errors</span> <span class="key">import</span> <span class="nam">StatsAnalysisError</span><span class="op">,</span> <span class="nam">StatsNoParticipantsError</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t82" href="#t82">82</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">tq</span><span class="op">.</span><span class="nam">task_payload_types</span> <span class="key">import</span> <span class="nam">WEBHOOK_OUTBOUND_TASK_TYPE</span><span class="op">,</span> <span class="nam">WebhookOutboundTask</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t83" href="#t83">83</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t84" href="#t84">84</a></span><span class="t"><span class="nam">ASSIGNMENT_STREAM_FETCH_SIZE_ROWS</span> <span class="op">=</span> <span class="num">16_384</span>&nbsp;</span><span class="r"></span></p>
@@ -1413,7 +1413,7 @@
     <p class="run run2"><span class="n"><a id="t1331" href="#t1331">1331</a></span><span class="t">        <span class="nam">xngin_session</span><span class="op">,</span> <span class="nam">experiment</span><span class="op">.</span><span class="nam">id</span><span class="op">,</span> <span class="nam">include_cluster_key</span><span class="op">=</span><span class="nam">include_cluster</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t1332" href="#t1332">1332</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t1333" href="#t1333">1333</a></span><span class="t">    <span class="key">if</span> <span class="nam">assignments_df</span><span class="op">.</span><span class="nam">empty</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t1334" href="#t1334">1334</a></span><span class="t">        <span class="key">raise</span> <span class="nam">StatsAnalysisError</span><span class="op">(</span><span class="str">&quot;No participants found for experiment.&quot;</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t1334" href="#t1334">1334</a></span><span class="t">        <span class="key">raise</span> <span class="nam">StatsNoParticipantsError</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1335" href="#t1335">1335</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t1336" href="#t1336">1336</a></span><span class="t">    <span class="key">with</span> <span class="nam">DwhSession</span><span class="op">.</span><span class="nam">open</span><span class="op">(</span><span class="nam">dsconfig</span><span class="op">.</span><span class="nam">dwh</span><span class="op">,</span> <span class="nam">timeout</span><span class="op">=</span><span class="nam">dwh_timeout</span><span class="op">)</span> <span class="key">as</span> <span class="nam">dwh</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1337" href="#t1337">1337</a></span><span class="t">        <span class="com"># Mark the start of the analysis as when we begin pulling outcomes.</span>&nbsp;</span><span class="r"></span></p>
@@ -1605,7 +1605,7 @@
             <a class="nav" href="z_f486e4c3bcca4cb5_experiments_common_csv_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.0">coverage.py v7.17.0</a>,
-            created at 2026-10-30 11:04 +0000
+            created at 2026-10-30 22:40 +0000
         </p>
     </div>
 </footer>

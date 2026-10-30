@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_71a08decc2280a90_dependencies_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.0">coverage.py v7.17.0</a>,
-            created at 2026-10-30 11:04 +0000
+            created at 2026-10-30 22:40 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -154,7 +154,7 @@
     <p class="pln"><span class="n"><a id="t72" href="#t72">72</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t73" href="#t73">73</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t74" href="#t74">74</a></span><span class="t"><span class="op">@</span><span class="nam">contextlib</span><span class="op">.</span><span class="nam">contextmanager</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t75" href="#t75">75</a></span><span class="t"><span class="key">def</span> <span class="nam">setup</span><span class="op">(</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t75" href="#t75">75</a></span><span class="t"><span class="key">def</span> <span class="nam">setup</span><span class="op">(</span><span class="op">*</span><span class="op">,</span> <span class="nam">pool_size</span><span class="op">:</span> <span class="nam">int</span> <span class="op">=</span> <span class="num">5</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t76" href="#t76">76</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Create the process-wide application database engine.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t77" href="#t77">77</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t78" href="#t78">78</a></span><span class="t"><span class="str">    Nested calls reuse that engine, since the FastAPI lifespan calls setup()</span>&nbsp;</span><span class="r"></span></p>
@@ -171,18 +171,19 @@
     <p class="pln"><span class="n"><a id="t89" href="#t89">89</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t90" href="#t90">90</a></span><span class="t">    <span class="nam">engine</span> <span class="op">=</span> <span class="nam">create_engine</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t91" href="#t91">91</a></span><span class="t">        <span class="nam">database_url</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t92" href="#t92">92</a></span><span class="t">        <span class="nam">connect_args</span><span class="op">=</span><span class="op">{</span><span class="str">&quot;application_name&quot;</span><span class="op">:</span> <span class="nam">APP_DB_APPLICATION_NAME</span><span class="op">}</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t93" href="#t93">93</a></span><span class="t">        <span class="nam">execution_options</span><span class="op">=</span><span class="op">{</span><span class="str">&quot;logging_token&quot;</span><span class="op">:</span> <span class="str">&quot;app&quot;</span><span class="op">}</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t94" href="#t94">94</a></span><span class="t">        <span class="nam">logging_name</span><span class="op">=</span><span class="nam">SA_LOGGER_NAME_FOR_APP</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t95" href="#t95">95</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t96" href="#t96">96</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t97" href="#t97">97</a></span><span class="t">    <span class="com"># We use expire_on_commit for reasons described in docs/SQLALCHEMY.md.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t98" href="#t98">98</a></span><span class="t">    <span class="nam">_GLOBAL_STATE</span> <span class="op">=</span> <span class="nam">DatabaseState</span><span class="op">(</span><span class="nam">database_url</span><span class="op">,</span> <span class="nam">engine</span><span class="op">,</span> <span class="nam">sessionmaker</span><span class="op">(</span><span class="nam">bind</span><span class="op">=</span><span class="nam">engine</span><span class="op">,</span> <span class="nam">expire_on_commit</span><span class="op">=</span><span class="key">False</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t99" href="#t99">99</a></span><span class="t">    <span class="key">try</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t100" href="#t100">100</a></span><span class="t">        <span class="key">yield</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t101" href="#t101">101</a></span><span class="t">    <span class="key">finally</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t102" href="#t102">102</a></span><span class="t">        <span class="nam">_GLOBAL_STATE</span> <span class="op">=</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t103" href="#t103">103</a></span><span class="t">        <span class="nam">engine</span><span class="op">.</span><span class="nam">dispose</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t92" href="#t92">92</a></span><span class="t">        <span class="nam">pool_size</span><span class="op">=</span><span class="nam">pool_size</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t93" href="#t93">93</a></span><span class="t">        <span class="nam">connect_args</span><span class="op">=</span><span class="op">{</span><span class="str">&quot;application_name&quot;</span><span class="op">:</span> <span class="nam">APP_DB_APPLICATION_NAME</span><span class="op">}</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t94" href="#t94">94</a></span><span class="t">        <span class="nam">execution_options</span><span class="op">=</span><span class="op">{</span><span class="str">&quot;logging_token&quot;</span><span class="op">:</span> <span class="str">&quot;app&quot;</span><span class="op">}</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t95" href="#t95">95</a></span><span class="t">        <span class="nam">logging_name</span><span class="op">=</span><span class="nam">SA_LOGGER_NAME_FOR_APP</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t96" href="#t96">96</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t97" href="#t97">97</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t98" href="#t98">98</a></span><span class="t">    <span class="com"># We use expire_on_commit for reasons described in docs/SQLALCHEMY.md.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t99" href="#t99">99</a></span><span class="t">    <span class="nam">_GLOBAL_STATE</span> <span class="op">=</span> <span class="nam">DatabaseState</span><span class="op">(</span><span class="nam">database_url</span><span class="op">,</span> <span class="nam">engine</span><span class="op">,</span> <span class="nam">sessionmaker</span><span class="op">(</span><span class="nam">bind</span><span class="op">=</span><span class="nam">engine</span><span class="op">,</span> <span class="nam">expire_on_commit</span><span class="op">=</span><span class="key">False</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t100" href="#t100">100</a></span><span class="t">    <span class="key">try</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t101" href="#t101">101</a></span><span class="t">        <span class="key">yield</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t102" href="#t102">102</a></span><span class="t">    <span class="key">finally</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t103" href="#t103">103</a></span><span class="t">        <span class="nam">_GLOBAL_STATE</span> <span class="op">=</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t104" href="#t104">104</a></span><span class="t">        <span class="nam">engine</span><span class="op">.</span><span class="nam">dispose</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -192,7 +193,7 @@
             <a class="nav" href="z_71a08decc2280a90_dependencies_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.0">coverage.py v7.17.0</a>,
-            created at 2026-10-30 11:04 +0000
+            created at 2026-10-30 22:40 +0000
         </p>
     </div>
 </footer>
