@@ -471,6 +471,32 @@ def test_desired_ns_clusters_requires_cluster_key():
         PreassignedFrequentistExperimentSpec.model_validate(invalid_spec)
 
 
+@pytest.mark.parametrize(
+    ("end_date", "valid"),
+    [("2024-01-02T00:00:00+00:00", True), ("2024-01-01T00:00:00+00:00", True), ("2023-12-31T00:00:00+00:00", False)],
+    ids=["after", "same", "before"],
+)
+def test_end_date_must_not_precede_start_date(end_date, valid):
+    spec = {
+        "experiment_type": "freq_preassigned",
+        "experiment_name": "test",
+        "description": "test",
+        "table_name": "dwh",
+        "primary_key": "id",
+        "start_date": "2024-01-01T00:00:00+00:00",
+        "end_date": end_date,
+        "arms": [{"arm_name": "C", "arm_description": "C"}, {"arm_name": "T", "arm_description": "T"}],
+        "strata": [],
+        "metrics": [{"field_name": "metric1", "metric_pct_change": 0.1}],
+        "filters": [],
+    }
+    if valid:
+        PreassignedFrequentistExperimentSpec.model_validate(spec)
+    else:
+        with pytest.raises(ValidationError, match="end_date must not be before start_date"):
+            PreassignedFrequentistExperimentSpec.model_validate(spec)
+
+
 def _one_time_metric(field_name: str, *, use_one_time_metric: bool) -> dict:
     # Clients send only the toggle; the server derives is_one_time_eligible during the power check.
     return {

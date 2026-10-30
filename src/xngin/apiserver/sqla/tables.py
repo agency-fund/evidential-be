@@ -471,6 +471,8 @@ class Experiment(Base):
     impact: Mapped[str] = mapped_column(server_default="")
     decision: Mapped[str] = mapped_column(server_default="")
 
+    __table_args__ = (CheckConstraint("end_date >= start_date", name="ck_experiments_end_not_before_start"),)
+
     # ArmAssignment table has many rows and is subject to bulk data operations;
     # for efficiency, we do not have a database-enforced ForeignKey constraint. This
     # explicit join description allows deletes to cascade to ArmAssignment when
