@@ -23,12 +23,12 @@ from xngin.apiserver.routers.common_api_types import (
 from xngin.apiserver.routers.common_enums import ContextType, LikelihoodTypes, PriorTypes, Relation
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.settings import Dsn, RemoteDatabaseConfig
-from xngin.apiserver.snapshots.fake_data import (
+from xngin.apiserver.sqla import tables
+from xngin.apiserver.storage.bootstrap_snapshots import (
     LATE_BREAKOUT,
     STEADY_GAIN,
     seed_historical_snapshots,
 )
-from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
 from xngin.apiserver.testing.wide_dwh_def import WIDE_DWH_TABLE_NAME
 

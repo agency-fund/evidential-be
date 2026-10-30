@@ -471,6 +471,8 @@ class Experiment(Base):
     impact: Mapped[str] = mapped_column(server_default="")
     decision: Mapped[str] = mapped_column(server_default="")
 
+    __table_args__ = (CheckConstraint("end_date >= start_date", name="ck_experiments_end_not_before_start"),)
+
     # ArmAssignment table has many rows and is subject to bulk data operations;
     # for efficiency, we do not have a database-enforced ForeignKey constraint. This
     # explicit join description allows deletes to cascade to ArmAssignment when
@@ -612,6 +614,8 @@ class Draw(Base):
             created_at,
             postgresql_where=sqlalchemy.text("enable_autofail IS TRUE AND outcome IS NULL"),
         ),
+        # Lets the worker check whether an experiment has any pending draw without reading its resolved ones.
+        Index("ix_draws_pending", experiment_id, postgresql_where=sqlalchemy.text("outcome IS NULL")),
         CheckConstraint(
             "(outcome IS NULL) = (autofailed_outcome IS NULL)",
             name="ck_draws_outcome_autofailed_paired",
@@ -745,3 +749,30 @@ class Snapshot(Base):
     data: Mapped[dict | None] = mapped_column(postgresql.JSONB(none_as_null=True))
 
     experiment: Mapped[Experiment] = relationship(back_populates="snapshots", viewonly=True)
+
+
+class JobStatus(Base):
+    """The most recent outcomes and backoff of one worker job for one experiment.
+
+    There is at most one row for each (experiment_id, job_name) pair. It is created when the job is first run for
+    that experiment and updated in place after each later run. Only workers update these rows.
+    """
+
+    __tablename__ = "job_statuses"
+
+    experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True)
+    # Corresponds to Job.name.
+    job_name: Mapped[str] = mapped_column(String(32), primary_key=True)
+    # When the attempt that last ran this job started; attempts that run no job leave it unchanged.
+    last_run_at: Mapped[datetime | None] = mapped_column()
+    # When the job last successfully completed. This may be different from last_run_at if there was an error.
+    last_success_at: Mapped[datetime | None] = mapped_column()
+    # Crashes roll back the attempt along with its effects; only recorded failures count here.
+    consecutive_failures: Mapped[int] = mapped_column(server_default="0")
+    # The Python exception type and message from the last failed run, or the explicit error text the job returned.
+    # Cleared when the job succeeds.
+    last_error: Mapped[str | None] = mapped_column(String(2048))
+    # The earliest time the job may run again. After a failure, this is the run's finish time plus the job's backoff
+    # delay for its consecutive_failures; after a deferred run, it is the finish time plus the run's retry_after;
+    # after a success, NULL.
+    retry_not_before: Mapped[datetime | None] = mapped_column()

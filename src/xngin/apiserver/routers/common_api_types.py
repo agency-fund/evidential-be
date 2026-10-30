@@ -987,6 +987,13 @@ class BaseDesignSpec(ApiBaseModel):
     # arms (at least two)
     arms: Annotated[Sequence[Arm], Field(..., min_length=2, max_length=MAX_NUMBER_OF_ARMS)]
 
+    @model_validator(mode="after")
+    def ensure_end_date_not_before_start_date(self) -> BaseDesignSpec:
+        """Matches the experiments table's ck_experiments_end_not_before_start constraint."""
+        if self.end_date < self.start_date:
+            raise ValueError("end_date must not be before start_date.")
+        return self
+
     def ids_are_present(self) -> bool:
         """True if any IDs are present."""
         return any(arm.arm_id is not None for arm in self.arms)
