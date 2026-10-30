@@ -1570,13 +1570,6 @@ def update_experiment(
     if experiment.state != ExperimentState.COMMITTED:
         raise LateValidationError("Experiment must have been committed to be updated.")
 
-    if "google_sheets_experiment_url" in body.model_fields_set:
-        if experiment.experiment_type != ExperimentsType.FREQ_PREASSIGNED.value or not isinstance(
-            experiment.datasource.get_config().dwh, GoogleSheetsDsn
-        ):
-            raise LateValidationError("Only preassigned Google Sheets experiments support an experiment outcome tab.")
-        experiment.google_sheets_experiment_url = body.google_sheets_experiment_url
-
     if body.name is not None:
         experiment.name = body.name
     if body.description is not None:

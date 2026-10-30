@@ -15,7 +15,7 @@ from xngin.apiserver.dwh.queries import get_raw_metric_stats
 from xngin.apiserver.exceptions_common import DwhConnectionError, LateValidationError
 from xngin.apiserver.limits import MAX_LENGTH_OF_NAME_VALUE
 from xngin.apiserver.routers.admin import admin_api_types as aapi
-from xngin.apiserver.routers.admin.admin_api_converters import api_dsn_to_settings_dwh, settings_dwh_to_api_dsn
+from xngin.apiserver.routers.admin.admin_api_converters import settings_dwh_to_api_dsn
 from xngin.apiserver.routers.common_api_types import (
     Arm,
     CreateExperimentRequest,
@@ -99,8 +99,6 @@ def test_only_spreadsheet_urls_are_accepted(url):
         aapi.GoogleSheetsDsn(spreadsheet_url=url)
     with pytest.raises(ValueError):
         GoogleSheetsDsn(spreadsheet_url=url)
-    with pytest.raises(ValueError):
-        aapi.UpdateExperimentRequest(google_sheets_experiment_url=url)
 
 
 @pytest.mark.parametrize(
@@ -541,7 +539,9 @@ def test_download_follows_public_google_download_redirect(sheets_http, mocker):
 
 @pytest.mark.parametrize("blank_outcomes", [False, True])
 @pytest.mark.parametrize("cluster_key", [None, "region"])
-def test_create_launch_export_import_and_analyze_a_sheet_experiment(sheets_http, aclient, blank_outcomes, cluster_key):
+def test_create_launch_export_import_and_analyze_a_sheet_experiment(
+    sheets_http, aclient, xngin_session, blank_outcomes, cluster_key
+):
     http, values = sheets_http
     examples = Path(__file__).parents[4] / "tools"
     with (examples / "google_sheets_example.csv").open(newline="") as source:
@@ -657,11 +657,10 @@ def test_create_launch_export_import_and_analyze_a_sheet_experiment(sheets_http,
     assert values[0] == headers
     source_tab = [row.copy() for row in values]
     http.csv_tabs["99"] = imported
-    aclient.update_experiment(
-        datasource_id=datasource_id,
-        experiment_id=experiment_id,
-        body=aapi.UpdateExperimentRequest(google_sheets_experiment_url=URL.replace("gid=42", "gid=99")),
+    xngin_session.get_one(tables.Experiment, experiment_id).google_sheets_experiment_url = URL.replace(
+        "gid=42", "gid=99"
     )
+    xngin_session.commit()
     values = imported
     header = f"evidential_{experiment_id.replace('-', '_')}_arm"
     assert values[0][-1] == header
@@ -854,13 +853,10 @@ def test_shared_raw_sheet_has_isolated_experiment_outcomes(sheets_http, aclient,
     )
 
     def connect(experiment_id, gid):
-        aclient.update_experiment(
-            datasource_id=ds_id,
-            experiment_id=experiment_id,
-            body=aapi.UpdateExperimentRequest(
-                google_sheets_experiment_url=None if gid is None else URL.replace("gid=42", f"gid={gid}")
-            ),
+        xngin_session.get_one(tables.Experiment, experiment_id).google_sheets_experiment_url = (
+            None if gid is None else URL.replace("gid=42", f"gid={gid}")
         )
+        xngin_session.commit()
         xngin_session.expire_all()
         assert xngin_session.get_one(tables.Experiment, experiment_id).google_sheets_experiment_url == (
             None if gid is None else URL.replace("gid=42", f"gid={gid}")
@@ -902,14 +898,6 @@ def test_shared_raw_sheet_has_isolated_experiment_outcomes(sheets_http, aclient,
         datasource_id=ds_id, experiment_id=first, body=aapi.UpdateExperimentRequest(name="Renamed")
     )
     assert treatment(first) == pytest.approx(first_result)  # Omitted URL is unchanged.
-    invalid = aclient.update_experiment(
-        datasource_id=ds_id,
-        experiment_id=first,
-        body=aapi.UpdateExperimentRequest.model_construct(google_sheets_experiment_url="https://example.com"),
-        raise_if_not_default_status=False,
-    )
-    assert invalid.status == 422
-    assert treatment(first) == pytest.approx(first_result)
     connect(first, "100")
     assert treatment(first) == pytest.approx(second_result)
     connect(first, None)
@@ -952,30 +940,3 @@ def test_shared_raw_sheet_has_isolated_experiment_outcomes(sheets_http, aclient,
     for snapshot_key, data in saved_data.items():
         assert xngin_session.get_one(tables.Snapshot, snapshot_key).data == data
     http.post.assert_not_called()
-
-
-@pytest.mark.parametrize("url", [None, URL])
-@pytest.mark.parametrize(
-    ("experiment_type", "dwh"),
-    [
-        ("freq_preassigned", aapi.ApiOnlyDsn()),
-        ("freq_online", aapi.GoogleSheetsDsn(spreadsheet_url=URL)),
-        ("mab", aapi.GoogleSheetsDsn(spreadsheet_url=URL)),
-    ],
-)
-def test_outcome_connection_rejects_unsupported_experiments(mocker, url, experiment_type, dwh):
-    from xngin.apiserver.routers.admin.admin_api import update_experiment  # noqa: PLC0415
-    from xngin.apiserver.routers.common_enums import ExperimentState  # noqa: PLC0415
-
-    experiment = mocker.Mock(state=ExperimentState.COMMITTED, experiment_type=experiment_type)
-    experiment.datasource.get_config.return_value = RemoteDatabaseConfig(
-        type="remote", dwh=api_dsn_to_settings_dwh(dwh)
-    )
-    session = mocker.Mock()
-    with pytest.raises(LateValidationError):
-        update_experiment(
-            experiment=experiment,
-            session=session,
-            body=aapi.UpdateExperimentRequest(google_sheets_experiment_url=url),
-        )
-    session.commit.assert_not_called()
