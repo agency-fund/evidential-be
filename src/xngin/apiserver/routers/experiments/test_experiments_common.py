@@ -473,12 +473,7 @@ def _make_experiment_field(
     metric_pct_change: float | None = None,
     filters: list[tables.ExperimentFilter] | None = None,
 ) -> tables.ExperimentField:
-    """Build a detached ExperimentField suitable for unit-testing without a DB session.
-
-    Don't pass experiment_filters in the constructor for non-filter fields — on a
-    detached (sessionless) instance the attribute stays None, so is_filter returns False.
-    Only pass an explicit list when the field should act as a filter.
-    """
+    """Build a detached ExperimentField suitable for unit-testing without a DB session."""
     field = tables.ExperimentField(
         field_name=field_name,
         data_type=data_type.value,
@@ -567,8 +562,10 @@ def test_make_schema_from_experiment_builds_participants_schema():
     assert field_names == ["country", "id", "revenue"]  # sorted by name
     id_fd = next(f for f in result.fields if f.field_name == "id")
     assert id_fd.is_unique_id is True
+    assert id_fd.is_filter is False
     revenue_fd = next(f for f in result.fields if f.field_name == "revenue")
     assert revenue_fd.is_metric is True
+    assert revenue_fd.is_filter is False
     country_fd = next(f for f in result.fields if f.field_name == "country")
     assert country_fd.is_strata is True
     assert country_fd.is_filter is True
@@ -678,7 +675,7 @@ def test_create_preassigned_experiment_impl(
     assert gender_field.data_type == "character varying"
     is_onboarded_field = next((f for f in experiment_fields if f.field_name == "is_onboarded"), None)
     assert is_onboarded_field is not None
-    assert is_onboarded_field.is_metric
+    assert is_onboarded_field.metric_pct_change == 0.1
     assert is_onboarded_field.data_type == "boolean"
 
     # Verify stats parameters were stored correctly
@@ -1342,53 +1339,43 @@ def test_create_freq_online_experiment_impl_experiments_fields_are_correctly_sto
     unique_id_field = next(f for f in experiment.experiment_fields if f.field_name == "id")
     assert unique_id_field.data_type == "bigint"
     assert unique_id_field.is_unique_id
-    assert unique_id_field.is_filter
-    assert unique_id_field.experiment_filters is not None
     assert unique_id_field.experiment_filters[0].relation == Relation.EXCLUDES
     assert unique_id_field.experiment_filters[0].numeric_values == [(2 << 52) + 1, None]
     assert unique_id_field.experiment_filters[0].position == 4
     current_income_field = next(f for f in experiment.experiment_fields if f.field_name == "current_income")
     assert current_income_field.data_type == "double precision"
-    assert current_income_field.is_metric
+    assert current_income_field.metric_pct_change == 5
     assert current_income_field.is_primary_metric
-    assert current_income_field.is_filter
-    assert current_income_field.experiment_filters is not None
     assert current_income_field.experiment_filters[0].relation == Relation.BETWEEN
     assert current_income_field.experiment_filters[0].numeric_values == [0.0, 100000.0]
     assert current_income_field.experiment_filters[0].position == 2
     is_engaged_field = next(f for f in experiment.experiment_fields if f.field_name == "is_engaged")
     assert is_engaged_field.data_type == "boolean"
-    assert is_engaged_field.is_metric
+    assert is_engaged_field.metric_target == 0.5
     assert not is_engaged_field.is_primary_metric
-    assert is_engaged_field.is_filter
-    assert is_engaged_field.experiment_filters is not None
     assert is_engaged_field.experiment_filters[0].relation == Relation.INCLUDES
     assert is_engaged_field.experiment_filters[0].boolean_values == [1, None]
     assert is_engaged_field.experiment_filters[0].position == 3
     ethnicity_field = next(f for f in experiment.experiment_fields if f.field_name == "ethnicity")
     assert ethnicity_field.data_type == "character varying"
     assert ethnicity_field.is_strata
+    assert not ethnicity_field.experiment_filters
     baseline_income_field = next(f for f in experiment.experiment_fields if f.field_name == "baseline_income")
     assert baseline_income_field.data_type == "numeric"
     assert baseline_income_field.is_strata
+    assert not baseline_income_field.experiment_filters
     gender_field = next(f for f in experiment.experiment_fields if f.field_name == "gender")
     assert gender_field.data_type == "character varying"
-    assert gender_field.is_filter
-    assert gender_field.experiment_filters is not None
     assert gender_field.experiment_filters[0].relation == Relation.INCLUDES
     assert gender_field.experiment_filters[0].string_values == ["Male"]
     assert gender_field.experiment_filters[0].position == 1
     sample_date_field = next(f for f in experiment.experiment_fields if f.field_name == "sample_date")
     assert sample_date_field.data_type == "date"
-    assert sample_date_field.is_filter
-    assert sample_date_field.experiment_filters is not None
     assert sample_date_field.experiment_filters[0].relation == Relation.BETWEEN
     assert sample_date_field.experiment_filters[0].string_values == ["2024-01-01", "2026-01-01"]
     assert sample_date_field.experiment_filters[0].position == 5
     uuid_filter_field = next(f for f in experiment.experiment_fields if f.field_name == "uuid_filter")
     assert uuid_filter_field.data_type == "uuid"
-    assert uuid_filter_field.is_filter
-    assert uuid_filter_field.experiment_filters is not None
     assert uuid_filter_field.experiment_filters[0].relation == Relation.EXCLUDES
     assert uuid_filter_field.experiment_filters[0].string_values == ["123e4567-e89b-12d3-a456-426614174000"]
     assert uuid_filter_field.experiment_filters[0].position == 6
@@ -1434,7 +1421,7 @@ def test_create_experiment_impl_for_freq_online_with_unbalanced_arms(
     assert gender_field.data_type == "character varying"
     is_onboarded_field = next((f for f in experiment_fields if f.field_name == "is_onboarded"), None)
     assert is_onboarded_field is not None
-    assert is_onboarded_field.is_metric
+    assert is_onboarded_field.metric_pct_change == 0.1
     assert is_onboarded_field.data_type == "boolean"
 
     # Reorder arms as storage layout to break test assumptions.

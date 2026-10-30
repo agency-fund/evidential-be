@@ -106,9 +106,7 @@ def _make_freq_experiment_fields(
     # Add filters. Fields used as filters technically could be reused with different filter values.
     for idx, spec_filter in enumerate(design_spec.filters):
         filter_field = _upsert_field_used(spec_filter.field_name, field_type_map, fields_used_map)
-        filters = filter_field.experiment_filters or []
-        filters.append(_experiment_filter_from_spec_filter(field_type_map, spec_filter, idx))
-        filter_field.experiment_filters = filters
+        filter_field.experiment_filters.append(_experiment_filter_from_spec_filter(field_type_map, spec_filter, idx))
 
     # Add metrics
     if design_spec.metrics:
@@ -176,7 +174,7 @@ class ExperimentStorageConverter:
     ) -> list[tuple[int, capi.Filter]]:
         """Converts an ExperimentField to a list of (position, API filter) tuples, or empty list if not a filter."""
         filters = []
-        for f in experiment_field.experiment_filters or []:
+        for f in experiment_field.experiment_filters:
             # Convert storage type to API type
             values: list[Any]
             if experiment_field.data_type == DataType.BIGINT:
@@ -199,7 +197,11 @@ class ExperimentStorageConverter:
         experiment_field: tables.ExperimentField,
     ) -> capi.DesignSpecMetricRequest | None:
         """Converts an ExperimentField to an API metric, or None if the field is not a metric."""
-        if experiment_field.is_metric:
+        if (
+            experiment_field.is_primary_metric
+            or experiment_field.metric_pct_change is not None
+            or experiment_field.metric_target is not None
+        ):
             return capi.DesignSpecMetricRequest(
                 field_name=experiment_field.field_name,
                 metric_pct_change=experiment_field.metric_pct_change,
