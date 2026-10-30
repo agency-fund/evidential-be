@@ -306,7 +306,11 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
 
 
 class GoogleSheetsDsn(ConfigBaseModel, BaseDsn):
-    """A service-account-readable spreadsheet bound to its name captured at connection."""
+    """A spreadsheet connection; tabs are its tables.
+
+    The URL's gid selects the default source tab for design. Its captured table_name
+    remains a display alias; experiments switch to their generated tab ID at launch.
+    """
 
     driver: Literal["google_sheets"] = "google_sheets"
     spreadsheet_url: str

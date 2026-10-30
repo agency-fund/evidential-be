@@ -424,15 +424,14 @@ class Experiment(Base):
     datasource_id: Mapped[str] = mapped_column(String(255), ForeignKey("datasources.id", ondelete="CASCADE"))
 
     experiment_type: Mapped[str] = mapped_column()
-    # The underlying datasource table name backing this experiment.
+    # The table within the datasource backing this experiment. For Google Sheets this
+    # starts as the source tab's name and becomes the generated outcomes tab ID at launch.
     datasource_table: Mapped[str | None] = mapped_column(String(255))
     name: Mapped[str] = mapped_column(String(255))
     # Describe your experiment and hypothesis here.
     description: Mapped[str] = mapped_column(String(2000))
     # Allow an explicit link to a more explicit experiment design doc.
     design_url: Mapped[str] = mapped_column(server_default="")
-    # Independent outcomes connection; datasource config continues to identify the raw tab.
-    google_sheets_experiment_url: Mapped[str | None] = mapped_column()
 
     # The experiment state should be one of xngin.apiserver.routers.common_enums.ExperimentState.
     state: Mapped[str]

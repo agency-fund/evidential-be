@@ -555,11 +555,58 @@ def create_bandit_online_experiment_impl(
     return experiment_converter.get_create_experiment_response(empty_assign_summary, webhook_ids)
 
 
+def get_google_sheets_assignment_data(
+    xngin_session: Session, experiment: tables.Experiment
+) -> tuple[str, dict[str, str], set[str]]:
+    uid = experiment.unique_id_field()
+    if uid is None or experiment.datasource_table is None:
+        raise LateValidationError("A Google Sheets experiment needs a participant ID and spreadsheet tab.")
+    assignments = {
+        pid: arm_name
+        for pid, arm_name in xngin_session.execute(
+            select(tables.ArmAssignment.participant_id, tables.Arm.name)
+            .join(tables.Arm, tables.Arm.id == tables.ArmAssignment.arm_id)
+            .where(tables.ArmAssignment.experiment_id == experiment.id)
+        ).all()
+    }
+    return uid.field_name, assignments, {field.field_name for field in experiment.experiment_fields}
+
+
 def commit_experiment_impl(xngin_session: Session, experiment: tables.Experiment) -> CommitExperimentResult:
+    if experiment.datasource.config.get("dwh", {}).get("driver") == "google_sheets":
+        # Serialise commits before inspecting Google metadata or changing the saved tab connection.
+        experiment = xngin_session.scalars(
+            select(tables.Experiment)
+            .where(tables.Experiment.id == experiment.id)
+            .options(
+                selectinload(tables.Experiment.datasource),
+                selectinload(tables.Experiment.webhooks),
+                selectinload(tables.Experiment.experiment_fields),
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).one()
+
     if experiment.state == ExperimentState.COMMITTED:
         return CommitExperimentResult.COMMITTED
     if experiment.state != ExperimentState.ASSIGNED:
         return CommitExperimentResult.INVALID_STATE
+
+    if isinstance(experiment.datasource.get_config().dwh, GoogleSheetsDsn):
+        if experiment.experiment_type != ExperimentsType.FREQ_PREASSIGNED:
+            raise LateValidationError("Google Sheets experiment tabs require a preassigned A/B experiment.")
+        unique_id_field, assignments, field_names = get_google_sheets_assignment_data(xngin_session, experiment)
+        assert experiment.datasource_table is not None  # Validated by get_google_sheets_assignment_data.
+        with DwhSession.open(experiment.datasource.get_config().dwh) as dwh:
+            # The tab and the state are saved in the same DB transaction. A rollback
+            # retains the source reference; a retry finds the owned tab by experiment ID.
+            experiment.datasource_table = dwh.create_sheet_experiment_tab(
+                experiment.datasource_table,
+                unique_id_field,
+                experiment.id,
+                assignments,
+                field_names,
+            )
 
     experiment.state = ExperimentState.COMMITTED
 
@@ -1315,14 +1362,6 @@ def analyze_experiment_freq_impl(
     if experiment.datasource_table is None or unique_id_field is None:
         raise StatsAnalysisError("Experiment must have a datasource table and unique ID field to analyze.")
 
-    dwh_config = dsconfig.dwh
-    if isinstance(dwh_config, GoogleSheetsDsn):
-        if experiment.google_sheets_experiment_url is None:
-            raise LateValidationError("Connect a Google Sheets experiment outcome tab before running analysis.")
-        dwh_config = GoogleSheetsDsn(
-            spreadsheet_url=experiment.google_sheets_experiment_url, table_name=experiment.datasource_table
-        )
-
     include_cluster = experiment.cluster_key_field() is not None
     participant_ids, assignments_df = read_assignments_efficiently(
         xngin_session, experiment.id, include_cluster_key=include_cluster
@@ -1330,7 +1369,7 @@ def analyze_experiment_freq_impl(
     if assignments_df.empty:
         raise StatsAnalysisError("No participants found for experiment.")
 
-    with DwhSession.open(dwh_config, timeout=dwh_timeout) as dwh:
+    with DwhSession.open(dsconfig.dwh, timeout=dwh_timeout) as dwh:
         sa_table = dwh.inspect_table(experiment.datasource_table)
 
         # Mark the start of the analysis as when we begin pulling outcomes.

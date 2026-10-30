@@ -1488,7 +1488,7 @@ EXPERIMENT_STATE_TRANSITION_RESPONSES: dict[int | str, dict[str, Any]] = {
 
 @router.post(
     "/datasources/{datasource_id}/experiments/{experiment_id}/commit",
-    responses=EXPERIMENT_STATE_TRANSITION_RESPONSES,
+    responses={**EXPERIMENT_STATE_TRANSITION_RESPONSES, **DWH_CONNECTION_RESPONSES},
     status_code=status.HTTP_204_NO_CONTENT,
 )
 def commit_experiment(

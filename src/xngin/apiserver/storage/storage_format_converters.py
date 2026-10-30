@@ -21,6 +21,8 @@ from xngin.apiserver.routers.common_enums import (
     ExperimentsType,
     StopAssignmentReason,
 )
+from xngin.apiserver.settings import GoogleSheetsDsn
+from xngin.apiserver.sheets_url import parse_spreadsheet_url
 from xngin.apiserver.sqla import tables
 from xngin.stats.bandit_weights_to_prior import (
     convert_arm_weights_to_prior_params,
@@ -375,10 +377,17 @@ class ExperimentStorageConverter:
         """Construct an ExperimentConfig from the internal Experiment and an AssignSummary.
 
         Expects assign_summary since that typically requires a db lookup."""
+        outcomes_url = None
+        table_name = self.experiment.datasource_table
+        if self.experiment.state == ExperimentState.COMMITTED and table_name is not None and table_name.isdecimal():
+            dwh = self.experiment.datasource.get_config().dwh
+            if isinstance(dwh, GoogleSheetsDsn):
+                spreadsheet_id, _ = parse_spreadsheet_url(dwh.spreadsheet_url)
+                outcomes_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={table_name}"
         return capi.GetExperimentResponse(
             experiment_id=self.experiment.id,
             datasource_id=self.experiment.datasource_id,
-            google_sheets_experiment_url=self.experiment.google_sheets_experiment_url,
+            google_sheets_experiment_url=outcomes_url,
             state=ExperimentState(self.experiment.state),
             stopped_assignments_at=self.experiment.stopped_assignments_at,
             stopped_assignments_reason=StopAssignmentReason.from_str(self.experiment.stopped_assignments_reason),
