@@ -188,14 +188,10 @@ def create_freq_experiment_analysis(
                 num_missing_values=missing_values,
             )
 
-            should_apply = (
-                (metric_name is None or metric_name == metric_field_name)
-                and (arm_id is None or arm_id == arm.id)
-                and field is not None
-                and value is not None
+            targeted = (metric_name is None or metric_name == metric_field_name) and (
+                arm_id is None or arm_id == arm.id
             )
-            if should_apply:
-                assert field is not None
+            if targeted and field is not None and value is not None:
                 setattr(arm_analysis, field, value)
                 if field in {"estimate", "std_error"}:
                     recalculate_t_and_p(arm_analysis)
