@@ -18,12 +18,11 @@ from xngin.apiserver.testing.worker_helpers import (
     status_for,
 )
 from xngin.apiserver.worker.attempts import (
-    AttemptExecutor,
     AttemptResult,
     FinishedAttempt,
-    SystemClock,
     claim_experiment,
 )
+from xngin.apiserver.worker.executor import AttemptExecutor, SystemClock
 from xngin.apiserver.worker.jobs.base import JobSucceeded
 from xngin.apiserver.worker.scheduler import (
     Pacer,

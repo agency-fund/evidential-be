@@ -21,11 +21,11 @@ from xngin.apiserver.routers.experiments.test_experiments_common import insert_e
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
 from xngin.apiserver.worker.attempts import (
-    AttemptExecutor,
     AttemptResult,
     FinishedAttempt,
     attempt_experiment,
 )
+from xngin.apiserver.worker.executor import AttemptExecutor
 from xngin.apiserver.worker.jobs.autofail import AutofailJob
 from xngin.apiserver.worker.jobs.base import Backoff, Job, JobSucceeded
 from xngin.apiserver.worker.jobs.dwh_pull import DwhPullJob

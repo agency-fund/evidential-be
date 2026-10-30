@@ -15,14 +15,13 @@ from sqlalchemy.orm import Session
 from xngin.apiserver import database
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.worker.attempts import (
-    AttemptExecutor,
     AttemptResult,
-    Clock,
     FinishedAttempt,
     claim_experiment,
     database_now,
     refresh_run_times,
 )
+from xngin.apiserver.worker.executor import AttemptExecutor, Clock
 from xngin.apiserver.worker.jobs.base import Job
 
 # A look refreshes at most this many stale experiments before reading the schedule, so a pass over many of them,

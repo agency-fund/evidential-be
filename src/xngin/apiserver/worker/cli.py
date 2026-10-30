@@ -12,7 +12,7 @@ import typer
 from loguru import logger
 
 from xngin.apiserver import customlogging, database
-from xngin.apiserver.worker.attempts import AttemptExecutor, SystemClock
+from xngin.apiserver.worker.executor import AttemptExecutor, SystemClock
 from xngin.apiserver.worker.jobs.autofail import AutofailJob
 from xngin.apiserver.worker.jobs.base import Backoff
 from xngin.apiserver.worker.jobs.dwh_pull import DwhPullJob
