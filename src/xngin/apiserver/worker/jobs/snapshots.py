@@ -32,12 +32,11 @@ class SnapshotJob:
     backoff: Backoff
 
     def next_run_at(self, now: ColumnElement[datetime]) -> ColumnElement[datetime | None]:
-        experiment = tables.Experiment
         return next_run_in_window(
             now,
             self.interval,
-            opens=experiment.start_date - SNAPSHOT_MARGIN,
-            closes=experiment.end_date + SNAPSHOT_MARGIN,
+            opens=tables.Experiment.start_date - SNAPSHOT_MARGIN,
+            closes=tables.Experiment.end_date + SNAPSHOT_MARGIN,
             name="snapshot_window",
         )
 
