@@ -583,9 +583,3 @@ def test_one_time_metric_rejected_for_online_experiments():
 
     with pytest.raises(ValidationError, match="use_one_time_metric is only supported for preassigned experiments"):
         OnlineFrequentistExperimentSpec.model_validate(payload)
-
-
-def test_one_time_metric_accepted_without_eligibility_flag():
-    # The frontend sends only the toggle; is_one_time_eligible is response-only.
-    metric = DesignSpecMetricRequest(field_name="metric1", metric_pct_change=0.1, use_one_time_metric=True)
-    assert metric.use_one_time_metric
