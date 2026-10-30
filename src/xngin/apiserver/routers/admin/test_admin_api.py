@@ -2996,6 +2996,50 @@ def test_snapshots(aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
     assert success_snapshot.updated_at == second.updated_at
     assert list_snapshot.latest_failure is None
 
+    # Force the next snapshot to fail by misconfiguring the Postgres port.
+    aclient.update_datasource(
+        datasource_id=create_datasource_response.id,
+        body=UpdateDatasourceRequest(dsn=valid_dsn.model_copy(update={"port": valid_dsn.port + 1})),
+    )
+    bad = commit_snapshot(experiment_id)
+
+    # get the snapshot we just created and verify it is failed
+    get_snapshot_response = aclient.get_snapshot(
+        organization_id=create_organization_response.id,
+        datasource_id=create_datasource_response.id,
+        experiment_id=experiment_id,
+        snapshot_id=bad.id,
+    ).data
+    assert get_snapshot_response.snapshot is not None
+    assert get_snapshot_response.snapshot.status == SnapshotStatus.FAILED
+    assert get_snapshot_response.snapshot.data is None
+
+    list_snapshot = aclient.list_snapshots(
+        organization_id=create_organization_response.id,
+        datasource_id=create_datasource_response.id,
+        experiment_id=experiment_id,
+    ).data
+    assert [item.id for item in list_snapshot.items] == [bad.id, second.id, first.id]
+    failed_snapshot = list_snapshot.items[0]
+    assert list_snapshot.latest_failure == failed_snapshot.updated_at
+    assert failed_snapshot.experiment_id == experiment_id
+    assert failed_snapshot.status == SnapshotStatus.FAILED
+    assert failed_snapshot.data is None
+    assert failed_snapshot.details is not None and "OperationalError: " in failed_snapshot.details["message"]
+
+    for status_filter, expected_ids in [
+        (SnapshotStatus.SUCCESS, [second.id, first.id]),
+        (SnapshotStatus.FAILED, [bad.id]),
+    ]:
+        list_snapshot = aclient.list_snapshots(
+            organization_id=create_organization_response.id,
+            datasource_id=create_datasource_response.id,
+            experiment_id=experiment_id,
+            status_=[status_filter],
+        ).data
+        assert [item.id for item in list_snapshot.items] == expected_ids, status_filter
+        assert list_snapshot.latest_failure == failed_snapshot.updated_at, status_filter
+
     # list snapshots with empty string in status_ param
     with expect_status_code(422):
         aclient.list_snapshots(
@@ -4567,8 +4611,7 @@ def test_historical_snapshot_fields_and_filtering(xngin_session, testing_datasou
         updated_at=captured,
         data=None,
     )
-    pending = tables.Snapshot(experiment_id=experiment_id)
-    xngin_session.add_all([failed, pending])
+    xngin_session.add(failed)
     xngin_session.commit()
 
     response = aclient.get_snapshot(
@@ -4587,9 +4630,7 @@ def test_historical_snapshot_fields_and_filtering(xngin_session, testing_datasou
         organization_id=testing_datasource.organization_id,
         datasource_id=testing_datasource.datasource_id,
         experiment_id=experiment_id,
-        status_=[SnapshotStatus.RUNNING],
+        status_=[SnapshotStatus.FAILED],
     ).data
-    assert [item.id for item in listing.items] == [pending.id]
-    assert listing.items[0].status == SnapshotStatus.RUNNING
-    assert listing.items[0].details is None
+    assert [item.id for item in listing.items] == [failed.id]
     assert listing.latest_failure == captured
