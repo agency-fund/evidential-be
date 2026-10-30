@@ -306,7 +306,7 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
 
 
 class GoogleSheetsDsn(ConfigBaseModel, BaseDsn):
-    """A public spreadsheet bound to the Google-provided name captured at connection."""
+    """A service-account-readable spreadsheet bound to its name captured at connection."""
 
     driver: Literal["google_sheets"] = "google_sheets"
     spreadsheet_url: str
