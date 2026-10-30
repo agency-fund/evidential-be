@@ -614,6 +614,8 @@ class Draw(Base):
             created_at,
             postgresql_where=sqlalchemy.text("enable_autofail IS TRUE AND outcome IS NULL"),
         ),
+        # Lets the worker check whether an experiment has any pending draw without reading its resolved ones.
+        Index("ix_draws_pending", experiment_id, postgresql_where=sqlalchemy.text("outcome IS NULL")),
         CheckConstraint(
             "(outcome IS NULL) = (autofailed_outcome IS NULL)",
             name="ck_draws_outcome_autofailed_paired",
@@ -750,10 +752,10 @@ class Snapshot(Base):
 
 
 class JobStatus(Base):
-    """The schedule and most recent outcomes of one worker job for one experiment.
+    """The most recent outcomes and backoff of one worker job for one experiment.
 
-    There is one row for each (experiment_id, job_name) pair, updated in place after each run, so it records only the
-    latest run, success, and error rather than a full history. Only workers update existing rows.
+    There is at most one row for each (experiment_id, job_name) pair. It is created when the job is first run for
+    that experiment and updated in place after each later run. Only workers update these rows.
     """
 
     __tablename__ = "job_statuses"
@@ -770,15 +772,7 @@ class JobStatus(Base):
     # The Python exception type and message from the last failed run, or the explicit error text the job returned.
     # Cleared when the job succeeds.
     last_error: Mapped[str | None] = mapped_column(String(2048))
-    # When the job is next due. Recomputed after each run and on each discovery from the job's compute_next_run_at,
-    # then delayed to retry_not_before if that is later. NULL means the job has no next run.
-    next_run_at: Mapped[datetime | None] = mapped_column()
     # The earliest time the job may run again. After a failure, this is the run's finish time plus the job's backoff
     # delay for its consecutive_failures; after a deferred run, it is the finish time plus the run's retry_after;
     # after a success, NULL.
     retry_not_before: Mapped[datetime | None] = mapped_column()
-    # The experiments.updated_at value that next_run_at was last computed from. Discovery recomputes run times
-    # when the experiment's updated_at no longer matches.
-    experiment_updated_at: Mapped[datetime | None] = mapped_column()
-
-    __table_args__ = (Index("ix_job_statuses_next_run", next_run_at, experiment_id),)

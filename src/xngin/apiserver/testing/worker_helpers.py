@@ -10,7 +10,7 @@ from threading import Event
 from typing import ClassVar
 from unittest.mock import patch
 
-from sqlalchemy import ColumnElement, false, select, text, update
+from sqlalchemy import ColumnElement, case, select, text, update
 from sqlalchemy.orm import Session
 
 from xngin.apiserver import database
@@ -24,13 +24,15 @@ from xngin.apiserver.worker.attempts import (
     AttemptResult,
     FinishedAttempt,
     attempt_experiment,
+    database_now,
+    experiment_run_times,
 )
 from xngin.apiserver.worker.executor import AttemptExecutor
 from xngin.apiserver.worker.jobs.autofail import AutofailJob
 from xngin.apiserver.worker.jobs.base import Backoff, Job, JobSucceeded
 from xngin.apiserver.worker.jobs.dwh_pull import DwhPullJob
 from xngin.apiserver.worker.jobs.snapshots import SnapshotJob
-from xngin.apiserver.worker.scheduler import Pacer, due_experiment_ids, run_worker
+from xngin.apiserver.worker.scheduler import Pacer, read_schedule, run_worker
 
 BACKOFF = Backoff(delays=(timedelta(minutes=1), timedelta(minutes=5)))
 SNAPSHOT = SnapshotJob(interval=timedelta(hours=3), dwh_timeout=90, backoff=Backoff.constant(timedelta(hours=1)))
@@ -39,29 +41,32 @@ AUTOFAIL = AutofailJob(batch_size=2, backoff=BACKOFF)
 NOW = datetime(2030, 1, 1, tzinfo=UTC)
 
 
-def run_nothing(session, experiment_id):
+def run_nothing(session, experiment):
     return JobSucceeded()
 
 
-def schedule_daily(status, now):
-    return status.last_success_at + timedelta(days=1) if status.last_success_at else now
+def schedule_daily(now):
+    last_success_at = tables.JobStatus.last_success_at
+    return case((last_success_at.is_(None), now), else_=last_success_at + timedelta(days=1))
+
+
+def schedule_now(now):
+    return now
 
 
 @dataclass(slots=True)
 class FakeJob:
     name: ClassVar[str] = "test"
     backoff: Backoff = BACKOFF
-    schedule: Callable = schedule_daily
+    # Builds the job's next_run_at expression from the evaluation time.
+    schedule: Callable[[ColumnElement[datetime]], ColumnElement[datetime | None]] = schedule_daily
     run: Callable = run_nothing
 
-    def needs_refresh(self) -> ColumnElement[bool]:
-        return false()
-
-    def compute_next_run_at(self, session, experiment, status, now):
-        return self.schedule(status, now)
+    def next_run_at(self, now):
+        return self.schedule(now)
 
     def execute(self, session, experiment):
-        return self.run(session, experiment.id)
+        return self.run(session, experiment)
 
 
 class OtherFakeJob(FakeJob):
@@ -137,6 +142,19 @@ def ran_successfully(attempt: FinishedAttempt, job: Job) -> bool:
     return attempt.result is AttemptResult.JOB_RAN and status_for(attempt.experiment_id, job).consecutive_failures == 0
 
 
+def scheduled_at(experiment_id: str, job: Job, *, now: datetime | None = None) -> datetime | None:
+    """Return when the job is next due for the experiment, as an attempt at now would see it."""
+    with database.get_session() as session:
+        run_times = experiment_run_times(session, (job,), experiment_id, now or database_now(session))
+        return run_times[0].run_at if run_times else None
+
+
+def due_experiment_ids(
+    jobs: Sequence[Job], excluded: Collection[str] = (), *, now: datetime | None = None
+) -> tuple[str, ...]:
+    return read_schedule(jobs, excluded, now=now).due
+
+
 def status_for(experiment_id, job):
     with database.get_session() as session:
         return session.get(tables.JobStatus, (experiment_id, job.name))
@@ -176,12 +194,14 @@ class FakeClock:
 
 
 def run_worker_on_fake_clock(
-    jobs: Sequence[Job], stop: Event, clock: FakeClock, pacer: Pacer, on_look: Callable[[], object] = lambda: None
+    jobs: Sequence[Job], stop: Event, pacer: Pacer, on_look: Callable[[], object] = lambda: None
 ) -> None:
-    """Run the worker on the test's thread, one attempt at a time, with time moving only on the fake clock.
+    """Run the worker on the test's thread, one attempt at a time, with time moving only on the pacer's fake clock.
 
     on_look is called after each look has handed out its attempt, if any.
     """
+    clock = pacer.clock
+    assert isinstance(clock, FakeClock)
 
     class ObservedExecutor(AttemptExecutor):
         def start(self, jobs: Sequence[Job], stop: Event, experiment_ids: Iterable[str]) -> None:
@@ -191,7 +211,7 @@ def run_worker_on_fake_clock(
     executor = ObservedExecutor(1, clock)
     clock.executor = executor
     with executor:
-        run_worker(jobs, stop, clock, pacer, executor)
+        run_worker(jobs, stop, pacer, executor)
 
 
 @dataclass(slots=True)
@@ -202,31 +222,31 @@ class Pause:
     assertions, as job failures rather than raising them, so the pause keeps them for paused_attempt to raise.
     """
 
-    before: Callable[[Session, str], object] | None = None
-    after: Callable[[Session, str], object] | None = None
+    before: Callable[[Session, tables.Experiment], object] | None = None
+    after: Callable[[Session, tables.Experiment], object] | None = None
     reached: Event = field(default_factory=Event)
     resume: Event = field(default_factory=Event)
     errors: list[BaseException] = field(default_factory=list)
     # The paused attempt's database backend, so a test can terminate it and wait for it to exit.
     pid: int | None = None
 
-    def __call__(self, session: Session, experiment_id: str) -> JobSucceeded:
+    def __call__(self, session: Session, experiment: tables.Experiment) -> JobSucceeded:
         try:
-            self._run(session, experiment_id)
+            self._run(session, experiment)
         except BaseException as exc:
             self.errors.append(exc)
             raise
         return JobSucceeded()
 
-    def _run(self, session: Session, experiment_id: str) -> None:
+    def _run(self, session: Session, experiment: tables.Experiment) -> None:
         self.pid = session.scalar(text("SELECT pg_backend_pid()"))
         if self.before:
-            self.before(session, experiment_id)
+            self.before(session, experiment)
         self.reached.set()
         if not self.resume.wait(5):
             raise TimeoutError("The test never resumed the paused job.")
         if self.after:
-            self.after(session, experiment_id)
+            self.after(session, experiment)
 
 
 @contextmanager

@@ -4,11 +4,17 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from loguru import logger
-from sqlalchemy.orm import Session
+from sqlalchemy import ColumnElement, and_
+from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.experiments.experiments_common import update_bandit_arm_with_outcome_impl
 from xngin.apiserver.sqla import tables
+
+
+def is_pending_draw(experiment_id: str | InstrumentedAttribute[str]) -> ColumnElement[bool]:
+    """Match the experiment's draws that have no outcome yet."""
+    return and_(tables.Draw.experiment_id == experiment_id, tables.Draw.outcome.is_(None))
 
 
 @dataclass(slots=True, frozen=True)

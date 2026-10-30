@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import ClassVar, Protocol
 
-from sqlalchemy import ColumnElement
+from sqlalchemy import ColumnElement, DateTime, SQLColumnExpression, and_, case, column, func, select, values
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.sqla import tables
@@ -29,7 +29,7 @@ class Backoff:
 class JobSucceeded:
     """The run succeeded. The worker records it as the last success and clears the failure count and error.
 
-    The next run is scheduled from compute_next_run_at.
+    The next run is scheduled from Job.next_run_at.
     """
 
 
@@ -54,8 +54,8 @@ class JobDeferred:
 
     Use it when the job was due but could make no progress, such as autofail finding every overdue draw locked by
     the API. The worker records neither a success nor a failure, and holds off the next run until retry_after has
-    passed, whatever compute_next_run_at returns. The delay schedules no run on its own: if compute_next_run_at
-    returns None, there is no next run.
+    passed, whatever Job.next_run_at returns. The delay schedules no run on its own: if Job.next_run_at
+    returns NULL, there is no next run.
     """
 
     retry_after: timedelta
@@ -70,42 +70,29 @@ class Job(Protocol):
     name: ClassVar[str]
     backoff: Backoff
 
-    def needs_refresh(self) -> ColumnElement[bool]:
-        """Return a condition on Experiment and this job's JobStatus row that holds when its stored run time is stale.
+    def next_run_at(self, now: ColumnElement[datetime]) -> ColumnElement[datetime | None]:
+        """Return a SQL expression for when the job should next run for an experiment, or NULL when it has no work.
 
-        The refresh already recomputes run times for experiments whose updated_at changed. This condition covers
-        the other rows compute_next_run_at reads, which change without touching the experiment row: for autofail,
-        a newly inserted draw. Return false() when compute_next_run_at depends only on the experiment row and the
-        job's own status.
+        The expression may refer to tables.Experiment and to tables.JobStatus, this job's status row for the
+        experiment. The worker evaluates it only for committed experiments, so it need not check the state. The
+        status row is outer-joined, so its columns are NULL until the job first runs. It may read other tables, such
+        as draws, through correlated subqueries. now is the time the expression is evaluated at.
 
-        When the condition holds, compute_next_run_at must return a time; otherwise the stored run time stays as
-        it was and the refresh revisits the experiment on every pass.
-        """
-        ...
+        Nothing about the result is stored. The worker evaluates the expression on every look for work, which happens
+        at least once per polling interval and again after each attempt finishes, and once more under the
+        experiment's claim before running the job. A time at or before now means the job is due. The worker delays the
+        run to the status row's retry_not_before when that is later, so the expression need not consider backoff.
 
-    def compute_next_run_at(
-        self, session: Session, experiment: tables.Experiment, status: tables.JobStatus, now: datetime
-    ) -> datetime | None:
-        """Return the time at which the job should run next, or None to leave it unscheduled until the next refresh
-        pass.
-
-        The worker stores the return value in JobStatus.next_run_at.
-
-        Return None when there is no work for the job to do. This does not stop the job for good: the refresh calls
-        this method again when the experiment changes or when needs_refresh holds.
-
-        Return a datetime when you know that it would be useful to run the job again immediately (a time now or in
-        the past), or when you want to ensure it runs no earlier than some time in the future. For example, a periodic
-        job that runs every three hours would return now + 3 hours.
-
-        Backoff is handled by the worker.
+        NULL does not stop the job for good: it only means the job doesn't run while the expression stays NULL. As
+        soon as the rows it reads change so that it gives a time, such as when an experiment is committed or a draw
+        is inserted, the next look schedules the job.
         """
         ...
 
     def execute(self, session: Session, experiment: tables.Experiment) -> JobResult:
         """Do one unit of the job's work for the experiment, in the caller's transaction.
 
-        The experiment is the row the caller claimed. Its relationships load lazily when the job first reads them.
+        The experiment is the row the caller claimed.
 
         To fail, raise any exception, or return JobFailed. A raised exception rolls back the job's writes, is
         logged and sent to Sentry, and its type and message are recorded as the error. A returned JobFailed keeps
@@ -118,15 +105,56 @@ class Job(Protocol):
 
 
 def next_run_in_window(
-    last_success_at: datetime | None, now: datetime, interval: timedelta, *, opens: datetime, closes: datetime
-) -> datetime | None:
-    """Return when a job that runs every interval between opens and closes should next run.
+    now: ColumnElement[datetime],
+    interval: timedelta,
+    *,
+    opens: SQLColumnExpression[datetime],
+    closes: SQLColumnExpression[datetime],
+    name: str,
+) -> ColumnElement[datetime | None]:
+    """Return SQL for when a job that runs every interval within a window should next run, or NULL if it shouldn't.
 
-    A job without a last_success_at is due immediately, but no earlier than opens. Returns None once no run fits
-    before closes.
+    The job's last success and last attempt are read from its JobStatus row. A job that has never succeeded is due
+    when the window opens, or now if it is already open, and never once it has closed. After a success, the next
+    run is due interval later, but no earlier than opens and no later than closes, so the window always ends with a
+    run. A success at or after closes ends the runs.
+
+    Once the window has closed, a run that came due inside it still gets one attempt, however late, if none has
+    started since it came due. There are no retries after the close.
+
+    The window is the caller's: a job can extend its runs past closes by evaluating another window, as DwhPullJob
+    does for its grace period. name is the window's alias in the generated SQL, which must differ between the
+    windows of one job.
     """
-    if closes < now:
-        return None
-    run_at = last_success_at + interval if last_success_at else now
-    run_at = max(run_at, opens)
-    return run_at if run_at <= closes else None
+    last_success_at = tables.JobStatus.last_success_at
+    last_run_at = tables.JobStatus.last_run_at
+    # Name the window's bounds and the next run after the last success once per row, so the CASE below reads them
+    # instead of repeating their arithmetic. The next run is kept inside the window: one that would come before the
+    # window opens waits for it to open, and one that would overshoot the close runs at the close, so the window
+    # still gets a final run.
+    window = values(
+        column("opens", DateTime(timezone=True)),
+        column("closes", DateTime(timezone=True)),
+        column("after_success", DateTime(timezone=True)),
+        name=name,
+    ).data([(opens, closes, func.least(func.greatest(last_success_at + interval, opens), closes))])
+    return (
+        select(
+            case(
+                # The window closed before the job ever succeeded.
+                (and_(last_success_at.is_(None), now > window.c.closes), None),
+                # The job has never succeeded, so it's due now, or when the window opens if that's later.
+                (last_success_at.is_(None), func.greatest(now, window.c.opens)),
+                # The job already ran at the close, which is the window's final run.
+                (last_success_at >= window.c.closes, None),
+                # The window has closed, and an attempt started after the run came due without succeeding, since a
+                # success would have moved last_success_at past it. Either the final run at the close was attempted
+                # after the close and failed, or a run due inside the window failed and its backoff retry would come
+                # after the close. Failed runs aren't retried once the window has closed.
+                (and_(now > window.c.closes, last_run_at >= window.c.after_success), None),
+                else_=window.c.after_success,
+            ).label("run_at")
+        )
+        .select_from(window)
+        .scalar_subquery()
+    )

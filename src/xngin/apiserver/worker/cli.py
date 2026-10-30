@@ -127,10 +127,11 @@ def run(
     exit_code = 1
     try:
         clock = SystemClock()
+        pacer = Pacer(poll_interval=poll_interval, clock=clock, exit_after_jobs=exit_after_jobs)
         # Each worker will get its own connection, plus one for scheduling. Leaving the executor's context drains
         # the running attempts, before the database is torn down.
         with database.setup(pool_size=parallelism + 1), AttemptExecutor(parallelism, clock) as executor:
-            run_worker(jobs, stop, clock, Pacer(poll_interval=poll_interval, exit_after_jobs=exit_after_jobs), executor)
+            run_worker(jobs, stop, pacer, executor)
         exit_code = 0
     except BaseException as exc:
         # exit_now discards the exception, so report it here.
