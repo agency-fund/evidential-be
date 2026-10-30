@@ -1,4 +1,5 @@
 import pytest
+from sqlalchemy import select
 
 from xngin.apiserver import database
 from xngin.apiserver.routers.admin.test_admin_api import make_bandit_online_experiment
@@ -151,3 +152,19 @@ def test_pull_one_experiment_invalid_values_skipped_and_left_null(
     analysis = analyze(aclient, testing_datasource, experiment_id)
     assert analysis.n_outcomes == 0
     assert all(arm.post_pred_mean == arm.prior_pred_mean for arm in analysis.arm_analyses)
+
+
+def test_a_pull_skips_draws_another_transaction_holds(
+    xngin_session, testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+):
+    """A pull never waits for another writer's draws, such as an experiment delete, which would deadlock."""
+    experiment_id = create_mab_dwh_experiment(aclient, testing_datasource)
+    assign(eclient, testing_datasource, experiment_id, "1", "2")
+    with database.get_session() as deleter, deleter.begin():
+        deleter.execute(
+            select(tables.Draw.participant_id)
+            .where(tables.Draw.experiment_id == experiment_id, tables.Draw.participant_id == "1")
+            .with_for_update()
+        )
+        assert pull(experiment_id) == OutcomeReport(ingested=1)
+    assert outcomes_of(eclient, testing_datasource, experiment_id, "1", "2") == {"1": None, "2": 1.0}

@@ -94,13 +94,15 @@ def pull_one_experiment(session: Session, experiment: tables.Experiment, *, dwh_
     # FOR NO KEY UPDATE holds these draws for the rest of the transaction while still letting
     # foreign keys reference them. Taking the lock here, before the warehouse read, makes other writes
     # to these draws wait for the pull instead of changing them partway through it, and a data reset that
-    # deletes them waits too.
+    # deletes them waits too. Draws another transaction already holds are skipped and left for a later pull:
+    # deleting an experiment locks its draws before the experiment row, which the worker's claim holds, so
+    # waiting for them here would deadlock.
     pending_ids = list(
         session.scalars(
             select(tables.Draw.participant_id)
             .where(is_pending_draw(experiment.id))
             .order_by(tables.Draw.created_at)
-            .with_for_update(of=tables.Draw, key_share=True)
+            .with_for_update(of=tables.Draw, key_share=True, skip_locked=True)
         )
     )
     if not pending_ids:
