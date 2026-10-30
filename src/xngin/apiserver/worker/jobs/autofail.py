@@ -18,16 +18,11 @@ from xngin.apiserver.worker.jobs.base import Backoff, JobDeferred, JobResult, Jo
 AUTOFAIL_EXPERIMENT_TYPES = frozenset({ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE})
 
 
-def is_pending_autofail_draw(experiment_id: str | InstrumentedAttribute[str]) -> ColumnElement[bool]:
-    """Match the experiment's unresolved autofail draws, as indexed by ix_draws_pending_autofail."""
-    return and_(is_pending_draw(experiment_id), tables.Draw.enable_autofail.is_(True))
-
-
-def select_pending_autofail_draws[T](
+def select_pending_draws[T](
     column: InstrumentedAttribute[T], experiment_id: str | InstrumentedAttribute[str]
 ) -> Select[tuple[T]]:
-    """Select a column of the experiment's unresolved autofail draws, oldest first."""
-    return select(column).where(is_pending_autofail_draw(experiment_id)).order_by(tables.Draw.created_at)
+    """Select a column of the experiment's unresolved draws, oldest first, as indexed by ix_draws_pending."""
+    return select(column).where(is_pending_draw(experiment_id)).order_by(tables.Draw.created_at)
 
 
 def _eligible_draw_participant_ids_query(
@@ -42,7 +37,7 @@ def _eligible_draw_participant_ids_query(
     can come back empty while the job is due; AutofailJob.execute handles that.
     """
     return (
-        select_pending_autofail_draws(tables.Draw.participant_id, experiment_id)
+        select_pending_draws(tables.Draw.participant_id, experiment_id)
         # A fresh statement timestamp also lets the index use a constant cutoff for this batch.
         .where(tables.Draw.created_at <= func.statement_timestamp() - timedelta(hours=autofail_window))
         .limit(batch_size)
@@ -63,9 +58,7 @@ class AutofailJob:
         # _eligible_draw_participant_ids_query. Skipping them here could leave a draw unscheduled if that write
         # rolled back. Unresolved draws still count after the experiment ends, so there is deliberately no end date
         # check: draws can expire long after the end date.
-        first_pending_at = (
-            select_pending_autofail_draws(tables.Draw.created_at, experiment.id).limit(1).scalar_subquery()
-        )
+        first_pending_at = select_pending_draws(tables.Draw.created_at, experiment.id).limit(1).scalar_subquery()
         return case(
             (
                 and_(
