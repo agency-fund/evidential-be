@@ -7,7 +7,7 @@ from typing import ClassVar
 import sentry_sdk
 from loguru import logger
 from sqlalchemy import ColumnElement, and_, exists, func, select
-from sqlalchemy.orm import InstrumentedAttribute, Session, selectinload
+from sqlalchemy.orm import InstrumentedAttribute, Session
 from sqlalchemy.sql import Select
 
 from xngin.apiserver.routers.common_enums import ExperimentState, ExperimentsType
@@ -53,23 +53,6 @@ def _eligible_draw_participant_ids_query(
     )
 
 
-def _autofail_experiment_query(experiment_id: str) -> Select[tuple[tables.Experiment]]:
-    """Reads the full Experiment ORM object.
-
-    We force some relations to be loaded because we are re-using the API endpoint's implementation so we need to match
-    its expectations.
-    """
-    return (
-        select(tables.Experiment)
-        .where(tables.Experiment.id == experiment_id)
-        .options(
-            selectinload(tables.Experiment.arms),
-            selectinload(tables.Experiment.contexts),
-            selectinload(tables.Experiment.experiment_fields),
-        )
-    )
-
-
 @dataclass(slots=True)
 class AutofailJob:
     name: ClassVar[str] = "autofail"
@@ -106,12 +89,11 @@ class AutofailJob:
         created_at = session.scalar(select_pending_autofail_draws(tables.Draw.created_at, experiment.id).limit(1))
         return created_at + timedelta(hours=experiment.autofail_window) if created_at is not None else None
 
-    def execute(self, session: Session, experiment_id: str) -> JobResult:
+    def execute(self, session: Session, experiment: tables.Experiment) -> JobResult:
         """Autofail one batch of overdue draws.
 
         The caller's claim holds the experiment row, so it cannot be deleted while the batch runs.
         """
-        experiment = session.scalars(_autofail_experiment_query(experiment_id)).one()
         participant_ids = list(
             session.scalars(
                 _eligible_draw_participant_ids_query(experiment.id, experiment.autofail_window, self.batch_size)

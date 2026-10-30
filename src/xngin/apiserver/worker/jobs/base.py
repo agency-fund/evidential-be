@@ -102,8 +102,10 @@ class Job(Protocol):
         """
         ...
 
-    def execute(self, session: Session, experiment_id: str) -> JobResult:
+    def execute(self, session: Session, experiment: tables.Experiment) -> JobResult:
         """Do one unit of the job's work for the experiment, in the caller's transaction.
+
+        The experiment is the row the caller claimed. Its relationships load lazily when the job first reads them.
 
         To fail, raise any exception, or return JobFailed. A raised exception rolls back the job's writes, is
         logged and sent to Sentry, and its type and message are recorded as the error. A returned JobFailed keeps

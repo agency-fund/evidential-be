@@ -134,7 +134,7 @@ def attempt_experiment(jobs: Sequence[Job], experiment_id: str) -> FinishedAttem
             scheduled_at = status.next_run_at
             sentry_sdk.metrics.count("worker.jobs.started", 1, attributes={"job": job.name})
             started = time.monotonic()
-            result = _execute_job(session, job, experiment_id)
+            result = _execute_job(session, job, experiment)
             finished_at = database_now(session)
             _record_run(session, job, experiment, status, result, started_at=now, finished_at=finished_at)
     except Exception as exc:
@@ -240,10 +240,10 @@ def _select_best_next_job(jobs: Sequence[Job], statuses: Mapping[str, tables.Job
     return min(ready, key=priority, default=None)
 
 
-def _execute_job(session: Session, job: Job, experiment_id: str) -> JobResult:
+def _execute_job(session: Session, job: Job, experiment: tables.Experiment) -> JobResult:
     try:
         with session.begin_nested():
-            return job.execute(session, experiment_id)
+            return job.execute(session, experiment)
     except Exception as exc:
         # An invalidated connection cannot record a failure or reconnect.
         if not session.is_active or session.connection().invalidated:

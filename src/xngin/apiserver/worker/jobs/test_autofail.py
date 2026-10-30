@@ -109,7 +109,9 @@ def age_draws(
 
 def commit_autofail_batch(experiment_id: str, batch_size: int = 500) -> JobResult:
     with database.get_session() as session, session.begin():
-        return AutofailJob(batch_size=batch_size, backoff=BACKOFF).execute(session, experiment_id)
+        return AutofailJob(batch_size=batch_size, backoff=BACKOFF).execute(
+            session, session.get_one(tables.Experiment, experiment_id)
+        )
 
 
 # What a batch reports when it found no overdue draws to process.

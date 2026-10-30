@@ -268,7 +268,9 @@ def test_snapshot_path_perf(
     timings: list[float] = []
     for _ in range(_iterations(n_draws)):
         t0 = time.perf_counter()
-        snapshot = capture_snapshot(xngin_session, experiment_id, dwh_timeout=90).snapshot
+        snapshot = capture_snapshot(
+            xngin_session, xngin_session.get_one(tables.Experiment, experiment_id), dwh_timeout=90
+        ).snapshot
         xngin_session.commit()
         timings.append(time.perf_counter() - t0)
         assert snapshot.data is not None

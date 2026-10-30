@@ -2,8 +2,8 @@ from dataclasses import dataclass
 
 import numpy as np
 from loguru import logger
-from sqlalchemy import select, text
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from xngin.apiserver.routers.common_api_types import ExperimentAnalysisResponse
 from xngin.apiserver.routers.common_enums import ContextType, ExperimentsType
@@ -20,27 +20,17 @@ class SnapshotCapture:
     error: Exception | None = None
 
 
-def capture_snapshot(session: Session, experiment_id: str, *, dwh_timeout: float) -> SnapshotCapture:
+def capture_snapshot(session: Session, experiment: tables.Experiment, *, dwh_timeout: float) -> SnapshotCapture:
     """Record a successful or failed analysis in the caller's transaction.
 
     dwh_timeout bounds the analysis's data warehouse read.
     """
+    # Read before the savepoint, which may roll back, so recording a failure needs no further reads.
+    experiment_id = experiment.id
     try:
         # Analysis is best-effort. A savepoint also recovers from SQL errors so the failure record
         # can commit in the owning transaction without releasing the experiment's maintenance locks.
         with session.begin_nested():
-            experiment = session.scalars(
-                select(tables.Experiment)
-                .where(tables.Experiment.id == experiment_id)
-                .options(
-                    selectinload(tables.Experiment.arms),
-                    selectinload(tables.Experiment.contexts),
-                    selectinload(tables.Experiment.datasource),
-                    selectinload(tables.Experiment.experiment_fields).selectinload(
-                        tables.ExperimentField.experiment_filters
-                    ),
-                )
-            ).one()
             analysis = _compute_snapshot_data(session, experiment, dwh_timeout)
             data = analysis.model_dump(mode="json")
     except Exception as exc:

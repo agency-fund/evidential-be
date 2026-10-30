@@ -58,8 +58,8 @@ class SnapshotJob:
             closes=experiment.end_date + SNAPSHOT_MARGIN,
         )
 
-    def execute(self, session: Session, experiment_id: str) -> JobResult:
-        capture = capture_snapshot(session, experiment_id, dwh_timeout=self.dwh_timeout)
+    def execute(self, session: Session, experiment: tables.Experiment) -> JobResult:
+        capture = capture_snapshot(session, experiment, dwh_timeout=self.dwh_timeout)
         # A new experiment has no participants yet. The failed snapshot still tells users why there is no data,
         # but the job did what it could, so it succeeds and waits a full interval rather than backing off.
         if capture.snapshot.status == "failed" and not isinstance(capture.error, StatsNoParticipantsError):

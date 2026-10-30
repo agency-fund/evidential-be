@@ -13,6 +13,7 @@ from xngin.apiserver.routers.common_api_types import (
     PriorTypes,
 )
 from xngin.apiserver.routers.experiments.test_experiments_common import insert_experiment_and_arms
+from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
 from xngin.apiserver.testing.worker_helpers import read_assignments
@@ -64,7 +65,7 @@ def analyze(aclient: AdminAPIClient, testing_datasource, experiment_id: str) -> 
 
 def pull(experiment_id: str, *, dwh_timeout: float = 90) -> OutcomeReport:
     with database.get_session() as session, session.begin():
-        return pull_one_experiment(session, experiment_id, dwh_timeout=dwh_timeout)
+        return pull_one_experiment(session, session.get_one(tables.Experiment, experiment_id), dwh_timeout=dwh_timeout)
 
 
 @pytest.mark.parametrize(

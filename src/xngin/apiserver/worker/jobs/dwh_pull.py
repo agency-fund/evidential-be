@@ -15,7 +15,7 @@ from typing import ClassVar
 import sentry_sdk
 from loguru import logger
 from sqlalchemy import ColumnElement, and_, exists, false, func, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
 
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.exceptions_common import LateValidationError
@@ -46,7 +46,7 @@ def _is_pending_draw(experiment_id: str) -> ColumnElement[bool]:
     return and_(tables.Draw.experiment_id == experiment_id, tables.Draw.outcome.is_(None))
 
 
-def pull_one_experiment(session: Session, experiment_id: str, *, dwh_timeout: float) -> OutcomeReport:
+def pull_one_experiment(session: Session, experiment: tables.Experiment, *, dwh_timeout: float) -> OutcomeReport:
     """Read newly landed outcomes for one MAB_ONLINE_DWH experiment and apply them.
 
     Runs in the caller's transaction, which DwhPullJob.execute receives from the worker, in three phases:
@@ -61,20 +61,8 @@ def pull_one_experiment(session: Session, experiment_id: str, *, dwh_timeout: fl
     The locks taken in phase 1 are held until the attempt's transaction ends, or until the job's savepoint rolls
     back if the pull fails. This means dwh_timeout is a lower limit on that lock duration, so we should be careful.
     """
-    experiment_query = (
-        select(tables.Experiment)
-        .where(tables.Experiment.id == experiment_id)
-        .options(
-            selectinload(tables.Experiment.arms),
-            selectinload(tables.Experiment.contexts),
-            selectinload(tables.Experiment.datasource),
-            selectinload(tables.Experiment.experiment_fields),
-        )
-    )
-
     # 1. Read what the warehouse query needs: the datasource config, the target and unique-id
     # columns, and the draws that still have no outcome.
-    experiment = session.execute(experiment_query).scalar_one()
     unique_id_field = experiment.unique_id_field()
     target_field = next((ef for ef in experiment.experiment_fields if ef.is_target), None)
     if experiment.datasource_table is None or unique_id_field is None or target_field is None:
@@ -94,7 +82,7 @@ def pull_one_experiment(session: Session, experiment_id: str, *, dwh_timeout: fl
     pending_ids = list(
         session.scalars(
             select(tables.Draw.participant_id)
-            .where(_is_pending_draw(experiment_id))
+            .where(_is_pending_draw(experiment.id))
             .order_by(tables.Draw.created_at)
             .with_for_update(of=tables.Draw, key_share=True)
         )
@@ -174,8 +162,8 @@ class DwhPullJob:
             )
         return run_at
 
-    def execute(self, session: Session, experiment_id: str) -> JobResult:
-        report = pull_one_experiment(session, experiment_id, dwh_timeout=self.dwh_timeout)
+    def execute(self, session: Session, experiment: tables.Experiment) -> JobResult:
+        report = pull_one_experiment(session, experiment, dwh_timeout=self.dwh_timeout)
         logger.info(f"Pulled outcomes: ingested={report.ingested} invalid={report.invalid} pending={report.pending}")
         for status, count in (("applied", report.ingested), ("invalid", report.invalid), ("pending", report.pending)):
             sentry_sdk.metrics.count("worker.dwh_pull.outcomes", count, attributes={"status": status})

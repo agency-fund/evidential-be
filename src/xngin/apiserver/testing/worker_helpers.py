@@ -60,8 +60,8 @@ class FakeJob:
     def compute_next_run_at(self, session, experiment, status, now):
         return self.schedule(status, now)
 
-    def execute(self, session, experiment_id):
-        return self.run(session, experiment_id)
+    def execute(self, session, experiment):
+        return self.run(session, experiment.id)
 
 
 class OtherFakeJob(FakeJob):
