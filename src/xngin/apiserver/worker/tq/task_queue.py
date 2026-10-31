@@ -6,7 +6,6 @@ import asyncio
 import inspect
 import os
 import threading
-import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
@@ -14,6 +13,9 @@ from typing import Any, Protocol
 import psycopg
 from loguru import logger
 from psycopg.rows import dict_row
+from sqlalchemy import make_url
+
+from xngin.apiserver.worker.executor import Clock
 
 TQ_DB_APPLICATION_NAME = f"tq-{os.getpid()}"
 
@@ -55,17 +57,19 @@ class TaskHandler(Protocol):
 class TaskQueue:
     """Task queue implementation using Postgres."""
 
-    def __init__(self, dsn: str, max_retries: int, poll_interval_secs: int):
+    def __init__(self, dsn: str, max_retries: int, poll_interval_secs: int, clock: Clock):
         """Initialize the task queue.
 
         Args:
             dsn: Database connection string.
             max_retries: Maximum number of retries for a task. Note: the task is always tried once.
             poll_interval_secs: Interval in seconds to poll for tasks when no notifications are received.
+            clock: The clock for the poll interval and reconnect delays, which tests replace to control time.
         """
         self.dsn = dsn
         self.max_retries = max_retries
         self.poll_interval = poll_interval_secs
+        self.clock = clock
         self.handlers: dict[str, TaskHandler] = {}
 
     def register_handler(self, task_type: str, handler: TaskHandler) -> None:
@@ -130,10 +134,8 @@ class TaskQueue:
                 """
             )
             row = cur.fetchone()
-            if row:
-                conn.commit()
-                return Task(**row)
-            return None
+            conn.commit()
+            return Task(**row) if row else None
 
     def _handle_task(self, conn: psycopg.Connection, task: Task) -> None:
         """Handle a task."""
@@ -206,16 +208,32 @@ class TaskQueue:
                 )
             conn.commit()
 
-    def run(self, cancel: threading.Event | None = None) -> None:
-        """Run the task queue processor.
+    def _wait_for_notification(self, conn: psycopg.Connection, stop: threading.Event) -> None:
+        """Wait until a task is inserted, poll_interval elapses, or stop is set.
 
-        This method will run indefinitely, processing tasks as they become available. If cancel is provided, the loop
-        will eventually exit when the cancel event is set.
+        Waits in slices of at most a second on the same connection, so that stop is noticed promptly without
+        reconnecting and re-running the trigger DDL in _setup_notifications.
         """
-        logger.info(f"Starting task queue with DSN: {self.dsn}")
+        deadline = self.clock.monotonic() + self.poll_interval
+        while not stop.is_set():
+            remaining = deadline - self.clock.monotonic()
+            if remaining <= 0:
+                logger.debug(f"Waited {self.poll_interval} for notification. Polling again.")
+                return
+            for _ in conn.notifies(timeout=min(remaining, 1), stop_after=1):
+                logger.debug("Received notification about new tasks")
+                return
 
-        # Main task handling loop: Handle any new tasks, then wait for NOTIFY or polling_interval, repeat.
-        while cancel is None or not cancel.is_set():
+    def run(self, stop: threading.Event) -> None:
+        """Run the task queue processor until stop is set.
+
+        The loop exits after the task in progress, if any, finishes.
+        """
+        logger.info(f"Starting task queue with DSN: {make_url(self.dsn)}")
+
+        # Connect and set up notifications once per connection, since the trigger DDL locks the tasks table. Reconnect
+        # only after a connection error.
+        while not stop.is_set():
             try:
                 with psycopg.connect(
                     self.dsn,
@@ -224,30 +242,17 @@ class TaskQueue:
                 ) as conn:
                     self._setup_notifications(conn)
 
-                    task = self._fetch_task(conn)
-                    if task:
-                        self._handle_task(conn, task)
-                        continue
+                    # Main task handling loop: Handle any new tasks, then wait for NOTIFY or polling_interval, repeat.
+                    while not stop.is_set():
+                        task = self._fetch_task(conn)
+                        if task:
+                            self._handle_task(conn, task)
+                            continue
 
-                    logger.debug("No tasks available, waiting for notifications...")
-                    conn.commit()
-
-                    if cancel is not None and cancel.is_set():
-                        break
-
-                    try:
-                        gen = conn.notifies(timeout=self.poll_interval)
-                        next(gen)
-                        logger.debug("Received notification about new tasks")
-                        continue
-                    except StopIteration:
-                        # StopIteration is raised when poll_interval expires
-                        logger.debug(f"Waited {self.poll_interval} for notification. Polling again.")
-                        continue
-                    finally:
-                        gen.close()
+                        logger.debug("No tasks available, waiting for notifications...")
+                        self._wait_for_notification(conn, stop)
 
             except psycopg.OperationalError as e:
                 logger.error(f"Database connection error: {e}")
                 logger.info("Reconnecting in 5 seconds...")
-                time.sleep(5)
+                self.clock.wait(stop, 5)

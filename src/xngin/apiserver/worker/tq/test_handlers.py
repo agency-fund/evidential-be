@@ -8,6 +8,7 @@ from xngin.apiserver.routers.admin_integrations.admin_integrations_api_types imp
 from xngin.apiserver.routers.admin_integrations.test_admin_integrations_api import FakeClient
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.admin_integrations_api_client import AdminIntegrationsAPIClient
+from xngin.apiserver.worker.executor import SystemClock
 from xngin.apiserver.worker.tq.handlers import make_turn_journeys_changed_handler, make_webhook_outbound_handler
 from xngin.apiserver.worker.tq.task_payload_types import TURN_JOURNEYS_CHANGED_TASK_TYPE, WEBHOOK_OUTBOUND_TASK_TYPE
 from xngin.apiserver.worker.tq.task_queue import TaskQueue
@@ -25,7 +26,7 @@ def test_webhook_outbound_handler_records_dns_failure_event(
 ):
     org_id = _create_organization(aclient, "test-webhook-dns-failure")
 
-    task_queue = TaskQueue(dsn=tq_dsn, max_retries=0, poll_interval_secs=1)
+    task_queue = TaskQueue(dsn=tq_dsn, max_retries=0, poll_interval_secs=1, clock=SystemClock())
     task_queue.register_handler(WEBHOOK_OUTBOUND_TASK_TYPE, make_webhook_outbound_handler(tq_dsn))
     with tq_runner(task_queue):
         task = insert_task(
@@ -58,7 +59,7 @@ def test_webhook_outbound_handler_records_success_event(
     org_id = _create_organization(aclient, "test-webhook-success")
 
     transport = httpx2.MockTransport(lambda request: httpx2.Response(200, request=request))
-    task_queue = TaskQueue(dsn=tq_dsn, max_retries=0, poll_interval_secs=1)
+    task_queue = TaskQueue(dsn=tq_dsn, max_retries=0, poll_interval_secs=1, clock=SystemClock())
     task_queue.register_handler(WEBHOOK_OUTBOUND_TASK_TYPE, make_webhook_outbound_handler(tq_dsn, transport=transport))
     with tq_runner(task_queue):
         task = insert_task(
@@ -96,7 +97,7 @@ def test_webhook_outbound_handler_preserves_url_credentials(
         captured_requests.append(request)
         return httpx2.Response(200, request=request)
 
-    task_queue = TaskQueue(dsn=tq_dsn, max_retries=0, poll_interval_secs=1)
+    task_queue = TaskQueue(dsn=tq_dsn, max_retries=0, poll_interval_secs=1, clock=SystemClock())
     task_queue.register_handler(
         WEBHOOK_OUTBOUND_TASK_TYPE,
         make_webhook_outbound_handler(tq_dsn, transport=httpx2.MockTransport(handler)),
@@ -150,7 +151,7 @@ def test_turn_journeys_changed_handler_updates_journeys_and_records_success_even
         [{"name": "Journey 1", "uuid": "j1-uuid"}, {"name": "Journey 2", "uuid": "j2-uuid"}],
     )
 
-    task_queue = TaskQueue(dsn=tq_dsn, max_retries=0, poll_interval_secs=1)
+    task_queue = TaskQueue(dsn=tq_dsn, max_retries=0, poll_interval_secs=1, clock=SystemClock())
     evidential_transport = httpx2.MockTransport(lambda req: httpx2.Response(204, request=req))
     task_queue.register_handler(
         TURN_JOURNEYS_CHANGED_TASK_TYPE, make_turn_journeys_changed_handler(tq_dsn, transport=evidential_transport)
@@ -195,7 +196,7 @@ def test_turn_journeys_changed_handler_records_failure_event_when_turn_api_fails
     # Simulate the Turn API being unavailable when the handler fires.
     monkeypatch.setattr(FakeClient, "expected_status", 500)
 
-    task_queue = TaskQueue(dsn=tq_dsn, max_retries=0, poll_interval_secs=1)
+    task_queue = TaskQueue(dsn=tq_dsn, max_retries=0, poll_interval_secs=1, clock=SystemClock())
     evidential_transport = httpx2.MockTransport(lambda req: httpx2.Response(500, request=req))
     task_queue.register_handler(
         TURN_JOURNEYS_CHANGED_TASK_TYPE, make_turn_journeys_changed_handler(tq_dsn, transport=evidential_transport)

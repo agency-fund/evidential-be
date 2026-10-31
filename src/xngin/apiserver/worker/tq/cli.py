@@ -1,10 +1,12 @@
 """tq is a simple Postgres task queue daemon."""
 
+from threading import Event
 from typing import Annotated
 
 import typer
 
 from xngin.apiserver import customlogging
+from xngin.apiserver.worker.executor import SystemClock
 from xngin.apiserver.worker.tq.handlers import make_turn_journeys_changed_handler, make_webhook_outbound_handler
 from xngin.apiserver.worker.tq.task_payload_types import TURN_JOURNEYS_CHANGED_TASK_TYPE, WEBHOOK_OUTBOUND_TASK_TYPE
 from xngin.apiserver.worker.tq.task_queue import TaskQueue
@@ -50,7 +52,7 @@ def run(
     ] = DEFAULT_POLLING_INTERVAL,
 ) -> None:
     """Run the task queue processor."""
-    queue = TaskQueue(dsn=dsn, max_retries=max_retries, poll_interval_secs=poll_interval)
+    queue = TaskQueue(dsn=dsn, max_retries=max_retries, poll_interval_secs=poll_interval, clock=SystemClock())
     queue.register_handler(WEBHOOK_OUTBOUND_TASK_TYPE, make_webhook_outbound_handler(dsn))
     queue.register_handler(TURN_JOURNEYS_CHANGED_TASK_TYPE, make_turn_journeys_changed_handler(dsn))
-    queue.run()
+    queue.run(stop=Event())
