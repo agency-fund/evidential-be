@@ -66,7 +66,6 @@ xngin-apiserver-dev = "xngin.apiserver.main:main_dev"
 xngin-apiserver-live = "xngin.apiserver.main:main_live"
 xngin-cli = "xngin.cli.main:app"
 xngin-worker = "xngin.apiserver.worker.cli:app"
-xngin-tq = "xngin.apiserver.worker.tq.cli:app"
 
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "session"

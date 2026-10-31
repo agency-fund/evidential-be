@@ -18,10 +18,13 @@ from xngin.apiserver.worker.jobs.base import Backoff
 from xngin.apiserver.worker.jobs.dwh_pull import DwhPullJob
 from xngin.apiserver.worker.jobs.snapshots import SnapshotJob
 from xngin.apiserver.worker.scheduler import Pacer, run_worker
+from xngin.apiserver.worker.tq.task_queue_thread import running_task_queue
 from xngin.ops import sentry
 from xngin.xsecrets import secretservice
 
-app = typer.Typer(help="Runs experiment snapshots, autofail updates, and data warehouse pulls.")
+app = typer.Typer(
+    help="Runs experiment snapshots, autofail updates, data warehouse pulls, and the task queue (e.g. webhooks)."
+)
 
 # A warehouse that is briefly unavailable is retried within minutes. One that stays broken, such as with revoked
 # credentials or a dropped table, settles at hourly pulls, since each failing pull holds the experiment's draw locks
@@ -39,6 +42,10 @@ DWH_PULL_BACKOFF = Backoff(
 # Autofail failures are quick database errors or bugs that hold nothing external, so they keep retrying every 2
 # minutes.
 AUTOFAIL_BACKOFF = Backoff(delays=(timedelta(minutes=1), timedelta(minutes=2)))
+
+# How long shutdown waits for the task queue thread to finish its current task, before the executor drains. Task
+# handlers time out their HTTP requests after 10 seconds, so this leaves room for the handler's database writes.
+TQ_JOIN_TIMEOUT_SECS = 30
 
 
 def seconds(**kwargs: float) -> int:
@@ -100,6 +107,22 @@ def run(
             help="Exit after this many jobs finish, so a fresh process replaces this one.",
         ),
     ] = 1000,
+    tq_max_retries: Annotated[
+        int,
+        typer.Option(
+            envvar="XNGIN_WORKER_TQ_MAX_RETRIES",
+            min=0,
+            help="Maximum number of retries for a task queue task. Note: the task is always tried once.",
+        ),
+    ] = 10,
+    tq_poll_interval: Annotated[
+        int,
+        typer.Option(
+            envvar="XNGIN_WORKER_TQ_POLL_INTERVAL",
+            min=1,
+            help="Seconds between task queue polls when no notifications are received.",
+        ),
+    ] = 60,
 ) -> None:
     """Run until SIGTERM, SIGINT, or --exit-after-jobs finished jobs, then drain active jobs and exit."""
     customlogging.setup()
@@ -120,17 +143,29 @@ def run(
         # AutofailJob computes its next run time from the experiment's pending draws.
         AutofailJob(batch_size=autofail_batch_size, backoff=AUTOFAIL_BACKOFF),
     )
+    clock = SystemClock()
     # Graceful shutdown: SIGINT and SIGTERM only set this event, so the worker stops starting new jobs
     # and drains active ones instead of dying mid-job.
     stop = Event()
     previous = {sig: signal.signal(sig, lambda *_: stop.set()) for sig in (signal.SIGINT, signal.SIGTERM)}
     exit_code = 1
     try:
-        clock = SystemClock()
         pacer = Pacer(poll_interval=poll_interval, clock=clock, exit_after_jobs=exit_after_jobs)
-        # Each worker will get its own connection, plus one for scheduling. Leaving the executor's context drains
-        # the running attempts, before the database is torn down.
-        with database.setup(pool_size=parallelism + 1), AttemptExecutor(parallelism, clock) as executor:
+        # Each worker will get its own connection, plus one for scheduling. The task queue runs on its own thread
+        # with its own connections. Leaving the contexts stops the task queue and lets it finish its current task,
+        # then drains the running attempts, before the database is torn down.
+        with (
+            database.setup(pool_size=parallelism + 1),
+            AttemptExecutor(parallelism, clock) as executor,
+            running_task_queue(
+                database.get_sqlalchemy_database_url(),
+                clock,
+                stop,
+                max_retries=tq_max_retries,
+                poll_interval=tq_poll_interval,
+                join_timeout=TQ_JOIN_TIMEOUT_SECS,
+            ),
+        ):
             run_worker(jobs, stop, pacer, executor)
         exit_code = 0
     except BaseException as exc:
@@ -144,7 +179,7 @@ def run(
 
 
 def exit_now(exit_code: int) -> None:
-    """Exit at once, killing threads left behind by abandoned warehouse calls.
+    """Exit at once, killing threads left behind by abandoned warehouse calls or a task queue that did not stop.
 
     A warehouse call that outlives its timeout keeps running on a helper thread, possibly forever. A normal
     interpreter exit joins every executor thread and would wait for them, so flush what we can and exit without
