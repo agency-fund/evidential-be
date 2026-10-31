@@ -368,5 +368,4 @@ class SnapshotStatus(enum.StrEnum):
     """Describes the status of a snapshot."""
 
     SUCCESS = "success"
-    RUNNING = "running"
     FAILED = "failed"
