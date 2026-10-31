@@ -4,8 +4,10 @@ from datetime import timedelta
 
 import psycopg
 import pytest
+from sqlalchemy import func, update
 from sqlalchemy.orm import Session
 
+from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.worker_helpers import FakeClock
 from xngin.apiserver.worker.executor import SystemClock
 from xngin.apiserver.worker.tq import task_queue as task_queue_module
@@ -201,6 +203,56 @@ def test_task_queue_polls_again_when_poll_interval_elapses(tq_dsn: str, monkeypa
     task_queue.run(stop=stop)
 
     assert len(polls) == 2
+
+
+def test_task_queue_reclaims_stale_running_task(xngin_session: Session, tq_dsn: str):
+    handled_task_ids: queue.SimpleQueue[str] = queue.SimpleQueue()
+    task_queue = TaskQueue(dsn=tq_dsn, max_retries=1, poll_interval_secs=1, clock=SystemClock(), stale_running_secs=60)
+    task_queue.register_handler("test.reclaim", lambda task: handled_task_ids.put(task.id))
+    stale = insert_task(xngin_session, task_type="test.reclaim")
+    fresh = insert_task(xngin_session, task_type="test.reclaim")
+    xngin_session.execute(
+        update(tables.Task)
+        .where(tables.Task.id == stale.id)
+        .values(status="running", updated_at=func.now() - timedelta(hours=1))
+    )
+    xngin_session.execute(update(tables.Task).where(tables.Task.id == fresh.id).values(status="running"))
+    xngin_session.commit()
+
+    with tq_runner(task_queue):
+        reclaimed = wait_for_task_status(stale.id, "success")
+
+    assert reclaimed.retry_count == 1
+    assert handled_task_ids.get(timeout=1) == stale.id
+    assert handled_task_ids.empty()
+    xngin_session.expire_all()
+    assert xngin_session.get_one(tables.Task, fresh.id).status == "running"
+
+
+def test_task_queue_marks_stale_running_task_dead_when_out_of_retries(xngin_session: Session, tq_dsn: str):
+    handled_task_ids: queue.SimpleQueue[str] = queue.SimpleQueue()
+    task_queue = TaskQueue(dsn=tq_dsn, max_retries=1, poll_interval_secs=1, clock=SystemClock(), stale_running_secs=60)
+    task_queue.register_handler("test.reclaim", lambda task: handled_task_ids.put(task.id))
+    # The first was orphaned on its final attempt. The second was orphaned with a retry count already past
+    # max_retries.
+    final_attempt = insert_task(xngin_session, task_type="test.reclaim")
+    beyond_retries = insert_task(xngin_session, task_type="test.reclaim")
+    for task, retry_count in ((final_attempt, 1), (beyond_retries, 2)):
+        xngin_session.execute(
+            update(tables.Task)
+            .where(tables.Task.id == task.id)
+            .values(status="running", retry_count=retry_count, updated_at=func.now() - timedelta(hours=1))
+        )
+    xngin_session.commit()
+
+    with tq_runner(task_queue):
+        dead_final_attempt = wait_for_task_status(final_attempt.id, "dead")
+        dead_beyond_retries = wait_for_task_status(beyond_retries.id, "dead")
+
+    assert dead_final_attempt.retry_count == 2
+    assert dead_beyond_retries.retry_count == 3
+    assert dead_final_attempt.message == "Orphaned while running, with no retries left."
+    assert handled_task_ids.empty()
 
 
 def test_task_queue_sets_up_notifications_once_per_connection(

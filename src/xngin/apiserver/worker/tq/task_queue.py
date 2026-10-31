@@ -23,6 +23,10 @@ TQ_DB_APPLICATION_NAME = f"tq-{os.getpid()}"
 CONNECT_TIMEOUT_SECS = 10
 RECONNECT_DELAY_SECS = 5
 
+# A task still running after this long is assumed to have been orphaned by a process that exited mid-task, and is
+# claimed again. Handlers time out their HTTP requests after 10 seconds, so a live task never runs this long.
+DEFAULT_STALE_RUNNING_SECS = 15 * 60
+
 
 @dataclass
 class Task:
@@ -61,7 +65,14 @@ class TaskHandler(Protocol):
 class TaskQueue:
     """Task queue implementation using Postgres."""
 
-    def __init__(self, dsn: str, max_retries: int, poll_interval_secs: int, clock: Clock):
+    def __init__(
+        self,
+        dsn: str,
+        max_retries: int,
+        poll_interval_secs: int,
+        clock: Clock,
+        stale_running_secs: int = DEFAULT_STALE_RUNNING_SECS,
+    ):
         """Initialize the task queue.
 
         Args:
@@ -69,11 +80,13 @@ class TaskQueue:
             max_retries: Maximum number of retries for a task. Note: the task is always tried once.
             poll_interval_secs: Interval in seconds to poll for tasks when no notifications are received.
             clock: The clock for the poll interval and reconnect delays, which tests replace to control time.
+            stale_running_secs: Seconds after which a running task is assumed orphaned and is claimed again.
         """
         self.dsn = dsn
         self.max_retries = max_retries
         self.poll_interval = poll_interval_secs
         self.clock = clock
+        self.stale_running_secs = stale_running_secs
         self.handlers: dict[str, TaskHandler] = {}
 
     def register_handler(self, task_type: str, handler: TaskHandler) -> None:
@@ -119,17 +132,28 @@ class TaskQueue:
             conn.commit()
 
     def _fetch_task(self, conn: psycopg.Connection) -> Task | None:
-        """Fetch a task from the queue."""
+        """Fetch a task from the queue.
+
+        Also reclaims tasks orphaned in the running state, counting the lost attempt as a retry so that a task that
+        keeps getting orphaned eventually exhausts its retries. A reclaimed task may run more than once.
+        """
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 t"""
                 UPDATE tasks
-                SET status = 'running', updated_at = NOW()
+                SET status = 'running',
+                    updated_at = NOW(),
+                    retry_count = retry_count + CASE WHEN status = 'running' THEN 1 ELSE 0 END
                 WHERE id = (
                     SELECT id FROM tasks
-                    WHERE status = 'pending'
-                    AND embargo_until <= NOW()
-                    AND retry_count <= {self.max_retries}
+                    WHERE (
+                        status = 'pending'
+                        AND embargo_until <= NOW()
+                        AND retry_count <= {self.max_retries}
+                    ) OR (
+                        status = 'running'
+                        AND updated_at < NOW() - make_interval(secs => {self.stale_running_secs})
+                    )
                     ORDER BY created_at
                     LIMIT 1
                     FOR UPDATE SKIP LOCKED
@@ -143,6 +167,12 @@ class TaskQueue:
 
     def _handle_task(self, conn: psycopg.Connection, task: Task) -> None:
         """Handle a task."""
+        if task.retry_count > self.max_retries:
+            # Reclaimed from a process that died during the task's last allowed attempt, so it is not run again.
+            logger.warning(f"Task {task.id} was orphaned while running with no retries left, marked as dead")
+            self._mark_task_dead(conn, task, "Orphaned while running, with no retries left.")
+            return
+
         logger.info(f"Handling task: {task}")
 
         if task.task_type not in self.handlers:
@@ -173,6 +203,18 @@ class TaskQueue:
             )
             conn.commit()
             logger.info(f"Task {task.id} completed and marked as successful")
+
+    def _mark_task_dead(self, conn: psycopg.Connection, task: Task, message: str) -> None:
+        """Mark a task as dead without running it, when its lost attempt has already been counted."""
+        with conn.cursor() as cur:
+            cur.execute(
+                t"""
+                UPDATE tasks
+                SET status = 'dead', updated_at = NOW(), message = {message}
+                WHERE id = {task.id}
+                """
+            )
+            conn.commit()
 
     def _mark_task_failed(self, conn: psycopg.Connection, task: Task, err: str) -> None:
         """Mark a task as failed."""
