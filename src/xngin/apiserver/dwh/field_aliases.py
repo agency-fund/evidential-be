@@ -36,7 +36,7 @@ class FieldAliases:
 
     def __init__(self, field_names: Iterable[str]):
         """Raises ValueError if two of field_names have the same alias."""
-        self._name_to_alias = {field_name: _alias(field_name) for field_name in field_names}
+        self._name_to_alias = {field_name: _alias(field_name) for field_name in dict.fromkeys(field_names)}
         self._alias_to_name = {alias: field_name for field_name, alias in self._name_to_alias.items()}
         if len(self._alias_to_name) != len(self._name_to_alias):
             raise ValueError(f"Field names {sorted(self._name_to_alias)} do not have distinct aliases.")
