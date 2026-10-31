@@ -3,6 +3,7 @@
 import json
 import secrets
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any, ClassVar, Literal, Self
 
 import sqlalchemy
@@ -706,7 +707,7 @@ class ExperimentFilter(Base):
     string_values: Mapped[list[str | None] | None] = mapped_column(ARRAY(String(255)))
     # We're ok with storing all numeric types as NUMERIC since it can hold any length up to the impl
     # limits, and we're not doing any indexing or aggregation of these values.
-    numeric_values: Mapped[list[Numeric | None] | None] = mapped_column(ARRAY(Numeric))
+    numeric_values: Mapped[list[Decimal | None] | None] = mapped_column(ARRAY(Numeric))
     boolean_values: Mapped[list[bool | None] | None] = mapped_column(ARRAY(Boolean))
 
     experiment: Mapped[Experiment] = relationship(
