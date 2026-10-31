@@ -3,7 +3,7 @@ import logging
 import sys
 import traceback
 import typing
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 
 from xngin.apiserver.flags import LogFormat
 
@@ -36,7 +36,74 @@ class InterceptHandler(logging.Handler):
             loguru_record["function"] = record.funcName
             loguru_record["line"] = record.lineno
 
-        logger.patch(describe_caller).opt(exception=record.exc_info).log(level, record.getMessage())
+        message, fields = record.getMessage(), dict[str, typing.Any]()
+        if record.name == GRANIAN_ACCESS_LOGGER and isinstance(record.args, Mapping):
+            message, fields = _describe_granian_access(record.args)
+
+        logger.patch(describe_caller).bind(**fields).opt(exception=record.exc_info).log(level, message)
+
+
+GRANIAN_ACCESS_LOGGER = "granian.access"
+
+
+def _describe_granian_access(request: Mapping[str, typing.Any]) -> tuple[str, dict[str, typing.Any]]:
+    """Describes a request from Granian's access log as a message and the fields to log alongside it.
+
+    Granian calls its access logger with a format string and a dict of request values. We ignore the format string and
+    describe the request ourselves: structured logs get each value as a top-level field, so Railway can filter on them,
+    and other formats get a single line of key=value pairs.
+
+    Granian doesn't escape the values, and the path is percent-decoded, so it can contain quotes, spaces, newlines, and
+    terminal escape sequences. Fields are safe because JSON escapes them; text is quoted with _logfmt_value.
+    """
+    path = request["path"]
+    query = request["query_string"]
+    duration_ms = round(request["dt_ms"], 3)
+    if flags.LOG_FORMAT == LogFormat.STRUCTURED_RAILWAY:
+        fields = {
+            "http_method": request["method"],
+            "http_path": path,
+            "http_query": query,
+            "http_status": request["status"],
+            "http_duration_ms": duration_ms,
+            "http_protocol": request["protocol"],
+            "client_addr": request["addr"],
+        }
+        return f"{request['method']} {_logfmt_value(path)} {request['status']}", fields
+    pairs = {
+        "dur": duration_ms,
+        "ip": request["addr"],
+        "method": request["method"],
+        "path": path,
+        "q": query,
+        "code": request["status"],
+    }
+    return " ".join(f"{key}={_logfmt_value(value)}" for key, value in pairs.items() if value != ""), {}
+
+
+_LOGFMT_ESCAPES = {'"': '\\"', "\\": "\\\\", "\n": "\\n", "\r": "\\r", "\t": "\\t"}
+
+
+def _logfmt_value(value: object) -> str:
+    """Formats a value for a key=value log line the way logfmt does.
+
+    Values made only of printable characters other than space, '"', '=', and backslash are written as is. Others are
+    quoted, with quotes, backslashes, and non-printable characters (including Unicode format characters such as
+    bidirectional overrides) backslash-escaped, so that a value can't break the line apart or alter a terminal.
+    """
+    text = str(value)
+    if text and all(char.isprintable() and char not in ' "=\\' for char in text):
+        return text
+    return '"' + "".join(map(_logfmt_escape, text)) + '"'
+
+
+def _logfmt_escape(char: str) -> str:
+    if escape := _LOGFMT_ESCAPES.get(char):
+        return escape
+    if char.isprintable():
+        return char
+    code_point = ord(char)
+    return f"\\u{code_point:04x}" if code_point <= 0xFFFF else f"\\U{code_point:08x}"
 
 
 def _customize_loguru():
