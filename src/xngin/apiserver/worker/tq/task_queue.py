@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Any, Protocol
 
 import psycopg
+import sentry_sdk
 from loguru import logger
 from psycopg.rows import dict_row
 from sqlalchemy import make_url
@@ -18,6 +19,9 @@ from sqlalchemy import make_url
 from xngin.apiserver.worker.executor import Clock
 
 TQ_DB_APPLICATION_NAME = f"tq-{os.getpid()}"
+
+CONNECT_TIMEOUT_SECS = 10
+RECONNECT_DELAY_SECS = 5
 
 
 @dataclass
@@ -232,13 +236,14 @@ class TaskQueue:
         logger.info(f"Starting task queue with DSN: {make_url(self.dsn)}")
 
         # Connect and set up notifications once per connection, since the trigger DDL locks the tasks table. Reconnect
-        # only after a connection error.
+        # only after the loop fails.
         while not stop.is_set():
             try:
                 with psycopg.connect(
                     self.dsn,
                     autocommit=False,
                     application_name=TQ_DB_APPLICATION_NAME,
+                    connect_timeout=CONNECT_TIMEOUT_SECS,
                 ) as conn:
                     self._setup_notifications(conn)
 
@@ -254,5 +259,13 @@ class TaskQueue:
 
             except psycopg.OperationalError as e:
                 logger.error(f"Database connection error: {e}")
-                logger.info("Reconnecting in 5 seconds...")
-                self.clock.wait(stop, 5)
+                logger.info(f"Reconnecting in {RECONNECT_DELAY_SECS} seconds...")
+                self.clock.wait(stop, RECONNECT_DELAY_SECS)
+            except Exception as exc:
+                # Any other error, such as a query failing or a tasks row that no longer matches Task, is a bug
+                # in the queue itself. Report it and retry on a fresh connection, so the worker's other jobs keep
+                # running rather than the whole worker exiting into a restart loop. Only errors outside this loop
+                # reach running_task_queue, which then stops the worker.
+                logger.opt(exception=exc).error(f"Task queue failed. Reconnecting in {RECONNECT_DELAY_SECS} seconds...")
+                sentry_sdk.capture_exception(exc)
+                self.clock.wait(stop, RECONNECT_DELAY_SECS)

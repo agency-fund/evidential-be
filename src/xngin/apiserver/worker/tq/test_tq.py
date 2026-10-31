@@ -122,6 +122,7 @@ def test_task_queue_retries_after_operational_error(monkeypatch: pytest.MonkeyPa
     connected_at: list[float] = []
 
     def fake_connect(*args, **kwargs):
+        assert kwargs["connect_timeout"] == task_queue_module.CONNECT_TIMEOUT_SECS
         connected_at.append(clock.now)
         if len(connected_at) == 2:
             stop.set()
@@ -132,6 +133,30 @@ def test_task_queue_retries_after_operational_error(monkeypatch: pytest.MonkeyPa
     task_queue.run(stop=stop)
 
     assert connected_at == [0.0, 5.0]
+
+
+@pytest.mark.usefixtures("xngin_session")
+def test_task_queue_reports_and_retries_after_unexpected_error(tq_dsn: str, monkeypatch: pytest.MonkeyPatch):
+    # A bug in the queue itself must not escape run(), which would take down the whole worker.
+    clock, stop = FakeClock(), threading.Event()
+    task_queue = TaskQueue(dsn=tq_dsn, max_retries=1, poll_interval_secs=1, clock=clock)
+    fetched_at: list[float] = []
+    captured: list[BaseException] = []
+
+    def failing_fetch_task(conn):
+        fetched_at.append(clock.now)
+        if len(fetched_at) == 2:
+            stop.set()
+            return
+        raise TypeError("unexpected column")
+
+    monkeypatch.setattr(task_queue, "_fetch_task", failing_fetch_task)
+    monkeypatch.setattr(task_queue_module.sentry_sdk, "capture_exception", captured.append)
+
+    task_queue.run(stop=stop)
+
+    assert fetched_at == [0.0, 5.0]
+    assert [str(exc) for exc in captured] == ["unexpected column"]
 
 
 @pytest.mark.usefixtures("xngin_session")

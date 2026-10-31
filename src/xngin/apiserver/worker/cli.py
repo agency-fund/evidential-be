@@ -44,7 +44,8 @@ DWH_PULL_BACKOFF = Backoff(
 AUTOFAIL_BACKOFF = Backoff(delays=(timedelta(minutes=1), timedelta(minutes=2)))
 
 # How long shutdown waits for the task queue thread to finish its current task, before the executor drains. Task
-# handlers time out their HTTP requests after 10 seconds, so this leaves room for the handler's database writes.
+# handlers time out their HTTP requests after 10 seconds and the queue's connect attempts after CONNECT_TIMEOUT_SECS,
+# so this leaves room for the handler's database writes.
 TQ_JOIN_TIMEOUT_SECS = 30
 
 
