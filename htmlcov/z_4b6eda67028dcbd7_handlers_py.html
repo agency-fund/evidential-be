@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Coverage for src/xngin/tq/handlers.py: 87%</title>
+    <title>Coverage for src/xngin/apiserver/worker/tq/handlers.py: 87%</title>
     <link rel="icon" sizes="32x32" href="favicon_32_cb_c827f16f.png">
     <link rel="stylesheet" href="style_cb_4667309f.css" type="text/css">
     <script src="coverage_html_cb_54cfdca1.js" defer></script>
@@ -11,7 +11,7 @@
 <header>
     <div class="content">
         <h1>
-            <span class="text">Coverage for </span><b>src<span class="sep">/</span>xngin<span class="sep">/</span>tq<span class="sep">/</span>handlers.py</b>:
+            <span class="text">Coverage for </span><b>src<span class="sep">/</span>xngin<span class="sep">/</span>apiserver<span class="sep">/</span>worker<span class="sep">/</span>tq<span class="sep">/</span>handlers.py</b>:
             <span class="pc_cov">87%</span>
         </h1>
         <aside id="help_panel_wrapper">
@@ -60,12 +60,12 @@
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
         <p class="text">
-            <a id="prevFileLink" class="nav" href="z_56ef3e8c0f95230f_stats_errors_py.html">&#xab; prev</a> &nbsp; &nbsp;
+            <a id="prevFileLink" class="nav" href="z_edad3300dbc56f04_scheduler_py.html">&#xab; prev</a> &nbsp; &nbsp;
             <a id="indexLink" class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
-            <a id="nextFileLink" class="nav" href="z_06f0985033d3ce98_task_queue_py.html">&#xbb; next</a>
+            <a id="nextFileLink" class="nav" href="z_4b6eda67028dcbd7_task_queue_thread_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.0">coverage.py v7.17.0</a>,
-            created at 2026-10-30 23:40 +0000
+            created at 2026-10-31 01:22 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -94,10 +94,10 @@
     <p class="run"><span class="n"><a id="t12" href="#t12">12</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span><span class="op">.</span><span class="nam">dns</span><span class="op">.</span><span class="nam">safe_resolve</span> <span class="key">import</span> <span class="nam">DnsLookupError</span><span class="op">,</span> <span class="nam">safe_resolve</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t13" href="#t13">13</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span><span class="op">.</span><span class="nam">flags</span> <span class="key">import</span> <span class="nam">XNGIN_PUBLIC_API_BASE_URL</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t14" href="#t14">14</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span><span class="op">.</span><span class="nam">sqla</span> <span class="key">import</span> <span class="nam">tables</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t15" href="#t15">15</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">events</span><span class="op">.</span><span class="nam">turn_journeys_changed</span> <span class="key">import</span> <span class="nam">TurnJourneysChangedEvent</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t16" href="#t16">16</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">events</span><span class="op">.</span><span class="nam">webhook_sent</span> <span class="key">import</span> <span class="nam">WebhookSentEvent</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t17" href="#t17">17</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">tq</span><span class="op">.</span><span class="nam">task_payload_types</span> <span class="key">import</span> <span class="nam">TurnJourneysChangedTask</span><span class="op">,</span> <span class="nam">WebhookOutboundTask</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t18" href="#t18">18</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">tq</span><span class="op">.</span><span class="nam">task_queue</span> <span class="key">import</span> <span class="nam">TQ_DB_APPLICATION_NAME</span><span class="op">,</span> <span class="nam">Task</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t15" href="#t15">15</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span><span class="op">.</span><span class="nam">worker</span><span class="op">.</span><span class="nam">tq</span><span class="op">.</span><span class="nam">task_payload_types</span> <span class="key">import</span> <span class="nam">TurnJourneysChangedTask</span><span class="op">,</span> <span class="nam">WebhookOutboundTask</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t16" href="#t16">16</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span><span class="op">.</span><span class="nam">worker</span><span class="op">.</span><span class="nam">tq</span><span class="op">.</span><span class="nam">task_queue</span> <span class="key">import</span> <span class="nam">TQ_DB_APPLICATION_NAME</span><span class="op">,</span> <span class="nam">Task</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t17" href="#t17">17</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">events</span><span class="op">.</span><span class="nam">turn_journeys_changed</span> <span class="key">import</span> <span class="nam">TurnJourneysChangedEvent</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t18" href="#t18">18</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">events</span><span class="op">.</span><span class="nam">webhook_sent</span> <span class="key">import</span> <span class="nam">WebhookSentEvent</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t19" href="#t19">19</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t20" href="#t20">20</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t21" href="#t21">21</a></span><span class="t"><span class="key">def</span> <span class="nam">_record_webhook_sent_event</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
@@ -251,10 +251,10 @@
     <p class="pln"><span class="n"><a id="t169" href="#t169">169</a></span><span class="t"><span class="str">    customers when debugging.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t170" href="#t170">170</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t171" href="#t171">171</a></span><span class="t"><span class="str">    This handler deliberately does not import or call Evidential&#x27;s business logic (e.g.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t172" href="#t172">172</a></span><span class="t"><span class="str">    `refresh_journeys_dict`) directly. Instead it makes a real outbound HTTP request back to this</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t173" href="#t173">173</a></span><span class="t"><span class="str">    same server&#x27;s `/integrations/turn/{webhook_id}/refresh-journeys` endpoint, authenticating with</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t174" href="#t174">174</a></span><span class="t"><span class="str">    the webhook token from the task payload. `tq` is kept free of dependencies on `sqla.tables` and</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t175" href="#t175">175</a></span><span class="t"><span class="str">    Evidential&#x27;s business logic, and runs with fewer privileges.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t172" href="#t172">172</a></span><span class="t"><span class="str">    `refresh_journeys_dict`) directly. Instead it makes a real outbound HTTP request to the</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t173" href="#t173">173</a></span><span class="t"><span class="str">    apiserver&#x27;s `/integrations/turn/{webhook_id}/refresh-journeys` endpoint, authenticating with</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t174" href="#t174">174</a></span><span class="t"><span class="str">    the webhook token from the task payload, so the refresh runs in the apiserver on the same code</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t175" href="#t175">175</a></span><span class="t"><span class="str">    path an external caller would use and the queue stays decoupled from that logic.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t176" href="#t176">176</a></span><span class="t"><span class="str">    &quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t177" href="#t177">177</a></span><span class="t">    <span class="nam">engine</span> <span class="op">=</span> <span class="nam">sqlalchemy</span><span class="op">.</span><span class="nam">create_engine</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t178" href="#t178">178</a></span><span class="t">        <span class="nam">dsn</span><span class="op">,</span> <span class="nam">connect_args</span><span class="op">=</span><span class="op">{</span><span class="str">&quot;application_name&quot;</span><span class="op">:</span> <span class="nam">TQ_DB_APPLICATION_NAME</span><span class="op">}</span><span class="op">,</span> <span class="nam">poolclass</span><span class="op">=</span><span class="nam">NullPool</span>&nbsp;</span><span class="r"></span></p>
@@ -305,12 +305,12 @@
 <footer>
     <div class="content">
         <p>
-            <a class="nav" href="z_56ef3e8c0f95230f_stats_errors_py.html">&#xab; prev</a> &nbsp; &nbsp;
+            <a class="nav" href="z_edad3300dbc56f04_scheduler_py.html">&#xab; prev</a> &nbsp; &nbsp;
             <a class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
-            <a class="nav" href="z_06f0985033d3ce98_task_queue_py.html">&#xbb; next</a>
+            <a class="nav" href="z_4b6eda67028dcbd7_task_queue_thread_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.0">coverage.py v7.17.0</a>,
-            created at 2026-10-30 23:40 +0000
+            created at 2026-10-31 01:22 +0000
         </p>
     </div>
 </footer>
