@@ -1,6 +1,8 @@
 import json
 import logging
 import sys
+from datetime import UTC, datetime
+from uuid import UUID
 
 import pytest
 from loguru import logger
@@ -28,6 +30,29 @@ def test_railway_json_puts_context_at_top_level(records):
     # Contextual values do not override the standard fields.
     assert structured["message"] == "hello world"
     assert "extra" not in structured
+
+
+def test_railway_json_serializes_values_json_does_not_support(records):
+    started_at = datetime(2026, 10, 31, 12, 0, tzinfo=UTC)
+    logger.bind(started_at=started_at, run_id=UUID(int=1), counts={1: "one"}).info("hello")
+
+    (record,) = records
+    structured = json.loads(customlogging._record_to_railway_json(record))
+
+    assert structured["started_at"] == "2026-10-31T12:00:00+00:00"
+    assert structured["run_id"] == "00000000-0000-0000-0000-000000000001"
+    assert structured["counts"] == {"1": "one"}
+
+
+def test_railway_json_falls_back_for_values_orjson_rejects(records):
+    logger.bind(big=2**70, surrogate="\udc80").info("hello")
+
+    (record,) = records
+    structured = json.loads(customlogging._record_to_railway_json(record))
+
+    assert structured["big"] == 2**70
+    assert structured["surrogate"] == "\udc80"
+    assert structured["message"] == "hello"
 
 
 @pytest.fixture

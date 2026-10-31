@@ -12,6 +12,7 @@ if typing.TYPE_CHECKING:
     from loguru import Record as loguru_Record
 
 
+import orjson
 from loguru import logger
 
 from xngin.apiserver import flags
@@ -79,7 +80,13 @@ def _record_to_railway_json(record: loguru_Record):
             "exc_msg": str(exc.value) if exc.value else None,
             "exc_tb": traceback.format_exception(exc.value, limit=15, chain=True) if exc.value else None,
         })
-    return json.dumps(structured)
+    # default=str and OPT_NON_STR_KEYS avoids disappearing log lines if any context variables are of an unusual type.
+    try:
+        return orjson.dumps(structured, default=str, option=orjson.OPT_NON_STR_KEYS).decode()
+    except orjson.JSONEncodeError:
+        # orjson rejects integers beyond 64 bits and strings that aren't valid UTF-8, and default= doesn't apply to
+        # either. json.dumps accepts both, so fall back to it rather than lose the line.
+        return json.dumps(structured, default=str)
 
 
 def _stdout_railway_sink(message: loguru_Message):
