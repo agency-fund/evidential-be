@@ -36,6 +36,7 @@ class ArmAnalysisResult:
 def analyze_experiment(
     assignments_df: pd.DataFrame,
     participant_outcomes: list[ParticipantOutcome],
+    metric_names: list[str],
     *,
     unit_col: str = "participant_id",
     arm_col: str = "arm_id",
@@ -54,6 +55,7 @@ def analyze_experiment(
             corresponding to a unit of analysis (a participant), its treatment assignment, and
             optionally the cluster id this unit is a part of for cluster-randomized experiments.
     participant_outcomes: list of outcomes for each unit in assignments_df, in the same order.
+    metric_names: names of the metrics to analyze; every metric value in participant_outcomes must be one of them.
     unit_col: Name of column in assignments_df to use for participant identifiers.
     arm_col: Name of column in assignments_df to use for arm identifiers.
     cluster_col: Name of column in assignments_df to use as cluster identifiers.
@@ -64,8 +66,8 @@ def analyze_experiment(
     Returns:
         map of metric name => map of arm_id (may be partial or empty!) => analysis results
         - If an arm is missing for a metric, it's because it had no valid data to process.
-        - If *zero* arm analyses exist for a metric (e.g. since zero non-null outcomes were found
-        across all arms), the name will exist, but the inner dict will be empty.
+        - Every name in metric_names has an entry. If *zero* arm analyses exist for a metric (e.g. since zero
+        non-null outcomes were found across all arms), the inner dict will be empty.
     """
     expected_id_columns = {unit_col, arm_col}
     if cluster_col is not None:
@@ -85,14 +87,14 @@ def analyze_experiment(
         alpha = 0.05
 
     # The frames hold each metric's values under its alias, so that no metric name can collide with an id column.
-    aliases = FieldAliases(mv.metric_name for po in participant_outcomes for mv in po.metric_values)
+    aliases = FieldAliases(metric_names)
     rows = []
     for outcome in participant_outcomes:
         data_row: dict[str, float | str | None] = {unit_col: outcome.participant_id}
         for metric_value in outcome.metric_values:
             data_row[aliases.alias(metric_value.metric_name)] = metric_value.metric_value
         rows.append(data_row)
-    outcomes_df = pd.DataFrame(rows)
+    outcomes_df = pd.DataFrame(rows, columns=[unit_col, *aliases.aliases()])
 
     merged_df = assignments_df.merge(outcomes_df, on=unit_col, how="left")
 
