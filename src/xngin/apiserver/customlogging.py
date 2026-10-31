@@ -146,6 +146,15 @@ def setup(*, patcher: Callable[[loguru_Record], None] | None = None) -> None:
             pass
 
 
+def granian_handler() -> logging.Handler:
+    """Handler factory referenced by granian_log_config.json.
+
+    This allows Granian's access logs to be emitted in the structured format, along with the context variables.
+    """
+    setup()
+    return InterceptHandler()
+
+
 def _silence_noisy_loggers():
     # Example: logger.disable("xngin.apiserver")
     pass
