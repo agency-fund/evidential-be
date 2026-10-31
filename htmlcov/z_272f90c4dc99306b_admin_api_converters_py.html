@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Coverage for src/xngin/apiserver/routers/admin/admin_api_converters.py: 84%</title>
+    <title>Coverage for src/xngin/apiserver/routers/admin/admin_api_converters.py: 86%</title>
     <link rel="icon" sizes="32x32" href="favicon_32_cb_c827f16f.png">
     <link rel="stylesheet" href="style_cb_4667309f.css" type="text/css">
     <script src="coverage_html_cb_54cfdca1.js" defer></script>
@@ -12,7 +12,7 @@
     <div class="content">
         <h1>
             <span class="text">Coverage for </span><b>src<span class="sep">/</span>xngin<span class="sep">/</span>apiserver<span class="sep">/</span>routers<span class="sep">/</span>admin<span class="sep">/</span>admin_api_converters.py</b>:
-            <span class="pc_cov">84%</span>
+            <span class="pc_cov">86%</span>
         </h1>
         <aside id="help_panel_wrapper">
             <input id="help_panel_state" type="checkbox">
@@ -54,9 +54,9 @@
             </div>
         </aside>
         <h2>
-            <span class="text">62 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">52<span class="text"> run</span></button>
-            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">10<span class="text"> missing</span></button>
+            <span class="text">58 statements &nbsp;</span>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">50<span class="text"> run</span></button>
+            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">8<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
         <p class="text">
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_272f90c4dc99306b_admin_api_types_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.0">coverage.py v7.17.0</a>,
-            created at 2026-10-31 01:22 +0000
+            created at 2026-10-31 02:37 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -196,34 +196,30 @@
     <p class="run"><span class="n"><a id="t114" href="#t114">114</a></span><span class="t"><span class="key">def</span> <span class="nam">convert_snapshot_to_api_snapshot</span><span class="op">(</span><span class="nam">snapshot</span><span class="op">:</span> <span class="nam">tables</span><span class="op">.</span><span class="nam">Snapshot</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">aapi</span><span class="op">.</span><span class="nam">Snapshot</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t115" href="#t115">115</a></span><span class="t">    <span class="nam">status</span><span class="op">:</span> <span class="nam">aapi</span><span class="op">.</span><span class="nam">SnapshotStatus</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t116" href="#t116">116</a></span><span class="t">    <span class="key">match</span> <span class="nam">snapshot</span><span class="op">.</span><span class="nam">status</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t117" href="#t117">117</a></span><span class="t">        <span class="key">case</span> <span class="str">&quot;pending&quot;</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t118" href="#t118">118</a></span><span class="t">            <span class="nam">status</span> <span class="op">=</span> <span class="nam">aapi</span><span class="op">.</span><span class="nam">SnapshotStatus</span><span class="op">.</span><span class="nam">RUNNING</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t119" href="#t119">119</a></span><span class="t">        <span class="key">case</span> <span class="str">&quot;success&quot;</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t120" href="#t120">120</a></span><span class="t">            <span class="nam">status</span> <span class="op">=</span> <span class="nam">aapi</span><span class="op">.</span><span class="nam">SnapshotStatus</span><span class="op">.</span><span class="nam">SUCCESS</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t121" href="#t121">121</a></span><span class="t">        <span class="key">case</span> <span class="str">&quot;failed&quot;</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t122" href="#t122">122</a></span><span class="t">            <span class="nam">status</span> <span class="op">=</span> <span class="nam">aapi</span><span class="op">.</span><span class="nam">SnapshotStatus</span><span class="op">.</span><span class="nam">FAILED</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t123" href="#t123">123</a></span><span class="t">        <span class="key">case</span> <span class="nam">_</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t124" href="#t124">124</a></span><span class="t">            <span class="nam">assert_never</span><span class="op">(</span><span class="nam">snapshot</span><span class="op">.</span><span class="nam">status</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t125" href="#t125">125</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t126" href="#t126">126</a></span><span class="t">    <span class="key">return</span> <span class="nam">aapi</span><span class="op">.</span><span class="nam">Snapshot</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t127" href="#t127">127</a></span><span class="t">        <span class="nam">experiment_id</span><span class="op">=</span><span class="nam">snapshot</span><span class="op">.</span><span class="nam">experiment_id</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t128" href="#t128">128</a></span><span class="t">        <span class="nam">id</span><span class="op">=</span><span class="nam">snapshot</span><span class="op">.</span><span class="nam">id</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t129" href="#t129">129</a></span><span class="t">        <span class="nam">status</span><span class="op">=</span><span class="nam">status</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t130" href="#t130">130</a></span><span class="t">        <span class="nam">created_at</span><span class="op">=</span><span class="nam">snapshot</span><span class="op">.</span><span class="nam">created_at</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t131" href="#t131">131</a></span><span class="t">        <span class="nam">updated_at</span><span class="op">=</span><span class="nam">snapshot</span><span class="op">.</span><span class="nam">updated_at</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t132" href="#t132">132</a></span><span class="t">        <span class="nam">data</span><span class="op">=</span><span class="nam">snapshot</span><span class="op">.</span><span class="nam">data</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t133" href="#t133">133</a></span><span class="t">        <span class="nam">details</span><span class="op">=</span><span class="op">{</span><span class="str">&quot;message&quot;</span><span class="op">:</span> <span class="nam">snapshot</span><span class="op">.</span><span class="nam">message</span><span class="op">}</span> <span class="key">if</span> <span class="nam">snapshot</span><span class="op">.</span><span class="nam">message</span> <span class="key">else</span> <span class="key">None</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t134" href="#t134">134</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t135" href="#t135">135</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t136" href="#t136">136</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t137" href="#t137">137</a></span><span class="t"><span class="key">def</span> <span class="nam">convert_api_snapshot_status_to_snapshot_status</span><span class="op">(</span><span class="nam">status</span><span class="op">:</span> <span class="nam">aapi</span><span class="op">.</span><span class="nam">SnapshotStatus</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">tables</span><span class="op">.</span><span class="nam">SnapshotStatus</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t138" href="#t138">138</a></span><span class="t">    <span class="key">match</span> <span class="nam">status</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t139" href="#t139">139</a></span><span class="t">        <span class="key">case</span> <span class="nam">aapi</span><span class="op">.</span><span class="nam">SnapshotStatus</span><span class="op">.</span><span class="nam">SUCCESS</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t140" href="#t140">140</a></span><span class="t">            <span class="key">return</span> <span class="str">&quot;success&quot;</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t141" href="#t141">141</a></span><span class="t">        <span class="key">case</span> <span class="nam">aapi</span><span class="op">.</span><span class="nam">SnapshotStatus</span><span class="op">.</span><span class="nam">RUNNING</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t142" href="#t142">142</a></span><span class="t">            <span class="key">return</span> <span class="str">&quot;pending&quot;</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t143" href="#t143">143</a></span><span class="t">        <span class="key">case</span> <span class="nam">aapi</span><span class="op">.</span><span class="nam">SnapshotStatus</span><span class="op">.</span><span class="nam">FAILED</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t144" href="#t144">144</a></span><span class="t">            <span class="key">return</span> <span class="str">&quot;failed&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t117" href="#t117">117</a></span><span class="t">        <span class="key">case</span> <span class="str">&quot;success&quot;</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t118" href="#t118">118</a></span><span class="t">            <span class="nam">status</span> <span class="op">=</span> <span class="nam">aapi</span><span class="op">.</span><span class="nam">SnapshotStatus</span><span class="op">.</span><span class="nam">SUCCESS</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t119" href="#t119">119</a></span><span class="t">        <span class="key">case</span> <span class="str">&quot;failed&quot;</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t120" href="#t120">120</a></span><span class="t">            <span class="nam">status</span> <span class="op">=</span> <span class="nam">aapi</span><span class="op">.</span><span class="nam">SnapshotStatus</span><span class="op">.</span><span class="nam">FAILED</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t121" href="#t121">121</a></span><span class="t">        <span class="key">case</span> <span class="nam">_</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t122" href="#t122">122</a></span><span class="t">            <span class="nam">assert_never</span><span class="op">(</span><span class="nam">snapshot</span><span class="op">.</span><span class="nam">status</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t123" href="#t123">123</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t124" href="#t124">124</a></span><span class="t">    <span class="key">return</span> <span class="nam">aapi</span><span class="op">.</span><span class="nam">Snapshot</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t125" href="#t125">125</a></span><span class="t">        <span class="nam">experiment_id</span><span class="op">=</span><span class="nam">snapshot</span><span class="op">.</span><span class="nam">experiment_id</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t126" href="#t126">126</a></span><span class="t">        <span class="nam">id</span><span class="op">=</span><span class="nam">snapshot</span><span class="op">.</span><span class="nam">id</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t127" href="#t127">127</a></span><span class="t">        <span class="nam">status</span><span class="op">=</span><span class="nam">status</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t128" href="#t128">128</a></span><span class="t">        <span class="nam">created_at</span><span class="op">=</span><span class="nam">snapshot</span><span class="op">.</span><span class="nam">created_at</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t129" href="#t129">129</a></span><span class="t">        <span class="nam">updated_at</span><span class="op">=</span><span class="nam">snapshot</span><span class="op">.</span><span class="nam">updated_at</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t130" href="#t130">130</a></span><span class="t">        <span class="nam">data</span><span class="op">=</span><span class="nam">snapshot</span><span class="op">.</span><span class="nam">data</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t131" href="#t131">131</a></span><span class="t">        <span class="nam">details</span><span class="op">=</span><span class="op">{</span><span class="str">&quot;message&quot;</span><span class="op">:</span> <span class="nam">snapshot</span><span class="op">.</span><span class="nam">message</span><span class="op">}</span> <span class="key">if</span> <span class="nam">snapshot</span><span class="op">.</span><span class="nam">message</span> <span class="key">else</span> <span class="key">None</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t132" href="#t132">132</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t133" href="#t133">133</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t134" href="#t134">134</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t135" href="#t135">135</a></span><span class="t"><span class="key">def</span> <span class="nam">convert_api_snapshot_status_to_snapshot_status</span><span class="op">(</span><span class="nam">status</span><span class="op">:</span> <span class="nam">aapi</span><span class="op">.</span><span class="nam">SnapshotStatus</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">tables</span><span class="op">.</span><span class="nam">SnapshotStatus</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t136" href="#t136">136</a></span><span class="t">    <span class="key">match</span> <span class="nam">status</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t137" href="#t137">137</a></span><span class="t">        <span class="key">case</span> <span class="nam">aapi</span><span class="op">.</span><span class="nam">SnapshotStatus</span><span class="op">.</span><span class="nam">SUCCESS</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t138" href="#t138">138</a></span><span class="t">            <span class="key">return</span> <span class="str">&quot;success&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t139" href="#t139">139</a></span><span class="t">        <span class="key">case</span> <span class="nam">aapi</span><span class="op">.</span><span class="nam">SnapshotStatus</span><span class="op">.</span><span class="nam">FAILED</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t140" href="#t140">140</a></span><span class="t">            <span class="key">return</span> <span class="str">&quot;failed&quot;</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -233,7 +229,7 @@
             <a class="nav" href="z_272f90c4dc99306b_admin_api_types_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.0">coverage.py v7.17.0</a>,
-            created at 2026-10-31 01:22 +0000
+            created at 2026-10-31 02:37 +0000
         </p>
     </div>
 </footer>
