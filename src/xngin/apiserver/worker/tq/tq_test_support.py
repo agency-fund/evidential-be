@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from xngin.apiserver import database
 from xngin.apiserver.sqla import tables
-from xngin.tq.task_queue import TaskQueue
+from xngin.apiserver.worker.tq.task_queue import TaskQueue
 
 STATUS_TIMEOUT_SECS = 5.0
 

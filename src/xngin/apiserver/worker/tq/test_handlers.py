@@ -8,10 +8,10 @@ from xngin.apiserver.routers.admin_integrations.admin_integrations_api_types imp
 from xngin.apiserver.routers.admin_integrations.test_admin_integrations_api import FakeClient
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.admin_integrations_api_client import AdminIntegrationsAPIClient
-from xngin.tq.handlers import make_turn_journeys_changed_handler, make_webhook_outbound_handler
-from xngin.tq.task_payload_types import TURN_JOURNEYS_CHANGED_TASK_TYPE, WEBHOOK_OUTBOUND_TASK_TYPE
-from xngin.tq.task_queue import TaskQueue
-from xngin.tq.tq_test_support import insert_task, tq_runner, wait_for_task_status
+from xngin.apiserver.worker.tq.handlers import make_turn_journeys_changed_handler, make_webhook_outbound_handler
+from xngin.apiserver.worker.tq.task_payload_types import TURN_JOURNEYS_CHANGED_TASK_TYPE, WEBHOOK_OUTBOUND_TASK_TYPE
+from xngin.apiserver.worker.tq.task_queue import TaskQueue
+from xngin.apiserver.worker.tq.tq_test_support import insert_task, tq_runner, wait_for_task_status
 
 
 def _create_organization(aclient: AdminAPIClient, name: str) -> str:

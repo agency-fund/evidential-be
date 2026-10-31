@@ -130,9 +130,9 @@ from xngin.apiserver.routers.power_adapters import build_metric_stats, calculate
 from xngin.apiserver.settings import NoDwh, RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
+from xngin.apiserver.worker.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE
 from xngin.events.webhook_sent import WebhookSentEvent
 from xngin.stats import check_power
-from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE
 
 GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
 RESPONSE_CACHE_MAX_AGE_SECONDS = timedelta(minutes=15).seconds

@@ -5,10 +5,10 @@ from typing import Annotated
 import typer
 
 from xngin.apiserver import customlogging
+from xngin.apiserver.worker.tq.handlers import make_turn_journeys_changed_handler, make_webhook_outbound_handler
+from xngin.apiserver.worker.tq.task_payload_types import TURN_JOURNEYS_CHANGED_TASK_TYPE, WEBHOOK_OUTBOUND_TASK_TYPE
+from xngin.apiserver.worker.tq.task_queue import TaskQueue
 from xngin.ops import sentry
-from xngin.tq.handlers import make_turn_journeys_changed_handler, make_webhook_outbound_handler
-from xngin.tq.task_payload_types import TURN_JOURNEYS_CHANGED_TASK_TYPE, WEBHOOK_OUTBOUND_TASK_TYPE
-from xngin.tq.task_queue import TaskQueue
 
 # The maximum number of times we will try to complete a task before marking it as "dead".
 DEFAULT_MAX_RETRIES = 10
