@@ -4,7 +4,7 @@ import psycopg.errors
 import sqlalchemy
 from fastapi import Request
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from loguru import logger
 from pydantic import BaseModel, ValidationError
 
@@ -140,3 +140,13 @@ def setup(app):
     @app.exception_handler(InvalidPageTokenError)
     def exception_handler_invalidpagetokenerror(_request: Request, _exc: InvalidPageTokenError):
         return JSONResponse(status_code=400, content={"detail": "Invalid page_token."})
+
+    # Exceptions not handled by the above get handled by Starlette's machinery, but Starlette doesn't decorate
+    # the structured log entries with the exception. We want the exceptions to be indexable, so we implement our
+    # own unhandled exception handler. The response is the same that Starlette sends.
+    @app.exception_handler(Exception)
+    async def exception_handler_unhandled(request: Request, exc: Exception):
+        logger.bind(http_method=request.method, http_path=request.url.path).opt(exception=exc).error(
+            "Unhandled exception while handling a request"
+        )
+        return PlainTextResponse("Internal Server Error", status_code=500)

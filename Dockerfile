@@ -24,4 +24,10 @@ RUN apt-get update \
 ENV PYTHONUNBUFFERED=1
 WORKDIR /code
 COPY --from=builder /code /code
-CMD ["./.venv/bin/xngin-apiserver-live"]
+CMD exec ./.venv/bin/granian \
+    --interface asgi \
+    --host 0.0.0.0 \
+    --port "${PORT:-8000}" \
+    --log-config src/xngin/apiserver/granian_log_config.json \
+    --access-log \
+    xngin.apiserver.main:app

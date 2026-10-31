@@ -31,7 +31,6 @@ dependencies = [
     "statsmodels>=0.14.5,<0.20",
     "stochatreat @ git+https://github.com/agency-fund/stochatreat@prod",
     "typer>=0.26.7,<0.27",
-    "uvicorn[standard]>=0.54.0",
 ]
 requires-python = ">=3.14,<3.15"
 
@@ -41,6 +40,7 @@ dev = [
     "coverage>=7.11.0",
     "deepdiff>=8.6.2,<9",
     "fastapi-typed-client @ git+https://github.com/dctaf/fastapi-typed-client-fork@evid/v0.4.0+evid.1",
+    "granian[reload]",  # for `task start`
     "mypy>=1.19.1",
     "pandas-gbq>=0.33.0,<0.34",
     "pandas-stubs>=2.3.3,<3",
@@ -63,8 +63,6 @@ requires = ["uv_build>=0.13.5"]
 build-backend = "uv_build"
 
 [project.scripts]
-xngin-apiserver-dev = "xngin.apiserver.main:main_dev"
-xngin-apiserver-live = "xngin.apiserver.main:main_live"
 xngin-cli = "xngin.cli.main:app"
 xngin-worker = "xngin.apiserver.worker.cli:app"
 

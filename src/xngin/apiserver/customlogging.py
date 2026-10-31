@@ -28,7 +28,7 @@ class InterceptHandler(logging.Handler):
 
         # Describe the caller using the LogRecord rather than by walking the stack to the first frame outside the
         # logging module: Sentry's logging integration wraps Logger.callHandlers, so that frame belongs to Sentry, and
-        # every record would appear to come from sentry_sdk.integrations.logging. The logger name ("uvicorn.access",
+        # every record would appear to come from sentry_sdk.integrations.logging. The logger name ("granian.access",
         # "sqlalchemy.engine.Engine.xngin_app") is also more useful than the module name a stack walk would find.
         def describe_caller(loguru_record: loguru_Record) -> None:
             loguru_record["name"] = record.name
