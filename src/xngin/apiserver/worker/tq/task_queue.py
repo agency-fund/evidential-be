@@ -203,6 +203,7 @@ class TaskQueue:
             )
             conn.commit()
             logger.info(f"Task {task.id} completed and marked as successful")
+        self._count_outcome(task, "succeeded")
 
     def _mark_task_dead(self, conn: psycopg.Connection, task: Task, message: str) -> None:
         """Mark a task as dead without running it, when its lost attempt has already been counted."""
@@ -215,6 +216,7 @@ class TaskQueue:
                 """
             )
             conn.commit()
+        self._count_outcome(task, "failed")
 
     def _mark_task_failed(self, conn: psycopg.Connection, task: Task, err: str) -> None:
         """Mark a task as failed."""
@@ -253,6 +255,10 @@ class TaskQueue:
                     f"{backoff_minutes} minutes"
                 )
             conn.commit()
+        self._count_outcome(task, "failed")
+
+    def _count_outcome(self, task: Task, outcome: str) -> None:
+        sentry_sdk.metrics.count(f"worker.tasks.{outcome}", 1, attributes={"task_type": task.task_type})
 
     def _wait_for_notification(self, conn: psycopg.Connection, stop: threading.Event) -> None:
         """Wait until a task is inserted, poll_interval elapses, or stop is set.
