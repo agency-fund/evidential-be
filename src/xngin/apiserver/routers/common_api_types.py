@@ -816,19 +816,23 @@ class Filter(ApiBaseModel):
     | EXCLUDES | [None]            | Match `x IS NOT NULL`                             |
     | EXCLUDES | ["a", None]       | Match `x IS NOT NULL AND x NOT IN ("a")`          |
     | EXCLUDES | ["a", "b"]        | Match `x IS NULL OR (x NOT IN ("a", "b"))`        |
-    | BETWEEN  | ["a", "z"]        | Match `"a" <= x <= "z"`                           |
-    | BETWEEN  | ["a", "z", None]  | Match `"a" <= x <= "z"` or `x IS NULL`            |
-    | BETWEEN  | [None, "z"]       | Match `x <= "z"`                                  |
-    | BETWEEN  | ["a", None]       | Match `x >= "a"`                                  |
-    | BETWEEN  | [None, "a", None] | Match `x <= "a"` or `x IS NULL`                   |
+    | BETWEEN  | [20, 30]          | Match `20 <= x <= 30`                             |
+    | BETWEEN  | [20, 30, None]    | Match `20 <= x <= 30` or `x IS NULL`              |
+    | BETWEEN  | [None, 30]        | Match `x <= 30`                                   |
+    | BETWEEN  | [20, None]        | Match `x >= 20`                                   |
+    | BETWEEN  | [None, 30, None]  | Match `x <= 30` or `x IS NULL`                    |
 
     String comparisons are case-sensitive.
 
-    ### Special Handling for BETWEEN support of including NULL
+    ### BETWEEN ranges
 
-    When the relation is BETWEEN, we allow for up to 3 values to support the special case of
-    including null in addition to the values in the between range via an OR IS NULL clause, as
-    indicated by a 3rd value of None. Any other 3rd value is invalid.
+    BETWEEN applies to numeric, DATE, DATETIME and TIMESTAMP fields. Both bounds are inclusive.
+
+    The value has 2 or 3 items:
+    - The first 2 items are the lower and upper bounds. Either bound can be None for an open-ended range, but not both.
+    - An optional 3rd item, which must be None, also matches null values.
+
+    Without the 3rd item, null values never match.
 
     ### Handling of DATE, DATETIME and TIMESTAMP values
 

@@ -189,7 +189,9 @@ class Relation(enum.StrEnum):
     EXCLUDES matches when the value does not match any of the provided values, including null if
     explicitly specified. If null is not explicitly excluded, we include nulls in the result.
 
-    BETWEEN matches when the value is between the two provided values (inclusive).
+    BETWEEN matches when the value is between the two provided bounds (inclusive). Either bound can be
+    null for an open-ended range. A null value matches only if a 3rd value of null is provided. BETWEEN
+    applies to numeric, date and timestamp values.
     """
 
     INCLUDES = "includes"
