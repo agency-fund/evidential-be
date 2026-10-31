@@ -10,20 +10,20 @@ from sqlalchemy.orm import Session
 
 from xngin.apiserver import database
 from xngin.apiserver.sqla import tables
-from xngin.tq.task_queue import TaskQueue
+from xngin.apiserver.worker.tq.task_queue import TaskQueue
 
 STATUS_TIMEOUT_SECS = 5.0
 
 
 def start_task_queue_in_thread(
-    task_queue: TaskQueue, cancel: threading.Event
+    task_queue: TaskQueue, stop: threading.Event
 ) -> tuple[threading.Thread, queue.SimpleQueue[BaseException]]:
     """Starts a TaskQueue in a new thread."""
     error_collector: queue.SimpleQueue[BaseException] = queue.SimpleQueue()
 
     def run_task_queue() -> None:
         try:
-            task_queue.run(cancel=cancel)
+            task_queue.run(stop=stop)
         except BaseException as exc:
             error_collector.put(exc)
 
@@ -35,12 +35,12 @@ def start_task_queue_in_thread(
 @contextmanager
 def tq_runner(queue_instance: TaskQueue) -> Generator[None]:
     """Context manager for running a TaskQueue in a thread with graceful shutdown."""
-    cancel = threading.Event()
-    thread, error_collector = start_task_queue_in_thread(queue_instance, cancel)
+    stop = threading.Event()
+    thread, error_collector = start_task_queue_in_thread(queue_instance, stop)
     try:
         yield
     finally:
-        cancel.set()
+        stop.set()
         thread.join(timeout=3)
         if thread.is_alive():
             raise AssertionError("TaskQueue thread did not stop within timeout")
@@ -68,7 +68,8 @@ def wait_for_task_status(
             return latest_task
         time.sleep(0.10)
     raise AssertionError(
-        f"Task {task_id} did not reach status {expected_status!r} before timeout. Last observed task: {latest_task!r}"
+        f"Task {task_id} did not reach status {expected_status!r} before timeout. Last observed: "
+        f"status={latest_task and latest_task.status!r} retry_count={latest_task and latest_task.retry_count!r}"
     )
 
 

@@ -246,7 +246,17 @@ class Task(Base):
     # An optional informative message about the state of this task.
     message: Mapped[str | None] = mapped_column()
 
-    __table_args__ = (Index("idx_tasks_embargo", "embargo_until"),)
+    # The queue claims the oldest pending or stale running task and sweeps for orphaned running tasks. Finished rows
+    # are never deleted, so only the live ones are indexed.
+    __table_args__ = (
+        Index(
+            "idx_tasks_active",
+            "created_at",
+            # Written as an OR rather than IN, which Postgres rewrites on every round trip and so makes Atlas emit
+            # a spurious migration each time.
+            postgresql_where=sqlalchemy.text("status = 'pending' OR status = 'running'"),
+        ),
+    )
 
 
 class User(Base):

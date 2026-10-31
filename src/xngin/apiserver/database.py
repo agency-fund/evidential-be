@@ -40,6 +40,12 @@ def get_server_database_url():
     raise ValueError("DATABASE_URL is not set")
 
 
+def get_psycopg_dsn(database_url: str) -> str:
+    """Converts a SQLAlchemy URL to the plain postgresql:// form that psycopg accepts."""
+    url = make_url(generic_url_to_sa_url(database_url)).set(drivername="postgresql")
+    return url.render_as_string(hide_password=False)
+
+
 @dataclasses.dataclass(slots=True, frozen=True)
 class DatabaseState:
     """Contains application-wide application database connection."""

@@ -1,7 +1,7 @@
 """conftest configures FastAPI dependency injection for testing and also does some setup before tests in
 this package are run.
 
-It lives above xngin.apiserver so that its fixtures also serve the tests of other packages, such as xngin.tq, without
+It lives above xngin.apiserver so that its fixtures also serve the tests of packages outside it without
 pytest_plugins. Helpers that tests import belong in xngin.apiserver.testing.helpers instead: importing
 a conftest as a module loads a second copy of it.
 """

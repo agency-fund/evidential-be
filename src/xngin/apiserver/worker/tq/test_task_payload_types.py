@@ -1,7 +1,7 @@
 import pytest
 
 from xngin.apiserver import constants
-from xngin.tq.task_payload_types import WebhookOutboundTask
+from xngin.apiserver.worker.tq.task_payload_types import WebhookOutboundTask
 
 
 @pytest.mark.parametrize(

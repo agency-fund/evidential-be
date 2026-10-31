@@ -321,10 +321,12 @@ tasks:
     cmd: |
       uv run xngin-cli add-user {{.CLI_ARGS}}
   start-worker:
-    desc: "Runs experiment snapshots, autofail updates, and data warehouse pulls."
+    desc: "Runs experiment snapshots, autofail updates, data warehouse pulls, and the task queue (e.g. webhooks)."
     interactive: true
     env:
       DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
+    deps:
+      - bootstrap-app-database
     cmd: >-
       uv run xngin-worker
       --poll-interval 30
@@ -333,14 +335,6 @@ tasks:
       --dwh-pull-interval 300
       --autofail-batch-size 10
       {{.CLI_ARGS}}
-  start-tq:
-    desc: "Start the task queue."
-    interactive: true
-    env:
-      DATABASE_URL: "{{.XNGIN_DEVAPP_STANDARD_DSN}}"  # tq uses psycopg3 directly (not SQLAlchemy).
-    deps:
-      - bootstrap-app-database
-    cmd: uv run xngin-tq
   psql:
     desc: "Start interactive psql"
     interactive: true

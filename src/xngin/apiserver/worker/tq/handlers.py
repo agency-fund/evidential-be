@@ -12,10 +12,10 @@ from xngin.apiserver import constants
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.flags import XNGIN_PUBLIC_API_BASE_URL
 from xngin.apiserver.sqla import tables
+from xngin.apiserver.worker.tq.task_payload_types import TurnJourneysChangedTask, WebhookOutboundTask
+from xngin.apiserver.worker.tq.task_queue import TQ_DB_APPLICATION_NAME, Task
 from xngin.events.turn_journeys_changed import TurnJourneysChangedEvent
 from xngin.events.webhook_sent import WebhookSentEvent
-from xngin.tq.task_payload_types import TurnJourneysChangedTask, WebhookOutboundTask
-from xngin.tq.task_queue import TQ_DB_APPLICATION_NAME, Task
 
 
 def _record_webhook_sent_event(
@@ -169,10 +169,10 @@ def make_turn_journeys_changed_handler(dsn: str, *, transport: httpx2.AsyncBaseT
     customers when debugging.
 
     This handler deliberately does not import or call Evidential's business logic (e.g.
-    `refresh_journeys_dict`) directly. Instead it makes a real outbound HTTP request back to this
-    same server's `/integrations/turn/{webhook_id}/refresh-journeys` endpoint, authenticating with
-    the webhook token from the task payload. `tq` is kept free of dependencies on `sqla.tables` and
-    Evidential's business logic, and runs with fewer privileges.
+    `refresh_journeys_dict`) directly. Instead it makes a real outbound HTTP request to the
+    apiserver's `/integrations/turn/{webhook_id}/refresh-journeys` endpoint, authenticating with
+    the webhook token from the task payload, so the refresh runs in the apiserver on the same code
+    path an external caller would use and the queue stays decoupled from that logic.
     """
     engine = sqlalchemy.create_engine(
         dsn, connect_args={"application_name": TQ_DB_APPLICATION_NAME}, poolclass=NullPool

@@ -72,6 +72,7 @@ from xngin.apiserver.sql.queries import stream
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
+from xngin.apiserver.worker.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
 from xngin.events.experiment_created import ExperimentCreatedEvent
 from xngin.stats.analysis import analyze_experiment as analyze_freq_experiment
 from xngin.stats.assignment import AssignmentResult
@@ -79,7 +80,6 @@ from xngin.stats.bandit_analysis import analyze_experiment as analyze_bandit_exp
 from xngin.stats.bandit_sampling import choose_arm as choose_bandit_arm
 from xngin.stats.bandit_sampling import update_arm as update_bandit_arm
 from xngin.stats.stats_errors import StatsAnalysisError, StatsNoParticipantsError
-from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
 
 ASSIGNMENT_STREAM_FETCH_SIZE_ROWS = 16_384
 
