@@ -67,6 +67,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     update_bandit_arm_with_outcome_impl,
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import get_experiment_assignments_as_csv_impl
+from xngin.apiserver.routers.experiments.property_filters import passes_filters
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.assertions import assert_dates_equal
@@ -1379,6 +1380,52 @@ def test_create_freq_online_experiment_impl_experiments_fields_are_correctly_sto
     assert uuid_filter_field.experiment_filters[0].relation == Relation.EXCLUDES
     assert uuid_filter_field.experiment_filters[0].string_values == ["123e4567-e89b-12d3-a456-426614174000"]
     assert uuid_filter_field.experiment_filters[0].position == 6
+
+
+def test_integer_filter_values_round_trip_as_ints(xngin_session: Session, testing_datasource):
+    """INTEGER filter values are stored as NUMERIC and must come back as ints, not floats."""
+    experiment_request = CreateExperimentRequest(
+        design_spec=OnlineFrequentistExperimentSpec(
+            experiment_type="freq_online",
+            experiment_name="Test Experiment with Integer Filters",
+            description="Testing integer filter storage",
+            start_date=datetime(2024, 1, 1, tzinfo=UTC),
+            end_date=datetime(2024, 1, 31, 23, 59, 59, tzinfo=UTC),
+            table_name="dwh",
+            primary_key="id",
+            arms=[Arm(arm_name="control", arm_description=""), Arm(arm_name="treatment", arm_description="")],
+            metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=5)],
+            strata=[],
+            filters=[
+                Filter(field_name="age", relation=Relation.BETWEEN, value=[18, None]),
+                Filter(field_name="age", relation=Relation.INCLUDES, value=[25, 30, None]),
+            ],
+        ),
+        webhooks=[],
+    )
+    field_type_map = {
+        "id": DataType.BIGINT,
+        "current_income": DataType.DOUBLE_PRECISION,
+        "age": DataType.INTEGER,
+    }
+    response = create_freq_online_experiment_impl(
+        request=experiment_request,
+        datasource_id=testing_datasource.datasource_id,
+        organization_id=testing_datasource.ds.organization_id,
+        xngin_session=xngin_session,
+        validated_webhooks=[],
+        field_type_map=field_type_map,
+    )
+
+    # Drop the in-memory objects so the filters are reloaded from the database.
+    xngin_session.expire_all()
+    experiment = get_experiment_preloaded(xngin_session, response.experiment_id)
+    filters = ExperimentStorageConverter(experiment).get_design_spec_filters()
+
+    assert [f.value for f in filters] == [[18, None], [25, 30, None]]
+    assert all(type(v) is int for f in filters for v in f.value if v is not None)
+    assert passes_filters({"age": 25}, field_type_map, filters)
+    assert not passes_filters({"age": 26}, field_type_map, filters)
 
 
 @pytest.mark.parametrize("reorder_arms", [True, False])

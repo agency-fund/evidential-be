@@ -179,6 +179,9 @@ class ExperimentStorageConverter:
             values: list[Any]
             if experiment_field.data_type == DataType.BIGINT:
                 values = [None if v is None else str(v) for v in (f.numeric_values or [])]
+            elif experiment_field.data_type == DataType.INTEGER:
+                # NUMERIC loads as Decimal, which Filter would coerce to float.
+                values = [None if v is None else int(v) for v in (f.numeric_values or [])]
             else:
                 values = f.string_values or f.numeric_values or f.boolean_values or []
             filters.append((
