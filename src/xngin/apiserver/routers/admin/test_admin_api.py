@@ -1631,6 +1631,15 @@ def test_power_check_validations(testing_datasource, aclient: AdminAPIClient):
         bad_design_spec.metrics = [DesignSpecMetricRequest(field_name="gender", metric_pct_change=0.1)]
         aclient.power_check(datasource_id=ds_id, body=design_spec_to_power_request(bad_design_spec))
 
+    # Raw JSON, since PowerRequest itself refuses to build with a repeated metric.
+    with expect_status_code(422, detail_contains='listed more than once: "current_income"'):
+        body = design_spec_to_power_request(design_spec).model_dump(mode="json")
+        body["metrics"] = [
+            {"field_name": "current_income", "metric_pct_change": 0.1},
+            {"field_name": "current_income", "metric_pct_change": 0.2},
+        ]
+        aclient.power_check(datasource_id=ds_id, body=body)
+
 
 def test_create_experiment_with_invalid_design_url(testing_datasource, aclient: AdminAPIClient):
     datasource_id = testing_datasource.datasource_id

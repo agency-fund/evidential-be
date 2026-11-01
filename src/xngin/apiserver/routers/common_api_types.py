@@ -1557,6 +1557,19 @@ class PowerRequest(ApiBaseModel):
         ),
     ] = None
 
+    @field_validator("metrics")
+    @classmethod
+    def validate_unique_metrics(cls, v: list[DesignSpecMetricRequest]) -> list[DesignSpecMetricRequest]:
+        """Ensure each metric's field_name appears only once."""
+        field_names = [m.field_name for m in v]
+        duplicates = sorted({name for name in field_names if field_names.count(name) > 1})
+        if duplicates:
+            listed = ", ".join(f'"{name}"' for name in duplicates)
+            raise ValueError(
+                f"Each metric can be listed only once; listed more than once: {listed}. Remove the repeats."
+            )
+        return v
+
     @model_validator(mode="after")
     def validate_cluster_randomization(self) -> Self:
         """Mirrors PreassignedFrequentistExperimentSpec: cluster sizing needs a cluster key.
