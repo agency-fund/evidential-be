@@ -79,18 +79,20 @@ def _passes_filter(exp_filter: Filter, field_type: DataType | None, value: Prope
         case Relation.EXCLUDES:
             return py_value not in parsed_values
         case Relation.BETWEEN:
-            if len(exp_filter.value) == 3 and py_value is None:
-                return True
+            if py_value is None:
+                # Like SQL, a null is never inside a range; only the 3-value form (trailing None) admits nulls.
+                return len(parsed_values) == 3
 
-            if not isinstance(py_value, (int, float, datetime, date, type(None))):
+            if not isinstance(py_value, (int, float, datetime, date)):
                 raise LateValidationError("BETWEEN relation is only supported for int/float/datetime/date fields.")
 
+            # The Filter validator guarantees an optional 3rd value is None, so *_ can ignore it here.
             match parsed_values:
-                case (left, None):
+                case (left, None, *_):
                     return py_value >= left  # type: ignore
-                case (None, right):
+                case (None, right, *_):
                     return py_value <= right  # type: ignore
-                case (left, right):
+                case (left, right, *_):
                     return left <= py_value <= right  # type: ignore
                 case _:
                     raise LateValidationError(f"Invalid between value: {exp_filter.value}")
