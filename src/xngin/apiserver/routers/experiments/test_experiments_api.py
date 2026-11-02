@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, TypeIs
 import pytest
 from pydantic import TypeAdapter
 
+from xngin.apiserver.routers.admin.admin_api_types import UpdateExperimentRequest
 from xngin.apiserver.routers.common_api_types import (
     AnyBanditDesignSpec,
     AnyFrequentistDesignSpec,
@@ -863,6 +864,57 @@ def test_get_assignment_online_past_end_date(
     ).data
     assert experiment.stopped_assignments_at is not None
     assert experiment.stopped_assignments_reason == StopAssignmentReason.END_DATE
+
+
+@pytest.mark.parametrize("experiment_type", [ExperimentsType.FREQ_ONLINE, ExperimentsType.MAB_ONLINE])
+def test_extending_end_date_resumes_assignments(
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient, experiment_type
+):
+    """An experiment that stopped assigning because its end date passed assigns again once the end date is extended."""
+    experiment = create_experiment(
+        testing_datasource, aclient, experiment_type=experiment_type, end_date=datetime.now(UTC) - timedelta(days=1)
+    )
+    experiment_id = experiment.experiment_id
+    api_key = testing_datasource.key
+    stopped = eclient.get_assignment(api_key=api_key, experiment_id=experiment_id, participant_id="before").data
+    assert stopped.assignment is None
+    assert (
+        eclient.get_experiment(api_key=api_key, experiment_id=experiment_id).data.stopped_assignments_reason
+        == StopAssignmentReason.END_DATE
+    )
+
+    aclient.update_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=experiment_id,
+        body=UpdateExperimentRequest(end_date=datetime.now(UTC) + timedelta(days=7)),
+    )
+
+    resumed = eclient.get_experiment(api_key=api_key, experiment_id=experiment_id).data
+    assert resumed.stopped_assignments_at is None
+    assert resumed.stopped_assignments_reason is None
+    after = eclient.get_assignment(api_key=api_key, experiment_id=experiment_id, participant_id="after").data
+    assert after.assignment is not None
+
+
+def test_resending_an_ended_experiments_end_date_keeps_it_stopped(
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+):
+    """Saving the current, past end date again is accepted and does not resume assignments."""
+    experiment = create_experiment(testing_datasource, aclient, end_date=datetime.now(UTC) - timedelta(days=1))
+    experiment_id = experiment.experiment_id
+    api_key = testing_datasource.key
+    eclient.get_assignment(api_key=api_key, experiment_id=experiment_id, participant_id="before")
+
+    aclient.update_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=experiment_id,
+        body=UpdateExperimentRequest(end_date=experiment.design_spec.end_date),
+    )
+
+    still_stopped = eclient.get_experiment(api_key=api_key, experiment_id=experiment_id).data
+    assert still_stopped.stopped_assignments_reason == StopAssignmentReason.END_DATE
+    after = eclient.get_assignment(api_key=api_key, experiment_id=experiment_id, participant_id="after").data
+    assert after.assignment is None
 
 
 def test_get_cmab_experiment_assignment_for_online_participant(

@@ -873,7 +873,8 @@ def create_assignment_for_participant(
 
     sorted_context_vals are assumed to be sorted by the experiment's corresponding context ids in ascending order.
 
-    Has side effect of updating the experiment's stopped_at and stopped_reason if we discover we should stop assigning.
+    If the experiment's end date has passed, records that it stopped assigning, with reason END_DATE. Extending the
+    end date clears that stop; see admin_api.update_experiment.
     """
     if experiment.stopped_assignments_at is not None:
         # Experiment is stopped, so no new assignments can be made.
@@ -886,9 +887,20 @@ def create_assignment_for_participant(
         raise ExperimentsAssignmentError("Experiment has no arms")
 
     # Don't allow new assignments for experiments that have ended.
-    if experiment.end_date < datetime.now(UTC):
-        experiment.stopped_assignments_at = datetime.now(UTC)
-        experiment.stopped_assignments_reason = StopAssignmentReason.END_DATE
+    now = datetime.now(UTC)
+    if experiment.end_date < now:
+        # The WHERE clause checks the end date again in the database, so a request that loaded the experiment just
+        # before its end date was extended does not record a stop that the extension has made obsolete.
+        xngin_session.execute(
+            update(tables.Experiment)
+            .where(
+                tables.Experiment.id == experiment.id,
+                tables.Experiment.end_date < now,
+                tables.Experiment.stopped_assignments_at.is_(None),
+            )
+            .values(stopped_assignments_at=now, stopped_assignments_reason=StopAssignmentReason.END_DATE)
+            .execution_options(synchronize_session="fetch")
+        )
         xngin_session.commit()
         return None
 
