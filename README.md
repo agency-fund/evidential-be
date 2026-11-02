@@ -47,13 +47,13 @@
 | src/xngin/apiserver/routers/auth/test\_auth\_dependencies.py                       |      176 |        7 |     96% | 50, 57-63 |
 | src/xngin/apiserver/routers/auth/test\_discovery.py                                |      233 |        1 |     99% |        90 |
 | src/xngin/apiserver/routers/auth/token\_cryptor.py                                 |       43 |        4 |     91% |16-17, 53-54 |
-| src/xngin/apiserver/routers/common\_api\_types.py                                  |      426 |       30 |     93% |206, 208, 534, 536, 538, 595, 903-910, 929, 1215, 1224, 1227-1228, 1238, 1240, 1250, 1252, 1270, 1567, 1569, 1584, 1591, 1781, 1962, 1964-1966 |
-| src/xngin/apiserver/routers/common\_enums.py                                       |      183 |       19 |     90% |67, 69, 93, 95, 97, 99, 106, 161-162, 214, 269-272, 281, 320-321, 325, 357 |
+| src/xngin/apiserver/routers/common\_api\_types.py                                  |      426 |       30 |     93% |206, 208, 534, 536, 538, 595, 907-914, 933, 1219, 1228, 1231-1232, 1242, 1244, 1254, 1256, 1274, 1571, 1573, 1588, 1595, 1785, 1966, 1968-1970 |
+| src/xngin/apiserver/routers/common\_enums.py                                       |      183 |       19 |     90% |67, 69, 93, 95, 97, 99, 106, 161-162, 216, 271-274, 283, 322-323, 327, 359 |
 | src/xngin/apiserver/routers/experiments/experiments\_api.py                        |       97 |        4 |     96% |132-134, 356 |
 | src/xngin/apiserver/routers/experiments/experiments\_common.py                     |      490 |       24 |     95% |393-394, 417, 495, 506, 548-549, 560, 579, 670, 765-766, 791, 923, 927, 948-949, 952, 1081, 1151-1152, 1189, 1200, 1326 |
 | src/xngin/apiserver/routers/experiments/experiments\_common\_csv.py                |       89 |        4 |     96% |43, 106, 240-241 |
 | src/xngin/apiserver/routers/experiments/experiments\_dependencies.py               |       46 |        3 |     93% |54, 75, 82 |
-| src/xngin/apiserver/routers/experiments/property\_filters.py                       |       96 |        8 |     92% |25, 28, 32, 95-96, 148, 160-161 |
+| src/xngin/apiserver/routers/experiments/property\_filters.py                       |       96 |        8 |     92% |25, 28, 32, 97-98, 150, 162-163 |
 | src/xngin/apiserver/routers/experiments/test\_experiments\_api.py                  |      587 |        7 |     99% |76, 190-191, 1212, 1217-1218, 1257 |
 | src/xngin/apiserver/routers/experiments/test\_experiments\_common.py               |     1308 |       11 |     99% |266-267, 277, 1655-1657, 2242-2243, 2691, 2914-2915 |
 | src/xngin/apiserver/routers/experiments/test\_property\_filters.py                 |       41 |        1 |     98% |        24 |
