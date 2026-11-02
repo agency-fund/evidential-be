@@ -1385,6 +1385,7 @@ def analyze_experiment_freq_impl(
                         std_error=float("nan"),
                         ci_lower=float("nan"),
                         ci_upper=float("nan"),
+                        mean=float("nan"),
                         mean_ci_lower=float("nan"),
                         mean_ci_upper=float("nan"),
                         num_missing_values=-1,  # -1 indicates arm analysis not available
