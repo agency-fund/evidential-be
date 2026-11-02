@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 # Maximum length of fields that describe a value in human readable, free-form text.
 MAX_LENGTH_OF_DESCRIPTION_VALUE = 2000
 
@@ -45,6 +47,11 @@ MAX_NUMBER_OF_POWER_CURVE_POINTS = 100
 
 # Maximum length of GCP service account info JSON.
 MAX_GCP_SERVICE_ACCOUNT_LEN = 8000
+
+# Minimum time between now and an experiment's new end date when the end date is changed. Background jobs (snapshots,
+# warehouse pulls) run every few hours on a schedule derived from the end date, so this lets at least one full cycle
+# run against the new end date. It also prevents an edit from ending an experiment immediately by accident.
+MIN_TIME_UNTIL_NEW_END_DATE = timedelta(hours=6)
 
 # Turn.io related limits
 TURN_REQUEST_TIMEOUT_SECONDS = 10
