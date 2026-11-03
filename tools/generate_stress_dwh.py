@@ -21,6 +21,8 @@ from compression import zstd
 from decimal import Decimal
 from pathlib import Path
 
+from psycopg.sql import Identifier
+
 from xngin.apiserver.testing import stress_dwh_def
 from xngin.apiserver.testing.stress_dwh_def import StressTable
 
@@ -55,8 +57,8 @@ def _csv_value(value: object, *, json_arrays: bool) -> object:
             return value
 
 
-def _quote(name: str) -> str:
-    return '"' + name.replace('"', '""') + '"'
+def _pg_quote(name: str) -> str:
+    return Identifier(name).as_string()
 
 
 def _ddl(table: StressTable, quote) -> str:
@@ -86,8 +88,8 @@ def main() -> None:
         writer.writerow([c.name for c in table.columns])
         writer.writerows([_csv_value(row[c.key], json_arrays=json_arrays) for c in table.columns] for row in rows)
         _write_zstd(TESTDATA_DIR / name, buf.getvalue())
-    _write_text(TESTDATA_DIR / "stress_dwh.postgres.ddl", _ddl(stress_dwh_def.POSTGRES, _quote))
-    _write_text(TESTDATA_DIR / "stress_dwh.redshift.ddl", _ddl(stress_dwh_def.REDSHIFT, _quote))
+    _write_text(TESTDATA_DIR / "stress_dwh.postgres.ddl", _ddl(stress_dwh_def.POSTGRES, _pg_quote))
+    _write_text(TESTDATA_DIR / "stress_dwh.redshift.ddl", _ddl(stress_dwh_def.REDSHIFT, _pg_quote))
 
     jsonl = "".join(json.dumps(stress_dwh_def.bigquery_row(row), ensure_ascii=False) + "\n" for row in rows)
     _write_zstd(TESTDATA_DIR / "stress_dwh.jsonl.zst", jsonl)

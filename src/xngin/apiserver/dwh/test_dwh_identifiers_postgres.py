@@ -8,6 +8,7 @@ import pytest
 import sqlalchemy
 from sqlalchemy import text
 
+from xngin.apiserver.dwh.dwh_utils import pg_quote
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.assertions import expect_status_code
 from xngin.apiserver.testing.dwh_identifiers_helpers import (
@@ -21,7 +22,6 @@ from xngin.apiserver.testing.dwh_identifiers_helpers import (
     expect_unusable_table_name,
     pg_dsn,
     pg_identifier_schemas,
-    pg_quote,
     with_name_suffix,
 )
 

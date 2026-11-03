@@ -25,6 +25,7 @@ from sqlalchemy import make_url
 
 from xngin.apiserver.certs import get_amazon_trust_ca_bundle_path
 from xngin.apiserver.dwh import dwh_utils
+from xngin.apiserver.dwh.dwh_utils import pg_quote
 from xngin.cli.commands.databases import create_database_if_absent
 from xngin.cli.common import cli_engine, fail
 
@@ -75,15 +76,6 @@ def _validate_src(v: Path) -> Path:
     raise typer.BadParameter("--src must end in .csv, .csv.zst, .jsonl or .jsonl.zst")
 
 
-def _quote(name: str) -> str:
-    """Quotes an identifier for Postgres or Redshift.
-
-    SQLAlchemy's quoting for these dialects also writes "%" as "%%", which only the drivers' parameter substitution
-    collapses; the statements here are executed without parameters, so a "%" must stay as it is.
-    """
-    return '"' + name.replace('"', '""') + '"'
-
-
 def _df_to_ddl(df: DataFrame, *, table_name: str) -> str:
     """Helper to transform a DataFrame into a CREATE TABLE statement."""
     # TODO: replace these types with more generic/widely supported defaults.
@@ -115,7 +107,7 @@ def _df_to_ddl(df: DataFrame, *, table_name: str) -> str:
             except ValueError, AttributeError, TypeError:
                 pass  # Not a UUID
     # Now generate the DDL.
-    columns = [f"{_quote(str(col))} {type_map.get(str(dtype), default_sql_type)}" for col, dtype in df_dtypes.items()]
+    columns = [f"{pg_quote(str(col))} {type_map.get(str(dtype), default_sql_type)}" for col, dtype in df_dtypes.items()]
     return f"""CREATE TABLE {table_name} ({",\n    ".join(columns)});"""
 
 
@@ -168,13 +160,13 @@ def _build_dest(
     if password is not None and url.username is not None:
         url = url.set(password=password)
 
-    full_table_name = f"{_quote(schema_name)}.{_quote(table_name)}" if schema_name else _quote(table_name)
+    full_table_name = pg_quote(schema_name, table_name) if schema_name else pg_quote(table_name)
     return _Dest(
         url=url,
         schema_name=schema_name,
         table_name=table_name,
         full_table_name=full_table_name,
-        create_schema_ddl=f"CREATE SCHEMA IF NOT EXISTS {_quote(schema_name)}" if schema_name else "",
+        create_schema_ddl=f"CREATE SCHEMA IF NOT EXISTS {pg_quote(schema_name)}" if schema_name else "",
         # CASCADE drops the table's views, which are created again after loading.
         drop_table_ddl=f"DROP TABLE IF EXISTS {full_table_name} CASCADE",
         views=views,
@@ -229,9 +221,7 @@ def _maybe_create_views(cur, dest: _Dest) -> None:
     view_names = [s.strip() for s in dest.views.split(",")]
     print(f"Creating views: {', '.join(sorted(view_names))}...")
     for view_name in view_names:
-        qualified_view_name = (
-            f"{_quote(dest.schema_name)}.{_quote(view_name)}" if dest.schema_name else _quote(view_name)
-        )
+        qualified_view_name = pg_quote(dest.schema_name, view_name) if dest.schema_name else pg_quote(view_name)
         cur.execute(
             f"CREATE OR REPLACE VIEW {qualified_view_name} AS SELECT * FROM {dest.full_table_name}"  # noqa: S608
         )
@@ -397,7 +387,7 @@ def _load_postgres(source: _Source, dest: _Dest) -> None:
             with opener(source.path) as reader:
                 cols = next(csv.reader([reader.readline()]))
                 sql = (
-                    f"COPY {dest.full_table_name} ({', '.join(_quote(c) for c in cols)}) "
+                    f"COPY {dest.full_table_name} ({', '.join(pg_quote(c) for c in cols)}) "
                     "FROM STDIN (FORMAT CSV, DELIMITER ',')"
                 )
                 print(f"SQL: {_truncate_with_ellipsis(sql)}")

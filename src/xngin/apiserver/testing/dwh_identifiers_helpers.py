@@ -14,6 +14,7 @@ from sqlalchemy import text
 
 from xngin.apiserver import flags
 from xngin.apiserver.dwh import dwh_utils
+from xngin.apiserver.dwh.dwh_utils import pg_quote
 from xngin.apiserver.routers.admin.admin_api_types import CreateDatasourceRequest, CreateOrganizationRequest
 from xngin.apiserver.routers.common_api_types import (
     Arm,
@@ -193,14 +194,10 @@ PG_SCHEMAS = ["dwh_tn_plain", "Mixed Schema-Name"]
 PG_OTHER_SCHEMA = "dwh_tn_other"
 
 
-def pg_quote(name: str) -> str:
-    return '"' + name.replace('"', '""') + '"'
-
-
 def pg_create_table(
     conn: sqlalchemy.Connection, schema: str, name: str, columns: Columns, rows: list[tuple] = ROWS
 ) -> None:
-    qualified = f"{pg_quote(schema)}.{pg_quote(name)}"
+    qualified = pg_quote(schema, name)
     column_types = zip(astuple(columns), ("int", "float8", "text", "text"), strict=True)
     conn.execute(text(f"CREATE TABLE {qualified} ({', '.join(f'{pg_quote(c)} {t}' for c, t in column_types)})"))
     conn.execute(

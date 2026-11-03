@@ -1,5 +1,6 @@
 import unicodedata
 
+from psycopg.sql import Identifier
 from sqlalchemy import URL, Engine
 
 REDSHIFT_HOSTNAME_SUFFIXES = ("redshift.amazonaws.com", "redshift-serverless.amazonaws.com")
@@ -46,6 +47,11 @@ def is_valid_bigquery_table_name(name: str) -> bool:
     return 0 < len(name.encode()) <= _BQ_TABLE_NAME_MAX_BYTES and all(
         unicodedata.category(c)[0] in "LMN" or unicodedata.category(c) in _BQ_TABLE_NAME_CATEGORIES for c in name
     )
+
+
+def pg_quote(*names: str) -> str:
+    """Quotes a Postgres or Redshift identifier: pg_quote(name), or pg_quote(schema, name) for a qualified name."""
+    return Identifier(*names).as_string()
 
 
 def extra_engine_setup(engine: Engine):

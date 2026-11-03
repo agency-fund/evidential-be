@@ -12,6 +12,7 @@ from dataclasses import asdict
 import pytest
 
 from xngin.apiserver.dns import safe_resolve
+from xngin.apiserver.dwh.dwh_utils import pg_quote
 from xngin.apiserver.settings import Dsn
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.dwh_identifiers_helpers import (
@@ -23,7 +24,6 @@ from xngin.apiserver.testing.dwh_identifiers_helpers import (
     exercise_through_api,
     expect_unusable_table_name,
     pg_identifier_schemas,
-    pg_quote,
     with_name_suffix,
 )
 

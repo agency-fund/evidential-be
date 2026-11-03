@@ -16,6 +16,7 @@ from google.oauth2 import service_account
 
 from xngin.apiserver import flags
 from xngin.apiserver.dwh import dwh_utils
+from xngin.apiserver.dwh.dwh_utils import pg_quote
 from xngin.apiserver.settings import BqDsn, Dsn, GcpServiceAccountFile
 from xngin.apiserver.testing import stress_dwh_def
 from xngin.apiserver.testing.helpers import GCP_CREDENTIALS_VAR
@@ -27,10 +28,6 @@ TESTDATA = Path(__file__).resolve().parent.parent / "testdata"
 REDSHIFT_DSN_VAR = "XNGIN_DEVDWH_AWS_REDSHIFT_DSN"
 REDSHIFT_BUCKET_VAR = "XNGIN_DEVDWH_AWS_BUCKET"
 REDSHIFT_IAM_ROLE_VAR = "XNGIN_DEVDWH_AWS_REDSHIFT_IAM_ROLE"
-
-
-def pg_quote(name: str) -> str:
-    return '"' + name.replace('"', '""') + '"'
 
 
 @contextmanager

@@ -11,12 +11,13 @@ import sqlalchemy
 from sqlalchemy import text
 
 from xngin.apiserver import flags
+from xngin.apiserver.dwh.dwh_utils import pg_quote
 from xngin.apiserver.settings import Dsn
 from xngin.apiserver.testing import stress_dwh_def
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.dwh_time_types_helpers import check_time_fields
 from xngin.apiserver.testing.pg_helpers import with_name_suffix
-from xngin.apiserver.testing.stress_loaders import pg_quote, postgres_stress_schema
+from xngin.apiserver.testing.stress_loaders import postgres_stress_schema
 
 SESSION_TIME_ZONE = "Asia/Kathmandu"
 

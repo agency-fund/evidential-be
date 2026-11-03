@@ -40,24 +40,13 @@ def fixture_schema_name() -> Iterator[str]:
     schema_name = f'Test %"Schema" {uuid.uuid4().hex[:8]}'
     yield schema_name
     with psycopg.connect(_psycopg_dsn(), autocommit=True) as conn:
-        conn.execute(f'DROP SCHEMA IF EXISTS "{schema_name.replace('"', '""')}" CASCADE')
+        conn.execute(t"DROP SCHEMA IF EXISTS {schema_name:i} CASCADE")  # type: ignore[misc]
 
 
 def _columns_and_rows(schema_name: str, table_name: str) -> tuple[list[str], list[tuple]]:
     with psycopg.connect(_psycopg_dsn()) as conn:
-        columns = [
-            row[0]
-            for row in conn.execute(
-                "SELECT column_name FROM information_schema.columns WHERE table_schema = %s AND table_name = %s "
-                "ORDER BY ordinal_position",
-                (schema_name, table_name),
-            )
-        ]
-        quoted = ", ".join('"' + c.replace('"', '""') + '"' for c in columns)
-        schema = schema_name.replace('"', '""')
-        table = table_name.replace('"', '""')
-        rows = conn.execute(f'SELECT {quoted} FROM "{schema}"."{table}" ORDER BY 1').fetchall()
-    return columns, rows
+        cur = conn.execute(t"SELECT * FROM {schema_name:i}.{table_name:i} ORDER BY 1")  # type: ignore[misc]
+        return [d.name for d in cur.description or []], cur.fetchall()
 
 
 @pytest.mark.parametrize("driver", ["postgresql+psycopg", "postgresql+psycopg2"])
