@@ -71,10 +71,9 @@ class CannotFindTableError(Exception):
 
 
 class UnsupportedTableNameError(CannotFindTableError):
-    """Raised for a BigQuery table name that BigQuery could not have created; see dwh_utils.is_bigquery_table_name.
+    """Raised for a table name that the backend does not allow.
 
-    Such names include dotted ones, which sqlalchemy-bigquery would read as dataset.table, reaching outside the data
-    source's dataset.
+    BigQuery: BigQuery does not allow table names with a dot because it would be ambiguous with a dataset-scoped table.
     """
 
     def __init__(self, table_name: str):
@@ -215,7 +214,7 @@ class DwhSession:
         Postgres and Redshift, a table name is quoted as a single identifier, so a dot in it is part of the name and
         cannot name a schema: the data source's search_path alone decides where tables are found.
         """
-        if isinstance(self._dwh_config, BqDsn) and not dwh_utils.is_bigquery_table_name(table_name):
+        if isinstance(self._dwh_config, BqDsn) and not dwh_utils.is_valid_bigquery_table_name(table_name):
             raise UnsupportedTableNameError(table_name)
 
     def _reflect_table_blocking(self, table_name: str, *, use_sa_autoload: bool) -> sqlalchemy.Table:

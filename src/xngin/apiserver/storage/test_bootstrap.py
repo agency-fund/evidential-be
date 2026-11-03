@@ -15,7 +15,7 @@ def test_the_stress_rows_are_reproducible():
 
 
 def test_the_stress_bigquery_names_are_ones_bigquery_allows():
-    assert dwh_utils.is_bigquery_table_name(stress_dwh_def.BIGQUERY.table)
+    assert dwh_utils.is_valid_bigquery_table_name(stress_dwh_def.BIGQUERY.table)
     for column in stress_dwh_def.BIGQUERY.columns:
         assert "." not in column.name
         assert "$" not in column.name

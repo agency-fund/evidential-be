@@ -35,7 +35,7 @@ def is_postgres(driver_or_url: str | URL) -> bool:
     return driver_or_url.drivername in {"postgresql", "postgresql+psycopg", "postgresql+psycopg2"}
 
 
-def is_bigquery_table_name(name: str) -> bool:
+def is_valid_bigquery_table_name(name: str) -> bool:
     """Whether name is a table name BigQuery could have created, which is safe inside a backtick-quoted identifier.
 
     sqlalchemy-bigquery quotes identifiers with backticks but does not escape them, so a name must not contain

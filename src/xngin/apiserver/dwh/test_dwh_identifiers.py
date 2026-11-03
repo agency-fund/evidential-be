@@ -28,7 +28,7 @@ def test_column_names_that_need_quoting_are_accepted_as_fields(name: str):
 )
 def test_bigquery_table_names_that_bigquery_allows_are_accepted(name: str):
     """Names that look like SQL, such as "t -- c", are still just names inside the backtick-quoted identifier."""
-    assert dwh_utils.is_bigquery_table_name(name)
+    assert dwh_utils.is_valid_bigquery_table_name(name)
 
 
 @pytest.mark.parametrize(
@@ -49,4 +49,4 @@ def test_bigquery_table_names_that_bigquery_allows_are_accepted(name: str):
     ],
 )
 def test_bigquery_table_names_bigquery_cannot_create_are_rejected(name: str):
-    assert not dwh_utils.is_bigquery_table_name(name)
+    assert not dwh_utils.is_valid_bigquery_table_name(name)
