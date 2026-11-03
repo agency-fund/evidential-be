@@ -50,11 +50,18 @@ def test_jsonl_populates_bigquery_records(bigquery_dataset: tuple[bigquery.Clien
     table = f"`{client.project}.{dataset_id}.{stress_dwh_def.BIGQUERY.table}`"
     rows = list(
         client.query_and_wait(
-            f"SELECT `Participant ID` AS id, address.city AS city, ARRAY_LENGTH(events) AS events, "
-            f"ARRAY_LENGTH(tags) AS tags FROM {table} ORDER BY 1"
+            f"SELECT `Participant ID` AS id, address.city AS city, ARRAY_LENGTH(address.lines) AS lines, "
+            f"ARRAY_LENGTH(events) AS events, ARRAY_LENGTH(tags) AS tags FROM {table} ORDER BY 1"
         )
     )
     expected = stress_dwh_def.generate_rows()[:5]
-    assert [(r["id"], r["city"], r["events"], r["tags"]) for r in rows] == [
-        (row["id"], row["city"], len(cast(list, row["events"])), len(cast(list, row["tags"]))) for row in expected
+    assert [(r["id"], r["city"], r["lines"], r["events"], r["tags"]) for r in rows] == [
+        (
+            row["id"],
+            row["city"],
+            len(cast(list, row["address_lines"])),
+            len(cast(list, row["events"])),
+            len(cast(list, row["tags"])),
+        )
+        for row in expected
     ]
