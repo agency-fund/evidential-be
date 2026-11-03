@@ -72,14 +72,14 @@ from xngin.apiserver.sql.queries import stream
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
+from xngin.apiserver.worker.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
 from xngin.events.experiment_created import ExperimentCreatedEvent
 from xngin.stats.analysis import analyze_experiment as analyze_freq_experiment
 from xngin.stats.assignment import AssignmentResult
 from xngin.stats.bandit_analysis import analyze_experiment as analyze_bandit_experiment
 from xngin.stats.bandit_sampling import choose_arm as choose_bandit_arm
 from xngin.stats.bandit_sampling import update_arm as update_bandit_arm
-from xngin.stats.stats_errors import StatsAnalysisError
-from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
+from xngin.stats.stats_errors import StatsAnalysisError, StatsNoParticipantsError
 
 ASSIGNMENT_STREAM_FETCH_SIZE_ROWS = 16_384
 
@@ -120,9 +120,9 @@ def make_schema_from_experiment(experiment: tables.Experiment) -> ParticipantsSc
             schema[ef.field_name] = fd
         if ef.is_unique_id:
             fd.is_unique_id = True
-        if ef.is_metric:
+        if ef.is_primary_metric or ef.metric_pct_change is not None or ef.metric_target is not None:
             fd.is_metric = True
-        if ef.is_filter:
+        if ef.experiment_filters:
             fd.is_filter = True
         if ef.is_strata:
             fd.is_strata = True
@@ -288,6 +288,16 @@ def create_experiment_impl(
             stratum_cols = strata_names + metric_names if stratify_on_metrics else strata_names
             select_columns = {*stratum_cols, primary_key}
             eligibility_filters = request.design_spec.filters
+
+            # One-time mode: only assign participants with a null value for the metric. It is validated to be
+            # primary-only, so at most one null filter is added.
+            primary_metric = request.design_spec.metrics[0]
+            if primary_metric.use_one_time_metric:
+                eligibility_filters = [
+                    *eligibility_filters,
+                    Filter(field_name=primary_metric.field_name, relation=Relation.INCLUDES, value=[None]),
+                ]
+
             if cluster_key is not None:
                 select_columns.add(cluster_key)
                 eligibility_filters = [
@@ -318,6 +328,16 @@ def create_experiment_impl(
                         n=desired_n,
                     )
                 sa_table, participants = result.sa_table, result.participants
+
+            # One-time mode can only assign the rows where the primary metric is still null. Block creation when
+            # there are fewer of those than requested rather than silently running a smaller experiment.
+            if primary_metric.use_one_time_metric and desired_n is not None and len(participants) < desired_n:
+                raise LateValidationError(
+                    f"Cannot create the experiment because only {len(participants)} participants have no value "
+                    f'for "{primary_metric.field_name}", fewer than the desired sample size of {desired_n}. '
+                    "Turn off one-time mode to sample from all participants, or adjust your filters to include "
+                    "more participants with no value."
+                )
 
             if not participants:
                 raise LateValidationError("Preassigned experiments must have eligible participants data")
@@ -921,7 +941,6 @@ def create_assignment_for_participant(
                             participant_id=participant_id,
                             arm_id=chosen_arm.id,
                             context_vals=sorted_context_vals,
-                            enable_autofail=experiment.enable_autofail,
                         )
                         .returning(tables.Draw.created_at)
                     )
@@ -1311,7 +1330,7 @@ def analyze_experiment_freq_impl(
         xngin_session, experiment.id, include_cluster_key=include_cluster
     )
     if assignments_df.empty:
-        raise StatsAnalysisError("No participants found for experiment.")
+        raise StatsNoParticipantsError()
 
     with DwhSession.open(dsconfig.dwh, timeout=dwh_timeout) as dwh:
         # Mark the start of the analysis as when we begin pulling outcomes.

@@ -40,6 +40,12 @@ def get_server_database_url():
     raise ValueError("DATABASE_URL is not set")
 
 
+def get_psycopg_dsn(database_url: str) -> str:
+    """Converts a SQLAlchemy URL to the plain postgresql:// form that psycopg accepts."""
+    url = make_url(generic_url_to_sa_url(database_url)).set(drivername="postgresql")
+    return url.render_as_string(hide_password=False)
+
+
 @dataclasses.dataclass(slots=True, frozen=True)
 class DatabaseState:
     """Contains application-wide application database connection."""
@@ -72,7 +78,7 @@ def get_session():
 
 
 @contextlib.contextmanager
-def setup():
+def setup(*, pool_size: int = 5):
     """Create the process-wide application database engine.
 
     Nested calls reuse that engine, since the FastAPI lifespan calls setup()
@@ -89,6 +95,7 @@ def setup():
 
     engine = create_engine(
         database_url,
+        pool_size=pool_size,
         connect_args={"application_name": APP_DB_APPLICATION_NAME},
         execution_options={"logging_token": "app"},
         logging_name=SA_LOGGER_NAME_FOR_APP,

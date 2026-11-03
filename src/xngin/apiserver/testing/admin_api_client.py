@@ -50,7 +50,6 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     CreateDatasourceResponse,
     CreateOrganizationRequest,
     CreateOrganizationResponse,
-    CreateSnapshotResponse,
     CreateUserRequest,
     CreateUserResponse,
     DeleteExperimentDataRequest,
@@ -1168,80 +1167,6 @@ class AdminAPIClient:
                 },
                 query_params={
                     "allow_missing": allow_missing,
-                },
-                raise_if_not_default_status=raise_if_not_default_status,
-                client_exts=client_exts,
-            ),
-        )
-
-    @overload
-    def create_snapshot(
-        self,
-        *,
-        datasource_id: str,
-        experiment_id: str,
-        organization_id: str,
-        raise_if_not_default_status: Literal[True] = True,
-        client_exts: AdminAPIClientExtensions | None = None,
-    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], CreateSnapshotResponse]: ...
-    @overload
-    def create_snapshot(
-        self,
-        *,
-        datasource_id: str,
-        experiment_id: str,
-        organization_id: str,
-        raise_if_not_default_status: Literal[False],
-        client_exts: AdminAPIClientExtensions | None = None,
-    ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateSnapshotResponse]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
-    ): ...
-    def create_snapshot(
-        self,
-        *,
-        datasource_id: str,
-        experiment_id: str,
-        organization_id: str,
-        raise_if_not_default_status: bool = True,
-        client_exts: AdminAPIClientExtensions | None = None,
-    ) -> (
-        AdminAPIClientResult[Literal[HTTPStatus.OK], CreateSnapshotResponse]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
-        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
-    ):
-        return cast(
-            (
-                AdminAPIClientResult[Literal[HTTPStatus.OK], CreateSnapshotResponse]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
-                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
-            ),
-            self._route_handler(
-                path="/v1/m/organizations/{organization_id}/datasources/{datasource_id}/experiments/{experiment_id}/snapshots",
-                method=HTTPMethod.POST,
-                default_status=HTTPStatus.OK,
-                models={
-                    HTTPStatus.OK: CreateSnapshotResponse,
-                    HTTPStatus.BAD_REQUEST: HTTPExceptionError,
-                    HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
-                    HTTPStatus.FORBIDDEN: HTTPExceptionError,
-                    HTTPStatus.NOT_FOUND: HTTPExceptionError,
-                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
-                },
-                path_params={
-                    "datasource_id": datasource_id,
-                    "experiment_id": experiment_id,
-                    "organization_id": organization_id,
                 },
                 raise_if_not_default_status=raise_if_not_default_status,
                 client_exts=client_exts,

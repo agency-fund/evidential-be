@@ -23,8 +23,8 @@ from xngin.apiserver.routers.common_api_types import ExperimentsType
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.helpers import delete_seeded_users
+from xngin.apiserver.worker.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
 from xngin.events.webhook_sent import WebhookSentEvent
-from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
 
 SAMPLE_GCLOUD_SERVICE_ACCOUNT = {
     "auth_provider_x509_cert_url": "",

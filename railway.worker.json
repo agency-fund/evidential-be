@@ -1,0 +1,24 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "deploy": {
+    "numReplicas": 1,
+    "restartPolicyType": "ALWAYS",
+    "drainingSeconds": 120
+  },
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile.worker.railway",
+    "watchPatterns": [
+      ".dockerignore",
+      ".gitignore",
+      "Dockerfile.worker.railway",
+      "atlas.hcl",
+      "migrations/**",
+      "pyproject.toml",
+      "railway.worker.json",
+      "src/**",
+      "static/**",
+      "uv.lock"
+    ]
+  }
+}

@@ -31,7 +31,7 @@ from xngin.apiserver.testing.admin_integrations_api_client import AdminIntegrati
 from xngin.apiserver.testing.assertions import expect_status_code
 from xngin.apiserver.testing.helpers import DatasourceMetadata
 from xngin.apiserver.testing.integrations_api_client import IntegrationsAPIClient
-from xngin.tq.task_payload_types import TURN_JOURNEYS_CHANGED_TASK_TYPE
+from xngin.apiserver.worker.tq.task_payload_types import TURN_JOURNEYS_CHANGED_TASK_TYPE
 
 
 @pytest.fixture(name="testing_design_spec")
