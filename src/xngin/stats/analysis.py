@@ -8,6 +8,13 @@ from patsy.eval import EvalFactor
 from xngin.apiserver.dwh.analysis_types import ParticipantOutcome
 from xngin.stats.stats_errors import StatsAnalysisError
 
+# Patsy formulas refer to columns in the dataframes. The input dataframes have customer-provided column names,
+# and they could conflict with Patsy operators or built-ins. To avoid that, we compose a dataframe where the
+# arms and metrics are mapped to constant column names.
+MODEL_ARM_COL = "arm"
+MODEL_OUTCOME_COL = "outcome"
+MODEL_FORMULA = f"{MODEL_OUTCOME_COL} ~ 0 + {MODEL_ARM_COL}"
+
 
 @dataclasses.dataclass(slots=True)  # slots=True for performance
 class ArmAnalysisResult:
@@ -114,15 +121,16 @@ def analyze_experiment(
         if sum(nan_counts_df[metric_name]) == len(merged_df):
             continue
 
-        merged_df_dropna = merged_df.dropna(subset=[metric_name])
-        # Disjoint arm indicators avoid covariance cancellation for zero-variance arm means.
-        # Metric names are column names, which may contain dots, spaces and other characters that a formula would
-        # parse, so the formula refers to the metric with patsy's Q(), which takes the name as a string literal.
-        model = smf.ols(f"Q({metric_name!r}) ~ 0 + {arm_col}", data=merged_df_dropna).fit(
-            cov_type="HC1" if cluster_col is None else "cluster",
-            cov_kwds=None if cluster_col is None else {"groups": merged_df_dropna[cluster_col]},
+        model_df = pd.DataFrame(
+            {MODEL_ARM_COL: merged_df[arm_col], MODEL_OUTCOME_COL: merged_df[metric_name]}, copy=False
         )
-        arm_ids = model.model.data.design_info.factor_infos[EvalFactor(arm_col)].categories
+        observed = model_df[MODEL_OUTCOME_COL].notna()
+        # Disjoint arm indicators avoid covariance cancellation for zero-variance arm means.
+        model = smf.ols(MODEL_FORMULA, data=model_df[observed]).fit(
+            cov_type="HC1" if cluster_col is None else "cluster",
+            cov_kwds=None if cluster_col is None else {"groups": merged_df.loc[observed, cluster_col]},
+        )
+        arm_ids = model.model.data.design_info.factor_infos[EvalFactor(MODEL_ARM_COL)].categories
 
         # Preserve the baseline mean and treatment-minus-baseline coefficient convention.
         contrasts = np.eye(len(arm_ids))
