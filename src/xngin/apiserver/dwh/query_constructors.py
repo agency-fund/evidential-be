@@ -138,7 +138,8 @@ def compose_cluster_query(
     columns = _resolve_columns(sa_table, select_columns)
 
     # Sample the clusters from those that have at least one row matching the filters. We label the cluster key because
-    # limitations of the SQLAlchemy API prevent subquery references containing a dot, such as BigQuery sub-fields.
+    # sqlalchemy-bigquery rewrites "." to "_" in subquery column labels, so a dotted column (a RECORD sub-field) can't
+    # be referenced by its original name from the outer query.
     cluster_col = sa_table.c[cluster_key]
     eligible_clusters = select(cluster_col.label("cluster_key")).filter(*filters).group_by(cluster_col).subquery()
     sampled_cluster_col = eligible_clusters.c.cluster_key
