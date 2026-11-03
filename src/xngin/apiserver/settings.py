@@ -29,6 +29,8 @@ from xngin.xsecrets import secretservice
 
 SA_LOGGER_NAME_FOR_DWH = "xngin_dwh"
 TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES = 10
+# Redshift Serverless can take most of a minute to accept a connection while it resumes from idle.
+TIMEOUT_SECS_FOR_CUSTOMER_REDSHIFT = 60
 
 
 @ttl_cache(maxsize=128, ttl=600)

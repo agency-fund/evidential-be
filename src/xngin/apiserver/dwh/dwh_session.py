@@ -21,7 +21,14 @@ from xngin.apiserver.dwh import dwh_utils, participant_metrics_queries, queries,
 from xngin.apiserver.dwh.analysis_types import ParticipantOutcome
 from xngin.apiserver.exceptions_common import DwhConnectionError, DwhDatabaseDoesNotExistError, DwhTimeoutError
 from xngin.apiserver.routers.common_api_types import DesignSpecMetricRequest, Filter
-from xngin.apiserver.settings import SA_LOGGER_NAME_FOR_DWH, TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES, BqDsn, Dsn, Dwh
+from xngin.apiserver.settings import (
+    SA_LOGGER_NAME_FOR_DWH,
+    TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES,
+    TIMEOUT_SECS_FOR_CUSTOMER_REDSHIFT,
+    BqDsn,
+    Dsn,
+    Dwh,
+)
 from xngin.ops.threads import ThreadTimeout, timeout_thread
 
 
@@ -643,7 +650,9 @@ class DwhSession:
         connect_args: dict = {}
 
         if dwh_utils.is_postgres(url):
-            connect_args["connect_timeout"] = TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES
+            connect_args["connect_timeout"] = (
+                TIMEOUT_SECS_FOR_CUSTOMER_REDSHIFT if dwh_utils.is_redshift(url) else TIMEOUT_SECS_FOR_CUSTOMER_POSTGRES
+            )
             # Replace the Postgres' client default DNS lookup with one that applies security checks first
             connect_args["hostaddr"] = safe_resolve(url.host)
 
