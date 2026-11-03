@@ -1622,8 +1622,6 @@ def power_check(
 
     filters = body.filters
     cluster_key = body.cluster_key
-    desired_n_clusters = body.desired_n_clusters
-    desired_ns_clusters = body.desired_ns_clusters
     # Exclude rows without a valid cluster key.
     if cluster_key is not None:
         filters = [*filters, Filter(field_name=cluster_key, relation=Relation.EXCLUDES, value=[None])]
@@ -1638,6 +1636,10 @@ def power_check(
         # warehouse is not contacted at all.
         metric_stats = [m.to_design_spec_metric() for m in body.metrics]
     else:
+        # Only queries run inside the session; stats are computed from the raw rows after the
+        # connection is closed. Metrics carrying baseline stats are not queried.
+        raw_metric_stats = raw_cluster_stats = None
+        fields_needing_cluster_stats = []
         with DwhSession.open(dsconfig.dwh) as dwh:
             sa_table = dwh.inspect_table(body.table_name)
             # Validate the fields used in the request are present in the table and that filter values are valid.
@@ -1648,27 +1650,20 @@ def power_check(
                 cluster_key=body.cluster_key,
             )
 
-            # Only queries run inside this block; stats are computed from the raw rows after
-            # the DWH connection is closed. Metrics carrying baseline stats are not queried.
-            raw_metric_stats = (
-                dwh.get_raw_metric_stats(sa_table, metrics=metrics_missing_stats, filters=filters)
-                if metrics_missing_stats
-                else None
-            )
-            db_derived_metrics = (
-                [m.field_name for m in body.metrics if not m.has_cluster_stats] if cluster_key is not None else []
-            )
-            raw_cluster_stats = None
-            # The per-cluster query also yields the cluster count, so it runs even when every metric
-            # supplies its own ICC/CV/avg_cluster_size (db_derived_metrics is empty) but not a count.
-            if needs_cluster_stats:
+            if metrics_missing_stats:
+                raw_metric_stats = dwh.get_raw_metric_stats(sa_table, metrics=metrics_missing_stats, filters=filters)
+
+            # We get the available_n_clusters from this sufficient-statistics query, so run it even
+            # when the user supplied stats but not the cluster count.
+            if cluster_key is not None and needs_cluster_stats:
+                fields_needing_cluster_stats = [m.field_name for m in body.metrics if not m.has_cluster_stats]
                 # Shifting each metric by its mean keeps the sums of squares in the
                 # sufficient-statistics query numerically stable. The mean comes from the raw
                 # query row for queried metrics and from the supplied baseline for echoed ones.
                 supplied_baselines = {m.field_name: m.metric_baseline for m in body.metrics if m.has_baseline_stats}
                 queried_aliases = FieldAliases(m.field_name for m in metrics_missing_stats)
                 outcome_shifts = {}
-                for field_name in db_derived_metrics:
+                for field_name in fields_needing_cluster_stats:
                     if field_name in supplied_baselines:
                         mean = supplied_baselines[field_name]
                     else:
@@ -1679,43 +1674,40 @@ def power_check(
                         )
                     if mean is not None:
                         outcome_shifts[field_name] = mean
-                assert cluster_key is not None  # implied by needs_cluster_stats
                 raw_cluster_stats = dwh.get_cluster_sufficient_stats(
                     sa_table,
                     cluster_column_name=cluster_key,
-                    outcome_column_names=db_derived_metrics,
+                    outcome_column_names=fields_needing_cluster_stats,
                     filters=filters,
                     outcome_shifts=outcome_shifts,
                 )
 
-        queried_stats = (
+        db_metric_stats = (
             build_metric_stats(raw_metric_stats, sa_table, metrics_missing_stats)
             if raw_metric_stats is not None
             else []
         )
-        queried_stats_by_name = {m.field_name: m for m in queried_stats}
+        db_metric_stats_by_name = {m.field_name: m for m in db_metric_stats}
         metric_stats = [
-            m.to_design_spec_metric() if m.has_baseline_stats else queried_stats_by_name[m.field_name]
+            m.to_design_spec_metric() if m.has_baseline_stats else db_metric_stats_by_name[m.field_name]
             for m in body.metrics
         ]
 
         # Augment with cluster-level stats if this is a cluster-randomized design.
         if cluster_key is not None:
             db_cluster_stats = (
-                calculate_cluster_stats(raw_cluster_stats, cluster_key, db_derived_metrics)
+                calculate_cluster_stats(raw_cluster_stats, cluster_key, fields_needing_cluster_stats)
                 if raw_cluster_stats is not None
                 else {}
             )
-            # One row per cluster, counted over the same filtered population as available_n.
-            db_n_clusters = len(raw_cluster_stats) if raw_cluster_stats is not None else None
             request_metrics_by_name = {m.field_name: m for m in body.metrics}
             for metric_stat in metric_stats:
                 req_metric = request_metrics_by_name[metric_stat.field_name]
                 if req_metric.available_n_clusters is not None:
                     metric_stat.available_n_clusters = req_metric.available_n_clusters
                 else:
-                    assert db_n_clusters is not None  # needs_cluster_stats ran the cluster query
-                    metric_stat.available_n_clusters = db_n_clusters
+                    assert raw_cluster_stats is not None  # needs_cluster_stats ran the cluster query
+                    metric_stat.available_n_clusters = len(raw_cluster_stats)
                 # If the user provided ICC, avg_cluster_size, and cv, use them instead of deriving from the dwh.
                 if req_metric.has_cluster_stats:
                     metric_stat.icc = req_metric.icc
@@ -1735,9 +1727,9 @@ def power_check(
             alpha=body.alpha,
             arm_weights=body.arm_weights,
             desired_n=body.desired_n,
-            desired_n_clusters=desired_n_clusters,
+            desired_n_clusters=body.desired_n_clusters,
             desired_ns=body.desired_ns,
-            desired_ns_clusters=desired_ns_clusters,
+            desired_ns_clusters=body.desired_ns_clusters,
         )
     )
 
