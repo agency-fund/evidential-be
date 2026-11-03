@@ -22,8 +22,9 @@
 | src/xngin/apiserver/dwh/queries.py                                                 |       47 |        3 |     94% |92, 95, 122 |
 | src/xngin/apiserver/dwh/query\_constructors.py                                     |       81 |        4 |     95% |75-76, 95-96 |
 | src/xngin/apiserver/dwh/test\_dialect\_sql.py                                      |       74 |        6 |     92% |494, 507, 510-513 |
-| src/xngin/apiserver/dwh/test\_dwh\_identifiers\_bigquery.py                        |       63 |       36 |     43% |42-44, 51-52, 67-99, 110-111, 115-116, 120-121, 126-128, 144-145 |
+| src/xngin/apiserver/dwh/test\_dwh\_identifiers\_bigquery.py                        |       72 |       41 |     43% |47-49, 56-57, 65-66, 80-113, 124-125, 129-130, 134-135, 141-142, 147-149, 165-166 |
 | src/xngin/apiserver/dwh/test\_dwh\_identifiers\_redshift.py                        |       34 |       10 |     71% |47-48, 53-54, 60, 66, 70, 76, 81-82 |
+| src/xngin/apiserver/dwh/test\_dwh\_records\_bigquery.py                            |       28 |       13 |     54% |24-25, 32-56 |
 | src/xngin/apiserver/dwh/test\_dwh\_session.py                                      |      123 |        1 |     99% |       123 |
 | src/xngin/apiserver/dwh/test\_dwh\_time\_types\_bigquery.py                        |       16 |        3 |     81% | 22-23, 30 |
 | src/xngin/apiserver/dwh/test\_dwh\_time\_types\_redshift.py                        |       21 |        4 |     81% |39-40, 46, 52 |
@@ -78,7 +79,7 @@
 | src/xngin/apiserver/testing/database\_plugin.py                                    |       33 |       12 |     64% |34-37, 39-42, 48, 54-57 |
 | src/xngin/apiserver/testing/helpers.py                                             |      104 |       21 |     80% |39, 58, 73, 75, 88, 98, 102, 104, 108, 148, 165-179 |
 | src/xngin/apiserver/testing/pg\_helpers.py                                         |       90 |        8 |     91% |   149-157 |
-| src/xngin/apiserver/testing/stress\_dwh\_def.py                                    |       71 |        1 |     99% |       290 |
+| src/xngin/apiserver/testing/stress\_dwh\_def.py                                    |       73 |        1 |     99% |       299 |
 | src/xngin/apiserver/testing/stress\_loaders.py                                     |       56 |       16 |     71% |67-79, 85-106 |
 | src/xngin/apiserver/testing/worker\_helpers.py                                     |      167 |       13 |     92% |125, 188, 236-238, 244, 247, 263, 269, 277-279, 295 |
 | src/xngin/apiserver/worker/attempts.py                                             |      120 |        4 |     97% |231-232, 246-247 |
@@ -117,7 +118,7 @@
 | src/xngin/xsecrets/secretservice.py                                                |       64 |        7 |     89% |37, 45-46, 51-52, 104, 126 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                                     |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                                         |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                                          | **20607** | **1085** | **95%** |           |
+| **TOTAL**                                                                          | **20646** | **1103** | **95%** |           |
 
 121 files skipped due to complete coverage.
 
