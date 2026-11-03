@@ -24,6 +24,7 @@ FIRST_NAMES = ["Ada", "Bao", "Chiara", "Dmitri", "Émilie", "Farah", "Gustavo", 
 REGIONS = ["Île-de-France", "Bayern", "São Paulo", "Ōsaka", "Ontario"]
 CLINICS = [f"Clinic {letter}" for letter in "ABCDEFGH"]
 CITIES = ["Paris", "München", "São Paulo", "大阪", "Toronto"]
+GROUPS = ["north", "south", "east", "west"]
 TAGS = ["vip", "new", "returning"]
 TIERS = ["bronze", "silver", "gold"]
 EVENTS = ["signup", "visit", "purchase"]
@@ -47,6 +48,7 @@ def generate_rows() -> list[dict[str, object]]:
     rng = random.Random(_SEED)  # noqa: S311 - reproducible sample data
     # The dates and times added later draw from their own generator, so the earlier columns keep their values.
     time_rng = random.Random(_SEED + 1)  # noqa: S311 - reproducible sample data
+    address_rng = random.Random(_SEED + 2)  # noqa: S311 - reproducible sample data
     rows = []
     for i in range(1, ROW_COUNT + 1):
         region = rng.randrange(len(REGIONS))
@@ -84,6 +86,9 @@ def generate_rows() -> list[dict[str, object]]:
             "postal_code": f"{rng.randrange(10_000, 99_999)}",
             "latitude": round(rng.uniform(-60, 60), 6),
             "longitude": round(rng.uniform(-180, 180), 6),
+            "address_group": address_rng.choice(GROUPS),
+            # Zero to two address lines.
+            "address_lines": [f"Line {n}" for n in range(1, address_rng.randrange(3) + 1)],
             # About one in ten of each is unknown. Births reach back before 1970; appointments are local times, with no
             # time zone, before 1970 and after 2038.
             "birth_date": (
@@ -179,7 +184,8 @@ REDSHIFT_SEARCH_PATH = '"stress schema"'
 
 # BigQuery column names may not contain dots or "$"; a dot reaches into a RECORD instead, as in address.geo.lat. The
 # table lives in the data source's dataset, so it has no schema. "events" is a REPEATED RECORD and "tags" a REPEATED
-# field, which are reflected as ARRAY columns and are not usable as fields.
+# field, which are reflected as ARRAY columns and are not usable as fields; so is address.lines, a REPEATED field
+# within a RECORD. address.group is a sub-field named by a reserved word.
 BIGQUERY = StressTable(
     schema=None,
     table="Participant Data-2026",
@@ -208,7 +214,8 @@ BIGQUERY = StressTable(
         Column(
             "address",
             "address",
-            "STRUCT<city STRING, `postal code` STRING, geo STRUCT<lat FLOAT64, lng FLOAT64>>",
+            "STRUCT<city STRING, `postal code` STRING, `group` STRING, geo STRUCT<lat FLOAT64, lng FLOAT64>, "
+            "lines ARRAY<STRING>>",
         ),
         Column("events", "events", "ARRAY<STRUCT<name STRING, `at` DATE>>"),
     ),
@@ -282,7 +289,9 @@ def bigquery_row(row: dict[str, object]) -> dict[str, object]:
                 values[column.name] = {
                     "city": row["city"],
                     "postal code": row["postal_code"],
+                    "group": row["address_group"],
                     "geo": {"lat": row["latitude"], "lng": row["longitude"]},
+                    "lines": row["address_lines"],
                 }
             case "events":
                 events = row["events"]
