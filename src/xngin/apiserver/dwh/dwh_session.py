@@ -90,7 +90,7 @@ def _mark_bigquery_timestamps_as_aware(table: sqlalchemy.Table) -> None:
     driver returns.
     """
     for column in table.columns:
-        if type(column.type) is sqlalchemy.sql.sqltypes.TIMESTAMP and not column.type.timezone:
+        if type(column.type) is sqlalchemy.sql.sqltypes.TIMESTAMP:
             column.type = sqlalchemy.TIMESTAMP(timezone=True)
 
 
