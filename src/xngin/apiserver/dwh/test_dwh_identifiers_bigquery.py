@@ -35,6 +35,11 @@ BQ_TABLE_NAMES = [*TABLE_NAMES, "tëst 名前"]
 # It also has a REPEATED RECORD column, events, which is reflected as one ARRAY column and is not offered as fields.
 NESTED_TABLE = "nested"
 NESTED_COLUMNS = Columns(id="id", metric="outer_rec.metric", segment="outer_rec.segment", cluster="outer_rec.cluster")
+# A table whose selected sub-fields share a last segment, value. BigQuery names an unaliased sub-field after its
+# last segment and renames duplicates (value, value_1); SQLAlchemy matches the columns of a select() by position, so
+# each still reads as its field.
+COLLIDING_TABLE = "colliding"
+COLLIDING_COLUMNS = Columns(id="id", metric="m.value", segment="m.segment", cluster="c.value")
 BQ_LOCATION = "us-west1"
 
 
@@ -56,12 +61,20 @@ def _bq_create_nested_table_sql(qualified: str, rows: list[tuple]) -> str:
     )
 
 
+def _bq_create_colliding_table_sql(qualified: str, rows: list[tuple]) -> str:
+    values = ", ".join(f"STRUCT({i}, STRUCT({m}, '{s}'), STRUCT('{c}'))" for i, m, s, c in rows)
+    return (
+        f"CREATE TABLE {qualified} AS SELECT * FROM UNNEST(ARRAY<STRUCT<id INT64, "
+        f"m STRUCT<value FLOAT64, segment STRING>, c STRUCT<value STRING>>>[{values}]);"
+    )
+
+
 @pytest.fixture(name="bq_datasets", scope="module")
 def fixture_bq_datasets() -> Iterator[tuple[BqDsn, str]]:
     """A BqDsn for a new dataset, and a second dataset's name.
 
-    The dataset holds a table for each of BQ_TABLE_NAMES, QUOTED_COLUMNS_TABLE with BQ_QUOTED_COLUMNS, and
-    NESTED_TABLE. The second dataset holds one table, elsewhere,
+    The dataset holds a table for each of BQ_TABLE_NAMES, QUOTED_COLUMNS_TABLE with BQ_QUOTED_COLUMNS,
+    NESTED_TABLE and COLLIDING_TABLE. The second dataset holds one table, elsewhere,
     which a qualified table name must not reach.
     """
     path = os.environ[GCP_CREDENTIALS_VAR]
@@ -84,6 +97,7 @@ def fixture_bq_datasets() -> Iterator[tuple[BqDsn, str]]:
                 for dataset_id, name, columns in tables
             )
             script += _bq_create_nested_table_sql(f"`{client.project}.{configured}.{NESTED_TABLE}`", ROWS)
+            script += _bq_create_colliding_table_sql(f"`{client.project}.{configured}.{COLLIDING_TABLE}`", ROWS)
             client.query_and_wait(script)
             yield (
                 BqDsn(
@@ -119,6 +133,13 @@ def test_bigquery_reads_columns_whose_names_need_quoting(aclient: AdminAPIClient
 def test_bigquery_reads_record_sub_fields(aclient: AdminAPIClient, bq_datasets: tuple[BqDsn, str]):
     dsn, _ = bq_datasets
     exercise_through_api(aclient, dsn, NESTED_TABLE, NESTED_COLUMNS, exact_fields=True)
+
+
+def test_bigquery_reads_record_sub_fields_with_the_same_last_segment(
+    aclient: AdminAPIClient, bq_datasets: tuple[BqDsn, str]
+):
+    dsn, _ = bq_datasets
+    exercise_through_api(aclient, dsn, COLLIDING_TABLE, COLLIDING_COLUMNS, exact_fields=True)
 
 
 def test_bigquery_refuses_dataset_qualified_table_names(aclient: AdminAPIClient, bq_datasets: tuple[BqDsn, str]):
