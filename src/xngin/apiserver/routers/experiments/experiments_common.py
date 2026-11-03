@@ -1332,12 +1332,13 @@ def analyze_experiment_freq_impl(
     if assignments_df.empty:
         raise StatsNoParticipantsError()
 
+    metric_names = [metric.field_name for metric in metrics]
     with DwhSession.open(dsconfig.dwh, timeout=dwh_timeout) as dwh:
         # Mark the start of the analysis as when we begin pulling outcomes.
         created_at = datetime.now(UTC)
         participant_outcomes = dwh.get_participant_metrics(
             experiment.datasource_table,
-            metric_names=[metric.field_name for metric in metrics],
+            metric_names=metric_names,
             unique_id_field=unique_id_field.field_name,
             participant_ids=participant_ids,
         )
@@ -1358,6 +1359,7 @@ def analyze_experiment_freq_impl(
     analyze_results = analyze_freq_experiment(
         assignments_df,
         participant_outcomes,
+        metric_names,
         unit_col=tables.ArmAssignment.participant_id.name,
         arm_col=tables.ArmAssignment.arm_id.name,
         cluster_col=tables.ArmAssignment.cluster_key.name if include_cluster else None,
