@@ -1629,7 +1629,9 @@ def power_check(
         filters = [*filters, Filter(field_name=cluster_key, relation=Relation.EXCLUDES, value=[None])]
 
     metrics_missing_stats = [m for m in body.metrics if not m.has_baseline_stats]
-    needs_cluster_stats = cluster_key is not None and any(not m.has_cluster_stats for m in body.metrics)
+    needs_cluster_stats = cluster_key is not None and any(
+        not m.has_cluster_stats or m.available_n_clusters is None for m in body.metrics
+    )
 
     if not metrics_missing_stats and not needs_cluster_stats:
         # Every metric arrived with baseline stats (and cluster stats where needed), so the
@@ -1657,7 +1659,9 @@ def power_check(
                 [m.field_name for m in body.metrics if not m.has_cluster_stats] if cluster_key is not None else []
             )
             raw_cluster_stats = None
-            if cluster_key is not None and db_derived_metrics:
+            # The per-cluster query also yields the cluster count, so it runs even when every metric
+            # supplies its own ICC/CV/avg_cluster_size (db_derived_metrics is empty) but not a count.
+            if needs_cluster_stats:
                 # Shifting each metric by its mean keeps the sums of squares in the
                 # sufficient-statistics query numerically stable. The mean comes from the raw
                 # query row for queried metrics and from the supplied baseline for echoed ones.
@@ -1675,6 +1679,7 @@ def power_check(
                         )
                     if mean is not None:
                         outcome_shifts[field_name] = mean
+                assert cluster_key is not None  # implied by needs_cluster_stats
                 raw_cluster_stats = dwh.get_cluster_sufficient_stats(
                     sa_table,
                     cluster_column_name=cluster_key,
@@ -1701,9 +1706,16 @@ def power_check(
                 if raw_cluster_stats is not None
                 else {}
             )
+            # One row per cluster, counted over the same filtered population as available_n.
+            db_n_clusters = len(raw_cluster_stats) if raw_cluster_stats is not None else None
             request_metrics_by_name = {m.field_name: m for m in body.metrics}
             for metric_stat in metric_stats:
                 req_metric = request_metrics_by_name[metric_stat.field_name]
+                if req_metric.available_n_clusters is not None:
+                    metric_stat.available_n_clusters = req_metric.available_n_clusters
+                else:
+                    assert db_n_clusters is not None  # needs_cluster_stats ran the cluster query
+                    metric_stat.available_n_clusters = db_n_clusters
                 # If the user provided ICC, avg_cluster_size, and cv, use them instead of deriving from the dwh.
                 if req_metric.has_cluster_stats:
                     metric_stat.icc = req_metric.icc

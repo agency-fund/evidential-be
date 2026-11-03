@@ -127,6 +127,17 @@ class DesignSpecMetricBase(ApiBaseModel):
             )
         ),
     ] = None
+    available_n_clusters: Annotated[
+        int | None,
+        Field(
+            ge=1,
+            description=(
+                "For cluster-randomized designs, the number of distinct clusters among the available_n "
+                "participants. Clusters are sampled from this population, so it is the largest valid "
+                "desired_n_clusters. Unset for individually-randomized designs."
+            ),
+        ),
+    ] = None
     use_one_time_metric: Annotated[
         bool,
         Field(
@@ -246,6 +257,7 @@ class DesignSpecMetricRequest(DesignSpecMetricBase):
             metric_stddev=self.metric_stddev,
             available_nonnull_n=self.available_nonnull_n,
             available_n=self.available_n,
+            available_n_clusters=self.available_n_clusters,
         )
 
 
@@ -1610,6 +1622,8 @@ class PowerRequest(ApiBaseModel):
             raise ValueError("desired_n_clusters can only be set when cluster_key is set.")
         if self.cluster_key is None and self.desired_ns_clusters is not None:
             raise ValueError("desired_ns_clusters can only be set when cluster_key is set.")
+        if self.cluster_key is None and any(m.available_n_clusters is not None for m in self.metrics):
+            raise ValueError("available_n_clusters can only be set when cluster_key is set.")
         return self
 
     @model_validator(mode="after")
