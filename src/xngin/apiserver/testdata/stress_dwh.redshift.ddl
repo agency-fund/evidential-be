@@ -1,0 +1,22 @@
+CREATE TABLE {{table_name}} (
+  "participant.id" BIGINT PRIMARY KEY,
+  "First Name" VARCHAR(256),
+  "e-mail" VARCHAR(255),
+  "Signup Date" DATE,
+  "last.login" TIMESTAMPTZ,
+  "Date of Birth" DATE,
+  "appointment at (local)" TIMESTAMP,
+  "check-in time" TIME,
+  "check-in time (tz)" TIMETZ,
+  "Score (%)" NUMERIC(5, 2),
+  "isActive" BOOLEAN,
+  "Income $" DOUBLE PRECISION,
+  "région" VARCHAR(256),
+  "Clinic Name" VARCHAR(256),
+  "visits-count" INTEGER,
+  "select" INTEGER,
+  "say ""hi""" VARCHAR(256),
+  "uuid col" CHAR(36),
+  "tags" SUPER,
+  "profile" SUPER
+);

@@ -8,6 +8,7 @@ from sqlalchemy import (
     String,
     Table,
     create_engine,
+    make_url,
     select,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -51,20 +52,18 @@ class SampleTableNoPK(Base):
     __mapper_args__ = MappingProxyType({"primary_key": [__table__.c.int_col]})
 
 
-# Marking these tests that use the bigquery dialect as integration-only since
-# it will try to auth against google using app default credentials.
-@pytest.mark.integration
 def test_random_compilation_on_different_engine_dialects():
     expected_results = {
         "postgresql": "random()",
         "bigquery": "rand()",
     }
 
-    for dialect, expected in expected_results.items():
-        engine = create_engine(f"{dialect}://")
+    for dialect_name, expected in expected_results.items():
+        # A dialect compiles SQL without connecting, unlike a BigQuery engine, which needs Google credentials.
+        dialect = make_url(f"{dialect_name}://").get_dialect()()
         query = select(custom_functions.Random(sa_table=SampleTable.__table__))
-        sql_text = str(query.compile(engine))
-        assert f"SELECT {expected}" in sql_text, f"Engine {engine.dialect}"
+        sql_text = str(query.compile(dialect=dialect))
+        assert f"SELECT {expected}" in sql_text, f"Dialect {dialect_name}"
 
 
 def test_deterministic_random():

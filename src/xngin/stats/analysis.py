@@ -116,7 +116,9 @@ def analyze_experiment(
 
         merged_df_dropna = merged_df.dropna(subset=[metric_name])
         # Disjoint arm indicators avoid covariance cancellation for zero-variance arm means.
-        model = smf.ols(f"{metric_name} ~ 0 + {arm_col}", data=merged_df_dropna).fit(
+        # Metric names are column names, which may contain dots, spaces and other characters that a formula would
+        # parse, so the formula refers to the metric with patsy's Q(), which takes the name as a string literal.
+        model = smf.ols(f"Q({metric_name!r}) ~ 0 + {arm_col}", data=merged_df_dropna).fit(
             cov_type="HC1" if cluster_col is None else "cluster",
             cov_kwds=None if cluster_col is None else {"groups": merged_df_dropna[cluster_col]},
         )

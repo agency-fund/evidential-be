@@ -56,10 +56,19 @@ _TEST_DATABASE_NAME = re.compile(r"_(?P<started>\d{8}t\d{6})_[0-9a-f]{8}_(main|g
 _CREATED: dict[str, sqlalchemy.URL] = {}
 
 
+def with_name_suffix(name: str) -> str:
+    """Returns name suffixed to be unique to this run and worker, for objects that runs and workers share a server for.
+
+    The testing warehouse is one database for every run and worker, so schemas and roles that tests create in it need
+    this suffix, as test databases do.
+    """
+    return f"{name}{_DATABASE_SUFFIX}"
+
+
 def with_database_suffix(connect_url: str) -> str:
     """Returns connect_url with its database name suffixed to be unique to this run and worker."""
     url = sqlalchemy.engine.url.make_url(connect_url)
-    return url.set(database=f"{url.database}{_DATABASE_SUFFIX}").render_as_string(hide_password=False)
+    return url.set(database=with_name_suffix(f"{url.database}")).render_as_string(hide_password=False)
 
 
 def _server_dsn(url: sqlalchemy.URL) -> str:
