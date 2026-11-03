@@ -67,7 +67,7 @@ def analyze_experiment(
         map of metric name => map of arm_id (may be partial or empty!) => analysis results
         - If an arm is missing for a metric, it's because it had no valid data to process.
         - Every name in metric_names has an entry. If *zero* arm analyses exist for a metric (e.g. since zero
-        non-null outcomes were found across all arms), the inner dict will be empty.
+        non-null outcomes were found across all arms, or none in the baseline arm), the inner dict will be empty.
     """
     expected_id_columns = {unit_col, arm_col}
     if cluster_col is not None:
@@ -127,8 +127,14 @@ def analyze_experiment(
             {MODEL_ARM_COL: merged_df[arm_col], MODEL_OUTCOME_COL: merged_df[metric_col]}, copy=False
         )
         observed = model_df[MODEL_OUTCOME_COL].notna()
+        observed_df = model_df[observed].copy()
+        # Arms without observations are left out: OLS would give them an arbitrary coefficient, and an
+        # unobserved baseline would turn every treatment "effect" into that arm's raw mean.
+        observed_df[MODEL_ARM_COL] = observed_df[MODEL_ARM_COL].cat.remove_unused_categories()
+        if merged_df[arm_col].cat.categories[0] not in observed_df[MODEL_ARM_COL].cat.categories:
+            continue
         # Disjoint arm indicators avoid covariance cancellation for zero-variance arm means.
-        model = smf.ols(MODEL_FORMULA, data=model_df[observed]).fit(
+        model = smf.ols(MODEL_FORMULA, data=observed_df).fit(
             cov_type="HC1" if cluster_col is None else "cluster",
             cov_kwds=None if cluster_col is None else {"groups": merged_df.loc[observed, cluster_col]},
         )
@@ -137,8 +143,6 @@ def analyze_experiment(
         # Preserve the baseline mean and treatment-minus-baseline coefficient convention.
         contrasts = np.eye(len(arm_ids))
         contrasts[1:, 0] = -1
-        # Unobserved arms retain zero coefficients rather than a fabricated negative baseline.
-        contrasts *= np.any(model.model.exog, axis=0)[:, None]
         comparisons = model.t_test(contrasts)
         p_values = np.asarray(comparisons.pvalue).reshape(-1)
         t_stats = np.asarray(comparisons.tvalue).reshape(-1)
