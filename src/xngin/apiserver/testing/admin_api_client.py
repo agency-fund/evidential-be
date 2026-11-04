@@ -3111,7 +3111,9 @@ class AdminAPIClient:
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.CONFLICT], HTTPExceptionError]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
     ): ...
     def commit_experiment(
         self,
@@ -3127,7 +3129,9 @@ class AdminAPIClient:
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.CONFLICT], HTTPExceptionError]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
     ):
         return cast(
             (
@@ -3137,7 +3141,9 @@ class AdminAPIClient:
                 | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
                 | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
                 | AdminAPIClientResult[Literal[HTTPStatus.CONFLICT], HTTPExceptionError]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
+                | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
             ),
             self._route_handler(
                 path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/commit",
@@ -3150,7 +3156,9 @@ class AdminAPIClient:
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
                     HTTPStatus.NOT_FOUND: HTTPExceptionError,
                     HTTPStatus.CONFLICT: HTTPExceptionError,
-                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: XHTTPValidationError,
+                    HTTPStatus.BAD_GATEWAY: MessageError,
+                    HTTPStatus.GATEWAY_TIMEOUT: MessageError,
                 },
                 path_params={
                     "datasource_id": datasource_id,
