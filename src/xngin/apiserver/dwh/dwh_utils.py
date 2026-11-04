@@ -1,4 +1,6 @@
+import re
 import unicodedata
+from urllib.parse import parse_qs, urlsplit
 
 from psycopg.sql import Identifier
 from sqlalchemy import URL, Engine
@@ -9,6 +11,26 @@ REDSHIFT_HOSTNAME_SUFFIXES = ("redshift.amazonaws.com", "redshift-serverless.ama
 # 1,024 UTF-8 bytes. https://cloud.google.com/bigquery/docs/tables#table_naming
 _BQ_TABLE_NAME_CATEGORIES = frozenset({"Pc", "Pd", "Zs"})
 _BQ_TABLE_NAME_MAX_BYTES = 1024
+
+
+def parse_spreadsheet_url(value: str) -> tuple[str, int | None]:
+    """Returns (spreadsheet ID, gid) from a Google Sheets link, rejecting any other URL.
+
+    The spreadsheet ID identifies the whole spreadsheet.
+    The gid identifies one tab within it: it's the number after gid= in the URL's fragment or
+    query, or None when the link doesn't name a tab.
+
+    Example: https://docs.google.com/spreadsheets/d/1AbC/edit#gid=42 -> ("1AbC", 42)
+    """
+    parsed = urlsplit(value)
+    match = re.fullmatch(r"/spreadsheets/d/([a-zA-Z0-9_-]+)(?:/.*)?", parsed.path)
+    if parsed.scheme != "https" or parsed.netloc != "docs.google.com" or match is None:
+        raise ValueError("Use a Google Sheets URL starting with https://docs.google.com/spreadsheets/d/.")
+    params = parse_qs(parsed.fragment, keep_blank_values=True) | parse_qs(parsed.query, keep_blank_values=True)
+    gid = params.get("gid", [None])[0]
+    if gid is not None and not re.fullmatch(r"[0-9]+", gid):
+        raise ValueError("The spreadsheet tab ID (gid) must be a non-negative integer.")
+    return match[1], int(gid) if gid is not None else None
 
 
 def is_redshift(host_or_url: str | URL) -> bool:

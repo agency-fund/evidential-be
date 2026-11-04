@@ -21,6 +21,7 @@ from xngin.apiserver.routers.common_enums import (
     ExperimentsType,
     StopAssignmentReason,
 )
+from xngin.apiserver.settings import GoogleSheetsDsn
 from xngin.apiserver.sqla import tables
 from xngin.stats.bandit_weights_to_prior import (
     convert_arm_weights_to_prior_params,
@@ -376,6 +377,17 @@ class ExperimentStorageConverter:
             return None
         return capi.PowerResponse.model_validate(self.experiment.power_analyses)
 
+    def get_google_sheets_experiment_url(self) -> str | None:
+        """Link to a committed Google Sheets experiment's outcomes tab; None for anything else."""
+        if self.experiment.state != ExperimentState.COMMITTED or self.experiment.datasource_table is None:
+            return None
+        # Check the stored driver first: get_config() would decrypt other datasources' credentials.
+        dwh_config = self.experiment.datasource.config["dwh"]
+        if dwh_config["driver"] != "google_sheets":
+            return None
+        spreadsheet_id = GoogleSheetsDsn.model_validate(dwh_config).spreadsheet_id
+        return f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={self.experiment.datasource_table}"
+
     def get_experiment_config(
         self,
         assign_summary: capi.AssignSummary,
@@ -387,6 +399,7 @@ class ExperimentStorageConverter:
         return capi.GetExperimentResponse(
             experiment_id=self.experiment.id,
             datasource_id=self.experiment.datasource_id,
+            google_sheets_experiment_url=self.get_google_sheets_experiment_url(),
             state=ExperimentState(self.experiment.state),
             stopped_assignments_at=self.experiment.stopped_assignments_at,
             stopped_assignments_reason=StopAssignmentReason.from_str(self.experiment.stopped_assignments_reason),
