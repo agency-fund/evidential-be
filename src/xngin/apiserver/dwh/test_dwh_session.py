@@ -11,6 +11,7 @@ from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.exceptions_common import (
     CannotFindTableError,
     DwhConfigurationError,
+    DwhPermissionDeniedError,
     DwhTimeoutError,
 )
 from xngin.apiserver.settings import Dsn
@@ -219,6 +220,26 @@ def test_an_exception_that_is_not_the_warehouses_doing_propagates_unchanged(dwh_
         dwh._on_worker("dividing by zero", lambda: 1 / 0)
 
 
+def test_check_table_readable_succeeds_for_a_role_with_select(dwh_config):
+    with DwhSession.open(dwh_config) as dwh:
+        dwh.check_table_readable(TESTING_DWH_TABLE_NAME)
+
+
+def test_check_table_readable_reports_a_missing_table(dwh_config):
+    with DwhSession.open(dwh_config) as dwh, pytest.raises(CannotFindTableError) as excinfo:
+        dwh.check_table_readable("no_such_table_xyz")
+    assert excinfo.value.table_name == "no_such_table_xyz"
+
+
+def test_check_table_readable_reports_a_role_without_select(restricted_dsn: Dsn):
+    with DwhSession.open(restricted_dsn) as dwh:
+        # Reflection reads only the catalog, so inspection alone does not notice.
+        dwh.inspect_table(TESTING_DWH_TABLE_NAME)
+        with pytest.raises(DwhPermissionDeniedError) as excinfo:
+            dwh.check_table_readable(TESTING_DWH_TABLE_NAME)
+    assert excinfo.value.table_name == TESTING_DWH_TABLE_NAME
+
+
 def _admin_dsn(search_path: str, driver: str = "postgresql+psycopg") -> Dsn:
     dsn: Dsn = Dsn.from_url(flags.XNGIN_DEVDWH_DSN)
     return dsn.model_copy(update={"search_path": search_path, "driver": driver})
@@ -228,6 +249,7 @@ def test_search_path_resolves_tables_in_another_schema(dwh_schema: str):
     with DwhSession.open(_admin_dsn(dwh_schema)) as dwh:
         assert "participants" in dwh.list_tables()
         assert {c.name for c in dwh.inspect_table("participants").columns} == {"id", "is_engaged"}
+        dwh.check_table_readable("participants")
         count = dwh._on_worker(
             "query", lambda: dwh._session.execute(text("SELECT count(*) FROM participants")).scalar_one()
         )
@@ -244,3 +266,19 @@ def test_a_malformed_search_path_is_reported():
     assert excinfo.value.hint == HINT_CHECK_SEARCH_PATH
     assert excinfo.value.dwh_message is not None
     assert "search_path" in excinfo.value.dwh_message
+
+
+def test_a_grant_hint_uses_a_schema_placeholder_even_with_a_single_search_path_schema(
+    restricted_dsn: Dsn, dwh_schema: str
+):
+    restricted = restricted_dsn.model_copy(update={"search_path": dwh_schema})
+    admin = sqlalchemy.create_engine(Dsn.from_url(flags.XNGIN_DEVDWH_DSN).to_sqlalchemy_url())
+    try:
+        with admin.begin() as conn:
+            conn.execute(text(f"GRANT USAGE ON SCHEMA {dwh_schema} TO {restricted.user}"))
+    finally:
+        admin.dispose()
+    with DwhSession.open(restricted) as dwh, pytest.raises(DwhPermissionDeniedError) as excinfo:
+        dwh.check_table_readable("participants")
+    assert excinfo.value.table_name == "participants"
+    assert excinfo.value.hint_command == f"GRANT SELECT ON <schema>.participants TO {restricted.user};"

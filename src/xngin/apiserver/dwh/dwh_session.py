@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from typing import Self
 
 import sqlalchemy
+from google.cloud import bigquery
+from google.cloud.bigquery import dbapi as bigquery_dbapi
 from loguru import logger
 from sqlalchemy import ColumnElement, Engine, Inspector, event, text
 from sqlalchemy.engine.interfaces import DBAPIConnection
@@ -321,6 +323,53 @@ class DwhSession:
             table_name,
             use_sa_autoload=use_sa_autoload,
         )
+
+    def _check_table_readable_blocking(self, table_name: str) -> None:
+        self._check_table_name(table_name)
+        probe = query_constructors.create_inspect_table_from_cursor_query(table_name)
+        if isinstance(self._dwh_config, BqDsn):
+            self._dry_run_bigquery_blocking(self._dwh_config, probe)
+            return
+        self._session.execute(probe)
+
+    def _dry_run_bigquery_blocking(self, dwh_config: BqDsn, query: sqlalchemy.Select) -> None:
+        """Submits query as a dry run, which BigQuery validates and authorizes but never executes.
+
+        Because it is a dry run, the statement can neither read nor change data, and is not billed, whatever it
+        says. The query names its table unqualified and is resolved against the data source's dataset, like every
+        other query DwhSession runs. Its SQL is compiled by sqlalchemy-bigquery, whose quoting does not escape
+        backticks, so callers must pass only table names _check_table_name accepts.
+        """
+        sql = str(query.compile(dialect=self._engine.dialect, compile_kwargs={"literal_binds": True}))
+        dbapi_connection: object = self._session.connection().connection.dbapi_connection
+        if not isinstance(dbapi_connection, bigquery_dbapi.Connection):
+            raise TypeError(f"Unexpected type of BigQuery connection: {type(dbapi_connection)}")
+        job_config = bigquery.QueryJobConfig(
+            dry_run=True, use_query_cache=False, default_dataset=f"{dwh_config.project_id}.{dwh_config.dataset_id}"
+        )
+        # The DB-API Connection wraps the google.cloud.bigquery.Client as _client; sqlalchemy-bigquery's own
+        # reflection reaches it the same way. query() raises Forbidden or NotFound while submitting the dry run.
+        dbapi_connection._client.query(sql, job_config=job_config)
+
+    def check_table_readable(self, table_name: str) -> None:
+        """Check that the configured role may read table_name, without reading any rows.
+
+        Runs the cheapest statement that exercises SELECT privilege on the table: SELECT * FROM table LIMIT 0 on
+        Postgres and Redshift, which check privileges before executing even a zero-row query. On BigQuery the
+        same statement is submitted as a dry run, because a real query can bill a scan even with LIMIT 0.
+
+        Table reflection reads only the catalog, which every role may do, so inspect_table() succeeds on a table
+        the role cannot read. This catches that case.
+
+        Args:
+            table_name: Name of the table to check. Only unqualified table names are supported.
+
+        Raises:
+            DwhPermissionDeniedError: If the configured role cannot read the table.
+            CannotFindTableError: If the table does not exist.
+            UnsupportedTableNameError: If table_name is not a name BigQuery allows.
+        """
+        self._on_worker("checking that a table is readable", self._check_table_readable_blocking, table_name)
 
     def _get_result_blocking(
         self,

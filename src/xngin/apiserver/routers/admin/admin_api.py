@@ -1176,6 +1176,9 @@ def inspect_table_in_datasource(
     with DwhSession.open(config.dwh) as dwh:
         # CannotFindTableError will be handled by exceptionhandlers.py.
         table = dwh.inspect_table(table_name)
+        # Probed here rather than in DwhSession.inspect_table, which every participants, metrics and analysis path
+        # calls internally and which must not gain a query; a failure here is raised before anything is cached.
+        dwh.check_table_readable(table_name)
     response = create_inspect_table_response_from_table(table)
 
     session.add(

@@ -43,6 +43,27 @@ def _power_request() -> PowerRequest:
     )
 
 
+def test_a_role_without_select_is_reported_when_the_table_is_inspected(restricted_dsn: Dsn, aclient: AdminAPIClient):
+    """Reflection reads only the catalog, which every role may do, so inspection also probes readability."""
+    ds_id = _create_datasource(aclient, restricted_dsn, "inspect without select")
+
+    with expect_status_code(424, code_eq="dwh_permission_denied") as match:
+        aclient.inspect_table_in_datasource(datasource_id=ds_id, table_name=TESTING_DWH_TABLE_NAME)
+    body = match.http_response().json()
+    assert body["table_name"] == TESTING_DWH_TABLE_NAME
+    assert body["hint_command"] == f"GRANT SELECT ON <schema>.{TESTING_DWH_TABLE_NAME} TO {restricted_dsn.user};"
+
+    # Nothing was cached from the failure: a datasource that can read the table inspects it normally, and the
+    # restricted one fails again rather than answering from a cache.
+    readable_ds_id = _create_datasource(aclient, Dsn.from_url(flags.XNGIN_DEVDWH_DSN), "inspect with select")
+    inspected = aclient.inspect_table_in_datasource(
+        datasource_id=readable_ds_id, table_name=TESTING_DWH_TABLE_NAME
+    ).data
+    assert any(field.field_name == "current_income" for field in inspected.fields)
+    with expect_status_code(424, code_eq="dwh_permission_denied"):
+        aclient.inspect_table_in_datasource(datasource_id=ds_id, table_name=TESTING_DWH_TABLE_NAME)
+
+
 def test_power_check_reports_a_role_without_select(restricted_dsn: Dsn, aclient: AdminAPIClient):
     ds_id = _create_datasource(aclient, restricted_dsn, "power check without select")
 
