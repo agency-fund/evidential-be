@@ -18,8 +18,10 @@ from deepdiff import DeepDiff
 from pydantic import HttpUrl
 
 from xngin.apiserver import flags
+from xngin.apiserver.dependencies import random_seed_dependency
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.dwh.dwh_session import DwhSession
+from xngin.apiserver.main import app
 from xngin.apiserver.routers.admin.admin_api_converters import CREDENTIALS_UNAVAILABLE_MESSAGE
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddExperimentCreatedWebhookRequest,
@@ -2378,10 +2380,12 @@ def test_freq_experiments_analyze(use_deterministic_random, testing_experiment, 
         for analysis in metric_analysis.arm_analyses:
             assert analysis.ci_lower is not None
             assert analysis.ci_upper is not None
+            assert analysis.estimate is not None
             assert analysis.ci_lower <= analysis.estimate <= analysis.ci_upper
             assert analysis.mean_ci_lower is not None
             assert analysis.mean_ci_upper is not None
-            assert analysis.mean_ci_lower <= analysis.mean_ci_upper
+            assert analysis.mean is not None
+            assert analysis.mean_ci_lower <= analysis.mean <= analysis.mean_ci_upper
 
 
 @pytest.mark.parametrize(
@@ -2683,11 +2687,63 @@ def test_analyze_experiment_with_no_assignments_in_one_arm_yet(
             assert analysis.std_error is not None
             assert analysis.num_missing_values == 0
         else:
-            assert analysis.estimate == 0
+            assert analysis.estimate is None
+            assert analysis.mean is None
             assert analysis.p_value is None
             assert analysis.t_stat is None
             assert analysis.std_error is None
             assert analysis.num_missing_values == -1
+
+
+def test_analyze_experiment_with_no_assignments_in_baseline_arm_yet(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+):
+    datasource_id = testing_datasource.datasource_id
+    experiment = make_freq_online_experiment(aclient, datasource_id)
+    experiment_id = experiment.config.experiment_id
+    arm_ids = {arm.arm_name: arm.arm_id for arm in experiment.config.design_spec.arms}
+
+    # Seed 0 assigns every participant to arm "T", leaving the baseline arm "C" without participants.
+    previous_seed = app.dependency_overrides[random_seed_dependency]
+    app.dependency_overrides[random_seed_dependency] = lambda: 0
+    try:
+        for participant_id in ("1", "2", "3"):
+            assignment = eclient.get_assignment(
+                api_key=testing_datasource.key, experiment_id=experiment_id, participant_id=participant_id
+            ).data.assignment
+            assert assignment is not None
+            assert assignment.arm_id == arm_ids["T"]
+    finally:
+        app.dependency_overrides[random_seed_dependency] = previous_seed
+
+    analysis_response = aclient.analyze_experiment(datasource_id=datasource_id, experiment_id=experiment_id).data
+    assert isinstance(analysis_response, FreqExperimentAnalysisResponse)
+    assert analysis_response.num_participants == 3
+    metric_analysis = analysis_response.metric_analyses[0]
+    analyses = {analysis.arm_id: analysis for analysis in metric_analysis.arm_analyses}
+    assert set(analyses) == set(arm_ids.values())
+
+    # The baseline arm's analysis is not available.
+    baseline = analyses[arm_ids["C"]]
+    assert baseline.is_baseline
+    assert baseline.estimate is None
+    assert baseline.mean is None
+    assert baseline.num_missing_values == -1
+
+    # The treatment arm reports its mean, but can't be compared to the empty baseline.
+    treatment = analyses[arm_ids["T"]]
+    assert not treatment.is_baseline
+    assert treatment.mean is not None
+    assert 0 <= treatment.mean <= 1
+    assert treatment.estimate is None
+    assert treatment.p_value is None
+    assert treatment.t_stat is None
+    assert treatment.std_error is None
+    assert treatment.ci_lower is None
+    assert treatment.ci_upper is None
+    assert treatment.num_missing_values == 0
 
 
 @pytest.mark.parametrize(
