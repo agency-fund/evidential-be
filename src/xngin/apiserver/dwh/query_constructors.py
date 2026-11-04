@@ -99,6 +99,9 @@ def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:
 def create_inspect_table_from_cursor_query(table_name: str, schema_name: str | None = None) -> sqlalchemy.Select:
     """Returns a zero-row SELECT used to read column metadata via cursor.description (driver-dependent).
 
+    Postgres and Redshift check SELECT privilege before executing even a zero-row query, so running it also tells
+    whether the role may read the table.
+
     SQLAlchemy's identifier quoting is used to prevent SQL injection attacks.
     """
     table = Table(table_name, sqlalchemy.MetaData(), schema=schema_name)

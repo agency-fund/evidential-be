@@ -13,6 +13,8 @@ import pytest
 from google.cloud import bigquery
 from google.oauth2 import service_account
 
+from xngin.apiserver.dwh.dwh_session import DwhSession
+from xngin.apiserver.exceptions_common import UnsupportedTableNameError
 from xngin.apiserver.settings import BqDsn, GcpServiceAccountFile
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.dwh_identifiers_helpers import (
@@ -164,3 +166,6 @@ def test_bigquery_refuses_names_bigquery_cannot_create(
 ):
     dsn, _ = bq_datasets
     expect_unusable_table_name(aclient, dsn, table_name, "not a valid BigQuery table name")
+    with DwhSession.open(dsn) as dwh, pytest.raises(UnsupportedTableNameError) as excinfo:
+        dwh.check_table_readable(table_name)
+    assert excinfo.value.__cause__ is None
