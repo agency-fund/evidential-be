@@ -61,9 +61,9 @@ def create_between_filter(col: sqlalchemy.Column, values: Sequence) -> ColumnEle
     """
     match values:
         case (left, None):
-            return col >= left  # type: ignore
+            return col >= left  # type: ignore[no-any-return]
         case (None, right):
-            return col <= right  # type: ignore
+            return col <= right  # type: ignore[no-any-return]
         case (left, right):
             return col.between(left, right)
         case (left, None, None):

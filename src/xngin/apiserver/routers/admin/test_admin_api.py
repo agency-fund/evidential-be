@@ -3046,7 +3046,7 @@ def test_snapshots(aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
             organization_id=create_organization_response.id,
             datasource_id=create_datasource_response.id,
             experiment_id=experiment_id,
-            status_=[""],  # type: ignore
+            status_=[""],  # type: ignore[list-item]  # Deliberately invalid; expect HTTP 422.
         )
 
     # Verify the snapshot data.
