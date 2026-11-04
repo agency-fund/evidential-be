@@ -464,3 +464,52 @@ def test_a_search_path_redshift_refuses_while_connecting_is_reported_as_a_config
         dwh.connectivity_check()
     assert excinfo.value.dwh_message == REDSHIFT_MISSING_SCHEMA
     assert isinstance(excinfo.value.__cause__, sqlalchemy.exc.ProgrammingError)
+
+
+# libpq tries every address a host resolves to. These are the texts each driver reported when localhost resolved to
+# ::1, where nothing listened, before 127.0.0.1, where the server refused the connection.
+PG2_REFUSED_THEN = (
+    'connection to server at "::1", port 5499 failed: Connection refused\n'
+    "\tIs the server running on that host and accepting TCP/IP connections?\n"
+    'connection to server at "127.0.0.1", port 5499 failed: FATAL:  {}\n'
+)
+PG3_REFUSED_THEN = (
+    'connection failed: connection to server at "127.0.0.1", port 5499 failed: FATAL:  {0}\n'
+    "Multiple connection attempts failed. All failures were:\n"
+    "- host: '::1', port: '5499', hostaddr: None: connection failed: connection to server at \"::1\", port 5499 "
+    "failed: Connection refused\n"
+    "\tIs the server running on that host and accepting TCP/IP connections?\n"
+    "- host: '127.0.0.1', port: '5499', hostaddr: '127.0.0.1': connection failed: connection to server at "
+    '"127.0.0.1", port 5499 failed: FATAL:  {0}'
+)
+
+
+@pytest.mark.parametrize(
+    "orig",
+    [
+        psycopg2.OperationalError(PG2_REFUSED_THEN.format('password authentication failed for user "postgres"')),
+        psycopg.OperationalError(PG3_REFUSED_THEN.format('password authentication failed for user "postgres"')),
+    ],
+    ids=["psycopg2", "psycopg"],
+)
+def test_a_refused_address_before_a_rejected_password_is_an_authentication_error(orig):
+    result = classify_dwh_error(_wrapped(orig), PG_DSN)
+    assert isinstance(result, DwhAuthenticationError)
+    assert result.dwh_message is not None
+    assert result.dwh_message.endswith('FATAL:  password authentication failed for user "postgres"')
+
+
+@pytest.mark.parametrize(
+    "orig",
+    [
+        psycopg2.OperationalError(PG2_REFUSED_THEN.format('database "nonexistent_db" does not exist')),
+        psycopg.OperationalError(PG3_REFUSED_THEN.format('database "nonexistent_db" does not exist')),
+    ],
+    ids=["psycopg2", "psycopg"],
+)
+def test_a_refused_address_before_a_missing_database_reports_the_servers_message(orig):
+    result = classify_dwh_error(_wrapped(orig), PG_DSN)
+    assert isinstance(result, DwhDatabaseDoesNotExistError)
+    assert result.dwh_message is not None
+    assert 'database "nonexistent_db" does not exist' in result.dwh_message
+    assert "::1" not in result.dwh_message

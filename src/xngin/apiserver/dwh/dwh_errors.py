@@ -64,6 +64,8 @@ _PG_AUTH_PHRASES = ("password authentication failed", "no pg_hba.conf entry", "a
 _PG_CONNECT_TIMEOUT_PHRASE = "timeout expired"
 # psycopg 3 prefixes libpq's connection error text with this; psycopg2 does not.
 _PG_CONNECT_PREFIX = "connection failed: "
+# psycopg 3 follows the last connection attempt's error with this line and a list of every attempt's error.
+_PG3_ATTEMPTS_HEADER = "Multiple connection attempts failed."
 # SQLSTATE classes the warehouse raises for reasons of its own, whatever the query: transaction rollback (a
 # serialization failure or a conflict with recovery on a replica), insufficient resources, and system errors. Their
 # primary messages describe the server's state, not the query's data.
@@ -110,18 +112,28 @@ def classify_dwh_error(exc: BaseException, dwh_config: Dwh) -> DwhError | None:
     return None
 
 
-def _is_postgres_database_not_found_error(exc: BaseException) -> bool:
-    """Returns true when the exception's text indicates a Postgres database does not exist.
+def _is_postgres_database_not_found_error(text: str) -> bool:
+    """Returns true when connection error text indicates a Postgres database does not exist.
 
-    Postgres reports this at connect time without a SQLSTATE, so only the text identifies it. Works on the raw
-    psycopg error and on the sqlalchemy.exc.OperationalError that wraps it, since both carry the text in args[0].
+    Postgres reports this at connect time without a SQLSTATE, so only the text identifies it.
     """
-    return (
-        len(exc.args) > 0
-        and isinstance(exc.args[0], str)
-        and "FATAL:  database" in exc.args[0]
-        and "does not exist" in exc.args[0]
-    )
+    return "FATAL:  database" in text and "does not exist" in text
+
+
+def _final_connect_attempt(exc: BaseException) -> str:
+    """The line of a connection error that reports the last address libpq tried.
+
+    A host can resolve to several addresses, such as ::1 and 127.0.0.1 for localhost, and libpq tries each in turn.
+    psycopg2 reports every failure in order, so the first line may be a refused attempt on an address the server
+    does not listen on, while the last says why the server itself turned the connection down. psycopg 3 puts the
+    last failure first, ahead of a list of all of them, which is skipped.
+    """
+    text = exc.args[0] if exc.args and isinstance(exc.args[0], str) else str(exc)
+    head = text.split(_PG3_ATTEMPTS_HEADER, 1)[0]
+    attempts = [
+        line.strip() for line in head.splitlines() if line.startswith(("connection to server", _PG_CONNECT_PREFIX))
+    ]
+    return attempts[-1] if attempts else _first_line(exc)
 
 
 def _candidates(exc: BaseException) -> Iterator[BaseException]:
@@ -178,7 +190,7 @@ def _classify_postgres(exc: psycopg.Error | psycopg2.Error, dwh_config: Dwh) -> 
     primary = exc.diag.message_primary or _first_line(exc)
     if sqlstate is None:
         if isinstance(exc, psycopg.OperationalError | psycopg2.OperationalError):
-            return _classify_postgres_connect_failure(exc, primary, dwh_config)
+            return _classify_postgres_connect_failure(exc, _final_connect_attempt(exc), dwh_config)
         # A client-side driver error (a closed connection, a misuse of the cursor) is not the warehouse's answer.
         return None
     if sqlstate == "42501":
@@ -239,7 +251,7 @@ def _classify_postgres_connect_failure(
     lowered = text.lower()
     if isinstance(exc, psycopg.errors.ConnectionTimeout) or _PG_CONNECT_TIMEOUT_PHRASE in lowered:
         return DwhTimeoutError("Connecting to the data warehouse timed out.", hint=HINT_CHECK_CONNECTION)
-    if _is_postgres_database_not_found_error(exc):
+    if _is_postgres_database_not_found_error(text):
         return _database_not_found(text, dwh_config)
     if any(phrase in lowered for phrase in _PG_AUTH_PHRASES):
         return _authentication_failed(text)
