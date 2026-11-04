@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 import numpy as np
+import sentry_sdk
 from loguru import logger
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -10,6 +11,7 @@ from xngin.apiserver.routers.common_enums import ContextType, ExperimentsType
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
+from xngin.apiserver.worker.jobs.base import EXPECTED_FAILURES, describe_failure
 
 
 @dataclass(slots=True, frozen=True)
@@ -38,8 +40,15 @@ def capture_snapshot(session: Session, experiment: tables.Experiment, *, dwh_tim
         # after losing the transaction that owns this experiment.
         if not session.is_active or session.connection().invalidated:
             raise
-        logger.opt(exception=exc).warning("Snapshot analysis failed.")
-        snapshot = tables.Snapshot(experiment_id=experiment_id, status="failed", message=f"{type(exc).__name__}: {exc}")
+        if isinstance(exc, EXPECTED_FAILURES):
+            logger.opt(exception=exc).warning("Snapshot analysis failed.")
+            message = describe_failure(exc)
+        else:
+            # Our own bug: still record the failed snapshot, but alert.
+            logger.opt(exception=exc).error("Snapshot analysis failed.")
+            sentry_sdk.capture_exception(exc)
+            message = f"{type(exc).__name__}: {exc}"
+        snapshot = tables.Snapshot(experiment_id=experiment_id, status="failed", message=message)
         error: Exception | None = exc
     else:
         snapshot = tables.Snapshot(experiment_id=experiment_id, status="success", data=data)
