@@ -22,7 +22,7 @@ from xngin.apiserver.routers.experiments import experiments_dependencies as edep
 from xngin.apiserver.routers.experiments.experiments_api import STANDARD_INTEGRATION_RESPONSES
 from xngin.apiserver.routers.integrations import integrations_dependencies as ideps
 from xngin.apiserver.sqla import tables
-from xngin.tq.task_payload_types import TURN_JOURNEYS_CHANGED_TASK_TYPE, TurnJourneysChangedTask
+from xngin.apiserver.worker.tq.task_payload_types import TURN_JOURNEYS_CHANGED_TASK_TYPE, TurnJourneysChangedTask
 
 
 @asynccontextmanager
@@ -90,7 +90,7 @@ def receive_turn_journey_update_notification(
     This endpoint only enqueues a task; it does not perform the refresh itself. A `tq` worker picks up
     the task and triggers the actual refresh by calling `refetch_journeys_from_turn` below, over HTTP.
     This is intentional: Turn.io's webhook calls timeout in ~5s, and large refreshes may take longer.
-    See `make_turn_journeys_changed_handler` in `xngin/tq/handlers.py` for the worker side logic.
+    See `make_turn_journeys_changed_handler` in `xngin/apiserver/worker/tq/handlers.py` for the worker side logic.
     """
     session.add(
         tables.Task(

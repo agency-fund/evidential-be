@@ -76,10 +76,6 @@ class ListSnapshotsResponse(PaginatedResponse, AdminApiBaseModel):
     ]
 
 
-class CreateSnapshotResponse(AdminApiBaseModel):
-    id: str
-
-
 class CreateOrganizationRequest(AdminApiBaseModel):
     name: Annotated[str, Field(max_length=MAX_LENGTH_OF_NAME_VALUE)]
 

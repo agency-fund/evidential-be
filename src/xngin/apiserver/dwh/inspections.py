@@ -1,49 +1,10 @@
 """Methods for converting SQLAlchemy metadata into our application-specific types."""
 
-import re
-
 import sqlalchemy
-from sqlalchemy_bigquery import STRUCT
 
-from xngin.apiserver.common_field_types import VALID_SQL_COLUMN_REGEX
-from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
-from xngin.apiserver.exceptions_common import LateValidationError
+from xngin.apiserver.common_field_types import has_control_characters
 from xngin.apiserver.routers.admin.admin_api_types import FieldMetadata, InspectDatasourceTableResponse
 from xngin.apiserver.routers.common_enums import DataType
-
-
-def create_schema_from_table(table: sqlalchemy.Table, unique_id_col: str | None = None, *, set_unique_id: bool = True):
-    """Attempts to get name and type info from the database Table itself.
-
-    If set_unique_id is True, unique_id_col is set to None, we will look for a primary key or assume a column named "id"
-    is primary key. If set_unique_id is false, no fields will be marked as the unique id.
-    """
-
-    collected = []
-    if unique_id_col is None:
-        unique_id_col = next((c.name for c in table.columns.values() if c.primary_key), "id")
-    for column in table.columns.values():
-        type_hint = column.type
-        descriptor = FieldDescriptor(
-            field_name=column.name,
-            data_type=DataType.match(type_hint),
-            description="",  # Note: we ignore column.comment
-            is_unique_id=column.name == unique_id_col and set_unique_id,
-            is_strata=False,
-            is_filter=False,
-            is_metric=False,
-        )
-        collected.append(descriptor)
-    # Sort order is: unique ID first, then string fields, then the rest by name.
-    rows = sorted(
-        collected,
-        key=lambda r: (
-            not r.is_unique_id,
-            r.data_type != DataType.CHARACTER_VARYING,
-            r.field_name,
-        ),
-    )
-    return ParticipantsSchema.model_validate({"table_name": table.name, "fields": rows})
 
 
 def create_inspect_table_response_from_table(
@@ -51,22 +12,16 @@ def create_inspect_table_response_from_table(
 ) -> InspectDatasourceTableResponse:
     """Creates an InspectDatasourceTableResponse from a sqlalchemy.Table.
 
-    This is similar to config_sheet.create_schema_from_table but tailored to use in the API.
+    The response lists each column whose data type is supported, under the name the warehouse reports, including
+    names that need quoting in SQL, such as a Postgres column named "a.b". Names with control characters, which
+    Postgres and Redshift allow, are left out, since they cannot be field names.
 
-    Columns whose names cannot be used as a FieldName (a Postgres column named "a.b", say) are left
-    out, as are columns with unsupported data types.
-
-    Raises:
-        LateValidationError: When the table has nested columns, which we do not support.
+    The BigQuery dialect reflects a RECORD column as a STRUCT column followed by one column per sub-field, named by its
+    path, such as "parent.child". The response includes the sub-fields but not the STRUCT, whose data type is not
+    supported. A REPEATED field is reflected as a single ARRAY column without sub-fields, so it is left out too.
     """
-    nested_columns = sorted(c.name for c in table.columns.values() if _is_nested_column(table, c))
-    if nested_columns:
-        raise LateValidationError(
-            f"Table '{table.name}' has nested columns ({', '.join(nested_columns)}), which are not supported. "
-            "Create a view that exposes the fields you need as top-level columns, then select that view."
-        )
 
-    usable_columns = [c for c in table.columns.values() if re.match(VALID_SQL_COLUMN_REGEX, c.name)]
+    usable_columns = [c for c in table.columns.values() if not has_control_characters(c.name)]
     possible_id_columns = {
         c.name
         for c in usable_columns
@@ -96,25 +51,3 @@ def create_inspect_table_response_from_table(
         detected_unique_id_fields=list(sorted(possible_id_columns)),
         fields=list(sorted(collected, key=lambda f: f.field_name)),
     )
-
-
-def _is_nested_column(table: sqlalchemy.Table, column: sqlalchemy.Column) -> bool:
-    """Whether column is a sub-field of a BigQuery RECORD column.
-
-    The BigQuery dialect reflects a RECORD column as a STRUCT column followed by one column per
-    sub-field, named "parent.child". Other dialects allow dots in ordinary column names, so a dot
-    alone does not make a column nested: its parent must be a STRUCT in the same table.
-    """
-    parent_name, dot, _ = column.name.partition(".")
-    if not dot:
-        return False
-    parent = table.columns.get(parent_name)
-    return parent is not None and isinstance(parent.type, STRUCT)
-
-
-def generate_field_descriptors(table: sqlalchemy.Table, unique_id_col: str):
-    """Fetches a map of column name to schema metadata.
-
-    Uniqueness of the values in the column unique_id_col is assumed, not verified!
-    """
-    return {c.field_name: c for c in create_schema_from_table(table, unique_id_col).fields}

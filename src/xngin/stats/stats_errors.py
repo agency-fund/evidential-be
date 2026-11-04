@@ -51,3 +51,10 @@ class StatsAnalysisError(StatsError):
     @property
     def type(self):
         return "analysis"
+
+
+class StatsNoParticipantsError(StatsAnalysisError):
+    """The experiment has no participants to analyze yet, which is expected for a new experiment."""
+
+    def __init__(self):
+        super().__init__("No participants found for experiment.")

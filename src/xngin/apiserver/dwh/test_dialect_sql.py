@@ -20,10 +20,10 @@ from sqlalchemy.dialects.postgresql import psycopg, psycopg2
 from sqlalchemy.orm import DeclarativeBase, mapped_column
 from sqlalchemy.sql.ddl import CreateTable
 
-from xngin.apiserver.conftest import DbType
 from xngin.apiserver.dwh.query_constructors import compose_query, create_query_filters
 from xngin.apiserver.routers.common_api_types import Filter
 from xngin.apiserver.routers.common_enums import Relation
+from xngin.apiserver.testing.helpers import DbType
 
 
 class HelpfulBase(DeclarativeBase):

@@ -35,30 +35,18 @@ OIDC_CLAIM_MAP = os.environ.get(ENV_XNGIN_OIDC_CLAIM_MAP, "")
 # token_cryptor).
 ENV_SESSION_TOKEN_KEYSET = "XNGIN_SESSION_TOKEN_KEYSET"  # noqa: S105
 
-# XNGIN_WORKERS sets the default number of parallel worker threads data processing jobs (such as snapshotter) will use.
-# This is distinct from WEB_CONCURRENCY.
-ENV_WORKERS = "XNGIN_WORKERS"
-
-
-def _get_nproc() -> int:
-    """Concurrent threads to use in batch jobs.
-
-    Defaults to 4. Override by setting the XNGIN_WORKERS environment variable.
-    """
-    workers = os.getenv(ENV_WORKERS, "").strip()
-    if workers:
-        return int(workers)
-    cpu_count = os.process_cpu_count() or 1
-    return max(4, cpu_count - 1)
-
-
-# Default number of worker threads a batch job spawns.
-NPROC = _get_nproc()
-
 ALLOW_CONNECTING_TO_PRIVATE_IPS = truthy_env("ALLOW_CONNECTING_TO_PRIVATE_IPS")
 PUBLISH_ALL_DOCS = truthy_env("XNGIN_PUBLISH_ALL_DOCS")
 
+# Optional Postgres server for development and testing. Used extensively in unit tests.
 XNGIN_DEVDWH_DSN = os.environ.get("XNGIN_DEVDWH_DSN", "")
+
+# Optional BigQuery warehouse for development and testing. This can use ?credentials_path= syntax; that gets
+# converted to inline credentials when creating a datasource. Used in integration tests.
+XNGIN_DEVDWH_GCP_BIGQUERY_DSN = os.environ.get("XNGIN_DEVDWH_GCP_BIGQUERY_DSN", "")
+
+# Optional Redshift warehouse for development and testing. Used in integration tests.
+XNGIN_DEVDWH_AWS_REDSHIFT_DSN = os.environ.get("XNGIN_DEVDWH_AWS_REDSHIFT_DSN", "")
 
 # How long one block of interactions with a customer data warehouse may run in total before we stop waiting for it.
 # This defends against remote warehouses, not against our own application database, which we assume does not stall.

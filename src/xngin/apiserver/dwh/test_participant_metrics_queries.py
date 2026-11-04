@@ -15,7 +15,7 @@ from xngin.apiserver.dwh.participant_metrics_queries import (
     to_np_int_arr,
 )
 
-pytest_plugins = ("xngin.apiserver.dwh.dwh_test_support",)
+pytest_plugins = ("xngin.apiserver.dwh.dwh_test_helpers",)
 
 
 def test_returns_none_when_not_all_integer_values():

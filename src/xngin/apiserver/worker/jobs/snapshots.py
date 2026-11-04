@@ -1,0 +1,48 @@
+"""Periodic, best-effort experiment snapshots."""
+
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import ClassVar
+
+from sqlalchemy import ColumnElement
+from sqlalchemy.orm import Session
+
+from xngin.apiserver.sqla import tables
+from xngin.apiserver.worker.jobs.base import (
+    Backoff,
+    JobFailed,
+    JobResult,
+    JobSucceeded,
+    next_run_in_window,
+)
+from xngin.apiserver.worker.jobs.snapshot_analysis import capture_snapshot
+from xngin.stats.stats_errors import StatsNoParticipantsError
+
+# Snapshots run from this long before an experiment starts until this long after it ends.
+SNAPSHOT_MARGIN = timedelta(days=1)
+
+
+@dataclass(slots=True)
+class SnapshotJob:
+    """Record each analysis attempt as a snapshot, whether the analysis succeeds or fails."""
+
+    name: ClassVar[str] = "snapshot"
+    interval: timedelta
+    dwh_timeout: float
+    backoff: Backoff
+
+    def next_run_at(self, now: ColumnElement[datetime]) -> ColumnElement[datetime | None]:
+        return next_run_in_window(
+            now,
+            self.interval,
+            opens=tables.Experiment.start_date - SNAPSHOT_MARGIN,
+            closes=tables.Experiment.end_date + SNAPSHOT_MARGIN,
+        )
+
+    def execute(self, session: Session, experiment: tables.Experiment) -> JobResult:
+        capture = capture_snapshot(session, experiment, dwh_timeout=self.dwh_timeout)
+        # A new experiment has no participants yet. The failed snapshot still tells users why there is no data,
+        # but the job did what it could, so it succeeds and waits a full interval rather than backing off.
+        if capture.snapshot.status == "failed" and not isinstance(capture.error, StatsNoParticipantsError):
+            return JobFailed(error=capture.snapshot.message or "The snapshot failed without a message.")
+        return JobSucceeded()

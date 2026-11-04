@@ -1,13 +1,14 @@
 """Test cases for property_filters.py functions."""
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 import pytest
 
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.common_api_types import Filter, PropertyValueTypes
 from xngin.apiserver.routers.common_enums import DataType, Relation
-from xngin.apiserver.routers.experiments.property_filters import passes_filters
+from xngin.apiserver.routers.experiments.property_filters import passes_filters, str_to_date_or_datetime
 
 
 @dataclass
@@ -232,6 +233,13 @@ BIGINT_CASES = [
 
 DATETIME_CASES = [
     Case(
+        props={"created_at_tz": "2025-01-15T12:00:00Z"},
+        fields={"created_at_tz": DataType.TIMESTAMP_WITH_TIMEZONE},
+        filters=[Filter(field_name="created_at_tz", relation=Relation.INCLUDES, value=["2025-01-15T12:00:00"])],
+        expected=True,
+        description="datetime_tz_naive_filter_matches_utc_value",
+    ),
+    Case(
         props={"created_at_tz": "2025-01-01T00:00:00"},
         fields={"created_at_tz": DataType.TIMESTAMP_WITH_TIMEZONE},
         filters=[Filter(field_name="created_at_tz", relation=Relation.INCLUDES, value=["2025-01-01T00:00:00"])],
@@ -395,6 +403,55 @@ NULLABLE_CASES = [
         filters=[Filter(field_name="birth_date", relation=Relation.BETWEEN, value=["2000-12-31", None, None])],
         expected=True,
         description="null_date_between_with_null_allowed",
+    ),
+    Case(
+        props={"age": None},
+        fields={"age": DataType.INTEGER},
+        filters=[Filter(field_name="age", relation=Relation.BETWEEN, value=[20, 30])],
+        expected=False,
+        description="null_between_without_null_allowed",
+    ),
+    Case(
+        props={"age": None},
+        fields={"age": DataType.INTEGER},
+        filters=[Filter(field_name="age", relation=Relation.BETWEEN, value=[20, None])],
+        expected=False,
+        description="null_gte_without_null_allowed",
+    ),
+    Case(
+        props={"age": 25},
+        fields={"age": DataType.INTEGER},
+        filters=[Filter(field_name="age", relation=Relation.BETWEEN, value=[20, 30, None])],
+        expected=True,
+        description="value_between_with_null_allowed_in_range",
+    ),
+    Case(
+        props={"age": 99},
+        fields={"age": DataType.INTEGER},
+        filters=[Filter(field_name="age", relation=Relation.BETWEEN, value=[20, 30, None])],
+        expected=False,
+        description="value_between_with_null_allowed_out_of_range",
+    ),
+    Case(
+        props={"age": 25},
+        fields={"age": DataType.INTEGER},
+        filters=[Filter(field_name="age", relation=Relation.BETWEEN, value=[None, 30, None])],
+        expected=True,
+        description="value_lte_with_null_allowed_match",
+    ),
+    Case(
+        props={"age": 10},
+        fields={"age": DataType.INTEGER},
+        filters=[Filter(field_name="age", relation=Relation.BETWEEN, value=[20, None, None])],
+        expected=False,
+        description="value_gte_with_null_allowed_no_match",
+    ),
+    Case(
+        props={"birth_date": "2000-06-15"},
+        fields={"birth_date": DataType.DATE},
+        filters=[Filter(field_name="birth_date", relation=Relation.BETWEEN, value=["2000-01-01", "2000-12-31", None])],
+        expected=True,
+        description="date_between_with_null_allowed_in_range",
     ),
 ]
 
@@ -577,3 +634,27 @@ def test_passes_filters_errors(testcase: ErrorCase):
     match_pattern = testcase.match_pattern or ".*"
     with pytest.raises(LateValidationError, match=match_pattern):
         passes_filters(testcase.props, testcase.fields, testcase.filters)
+
+
+def test_str_to_date_or_datetime_timezone_handling():
+    naive = datetime(2025, 1, 15, 12, 0, 0)
+    aware = naive.replace(tzinfo=UTC)
+
+    # TIMESTAMP WITH TIME ZONE columns get aware UTC values; naive inputs are taken as UTC.
+    for value in ("2025-01-15T12:00:00", "2025-01-15T12:00:00Z", "2025-01-15T12:00:00+00:00"):
+        result = str_to_date_or_datetime("c", value, "datetimetz")
+        assert isinstance(result, datetime) and result == aware and result.tzinfo is UTC, value
+
+    # TIMESTAMP WITHOUT TIME ZONE columns get naive values.
+    for value in ("2025-01-15T12:00:00", "2025-01-15T12:00:00+00:00", "2025-01-15T12:00:00.123456"):
+        result = str_to_date_or_datetime("c", value, "datetime")
+        assert isinstance(result, datetime) and result == naive and result.tzinfo is None, value
+
+    assert str_to_date_or_datetime("c", "2025-01-15", "datetime") == datetime(2025, 1, 15)
+    assert str_to_date_or_datetime("c", "2025-01-15T12:00:00", "date") == naive.date()
+    assert str_to_date_or_datetime("c", None, "datetimetz") is None
+
+    with pytest.raises(LateValidationError, match="c: datetime-type filter values must be in UTC"):
+        str_to_date_or_datetime("c", "2025-01-15T12:00:00+08:00", "datetimetz")
+    with pytest.raises(LateValidationError, match="c: date-type filter values must be strings"):
+        str_to_date_or_datetime("c", 12.5, "date")

@@ -7,7 +7,6 @@ from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
-from xngin.apiserver.conftest import expect_status_code
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddMemberToOrganizationRequest,
     CreateOrganizationRequest,
@@ -20,6 +19,7 @@ from xngin.apiserver.routers.auth.auth_dependencies import (
     UNPRIVILEGED_EMAIL,
 )
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
+from xngin.apiserver.testing.assertions import expect_status_code
 
 
 class _HasIdAndEmail(Protocol):

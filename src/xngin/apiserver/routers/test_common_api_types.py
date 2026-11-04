@@ -7,6 +7,8 @@ from xngin.apiserver.routers.common_api_types import (
     DesignSpecMetricRequest,
     Filter,
     MABDwhExperimentSpec,
+    OnlineFrequentistExperimentSpec,
+    PowerRequest,
     PreassignedFrequentistExperimentSpec,
     SampleCall,
     SampleCalls,
@@ -19,6 +21,12 @@ VALID_COLUMN_NAMES = [
     "_hidden",
     "a123",
     "very_long_column_name_123",
+    "123column",
+    "column-name",
+    "column.name",
+    "column$name",
+    "column name",
+    "x" * 300,
 ]
 
 
@@ -46,21 +54,18 @@ def test_boolean_filter_validation():
 
 
 INVALID_COLUMN_NAMES = [
-    "123column",  # Can't start with number
-    "column-name",  # No hyphens allowed
-    "column.name",  # No periods allowed
-    "",  # Empty string
-    "column$name",  # No special characters
-    "column name",  # No spaces
+    pytest.param("", "at least 1 character", id="empty"),
+    pytest.param("x" * 301, "at most 300 characters", id="too-long"),
+    pytest.param("column\nname", "must not contain control characters", id="newline"),
+    pytest.param("column\x00name", "must not contain control characters", id="nul"),
+    pytest.param("column\x7fname", "must not contain control characters", id="delete"),
+    pytest.param("column\x85name", "must not contain control characters", id="next-line"),
 ]
 
 
-@pytest.mark.parametrize("name", INVALID_COLUMN_NAMES)
-def test_invalid_field_names(name):
-    with pytest.raises(
-        ValidationError,
-        match="field_name must start with letter/underscore and contain only letters, numbers, underscores",
-    ):
+@pytest.mark.parametrize(("name", "message"), INVALID_COLUMN_NAMES)
+def test_invalid_field_names(name, message):
+    with pytest.raises(ValidationError, match=message):
         Filter(field_name=name, relation=Relation.INCLUDES, value=[1])
 
 
@@ -467,3 +472,159 @@ def test_desired_ns_clusters_requires_cluster_key():
 
     with pytest.raises(ValidationError, match="desired_ns_clusters can only be set when cluster_key is set"):
         PreassignedFrequentistExperimentSpec.model_validate(invalid_spec)
+
+
+@pytest.mark.parametrize(
+    ("end_date", "valid"),
+    [("2024-01-02T00:00:00+00:00", True), ("2024-01-01T00:00:00+00:00", True), ("2023-12-31T00:00:00+00:00", False)],
+    ids=["after", "same", "before"],
+)
+def test_end_date_must_not_precede_start_date(end_date, valid):
+    spec = {
+        "experiment_type": "freq_preassigned",
+        "experiment_name": "test",
+        "description": "test",
+        "table_name": "dwh",
+        "primary_key": "id",
+        "start_date": "2024-01-01T00:00:00+00:00",
+        "end_date": end_date,
+        "arms": [{"arm_name": "C", "arm_description": "C"}, {"arm_name": "T", "arm_description": "T"}],
+        "strata": [],
+        "metrics": [{"field_name": "metric1", "metric_pct_change": 0.1}],
+        "filters": [],
+    }
+    if valid:
+        PreassignedFrequentistExperimentSpec.model_validate(spec)
+    else:
+        with pytest.raises(ValidationError, match="end_date must not be before start_date"):
+            PreassignedFrequentistExperimentSpec.model_validate(spec)
+
+
+def _one_time_metric(field_name: str, *, use_one_time_metric: bool) -> dict:
+    # Clients send only the toggle; the server derives is_one_time_eligible during the power check.
+    return {
+        "field_name": field_name,
+        "metric_pct_change": 0.1,
+        "use_one_time_metric": use_one_time_metric,
+    }
+
+
+def test_one_time_metric_allowed_on_primary_metric():
+    metrics = [
+        _one_time_metric("primary", use_one_time_metric=True),
+        _one_time_metric("second", use_one_time_metric=False),
+    ]
+
+    spec = PreassignedFrequentistExperimentSpec.model_validate(_preassigned_spec_payload(metrics=metrics))
+    assert spec.metrics[0].use_one_time_metric
+
+    power_request = PowerRequest.model_validate({"table_name": "dwh", "n_arms": 2, "metrics": metrics})
+    assert power_request.metrics[0].use_one_time_metric
+
+
+def test_one_time_metric_rejected_on_secondary_metric():
+    metrics = [
+        _one_time_metric("primary", use_one_time_metric=False),
+        _one_time_metric("second", use_one_time_metric=True),
+    ]
+    expected = 'use_one_time_metric can only be set on the primary metric .* "second"'
+
+    with pytest.raises(ValidationError, match=expected):
+        PreassignedFrequentistExperimentSpec.model_validate(_preassigned_spec_payload(metrics=metrics))
+
+    with pytest.raises(ValidationError, match=expected):
+        PowerRequest.model_validate({"table_name": "dwh", "n_arms": 2, "metrics": metrics})
+
+
+def test_repeated_metrics_rejected():
+    metrics = [
+        {"field_name": "income", "metric_pct_change": 0.1},
+        {"field_name": "age", "metric_pct_change": 0.1},
+        {"field_name": "income", "metric_pct_change": 0.2},
+        {"field_name": "age", "metric_pct_change": 0.2},
+    ]
+    expected = 'listed more than once: "age", "income"'
+
+    with pytest.raises(ValidationError, match=expected):
+        PreassignedFrequentistExperimentSpec.model_validate(_preassigned_spec_payload(metrics=metrics))
+
+    with pytest.raises(ValidationError, match=expected):
+        PowerRequest.model_validate({"table_name": "dwh", "n_arms": 2, "metrics": metrics})
+
+
+def test_design_spec_metric_request_to_design_spec_metric_keeps_toggle():
+    request = DesignSpecMetricRequest(
+        field_name="metric1",
+        metric_pct_change=0.1,
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100.0,
+        metric_stddev=15.0,
+        available_nonnull_n=900,
+        available_n=1000,
+        use_one_time_metric=True,
+    )
+
+    metric = request.to_design_spec_metric()
+
+    assert metric.use_one_time_metric
+    # Eligibility starts unset; only the power check derives it.
+    assert not metric.is_one_time_eligible
+
+
+def test_design_spec_metric_request_rejects_eligibility_flag():
+    # Eligibility is response-only: the power check derives it from the data, so requests cannot carry it.
+    with pytest.raises(ValidationError, match="is_one_time_eligible"):
+        DesignSpecMetricRequest.model_validate({
+            "field_name": "metric1",
+            "metric_pct_change": 0.1,
+            "is_one_time_eligible": True,
+        })
+
+
+def test_one_time_metric_rejected_for_cluster_designs():
+    metrics = [_one_time_metric("primary", use_one_time_metric=True)]
+    expected = "use_one_time_metric is not supported for cluster-randomized designs"
+
+    with pytest.raises(ValidationError, match=expected):
+        PreassignedFrequentistExperimentSpec.model_validate(
+            _preassigned_spec_payload(metrics=metrics, cluster_key="school_id")
+        )
+
+    with pytest.raises(ValidationError, match=expected):
+        PowerRequest.model_validate({"table_name": "dwh", "n_arms": 2, "cluster_key": "school_id", "metrics": metrics})
+
+
+def test_one_time_metric_rejected_with_filter_on_same_column():
+    metrics = [_one_time_metric("primary", use_one_time_metric=True)]
+    filters = [{"field_name": "primary", "relation": "between", "value": [0, 100]}]
+    expected = 'Cannot filter on "primary" while use_one_time_metric is set'
+
+    with pytest.raises(ValidationError, match=expected):
+        PreassignedFrequentistExperimentSpec.model_validate(_preassigned_spec_payload(metrics=metrics, filters=filters))
+
+    with pytest.raises(ValidationError, match=expected):
+        PowerRequest.model_validate({"table_name": "dwh", "n_arms": 2, "metrics": metrics, "filters": filters})
+
+
+def test_one_time_metric_allows_filters_on_other_columns_and_filters_without_one_time():
+    filters = [{"field_name": "primary", "relation": "between", "value": [0, 100]}]
+    # A filter on the primary metric is fine when one-time mode is off...
+    PreassignedFrequentistExperimentSpec.model_validate(
+        _preassigned_spec_payload(metrics=[_one_time_metric("primary", use_one_time_metric=False)], filters=filters)
+    )
+    # ...and one-time mode is fine with filters on other columns.
+    PreassignedFrequentistExperimentSpec.model_validate(
+        _preassigned_spec_payload(
+            metrics=[_one_time_metric("primary", use_one_time_metric=True)],
+            filters=[{"field_name": "age", "relation": "between", "value": [18, 65]}],
+        )
+    )
+
+
+def test_one_time_metric_rejected_for_online_experiments():
+    payload = _preassigned_spec_payload(
+        experiment_type="freq_online", metrics=[_one_time_metric("primary", use_one_time_metric=True)]
+    )
+
+    with pytest.raises(ValidationError, match="use_one_time_metric is only supported for preassigned experiments"):
+        OnlineFrequentistExperimentSpec.model_validate(payload)

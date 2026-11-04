@@ -10,7 +10,7 @@ from sqlalchemy import Column, Table
 from sqlalchemy.types import BigInteger, Boolean, Date, DateTime, Double, Float, Integer, Numeric, String, Uuid
 
 from xngin.apiserver.dwh import dwh_utils
-from xngin.apiserver.dwh.dwh_test_support import (
+from xngin.apiserver.dwh.dwh_test_helpers import (
     ROW_10,
     ROW_20,
     ROW_30,
@@ -33,7 +33,7 @@ from xngin.apiserver.routers.common_enums import DataType
 from xngin.apiserver.routers.experiments.test_property_filters import ALL_FILTER_CASES
 from xngin.db_extensions import custom_functions
 
-pytest_plugins = ("xngin.apiserver.dwh.dwh_test_support",)
+pytest_plugins = ("xngin.apiserver.dwh.dwh_test_helpers",)
 
 
 @pytest.mark.parametrize(
