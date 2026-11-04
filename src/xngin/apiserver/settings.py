@@ -7,9 +7,7 @@ The Pydantic classes herein also provide some methods for connecting to the cust
 import base64
 import binascii
 import os
-import re
 from typing import Annotated, Literal, Protocol
-from urllib.parse import parse_qs, urlsplit
 
 import sqlalchemy
 from cachetools.func import ttl_cache
@@ -308,26 +306,6 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
         return self
 
 
-def parse_spreadsheet_url(value: str) -> tuple[str, int | None]:
-    """Returns (spreadsheet ID, gid) from a Google Sheets link, rejecting any other URL.
-
-    The spreadsheet ID identifies the whole spreadsheet.
-    The gid identifies one tab within it: it's the number after gid= in the URL's fragment or
-    query, or None when the link doesn't name a tab.
-
-    Example: https://docs.google.com/spreadsheets/d/1AbC/edit#gid=42 -> ("1AbC", 42)
-    """
-    parsed = urlsplit(value)
-    match = re.fullmatch(r"/spreadsheets/d/([a-zA-Z0-9_-]+)(?:/.*)?", parsed.path)
-    if parsed.scheme != "https" or parsed.netloc != "docs.google.com" or match is None:
-        raise ValueError("Use a Google Sheets URL starting with https://docs.google.com/spreadsheets/d/.")
-    params = parse_qs(parsed.fragment, keep_blank_values=True) | parse_qs(parsed.query, keep_blank_values=True)
-    gid = params.get("gid", [None])[0]
-    if gid is not None and not re.fullmatch(r"[0-9]+", gid):
-        raise ValueError("The spreadsheet tab ID (gid) must be a non-negative integer.")
-    return match[1], int(gid) if gid is not None else None
-
-
 class GoogleSheetsDsn(ConfigBaseModel, BaseDsn):
     """A spreadsheet connection whose tables are its tabs, named by tab ID (the gid in a tab's URL)."""
 
@@ -337,18 +315,18 @@ class GoogleSheetsDsn(ConfigBaseModel, BaseDsn):
     @field_validator("spreadsheet_url")
     @classmethod
     def validate_spreadsheet_url(cls, value: str) -> str:
-        parse_spreadsheet_url(value)
+        dwh_utils.parse_spreadsheet_url(value)
         return value
 
     @property
     def spreadsheet_id(self) -> str:
         """The ID of the whole spreadsheet"""
-        return parse_spreadsheet_url(self.spreadsheet_url)[0]
+        return dwh_utils.parse_spreadsheet_url(self.spreadsheet_url)[0]
 
     @property
     def default_gid(self) -> int | None:
         """The tab ID (gid) the URL points to, used as the datasource's default tab. None means the first tab."""
-        return parse_spreadsheet_url(self.spreadsheet_url)[1]
+        return dwh_utils.parse_spreadsheet_url(self.spreadsheet_url)[1]
 
     def to_sqlalchemy_url(self):
         raise NotImplementedError("GoogleSheetsDsn does not support to_sqlalchemy_url()")
