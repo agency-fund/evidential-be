@@ -64,23 +64,36 @@ LATE_BREAKOUT = HistoricalSnapshotProfile(
 )
 
 
+def _get_estimate(arm_analysis: ArmAnalysis) -> float:
+    # The API only omits the estimate for arms without values or an empty baseline, which fake snapshots don't create.
+    if arm_analysis.estimate is None:
+        raise ValueError(f"Fake snapshot arm {arm_analysis.arm_id} has no estimate")
+    return arm_analysis.estimate
+
+
 def recalculate_t_and_p(arm_analysis: ArmAnalysis, df: int = 100) -> None:
     """Recalculate t-stat and p-value after estimate/std-error changes."""
-    if arm_analysis.estimate is None:
-        arm_analysis.t_stat = None
-        arm_analysis.p_value = None
-    elif arm_analysis.std_error is not None and arm_analysis.std_error != 0:
-        arm_analysis.t_stat = arm_analysis.estimate / arm_analysis.std_error
+    estimate = _get_estimate(arm_analysis)
+    if arm_analysis.std_error is not None and arm_analysis.std_error != 0:
+        arm_analysis.t_stat = estimate / arm_analysis.std_error
         arm_analysis.p_value = float(2 * (1 - stats.t.cdf(abs(arm_analysis.t_stat), df=df)))
-    elif arm_analysis.estimate > 0:
+    elif estimate > 0:
         arm_analysis.t_stat = float("inf")
         arm_analysis.p_value = 0.0
-    elif arm_analysis.estimate < 0:
+    elif estimate < 0:
         arm_analysis.t_stat = float("-inf")
         arm_analysis.p_value = 0.0
     else:
         arm_analysis.t_stat = None
         arm_analysis.p_value = None
+
+
+def set_arm_means(arm_analyses: list[ArmAnalysis]) -> None:
+    """Set each arm's mean the way the analysis does: the baseline's estimate is its mean, and the other
+    arms' estimates are differences from it."""
+    baseline_mean = _get_estimate(next(a for a in arm_analyses if a.is_baseline))
+    for arm_analysis in arm_analyses:
+        arm_analysis.mean = baseline_mean if arm_analysis.is_baseline else baseline_mean + _get_estimate(arm_analysis)
 
 
 def validate_freq_experiment(experiment: tables.Experiment) -> None:
@@ -201,6 +214,8 @@ def create_freq_experiment_analysis(
 
             arm_analyses.append(arm_analysis)
 
+        # After the overrides, so an overridden estimate also moves the means.
+        set_arm_means(arm_analyses)
         metric_analyses.append(
             MetricAnalysis(
                 metric_name=metric_field_name,
