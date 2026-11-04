@@ -2,6 +2,7 @@ import datetime as dt
 import json
 import math
 import uuid
+from collections import Counter
 from collections.abc import Sequence
 from typing import Annotated, Literal, NotRequired, Self, TypedDict
 
@@ -277,6 +278,15 @@ def _validate_one_time_metric_scope(
             "already limits participants to those with no value for it. "
             f'Remove the filter on "{primary_field_name}" or turn off use_one_time_metric.'
         )
+
+
+def _validate_unique_metric_field_names(metrics: list[DesignSpecMetricRequest]) -> None:
+    """Ensure each metric's field_name appears only once."""
+    counts = Counter(metric.field_name for metric in metrics)
+    duplicates = sorted(name for name, count in counts.items() if count > 1)
+    if duplicates:
+        listed = ", ".join(f'"{name}"' for name in duplicates)
+        raise ValueError(f"Each metric can be listed only once; listed more than once: {listed}. Remove the repeats.")
 
 
 class ParticipantProperty(ApiBaseModel):
@@ -1130,6 +1140,12 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
         return value.isoformat()
 
+    @field_validator("metrics")
+    @classmethod
+    def validate_unique_metrics(cls, v: list[DesignSpecMetricRequest]) -> list[DesignSpecMetricRequest]:
+        _validate_unique_metric_field_names(v)
+        return v
+
     @model_validator(mode="after")
     def validate_strata(self) -> Self:
         """Validate that the strata are valid."""
@@ -1560,6 +1576,12 @@ class PowerRequest(ApiBaseModel):
             ),
         ),
     ] = None
+
+    @field_validator("metrics")
+    @classmethod
+    def validate_unique_metrics(cls, v: list[DesignSpecMetricRequest]) -> list[DesignSpecMetricRequest]:
+        _validate_unique_metric_field_names(v)
+        return v
 
     @model_validator(mode="after")
     def validate_cluster_randomization(self) -> Self:
