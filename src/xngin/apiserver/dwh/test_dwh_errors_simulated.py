@@ -1,7 +1,7 @@
 """Isolated DWH error fallbacks and failures that are impractical to induce reliably.
 
-Prefer real server coverage in test_dwh_errors_postgres.py. Keep simulated exceptions here only for behavior
-those integration tests cannot exercise.
+Prefer real server coverage in test_dwh_errors_postgres.py and test_dwh_errors_bigquery.py. Keep simulated
+exceptions here only for behavior those integration tests cannot exercise.
 """
 
 import google.api_core.exceptions
