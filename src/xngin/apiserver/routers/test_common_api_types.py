@@ -533,15 +533,19 @@ def test_one_time_metric_rejected_on_secondary_metric():
         PowerRequest.model_validate({"table_name": "dwh", "n_arms": 2, "metrics": metrics})
 
 
-def test_power_request_rejects_repeated_metrics():
+def test_repeated_metrics_rejected():
     metrics = [
         {"field_name": "income", "metric_pct_change": 0.1},
         {"field_name": "age", "metric_pct_change": 0.1},
         {"field_name": "income", "metric_pct_change": 0.2},
         {"field_name": "age", "metric_pct_change": 0.2},
     ]
+    expected = 'listed more than once: "age", "income"'
 
-    with pytest.raises(ValidationError, match='listed more than once: "age", "income"'):
+    with pytest.raises(ValidationError, match=expected):
+        PreassignedFrequentistExperimentSpec.model_validate(_preassigned_spec_payload(metrics=metrics))
+
+    with pytest.raises(ValidationError, match=expected):
         PowerRequest.model_validate({"table_name": "dwh", "n_arms": 2, "metrics": metrics})
 
 
