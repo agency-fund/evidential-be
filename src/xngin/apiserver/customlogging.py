@@ -3,7 +3,7 @@ import logging
 import sys
 import traceback
 import typing
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 
 from xngin.apiserver.flags import LogFormat
 
@@ -12,6 +12,7 @@ if typing.TYPE_CHECKING:
     from loguru import Record as loguru_Record
 
 
+import orjson
 from loguru import logger
 
 from xngin.apiserver import flags
@@ -27,7 +28,7 @@ class InterceptHandler(logging.Handler):
 
         # Describe the caller using the LogRecord rather than by walking the stack to the first frame outside the
         # logging module: Sentry's logging integration wraps Logger.callHandlers, so that frame belongs to Sentry, and
-        # every record would appear to come from sentry_sdk.integrations.logging. The logger name ("uvicorn.access",
+        # every record would appear to come from sentry_sdk.integrations.logging. The logger name ("granian.access",
         # "sqlalchemy.engine.Engine.xngin_app") is also more useful than the module name a stack walk would find.
         def describe_caller(loguru_record: loguru_Record) -> None:
             loguru_record["name"] = record.name
@@ -35,7 +36,74 @@ class InterceptHandler(logging.Handler):
             loguru_record["function"] = record.funcName
             loguru_record["line"] = record.lineno
 
-        logger.patch(describe_caller).opt(exception=record.exc_info).log(level, record.getMessage())
+        message, fields = record.getMessage(), dict[str, typing.Any]()
+        if record.name == GRANIAN_ACCESS_LOGGER and isinstance(record.args, Mapping):
+            message, fields = _describe_granian_access(record.args)
+
+        logger.patch(describe_caller).bind(**fields).opt(exception=record.exc_info).log(level, message)
+
+
+GRANIAN_ACCESS_LOGGER = "granian.access"
+
+
+def _describe_granian_access(request: Mapping[str, typing.Any]) -> tuple[str, dict[str, typing.Any]]:
+    """Describes a request from Granian's access log as a message and the fields to log alongside it.
+
+    Granian calls its access logger with a format string and a dict of request values. We ignore the format string and
+    describe the request ourselves: structured logs get each value as a top-level field, so Railway can filter on them,
+    and other formats get a single line of key=value pairs.
+
+    Granian doesn't escape the values, and the path is percent-decoded, so it can contain quotes, spaces, newlines, and
+    terminal escape sequences. Fields are safe because JSON escapes them; text is quoted with _logfmt_value.
+    """
+    path = request["path"]
+    query = request["query_string"]
+    duration_ms = round(request["dt_ms"], 3)
+    if flags.LOG_FORMAT == LogFormat.STRUCTURED_RAILWAY:
+        fields = {
+            "http_method": request["method"],
+            "http_path": path,
+            "http_query": query,
+            "http_status": request["status"],
+            "http_duration_ms": duration_ms,
+            "http_protocol": request["protocol"],
+            "client_addr": request["addr"],
+        }
+        return f"{request['method']} {_logfmt_value(path)} {request['status']}", fields
+    pairs = {
+        "dur": duration_ms,
+        "ip": request["addr"],
+        "method": request["method"],
+        "path": path,
+        "q": query,
+        "code": request["status"],
+    }
+    return " ".join(f"{key}={_logfmt_value(value)}" for key, value in pairs.items() if value != ""), {}
+
+
+_LOGFMT_ESCAPES = {'"': '\\"', "\\": "\\\\", "\n": "\\n", "\r": "\\r", "\t": "\\t"}
+
+
+def _logfmt_value(value: object) -> str:
+    """Formats a value for a key=value log line the way logfmt does.
+
+    Values made only of printable characters other than space, '"', '=', and backslash are written as is. Others are
+    quoted, with quotes, backslashes, and non-printable characters (including Unicode format characters such as
+    bidirectional overrides) backslash-escaped, so that a value can't break the line apart or alter a terminal.
+    """
+    text = str(value)
+    if text and all(char.isprintable() and char not in ' "=\\' for char in text):
+        return text
+    return '"' + "".join(map(_logfmt_escape, text)) + '"'
+
+
+def _logfmt_escape(char: str) -> str:
+    if escape := _LOGFMT_ESCAPES.get(char):
+        return escape
+    if char.isprintable():
+        return char
+    code_point = ord(char)
+    return f"\\u{code_point:04x}" if code_point <= 0xFFFF else f"\\U{code_point:08x}"
 
 
 def _customize_loguru():
@@ -79,7 +147,13 @@ def _record_to_railway_json(record: loguru_Record):
             "exc_msg": str(exc.value) if exc.value else None,
             "exc_tb": traceback.format_exception(exc.value, limit=15, chain=True) if exc.value else None,
         })
-    return json.dumps(structured)
+    # default=str and OPT_NON_STR_KEYS avoids disappearing log lines if any context variables are of an unusual type.
+    try:
+        return orjson.dumps(structured, default=str, option=orjson.OPT_NON_STR_KEYS).decode()
+    except orjson.JSONEncodeError:
+        # orjson rejects integers beyond 64 bits and strings that aren't valid UTF-8, and default= doesn't apply to
+        # either. json.dumps accepts both, so fall back to it rather than lose the line.
+        return json.dumps(structured, default=str)
 
 
 def _stdout_railway_sink(message: loguru_Message):
@@ -137,6 +211,15 @@ def setup(*, patcher: Callable[[loguru_Record], None] | None = None) -> None:
         case _:
             # allow loguru default behavior
             pass
+
+
+def granian_handler() -> logging.Handler:
+    """Handler factory referenced by granian_log_config.json.
+
+    This allows Granian's access logs to be emitted in the structured format, along with the context variables.
+    """
+    setup()
+    return InterceptHandler()
 
 
 def _silence_noisy_loggers():
