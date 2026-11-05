@@ -3920,6 +3920,9 @@ def test_power_check_with_manual_icc_and_nulls_in_cluster_key(testing_datasource
     assert analysis.metric_spec.available_n == 972
     # Verify that the 24 null outcome rows + 28 null cluster key rows are excluded here:
     assert analysis.metric_spec.available_nonnull_n == 948
+    # The cluster count still comes from the dwh, independent of the user-supplied avg_cluster_size,
+    # and the null age does not count as a cluster.
+    assert analysis.metric_spec.available_n_clusters == 72
 
     # Verify this was analyzed as a cluster-randomized experiment, and that with the user-supplied
     # estimates about the data we should have enough clusters to sample from despite the minimum
@@ -3930,6 +3933,39 @@ def test_power_check_with_manual_icc_and_nulls_in_cluster_key(testing_datasource
     assert analysis.design_effect == pytest.approx(1.137, abs=1e-3)
     assert analysis.msg is not None
     assert analysis.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
+
+
+def test_power_check_with_manual_icc_and_no_clusters_raises(testing_datasource, aclient: AdminAPIClient):
+    """Supplied cluster stats skip the ICC derivation, but the cluster count query still rejects an
+    empty cluster population, so available_n_clusters is never reported as 0."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test cluster power",
+        description="Verify a filter matching no clusters is rejected.",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        table_name=WIDE_DWH_TABLE_NAME,
+        primary_key="id",
+        arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
+        metrics=[
+            DesignSpecMetricRequest(
+                field_name="household_income",
+                metric_pct_change=0.1,
+                icc=0.015,
+                avg_cluster_size=10,
+                cv=0.1,
+            )
+        ],
+        strata=[],
+        filters=[Filter(field_name="id", relation=Relation.BETWEEN, value=[-10, -1])],
+        cluster_key="age",
+    )
+
+    with expect_status_code(422, detail_contains="No clusters found in column 'age'"):
+        aclient.power_check(
+            datasource_id=testing_datasource.datasource_id,
+            body=design_spec_to_power_request(design_spec),
+        )
 
 
 def test_power_check_with_desired_n_clusters(testing_datasource, aclient: AdminAPIClient):
@@ -4001,6 +4037,7 @@ def echo_metric_request(spec: DesignSpecMetric) -> DesignSpecMetricRequest:
         metric_stddev=spec.metric_stddev,
         available_nonnull_n=spec.available_nonnull_n,
         available_n=spec.available_n,
+        available_n_clusters=spec.available_n_clusters,
     )
 
 
@@ -4128,6 +4165,39 @@ async def test_power_check_reuses_provided_cluster_stats_without_dwh(testing_dat
     reuse_analysis = aclient.power_check(
         datasource_id=testing_datasource.datasource_id,
         body=design_spec_to_power_request(reuse_spec),
+    ).data.analyses[0]
+    assert reuse_analysis == first_analysis
+    assert reuse_analysis.metric_spec.available_n_clusters == 72
+
+
+async def test_power_check_queries_cluster_count_when_not_provided(testing_datasource, aclient: AdminAPIClient):
+    """Baseline and cluster stats without available_n_clusters still query the dwh for the count."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test cluster count query",
+        description="A cluster power check lacking only the cluster count queries it from the dwh.",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        table_name=WIDE_DWH_TABLE_NAME,
+        primary_key="id",
+        arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
+        metrics=[DesignSpecMetricRequest(field_name="household_income", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+        cluster_key="age",
+    )
+    first_analysis = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=design_spec_to_power_request(design_spec),
+    ).data.analyses[0]
+    assert first_analysis.metric_spec.available_n_clusters == 72
+
+    echoed_without_count = echo_metric_request(first_analysis.metric_spec).model_copy(
+        update={"available_n_clusters": None}
+    )
+    reuse_analysis = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=design_spec_to_power_request(design_spec.model_copy(update={"metrics": [echoed_without_count]})),
     ).data.analyses[0]
     assert reuse_analysis == first_analysis
 
@@ -4265,6 +4335,8 @@ def test_power_check_with_db_derived_icc_and_nulls_in_cluster_key(testing_dataso
     assert analysis.metric_spec.available_n == 972
     # 24 rows have a null household_income among the 972 non-null-age rows.
     assert analysis.metric_spec.available_nonnull_n == 948
+    # 72 distinct non-null ages, consistent with available_n / avg_cluster_size = 972 / 13.5.
+    assert analysis.metric_spec.available_n_clusters == 72
 
     # In this case, due to clustering we do not have a sufficient number of clusters (and units) to sample from.
     assert analysis.num_clusters_total == 78
@@ -4395,6 +4467,10 @@ def test_power_check_cluster_with_manual_and_db_derived_metrics(testing_datasour
         dwh_analysis.target_n / dwh_analysis.metric_spec.avg_cluster_size
     )
     assert dwh_analysis.clusters_per_arm == [602, 602]
+
+    # The cluster count describes the population, not the metric, so manual cluster stats don't change it.
+    assert dwh_analysis.metric_spec.available_n_clusters == 1000
+    assert user_analysis.metric_spec.available_n_clusters == 1000
 
 
 def test_create_freq_preassigned_experiment_with_cluster_key_roundtrips(
