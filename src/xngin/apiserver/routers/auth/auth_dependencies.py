@@ -185,7 +185,13 @@ def _lookup_or_create(session: Session, principal: Principal) -> tables.User | N
     user_count = session.scalar(select(count(tables.User.id)))
     if user_count == 0 or (flags.AIRPLANE_MODE and principal.iss == "airplane"):
         user = tables.User(email=principal.email, iss=principal.iss, sub=principal.sub, is_privileged=True)
-        user = create_entities_for_first_time_user(session, user, flags.XNGIN_DEVDWH_DSN)
+        user = create_entities_for_first_time_user(
+            session,
+            user,
+            flags.XNGIN_DEVDWH_DSN,
+            bigquery_dsn=flags.XNGIN_DEVDWH_GCP_BIGQUERY_DSN,
+            redshift_dsn=flags.XNGIN_DEVDWH_AWS_REDSHIFT_DSN,
+        )
         session.commit()
         return user
     return None

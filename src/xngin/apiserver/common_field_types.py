@@ -1,25 +1,34 @@
-import re
+import unicodedata
 from typing import Annotated
 
-from pydantic import BeforeValidator, Field
+from pydantic import BeforeValidator, Field, StringConstraints
 from pydantic_core.core_schema import ValidationInfo
 
-VALID_SQL_COLUMN_REGEX = r"^[a-zA-Z_][a-zA-Z0-9_]*$"
+from xngin.apiserver.limits import MAX_LENGTH_OF_FIELD_NAME
 
 
-def validate_can_be_used_as_column_name(value: str, info: ValidationInfo) -> str:
-    """Validates value is usable as a SQL column name."""
+def has_control_characters(name: str) -> bool:
+    """Whether name has a control character, such as a tab, newline or NUL, which field names may not contain."""
+    return any(unicodedata.category(c) == "Cc" for c in name)
+
+
+def validate_column_name(value: str, info: ValidationInfo) -> str:
+    """Validates that value could be the name of a column in a data warehouse.
+
+    Any name a warehouse allows is accepted, including dots, spaces, dashes and mixed case: a name is always looked up
+    in the reflected table before it is used, and quoted wherever it appears in SQL. Names with control characters
+    are refused; inspection does not offer the Postgres and Redshift columns that have them.
+    """
     if not isinstance(value, str):
         raise ValueError(f"{info.field_name} must be a string")  # noqa: TRY004
-    if not re.match(VALID_SQL_COLUMN_REGEX, value):
-        raise ValueError(
-            f"{info.field_name} must start with letter/underscore and contain only letters, numbers, underscores"
-        )
+    if has_control_characters(value):
+        raise ValueError(f"{info.field_name} must not contain control characters")
     return value
 
 
 FieldName = Annotated[
     str,
-    BeforeValidator(validate_can_be_used_as_column_name),
-    Field(json_schema_extra={"pattern": VALID_SQL_COLUMN_REGEX}, examples=["field_name"]),
+    StringConstraints(min_length=1, max_length=MAX_LENGTH_OF_FIELD_NAME),
+    BeforeValidator(validate_column_name),
+    Field(examples=["field_name"]),
 ]

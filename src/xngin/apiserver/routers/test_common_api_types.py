@@ -21,6 +21,12 @@ VALID_COLUMN_NAMES = [
     "_hidden",
     "a123",
     "very_long_column_name_123",
+    "123column",
+    "column-name",
+    "column.name",
+    "column$name",
+    "column name",
+    "x" * 300,
 ]
 
 
@@ -48,21 +54,18 @@ def test_boolean_filter_validation():
 
 
 INVALID_COLUMN_NAMES = [
-    "123column",  # Can't start with number
-    "column-name",  # No hyphens allowed
-    "column.name",  # No periods allowed
-    "",  # Empty string
-    "column$name",  # No special characters
-    "column name",  # No spaces
+    pytest.param("", "at least 1 character", id="empty"),
+    pytest.param("x" * 301, "at most 300 characters", id="too-long"),
+    pytest.param("column\nname", "must not contain control characters", id="newline"),
+    pytest.param("column\x00name", "must not contain control characters", id="nul"),
+    pytest.param("column\x7fname", "must not contain control characters", id="delete"),
+    pytest.param("column\x85name", "must not contain control characters", id="next-line"),
 ]
 
 
-@pytest.mark.parametrize("name", INVALID_COLUMN_NAMES)
-def test_invalid_field_names(name):
-    with pytest.raises(
-        ValidationError,
-        match="field_name must start with letter/underscore and contain only letters, numbers, underscores",
-    ):
+@pytest.mark.parametrize(("name", "message"), INVALID_COLUMN_NAMES)
+def test_invalid_field_names(name, message):
+    with pytest.raises(ValidationError, match=message):
         Filter(field_name=name, relation=Relation.INCLUDES, value=[1])
 
 
@@ -525,6 +528,22 @@ def test_one_time_metric_rejected_on_secondary_metric():
         _one_time_metric("second", use_one_time_metric=True),
     ]
     expected = 'use_one_time_metric can only be set on the primary metric .* "second"'
+
+    with pytest.raises(ValidationError, match=expected):
+        PreassignedFrequentistExperimentSpec.model_validate(_preassigned_spec_payload(metrics=metrics))
+
+    with pytest.raises(ValidationError, match=expected):
+        PowerRequest.model_validate({"table_name": "dwh", "n_arms": 2, "metrics": metrics})
+
+
+def test_repeated_metrics_rejected():
+    metrics = [
+        {"field_name": "income", "metric_pct_change": 0.1},
+        {"field_name": "age", "metric_pct_change": 0.1},
+        {"field_name": "income", "metric_pct_change": 0.2},
+        {"field_name": "age", "metric_pct_change": 0.2},
+    ]
+    expected = 'listed more than once: "age", "income"'
 
     with pytest.raises(ValidationError, match=expected):
         PreassignedFrequentistExperimentSpec.model_validate(_preassigned_spec_payload(metrics=metrics))

@@ -2,6 +2,7 @@ import datetime as dt
 import json
 import math
 import uuid
+from collections import Counter
 from collections.abc import Sequence
 from typing import Annotated, Literal, NotRequired, Self, TypedDict
 
@@ -279,6 +280,15 @@ def _validate_one_time_metric_scope(
         )
 
 
+def _validate_unique_metric_field_names(metrics: list[DesignSpecMetricRequest]) -> None:
+    """Ensure each metric's field_name appears only once."""
+    counts = Counter(metric.field_name for metric in metrics)
+    duplicates = sorted(name for name, count in counts.items() if count > 1)
+    if duplicates:
+        listed = ", ".join(f'"{name}"' for name in duplicates)
+        raise ValueError(f"Each metric can be listed only once; listed more than once: {listed}. Remove the repeats.")
+
+
 class ParticipantProperty(ApiBaseModel):
     """A single participant property used when applying the experiment's filters.
 
@@ -390,8 +400,14 @@ class Arm(ApiBaseModel):
 
 class ArmAnalysis(Arm):
     estimate: Annotated[
-        float,
-        Field(description="The estimated treatment effect relative to the baseline arm."),
+        float | None,
+        Field(
+            description=(
+                "The estimated treatment effect relative to the baseline arm. For the baseline arm itself, "
+                "its mean. None when the baseline arm has no values for this metric, or when this arm's "
+                "analysis is not available."
+            )
+        ),
     ]
     p_value: Annotated[
         float | None,
@@ -420,6 +436,15 @@ class ArmAnalysis(Arm):
         float | None,
         Field(description="Confidence interval upper bound for the regression coefficient estimate."),
     ] = None
+    mean: Annotated[
+        float | None,
+        Field(
+            description=(
+                "The arm's mean value for this metric. Unlike the treatment effect, it is available even "
+                "when the baseline arm has no values. None when this arm's analysis is not available."
+            )
+        ),
+    ] = None
     mean_ci_lower: Annotated[
         float | None,
         Field(description="Confidence interval lower bound for the arm's mean."),
@@ -445,6 +470,8 @@ class ArmAnalysis(Arm):
     ]
 
     @field_serializer(
+        "estimate",
+        "mean",
         "t_stat",
         "p_value",
         "std_error",
@@ -866,19 +893,23 @@ class Filter(ApiBaseModel):
     | EXCLUDES | [None]            | Match `x IS NOT NULL`                             |
     | EXCLUDES | ["a", None]       | Match `x IS NOT NULL AND x NOT IN ("a")`          |
     | EXCLUDES | ["a", "b"]        | Match `x IS NULL OR (x NOT IN ("a", "b"))`        |
-    | BETWEEN  | ["a", "z"]        | Match `"a" <= x <= "z"`                           |
-    | BETWEEN  | ["a", "z", None]  | Match `"a" <= x <= "z"` or `x IS NULL`            |
-    | BETWEEN  | [None, "z"]       | Match `x <= "z"`                                  |
-    | BETWEEN  | ["a", None]       | Match `x >= "a"`                                  |
-    | BETWEEN  | [None, "a", None] | Match `x <= "a"` or `x IS NULL`                   |
+    | BETWEEN  | [20, 30]          | Match `20 <= x <= 30`                             |
+    | BETWEEN  | [20, 30, None]    | Match `20 <= x <= 30` or `x IS NULL`              |
+    | BETWEEN  | [None, 30]        | Match `x <= 30`                                   |
+    | BETWEEN  | [20, None]        | Match `x >= 20`                                   |
+    | BETWEEN  | [None, 30, None]  | Match `x <= 30` or `x IS NULL`                    |
 
     String comparisons are case-sensitive.
 
-    ### Special Handling for BETWEEN support of including NULL
+    ### BETWEEN ranges
 
-    When the relation is BETWEEN, we allow for up to 3 values to support the special case of
-    including null in addition to the values in the between range via an OR IS NULL clause, as
-    indicated by a 3rd value of None. Any other 3rd value is invalid.
+    BETWEEN applies to numeric, DATE, DATETIME and TIMESTAMP fields. Both bounds are inclusive.
+
+    The value has 2 or 3 items:
+    - The first 2 items are the lower and upper bounds. Either bound can be None for an open-ended range, but not both.
+    - An optional 3rd item, which must be None, also matches null values.
+
+    Without the 3rd item, null values never match.
 
     ### Handling of DATE, DATETIME and TIMESTAMP values
 
@@ -1125,6 +1156,12 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
     def serialize_dt(self, value: dt.datetime, _info):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
         return value.isoformat()
+
+    @field_validator("metrics")
+    @classmethod
+    def validate_unique_metrics(cls, v: list[DesignSpecMetricRequest]) -> list[DesignSpecMetricRequest]:
+        _validate_unique_metric_field_names(v)
+        return v
 
     @model_validator(mode="after")
     def validate_strata(self) -> Self:
@@ -1556,6 +1593,12 @@ class PowerRequest(ApiBaseModel):
             ),
         ),
     ] = None
+
+    @field_validator("metrics")
+    @classmethod
+    def validate_unique_metrics(cls, v: list[DesignSpecMetricRequest]) -> list[DesignSpecMetricRequest]:
+        _validate_unique_metric_field_names(v)
+        return v
 
     @model_validator(mode="after")
     def validate_cluster_randomization(self) -> Self:

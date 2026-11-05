@@ -31,6 +31,7 @@ dependencies = [
     "statsmodels>=0.14.5,<0.20",
     "stochatreat @ git+https://github.com/agency-fund/stochatreat@prod",
     "typer>=0.26.7,<0.27",
+    "xxhash>=4.0.2",
 ]
 requires-python = ">=3.14,<3.15"
 
@@ -41,7 +42,7 @@ dev = [
     "deepdiff>=8.6.2,<9",
     "fastapi-typed-client @ git+https://github.com/dctaf/fastapi-typed-client-fork@evid/v0.4.0+evid.1",
     "granian[reload]",  # for `task start`
-    "mypy>=1.19.1",
+    "mypy>=2.4.1",
     "pandas-gbq>=0.33.0,<0.34",
     "pandas-stubs>=2.3.3,<3",
     "prek>=0.5.3,<0.6.0",
@@ -238,13 +239,10 @@ override-dependencies = [
 ]
 
 [tool.mypy]
-python_version = 3.14
 mypy_path = "src"
-namespace_packages = true
 enable_error_code = [
     "exhaustive-match",
-    "override",
-    "redundant-cast",
+    "ignore-without-code",
     "redundant-expr",
     "truthy-bool",
     "truthy-iterable",
@@ -256,8 +254,7 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 warn_return_any = true
 warn_unreachable = true
-strict_optional = true
-disallow_untyped_defs = false
+num_workers = "auto"
 plugins = ['pydantic.mypy']
 
 [[tool.mypy.overrides]]

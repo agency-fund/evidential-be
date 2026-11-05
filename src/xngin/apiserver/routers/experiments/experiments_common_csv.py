@@ -1,4 +1,3 @@
-# mypy: disable-error-code="misc"
 from collections.abc import Generator
 
 from fastapi.responses import StreamingResponse
@@ -60,8 +59,8 @@ def _build_freq_experiment_assignments_select_query(
             ) AS strata ON TRUE
         """
     else:
-        extra_columns = sql.SQL("")
-        lateral_join = sql.SQL("")
+        extra_columns = t""
+        lateral_join = t""
 
     created_at_column = sql.SQL("aa.created_at AS created_at")
     if not with_microseconds:
