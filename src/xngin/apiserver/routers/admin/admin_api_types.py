@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated, Literal
 from urllib.parse import urlparse
 
@@ -14,6 +14,7 @@ from xngin.apiserver.limits import (
     MAX_LENGTH_OF_ID_VALUE,
     MAX_LENGTH_OF_NAME_VALUE,
     MAX_LENGTH_OF_URL_VALUE,
+    MIN_TIME_UNTIL_NEW_END_DATE,
 )
 from xngin.apiserver.routers.common_api_types import (
     ApiBaseModel,
@@ -545,7 +546,16 @@ class UpdateExperimentRequest(AdminApiBaseModel):
     description: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)] = None
     design_url: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_URL_VALUE)] = None
     start_date: Annotated[datetime | None, Field()] = None
-    end_date: Annotated[datetime | None, Field()] = None
+    end_date: Annotated[
+        datetime | None,
+        Field(
+            description=(
+                "New end date. Must be after the start date and at least "
+                f"{MIN_TIME_UNTIL_NEW_END_DATE // timedelta(hours=1)} hours from now. If the experiment stopped making "
+                "new assignments because its previous end date passed, a later end date resumes them."
+            )
+        ),
+    ] = None
 
     impact: Annotated[Impact | None, Field()] = None
     decision: Annotated[str | None, Field()] = None

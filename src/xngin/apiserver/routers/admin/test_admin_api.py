@@ -2286,6 +2286,11 @@ def test_update_experiment_invalid(testing_datasource, testing_experiment, aclie
     with expect_status_code(422, detail_eq="New end date must be after start date."):
         aclient.update_experiment(datasource_id=datasource_id, experiment_id=experiment_id, body=request)
 
+    for end_date in (datetime.now(UTC) - timedelta(days=1), datetime.now(UTC) + timedelta(hours=5)):
+        request = UpdateExperimentRequest(end_date=end_date)
+        with expect_status_code(422, detail_eq="New end date must be at least 6 hours from now."):
+            aclient.update_experiment(datasource_id=datasource_id, experiment_id=experiment_id, body=request)
+
     # Lastly check invalid experiment state. Preassigned experiments are created in ASSIGNED
     # state before they are committed.
     assigned_experiment_id = aclient.create_experiment(
@@ -2300,6 +2305,23 @@ def test_update_experiment_invalid(testing_datasource, testing_experiment, aclie
             experiment_id=assigned_experiment_id,
             body=UpdateExperimentRequest(name="updated"),
         )
+
+
+def test_update_experiment_end_date_keeps_preassigned_experiment_stopped(testing_experiment, aclient: AdminAPIClient):
+    """A preassigned experiment's participants are fixed, so extending its end date must not resume assignments."""
+    datasource_id = testing_experiment.datasource_id
+    experiment_id = testing_experiment.id
+    assert testing_experiment.config.stopped_assignments_reason == StopAssignmentReason.PREASSIGNED
+
+    aclient.update_experiment(
+        datasource_id=datasource_id,
+        experiment_id=experiment_id,
+        body=UpdateExperimentRequest(end_date=datetime.now(UTC) + timedelta(days=7)),
+    )
+
+    config = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=experiment_id).data.config
+    assert config.stopped_assignments_reason == StopAssignmentReason.PREASSIGNED
+    assert config.stopped_assignments_at is not None
 
 
 def test_update_arm(testing_experiment, aclient: AdminAPIClient):

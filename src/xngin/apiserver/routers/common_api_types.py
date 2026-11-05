@@ -1866,12 +1866,22 @@ class ExperimentConfig(ApiBaseModel):
     stopped_assignments_at: Annotated[
         dt.datetime | None,
         Field(
-            description="The date and time assignments were stopped. Null if assignments are still allowed to be made."
+            description=(
+                "The date and time new assignments were stopped. Null if no stop has been recorded. A stop because the "
+                "end date passed is recorded by the first assignment request after the end date, so this can be null "
+                "for an experiment whose end date has passed; either way, no new assignments are made after the end "
+                "date. Extending the end date clears a stop recorded for that reason."
+            )
         ),
     ]
     stopped_assignments_reason: Annotated[
         StopAssignmentReason | None,
-        Field(description="The reason assignments were stopped. Null if assignments are still allowed to be made."),
+        Field(
+            description=(
+                "Why new assignments were stopped, e.g. preassigned (participants were fixed when the experiment was "
+                "created) or end_date (the end date passed). Null if no stop has been recorded."
+            )
+        ),
     ]
     design_spec: DesignSpec
     power_analyses: PowerResponse | None
@@ -1919,7 +1929,13 @@ class GetParticipantAssignmentResponse(ApiBaseModel):
     participant_id: str
     assignment: Annotated[
         Assignment | None,
-        Field(description="Null if no assignment. assignment.strata are not included."),
+        Field(
+            description=(
+                "The participant's assignment, without strata. Null if the participant has no assignment and none was "
+                "created: create_if_none is false, the participant fails the filters or is not in a preassigned "
+                "experiment, or the experiment has stopped assigning (see stopped_assignments_reason)."
+            )
+        ),
     ]
 
 
