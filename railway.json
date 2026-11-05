@@ -1,7 +1,7 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "deploy": {
-    "drainingSeconds": 60,
+    "drainingSeconds": 120,
     "preDeployCommand": "/bin/sh -c \"exec ./atlas migrate apply --env sa_postgres --url \\\"$DATABASE_URL\\\"\""
   },
   "build": {
