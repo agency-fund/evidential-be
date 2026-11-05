@@ -20,6 +20,6 @@ CREATE TABLE {{table_name}} (
   `profile` JSON,
   `Big Number` BIGNUMERIC,
   `location` GEOGRAPHY,
-  `address` STRUCT<city STRING, `postal code` STRING, geo STRUCT<lat FLOAT64, lng FLOAT64>>,
+  `address` STRUCT<city STRING, `postal code` STRING, `group` STRING, geo STRUCT<lat FLOAT64, lng FLOAT64>, lines ARRAY<STRING>>,
   `events` ARRAY<STRUCT<name STRING, `at` DATE>>
 );

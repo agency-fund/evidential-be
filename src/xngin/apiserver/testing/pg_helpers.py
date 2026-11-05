@@ -87,12 +87,12 @@ def _check_is_test_database(database: str):
 
 
 def _drop_database(conn: psycopg3.Connection, name: str):
-    conn.execute(t"DROP DATABASE IF EXISTS {name:i} WITH (FORCE)")  # type: ignore[misc]
+    conn.execute(t"DROP DATABASE IF EXISTS {name:i} WITH (FORCE)")
 
 
 def _drop_template(conn: psycopg3.Connection, name: str):
     """Drops a template database, which Postgres requires to be unmarked as a template first."""
-    conn.execute(t"ALTER DATABASE {name:i} IS_TEMPLATE false")  # type: ignore[misc]
+    conn.execute(t"ALTER DATABASE {name:i} IS_TEMPLATE false")
     _drop_database(conn, name)
 
 
@@ -141,22 +141,22 @@ def create_test_database_pg(connect_url: str, metadata: MetaData):
     _check_is_test_database(database)
     template = f"{TEMPLATE_PREFIX}{_schema_digest(metadata)}"
     with _connect_to_server(url) as conn:
-        conn.execute(t"SELECT pg_advisory_lock({_LOCK_KEY})")  # type: ignore[misc]
+        conn.execute(t"SELECT pg_advisory_lock({_LOCK_KEY})")
         _drop_leftovers(conn, template, datetime.now(UTC))
-        row = conn.execute(t"SELECT datistemplate FROM pg_database WHERE datname = {template}").fetchone()  # type: ignore[misc]
+        row = conn.execute(t"SELECT datistemplate FROM pg_database WHERE datname = {template}").fetchone()
         if row is None or not row[0]:
             # A template that exists but was never marked as one is left over from an interrupted build.
             _drop_database(conn, template)
-            conn.execute(t"CREATE DATABASE {template:i}")  # type: ignore[misc]
+            conn.execute(t"CREATE DATABASE {template:i}")
             engine = sqlalchemy.create_engine(url.set(database=template), poolclass=sqlalchemy.NullPool)
             try:
                 with engine.begin() as template_conn:
                     metadata.create_all(template_conn)
             finally:
                 engine.dispose()
-            conn.execute(t"ALTER DATABASE {template:i} IS_TEMPLATE true")  # type: ignore[misc]
+            conn.execute(t"ALTER DATABASE {template:i} IS_TEMPLATE true")
         _drop_database(conn, database)
-        conn.execute(t"CREATE DATABASE {database:i} TEMPLATE {template:i} STRATEGY FILE_COPY")  # type: ignore[misc]
+        conn.execute(t"CREATE DATABASE {database:i} TEMPLATE {template:i} STRATEGY FILE_COPY")
         _CREATED[database] = url
 
 
@@ -167,7 +167,7 @@ def create_empty_test_database_pg(connect_url: sqlalchemy.URL | str):
     _check_is_test_database(database)
     with _connect_to_server(url) as conn:
         _drop_database(conn, database)
-        conn.execute(t"CREATE DATABASE {database:i}")  # type: ignore[misc]
+        conn.execute(t"CREATE DATABASE {database:i}")
     _CREATED[database] = url
 
 

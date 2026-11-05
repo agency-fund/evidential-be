@@ -7,6 +7,7 @@ from xngin.apiserver.routers.common_api_types import Filter, PropertyValueTypes
 from xngin.apiserver.routers.common_enums import DataType, Relation
 
 type DateTarget = Literal["date", "datetime", "datetimetz"]
+type ParsedFilterValue = str | int | float | bool | date | datetime | None
 
 
 def str_to_date_or_datetime(
@@ -85,18 +86,16 @@ def _passes_filter(exp_filter: Filter, field_type: DataType | None, value: Prope
             # The Filter validator guarantees an optional 3rd value is None, so *_ can ignore it here.
             match parsed_values:
                 case (left, None, *_):
-                    return py_value >= left  # type: ignore
+                    return py_value >= left  # type: ignore[operator]
                 case (None, right, *_):
-                    return py_value <= right  # type: ignore
+                    return py_value <= right  # type: ignore[operator]
                 case (left, right, *_):
-                    return left <= py_value <= right  # type: ignore
+                    return left <= py_value <= right  # type: ignore[operator]
                 case _:
                     raise LateValidationError(f"Invalid between value: {exp_filter.value}")
 
 
-def validate_filter_value(
-    field_name: str, value: PropertyValueTypes, field_type: DataType | None
-) -> str | int | float | bool | datetime | date | None:
+def validate_filter_value(field_name: str, value: PropertyValueTypes, field_type: DataType | None) -> ParsedFilterValue:
     """Validate a value is of the appropriate type and possibly transform into the appropriate Python type.
 
     Raises:

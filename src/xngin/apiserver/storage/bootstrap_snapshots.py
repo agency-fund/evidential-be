@@ -1,5 +1,6 @@
 """Helpers for generating fake frequentist snapshot data."""
 
+import math
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from itertools import cycle
@@ -64,20 +65,66 @@ LATE_BREAKOUT = HistoricalSnapshotProfile(
 )
 
 
+def _get_estimate(arm_analysis: ArmAnalysis) -> float:
+    # The API only omits the estimate for arms without values or an empty baseline, which fake snapshots don't create.
+    if arm_analysis.estimate is None:
+        raise ValueError(f"Fake snapshot arm {arm_analysis.arm_id} has no estimate")
+    return arm_analysis.estimate
+
+
 def recalculate_t_and_p(arm_analysis: ArmAnalysis, df: int = 100) -> None:
     """Recalculate t-stat and p-value after estimate/std-error changes."""
+    estimate = _get_estimate(arm_analysis)
     if arm_analysis.std_error is not None and arm_analysis.std_error != 0:
-        arm_analysis.t_stat = arm_analysis.estimate / arm_analysis.std_error
+        arm_analysis.t_stat = estimate / arm_analysis.std_error
         arm_analysis.p_value = float(2 * (1 - stats.t.cdf(abs(arm_analysis.t_stat), df=df)))
-    elif arm_analysis.estimate > 0:
+    elif estimate > 0:
         arm_analysis.t_stat = float("inf")
         arm_analysis.p_value = 0.0
-    elif arm_analysis.estimate < 0:
+    elif estimate < 0:
         arm_analysis.t_stat = float("-inf")
         arm_analysis.p_value = 0.0
     else:
         arm_analysis.t_stat = None
         arm_analysis.p_value = None
+
+
+def set_arm_means_and_cis(arm_analyses: list[ArmAnalysis], df: int = 100) -> None:
+    """Set each arm's mean and its 95% confidence interval the way the analysis does: the baseline's estimate is
+    its mean, and the other arms' estimates are differences from it."""
+    baseline_mean = _get_estimate(next(a for a in arm_analyses if a.is_baseline))
+    critical_value = float(stats.t.ppf(0.975, df=df))
+    for arm_analysis in arm_analyses:
+        mean = baseline_mean if arm_analysis.is_baseline else baseline_mean + _get_estimate(arm_analysis)
+        arm_analysis.mean = mean
+        # The baseline's standard error is its mean's. A difference's standard error combines both arms' mean
+        # errors, so assume the arms' errors are equal.
+        std_error = arm_analysis.std_error
+        if std_error is not None and not arm_analysis.is_baseline:
+            std_error /= math.sqrt(2)
+        if std_error is None:
+            arm_analysis.mean_ci_lower = arm_analysis.mean_ci_upper = None
+        else:
+            arm_analysis.mean_ci_lower = mean - critical_value * std_error
+            arm_analysis.mean_ci_upper = mean + critical_value * std_error
+
+
+def clear_unavailable_arms(arm_analyses: list[ArmAnalysis]) -> None:
+    """Match the analysis API's placeholder for arms marked unavailable with num_missing_values=-1: they have no
+    results, and when the baseline is unavailable, the other arms only keep their means."""
+    comparison_fields = ("estimate", "p_value", "t_stat", "std_error", "ci_lower", "ci_upper")
+    mean_fields = ("mean", "mean_ci_lower", "mean_ci_upper")
+    is_baseline_unavailable = any(a.is_baseline and a.num_missing_values < 0 for a in arm_analyses)
+    for arm_analysis in arm_analyses:
+        cleared_fields: tuple[str, ...]
+        if arm_analysis.num_missing_values < 0:
+            cleared_fields = comparison_fields + mean_fields
+        elif is_baseline_unavailable:
+            cleared_fields = comparison_fields
+        else:
+            continue
+        for field in cleared_fields:
+            setattr(arm_analysis, field, None)
 
 
 def validate_freq_experiment(experiment: tables.Experiment) -> None:
@@ -192,12 +239,16 @@ def create_freq_experiment_analysis(
                 arm_id is None or arm_id == arm.id
             )
             if targeted and field is not None and value is not None:
-                setattr(arm_analysis, field, value)
+                # The CLI parses values as floats, but num_missing_values is an int field.
+                setattr(arm_analysis, field, int(value) if field == "num_missing_values" else value)
                 if field in {"estimate", "std_error"}:
                     recalculate_t_and_p(arm_analysis)
 
             arm_analyses.append(arm_analysis)
 
+        # After the overrides, so an overridden estimate also moves the means.
+        set_arm_means_and_cis(arm_analyses)
+        clear_unavailable_arms(arm_analyses)
         metric_analyses.append(
             MetricAnalysis(
                 metric_name=metric_field_name,

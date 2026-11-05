@@ -288,6 +288,8 @@ tasks:
     cmds:
       - task test
   test-integration:
+    dotenv:
+      - .env
     desc: >-
       Runs the integration tests, which use real cloud services. Tests whose variables are unset are skipped. GCP
       integration tests: XNGIN_DEVDWH_GCP_CREDENTIALS, the path to a service account key file that may create BigQuery

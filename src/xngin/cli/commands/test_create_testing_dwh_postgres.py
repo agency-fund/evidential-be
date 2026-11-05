@@ -40,12 +40,12 @@ def fixture_schema_name() -> Iterator[str]:
     schema_name = f'Test %"Schema" {uuid.uuid4().hex[:8]}'
     yield schema_name
     with psycopg.connect(_psycopg_dsn(), autocommit=True) as conn:
-        conn.execute(t"DROP SCHEMA IF EXISTS {schema_name:i} CASCADE")  # type: ignore[misc]
+        conn.execute(t"DROP SCHEMA IF EXISTS {schema_name:i} CASCADE")
 
 
 def _columns_and_rows(schema_name: str, table_name: str) -> tuple[list[str], list[tuple]]:
     with psycopg.connect(_psycopg_dsn()) as conn:
-        cur = conn.execute(t"SELECT * FROM {schema_name:i}.{table_name:i} ORDER BY 1")  # type: ignore[misc]
+        cur = conn.execute(t"SELECT * FROM {schema_name:i}.{table_name:i} ORDER BY 1")
         return [d.name for d in cur.description or []], cur.fetchall()
 
 

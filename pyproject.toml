@@ -41,7 +41,7 @@ dev = [
     "coverage>=7.11.0",
     "deepdiff>=8.6.2,<9",
     "fastapi-typed-client @ git+https://github.com/dctaf/fastapi-typed-client-fork@evid/v0.4.0+evid.1",
-    "mypy>=1.19.1",
+    "mypy>=2.4.1",
     "pandas-gbq>=0.33.0,<0.34",
     "pandas-stubs>=2.3.3,<3",
     "prek>=0.5.3,<0.6.0",
@@ -240,13 +240,10 @@ override-dependencies = [
 ]
 
 [tool.mypy]
-python_version = 3.14
 mypy_path = "src"
-namespace_packages = true
 enable_error_code = [
     "exhaustive-match",
-    "override",
-    "redundant-cast",
+    "ignore-without-code",
     "redundant-expr",
     "truthy-bool",
     "truthy-iterable",
@@ -258,8 +255,7 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 warn_return_any = true
 warn_unreachable = true
-strict_optional = true
-disallow_untyped_defs = false
+num_workers = "auto"
 plugins = ['pydantic.mypy']
 
 [[tool.mypy.overrides]]

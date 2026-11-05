@@ -380,6 +380,7 @@ def _maybe_create_stress_samples(
     """Adds a data source for each configured warehouse that holds the stress test table."""
     if testing_dwh_dsn:
         dsn = testing_dwh_dsn
+        logger.info("Creating stress sample in Postgres...")
         _create_stress_samples_or_warn(
             session,
             PGSTRESS_DATASOURCE_NAME,
@@ -394,6 +395,7 @@ def _maybe_create_stress_samples(
         )
     if bigquery_dsn:
         bq_dsn = bigquery_dsn
+        logger.info("Creating stress sample in BigQuery...")
         _create_stress_samples_or_warn(
             session,
             BQSTRESS_DATASOURCE_NAME,
@@ -408,6 +410,7 @@ def _maybe_create_stress_samples(
         )
     if redshift_dsn:
         rs_dsn = redshift_dsn
+        logger.info("Creating stress sample in Redshift...")
         _create_stress_samples_or_warn(
             session,
             RSSTRESS_DATASOURCE_NAME,
