@@ -138,7 +138,9 @@ def check_balance_of_preprocessed_df(
         BalanceResult object containing test results
     """
     if data[treatment_col].nunique() <= 1:
-        raise ValueError("Treatment column has insufficient arms.")
+        raise StatsBalanceError(
+            "All participants were randomly assigned to one arm. Increase your sample size and try again."
+        )
     if cluster_col is not None and cluster_col not in data.columns:
         raise StatsBalanceError(f"Cluster column '{cluster_col}' not found in balance-check data.")
 

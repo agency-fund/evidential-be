@@ -302,6 +302,10 @@ def _assign_clusters_to_arms(
             exclude_col_set=exclude_cols_set,
         )
     except StatsBalanceError:
+        # Let users to know if all participants were randomly assigned to one arm, but other balance
+        # failures, such as equal cluster sizes leaving no usable covariate, can skip the check.
+        if cluster_df[STOCHATREAT_TREAT_NAME].nunique() <= 1:
+            raise
         balance_result = None
 
     return AssignmentResult(
