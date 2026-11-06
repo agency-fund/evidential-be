@@ -366,27 +366,111 @@ def test_zero_effect_with_zero_variance_keeps_inference_undefined(clustered):
         assert math.isnan(arm.p_value)
 
 
-# HC1 and the residual scale divide by df_resid, which is 0 with one observation per arm.
-@pytest.mark.filterwarnings("ignore:divide by zero encountered in scalar divide:RuntimeWarning")
-@pytest.mark.filterwarnings("ignore:invalid value encountered in multiply:RuntimeWarning")
-def test_analysis_with_inestimable_variance_keeps_nan_mean_cis():
-    """With one observation per arm, HC1 variance and mean confidence intervals remain undefined."""
-    arm_a, arm_b = "a" * 32, "b" * 32
-    assignments = pd.DataFrame([{"participant_id": "0", "arm_id": arm_a}, {"participant_id": "1", "arm_id": arm_b}])
+def _analyze_small(
+    arms: list[str], values: list[float | None], clusters: list[str] | None = None
+) -> dict[str, ArmAnalysisResult]:
+    """Analyzes one metric with "control" as the baseline; clustered when clusters are given."""
+    assignments = pd.DataFrame({"participant_id": [str(i) for i in range(len(arms))], "arm_id": arms})
+    if clusters is not None:
+        assignments["cluster_id"] = clusters
     outcomes = [
-        ParticipantOutcome(
-            participant_id=str(i),
-            metric_values=[MetricValue(metric_name="bool_field", metric_value=i)],
-        )
-        for i in range(2)
+        ParticipantOutcome(participant_id=str(i), metric_values=[MetricValue(metric_name="m", metric_value=value)])
+        for i, value in enumerate(values)
     ]
+    cluster_col = None if clusters is None else "cluster_id"
+    return analyze_experiment(assignments, outcomes, ["m"], baseline_arm_id="control", cluster_col=cluster_col)["m"]
 
-    result = analyze_experiment(assignments, outcomes, ["bool_field"], baseline_arm_id=arm_a)
 
-    for arm_id in (arm_a, arm_b):
-        arm_results = result["bool_field"][arm_id]
-        assert math.isnan(arm_results.mean_ci_lower), arm_id
-        assert math.isnan(arm_results.mean_ci_upper), arm_id
+def _has_inference(result: ArmAnalysisResult) -> bool:
+    return all(math.isfinite(v) for v in (result.std_error, result.p_value, result.ci_lower, result.ci_upper))
+
+
+def _has_no_inference(result: ArmAnalysisResult) -> bool:
+    return all(
+        math.isnan(v) for v in (result.std_error, result.t_stat, result.p_value, result.ci_lower, result.ci_upper)
+    )
+
+
+def _has_mean_ci(result: ArmAnalysisResult) -> bool:
+    return math.isfinite(result.mean_ci_lower) and math.isfinite(result.mean_ci_upper)
+
+
+def _has_no_mean_ci(result: ArmAnalysisResult) -> bool:
+    return math.isnan(result.mean_ci_lower) and math.isnan(result.mean_ci_upper)
+
+
+# Each case leaves every arm without a variance of its own, which once divided by zero residual degrees of freedom
+# (HC1) or by a degenerate cluster correction, or reported the arms as exact.
+@pytest.mark.parametrize(
+    ("arms", "values", "clusters"),
+    [
+        pytest.param(["control", "treatment"], [1, 3], None, id="one-value-per-arm"),
+        pytest.param(["control", "treatment"], [1, 3], ["x", "y"], id="clustered-one-value-per-arm"),
+        pytest.param(["control"] * 2 + ["treatment"] * 2, [1, 2, 3, 4], ["x", "x", "y", "y"], id="one-cluster-per-arm"),
+        pytest.param(["control"] * 2 + ["treatment"] * 2, [1, 2, 3, 4], ["x"] * 4, id="one-cluster-overall"),
+    ],
+)
+def test_analysis_without_any_arm_variance_reports_only_point_estimates(arms, values, clusters):
+    result = _analyze_small(arms, values, clusters)
+
+    control, treatment = result["control"], result["treatment"]
+    assert control.mean == pytest.approx(np.mean(values[: arms.count("control")]))
+    assert treatment.mean == pytest.approx(np.mean(values[arms.count("control") :]))
+    assert control.estimate == control.mean
+    assert treatment.estimate == pytest.approx(treatment.mean - control.mean)
+    for arm in (control, treatment):
+        assert _has_no_inference(arm)
+        assert _has_no_mean_ci(arm)
+
+
+def test_analysis_with_only_the_baseline_observed_once():
+    result = _analyze_small(["control", "treatment"], [2, None])
+
+    assert set(result) == {"control"}
+    assert result["control"].mean == result["control"].estimate == 2
+    assert _has_no_inference(result["control"])
+    assert _has_no_mean_ci(result["control"])
+
+
+@pytest.mark.parametrize(
+    "clusters",
+    [None, ["a", "b", "b", "c", "d", "d", "e"]],
+    ids=["hc1", "clustered"],
+)
+def test_analysis_with_a_single_value_treatment_arm(clusters):
+    """The single-value arm loses only its own inference; HC1 would have reported its mean as exact."""
+    arms = ["control"] * 3 + ["treatment"] * 3 + ["single"]
+    result = _analyze_small(arms, [1, 2, 4, 2, 3, 5, 7], clusters)
+
+    for arm_id in ("control", "treatment"):
+        assert _has_inference(result[arm_id]), arm_id
+        assert _has_mean_ci(result[arm_id]), arm_id
+    single = result["single"]
+    assert single.mean == 7
+    assert single.estimate == pytest.approx(7 - result["control"].mean)
+    assert _has_no_inference(single)
+    assert _has_no_mean_ci(single)
+
+
+@pytest.mark.parametrize(
+    ("arms", "values", "clusters"),
+    [
+        pytest.param(["control"] + ["treatment"] * 3, [1, 2, 3, 5], None, id="hc1-one-value"),
+        pytest.param(
+            ["control"] * 2 + ["treatment"] * 4, [1, 2, 3, 5, 4, 6], ["x", "x", "y", "y", "z", "z"], id="one-cluster"
+        ),
+    ],
+)
+def test_analysis_with_a_baseline_without_variance(arms, values, clusters):
+    """Comparisons need the baseline's variance too, but the treatment arm's own mean stays estimable."""
+    result = _analyze_small(arms, values, clusters)
+
+    control, treatment = result["control"], result["treatment"]
+    assert treatment.estimate == pytest.approx(treatment.mean - control.mean)
+    assert _has_no_inference(control)
+    assert _has_no_inference(treatment)
+    assert _has_no_mean_ci(control)
+    assert _has_mean_ci(treatment)
 
 
 def test_analysis_with_multiple_metrics(test_assignments):
