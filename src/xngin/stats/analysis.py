@@ -22,7 +22,8 @@ MODEL_FORMULA = f"{MODEL_OUTCOME_COL} ~ 0 + {MODEL_ARM_COL}"
 class ArmAnalysisResult:
     is_baseline: bool
     # The fields from estimate to ci_upper compare the arm to the baseline (for the baseline
-    # itself, they describe its mean). They are NaN when the baseline has no values.
+    # itself, they describe its mean). They are NaN when the baseline has no values. All but the estimate
+    # are also NaN when the arm or the baseline lacks a variance of its own (see analyze_experiment).
     estimate: float
     p_value: float
     t_stat: float
@@ -37,7 +38,7 @@ class ArmAnalysisResult:
     num_missing_values: int
 
 
-def analyze_experiment(
+def analyze_experiment(  # noqa: PLR0915
     assignments_df: pd.DataFrame,
     participant_outcomes: list[ParticipantOutcome],
     metric_names: list[str],
@@ -72,6 +73,10 @@ def analyze_experiment(
         - If an arm is missing for a metric, it's because it had no valid data to process.
         - If the baseline arm is missing, the other arms' results only include their means and
         mean CIs; the fields comparing them to the baseline are NaN.
+        - An arm with fewer than 2 values (or, when clustered, values from fewer than 2 clusters) has no
+        variance of its own to estimate. It keeps its mean and estimate, but its mean CIs and the inference
+        fields comparing it to the baseline are NaN. If that arm is the baseline, every arm's comparison
+        inference is NaN.
         - Every name in metric_names has an entry. If *zero* arm analyses exist for a metric (e.g. since zero
         non-null outcomes were found across all arms), the inner dict will be empty.
     """
@@ -143,10 +148,24 @@ def analyze_experiment(
         baseline = merged_df[arm_col].cat.categories[0] if baseline_arm_id is None else baseline_arm_id
         has_baseline_values = baseline in model_df[MODEL_ARM_COL].cat.categories
 
+        clusters = None if cluster_col is None else merged_df.loc[observed, cluster_col]
+        estimable = _arms_with_estimable_variance(model_df[MODEL_ARM_COL], clusters)
+        if not estimable.any():
+            # A fit would only divide by zero residual degrees of freedom (HC1) or by a degenerate cluster
+            # correction, so report the point estimates alone.
+            means = model_df.groupby(MODEL_ARM_COL, observed=True)[MODEL_OUTCOME_COL].mean()
+            for arm_id in means.index:
+                arm_analyses[arm_id] = _point_estimate_only(
+                    mean=float(means[arm_id]),
+                    baseline_mean=None if arm_id == baseline else float(means.get(baseline, math.nan)),
+                    num_missing_values=nan_counts_df.loc[arm_id, metric_col],
+                )
+            continue
+
         # Disjoint arm indicators avoid covariance cancellation for zero-variance arm means.
         model = smf.ols(MODEL_FORMULA, data=model_df).fit(
-            cov_type="HC1" if cluster_col is None else "cluster",
-            cov_kwds=None if cluster_col is None else {"groups": merged_df.loc[observed, cluster_col]},
+            cov_type="HC1" if clusters is None else "cluster",
+            cov_kwds=None if clusters is None else {"groups": clusters},
         )
         arm_ids = model.model.data.design_info.factor_infos[EvalFactor(MODEL_ARM_COL)].categories
 
@@ -179,8 +198,45 @@ def analyze_experiment(
                 mean_ci_upper=float(mean_confidence_intervals.iloc[i, 1]),
                 num_missing_values=nan_counts_df.loc[arm_id, metric_col],
             )
-            if not has_baseline_values:
-                result.estimate = result.p_value = result.t_stat = math.nan
+            # Robust variances would report an arm without a variance of its own as exact, so it keeps its point
+            # estimates without inference, as does every comparison against such a baseline.
+            if not estimable[i]:
+                result.mean_ci_lower = result.mean_ci_upper = math.nan
+            if not (has_baseline_values and estimable[i] and estimable[0]):
+                result.p_value = result.t_stat = math.nan
                 result.std_error = result.ci_lower = result.ci_upper = math.nan
+            if not has_baseline_values:
+                result.estimate = math.nan
             arm_analyses[arm_id] = result
     return metric_analyses
+
+
+def _arms_with_estimable_variance(arms: pd.Series, clusters: pd.Series | None) -> np.ndarray:
+    """Which arms, in model order, have a variance of their own to estimate.
+
+    Robust variances are built from deviations around each arm's mean. A single observation (or, with
+    cluster-robust variances, a single cluster) has none, so its arm's variance would come out as exactly zero.
+    """
+    sizes = (
+        arms.groupby(arms, observed=True).size()
+        if clusters is None
+        else clusters.groupby(arms, observed=True).nunique()
+    )
+    return sizes.to_numpy() >= 2
+
+
+def _point_estimate_only(*, mean: float, baseline_mean: float | None, num_missing_values: int) -> ArmAnalysisResult:
+    """An arm's result without inference. baseline_mean is None for the baseline itself, and NaN if it has no values."""
+    return ArmAnalysisResult(
+        is_baseline=baseline_mean is None,
+        estimate=mean if baseline_mean is None else mean - baseline_mean,
+        p_value=math.nan,
+        t_stat=math.nan,
+        std_error=math.nan,
+        ci_lower=math.nan,
+        ci_upper=math.nan,
+        mean=mean,
+        mean_ci_lower=math.nan,
+        mean_ci_upper=math.nan,
+        num_missing_values=num_missing_values,
+    )
