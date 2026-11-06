@@ -1,6 +1,5 @@
 import math
 import threading
-import warnings
 from datetime import UTC, datetime, timedelta
 from typing import assert_never
 
@@ -231,11 +230,7 @@ def test_capture_snapshot_of_freq_preassigned(xngin_session, testing_datasource)
     assert arm2.position == 2
 
     # Test 1: baseline arm is the position 1 arm.
-    # Suppress expected statsmodels warnings due to not actually assigning any units to the arms for
-    # this test, as we're not focused on the actual analysis.
-    with warnings.catch_warnings():
-        warnings.filterwarnings(action="ignore", message=r"(divide by zero|invalid value).*", category=RuntimeWarning)
-        commit_snapshot(experiment.id)
+    commit_snapshot(experiment.id)
     analysis = get_latest_snapshot_analysis(xngin_session, experiment.id)
     # Verify analysis payload is in the order of experiment.arms above.
     assert isinstance(analysis, FreqExperimentAnalysisResponse)
@@ -253,9 +248,7 @@ def test_capture_snapshot_of_freq_preassigned(xngin_session, testing_datasource)
     xngin_session.commit()
     xngin_session.refresh(experiment, ["arms"])
 
-    with warnings.catch_warnings():
-        warnings.filterwarnings(action="ignore", message=r"(divide by zero|invalid value).*", category=RuntimeWarning)
-        commit_snapshot(experiment.id)
+    commit_snapshot(experiment.id)
     analysis = get_latest_snapshot_analysis(xngin_session, experiment.id)
 
     assert isinstance(analysis, FreqExperimentAnalysisResponse)
@@ -275,9 +268,7 @@ def test_capture_snapshot_of_freq_preassigned(xngin_session, testing_datasource)
     assert experiment.arms[0].position is None
     assert experiment.arms[1].position is None
 
-    with warnings.catch_warnings():
-        warnings.filterwarnings(action="ignore", message=r"(divide by zero|invalid value).*", category=RuntimeWarning)
-        commit_snapshot(experiment.id)
+    commit_snapshot(experiment.id)
     analysis = get_latest_snapshot_analysis(xngin_session, experiment.id)
 
     assert isinstance(analysis, FreqExperimentAnalysisResponse)
