@@ -8,7 +8,7 @@
 | src/xngin/apiserver/benchmarks/test\_draws\_perf.py                                |       91 |       62 |     32% |48, 52-93, 111-128, 143-159, 163, 171, 177-180, 192-215, 228-251, 264-278 |
 | src/xngin/apiserver/certs/certs.py                                                 |       16 |        9 |     44% |19-23, 37-44 |
 | src/xngin/apiserver/common\_field\_types.py                                        |       14 |        1 |     93% |        23 |
-| src/xngin/apiserver/customlogging.py                                               |       72 |       12 |     83% |25-26, 77, 87-88, 95, 133-142 |
+| src/xngin/apiserver/customlogging.py                                               |      105 |       14 |     87% |26-27, 145, 161-162, 169, 207-216, 224-225 |
 | src/xngin/apiserver/database.py                                                    |       53 |        4 |     92% |40, 63, 69, 76 |
 | src/xngin/apiserver/dependencies.py                                                |       12 |        1 |     92% |        12 |
 | src/xngin/apiserver/dns/safe\_resolve.py                                           |       68 |       14 |     79% |47-58, 90, 113-114 |
@@ -30,9 +30,9 @@
 | src/xngin/apiserver/dwh/test\_dwh\_time\_types\_redshift.py                        |       21 |        4 |     81% |39-40, 46, 52 |
 | src/xngin/apiserver/dwh/test\_queries.py                                           |       69 |        1 |     99% |       170 |
 | src/xngin/apiserver/dwh/test\_query\_constructors.py                               |      160 |        2 |     99% |  444, 461 |
-| src/xngin/apiserver/exceptionhandlers.py                                           |       80 |        5 |     94% |56, 75, 86, 100, 125 |
-| src/xngin/apiserver/flags.py                                                       |       57 |        4 |     93% |87, 90, 108, 111 |
-| src/xngin/apiserver/main.py                                                        |       38 |        6 |     84% |41, 49, 78-79, 96-98 |
+| src/xngin/apiserver/exceptionhandlers.py                                           |       84 |        5 |     94% |56, 75, 86, 100, 125 |
+| src/xngin/apiserver/flags.py                                                       |       60 |        4 |     93% |98, 101, 119, 122 |
+| src/xngin/apiserver/main.py                                                        |       31 |        2 |     94% |    40, 48 |
 | src/xngin/apiserver/openapi.py                                                     |       27 |        3 |     89% |113, 178, 180 |
 | src/xngin/apiserver/pagination.py                                                  |      116 |       14 |     88% |47-48, 53-55, 61, 68, 98, 233, 235, 246-249 |
 | src/xngin/apiserver/request\_encapsulation\_middleware.py                          |       69 |        3 |     96% |   113-115 |
@@ -118,9 +118,9 @@
 | src/xngin/xsecrets/secretservice.py                                                |       64 |        7 |     89% |37, 45-46, 51-52, 104, 126 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                                     |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                                         |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                                          | **20800** | **1110** | **95%** |           |
+| **TOTAL**                                                                          | **20928** | **1108** | **95%** |           |
 
-121 files skipped due to complete coverage.
+123 files skipped due to complete coverage.
 
 
 ## Setup coverage badge
