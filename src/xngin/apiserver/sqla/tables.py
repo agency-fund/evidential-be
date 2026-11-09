@@ -569,6 +569,9 @@ class Arm(Base):
         back_populates="arm",
         cascade="all, delete-orphan",
     )
+    # lazy="raise" makes readers preload this explicitly; see get_assign_summary. passive_deletes leaves the row to
+    # the ON DELETE CASCADE because arm_stats.arm_id is also its primary key and cannot be nulled out.
+    stats: Mapped[ArmStats | None] = relationship(uselist=False, lazy="raise", passive_deletes=True)
 
 
 class ArmStats(Base):

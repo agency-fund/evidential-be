@@ -1459,11 +1459,10 @@ def list_organization_experiments(
 @router.get("/datasources/{datasource_id}/experiments/{experiment_id}")
 def get_experiment_for_ui(
     experiment: Annotated[tables.Experiment, Depends(adeps.experiment_for_ui)],
-    session: Annotated[Session, Depends(xngin_sync_db_session)],
 ) -> GetExperimentForUiResponse:
     """Returns the experiment with the specified ID."""
     return GetExperimentForUiResponse(
-        config=experiments_common.get_experiment_impl(session, experiment),
+        config=experiments_common.get_experiment_impl(experiment),
         experiment_schema=make_schema_from_experiment(experiment),
     )
 

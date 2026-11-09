@@ -624,14 +624,11 @@ def abandon_experiment_impl(experiment: tables.Experiment):
     return AbandonExperimentResult.ABANDONED
 
 
-def get_experiment_impl(
-    xngin_session: Session,
-    experiment: tables.Experiment,
-) -> GetExperimentResponse:
+def get_experiment_impl(experiment: tables.Experiment) -> GetExperimentResponse:
+    """Builds the full experiment response. Requires Experiment.arms with Arm.stats to be preloaded."""
     converter = ExperimentStorageConverter(experiment)
     assign_summary = get_assign_summary(
-        xngin_session,
-        experiment_id=experiment.id,
+        experiment.arms,
         experiment_type=ExperimentsType(experiment.experiment_type),
         balance_check=converter.get_balance_check(),
         include_cluster_counts=experiment.cluster_key_field() is not None,
@@ -652,7 +649,9 @@ def list_organization_or_datasource_experiments_impl(
     Raises ValueError if neither is provided.
     """
     stmt = select(tables.Experiment).options(
-        selectinload(tables.Experiment.arms),
+        # The stats feed each experiment's assign summary; joining them onto the arms query avoids a query per
+        # experiment.
+        selectinload(tables.Experiment.arms).joinedload(tables.Arm.stats),
         selectinload(tables.Experiment.contexts),
         selectinload(tables.Experiment.webhooks),
         selectinload(tables.Experiment.experiment_fields).selectinload(tables.ExperimentField.experiment_filters),
@@ -684,8 +683,7 @@ def list_organization_or_datasource_experiments_impl(
         converter = ExperimentStorageConverter(e)
         balance_check = converter.get_balance_check()
         assign_summary = get_assign_summary(
-            xngin_session=xngin_session,
-            experiment_id=e.id,
+            e.arms,
             experiment_type=ExperimentsType(e.experiment_type),
             balance_check=balance_check,
             include_cluster_counts=e.cluster_key_field() is not None,
@@ -1271,33 +1269,25 @@ def convert_assignment_results_to_assign_summary(
 
 
 def get_assign_summary(
-    xngin_session: Session,
+    arms: Sequence[tables.Arm],
     *,
-    experiment_id: str,
     experiment_type: ExperimentsType,
     balance_check: BalanceCheck | None,
     include_cluster_counts: bool = False,
 ) -> AssignSummary:
-    """Constructs an AssignSummary from the experiment's arms and arm_assignments."""
-    result = xngin_session.execute(
-        select(
-            tables.Arm.id,
-            tables.Arm.name,
-            func.coalesce(tables.ArmStats.population, 0),
-            tables.ArmStats.cluster_count,
-        )
-        .outerjoin(tables.ArmStats, tables.Arm.id == tables.ArmStats.arm_id)
-        .where(tables.Arm.experiment_id == experiment_id)
-        .order_by(tables.Arm.position)
-    )
+    """Constructs an AssignSummary from the experiment's arms and their denormalized arm_stats counters.
 
+    Callers must preload Arm.stats (e.g. selectinload(Experiment.arms).joinedload(Arm.stats)); the relationship is
+    lazy="raise" so that listing many experiments cannot silently issue one query per experiment. An arm without an
+    arm_stats row has no assignments yet.
+    """
     arm_sizes = [
         ArmSize(
-            arm=Arm(arm_id=arm_id, arm_name=name),
-            size=count,
-            cluster_count=cluster_count if include_cluster_counts else None,
+            arm=Arm(arm_id=arm.id, arm_name=arm.name),
+            size=0 if arm.stats is None else arm.stats.population,
+            cluster_count=arm.stats.cluster_count if include_cluster_counts and arm.stats is not None else None,
         )
-        for arm_id, name, count, cluster_count in result
+        for arm in arms
     ]
 
     if experiment_type in {ExperimentsType.MAB_ONLINE, ExperimentsType.MAB_ONLINE_DWH, ExperimentsType.CMAB_ONLINE}:

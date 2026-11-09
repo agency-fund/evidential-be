@@ -23,6 +23,7 @@ from xngin.apiserver.apikeys import hash_key_or_raise, require_valid_api_key
 from xngin.apiserver.dependencies import CannotFindDatasourceError, xngin_sync_db_session
 from xngin.apiserver.routers.preloads import (
     EXPERIMENT_FIELDS_WITH_FILTERS,
+    EXPERIMENT_JOINED_ARMS_WITH_STATS,
     PreloadChain,
     build_preload_options,
 )
@@ -169,5 +170,5 @@ experiment_for_full_response = _Experiment(
         tables.Experiment.webhooks,
         tables.Experiment.contexts,
     ],
-    nested_preload=[EXPERIMENT_FIELDS_WITH_FILTERS],
+    nested_preload=[EXPERIMENT_FIELDS_WITH_FILTERS, EXPERIMENT_JOINED_ARMS_WITH_STATS],
 )
