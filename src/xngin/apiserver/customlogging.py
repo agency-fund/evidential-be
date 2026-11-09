@@ -177,6 +177,9 @@ def setup(*, patcher: Callable[[loguru_Record], None] | None = None) -> None:
     If specified, `patcher` will be applied to every record, allowing callers to enrich log records.
     """
     logging.basicConfig(handlers=[InterceptHandler()], level=logging.NOTSET, force=True)
+    # Route warnings.warn() output (e.g. numpy RuntimeWarnings raised inside statsmodels) through the "py.warnings"
+    # logger instead of writing it to stderr, so that it is structured and carries contextual fields.
+    logging.captureWarnings(True)
     _customize_loguru()
     logger.configure(patcher=patcher)
 

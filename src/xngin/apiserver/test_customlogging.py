@@ -1,6 +1,7 @@
 import json
 import logging
 import sys
+import warnings
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -180,3 +181,31 @@ def test_granian_access_logs_key_value_pairs_in_other_formats(records, granian_a
 )
 def test_logfmt_value(value, expected):
     assert customlogging._logfmt_value(value) == expected
+
+
+@pytest.fixture
+def captured_warnings():
+    py_warnings = logging.getLogger("py.warnings")
+    py_warnings.addHandler(customlogging.InterceptHandler())
+    py_warnings.propagate = False
+    # captureWarnings(True) is a no-op if logging believes it is already capturing, but pytest restores
+    # warnings.showwarning around each test, so reset it first.
+    logging.captureWarnings(False)
+    logging.captureWarnings(True)
+    yield
+    logging.captureWarnings(False)
+    py_warnings.handlers.clear()
+    py_warnings.propagate = True
+
+
+def test_python_warnings_are_logged_with_context(records, captured_warnings):
+    # pytest intercepts warnings.warn(), so call the hook that logging.captureWarnings() installs directly.
+    with logger.contextualize(experiment_id="exp_1"):
+        warnings.showwarning(RuntimeWarning("invalid value encountered in multiply"), RuntimeWarning, "lm.py", 1992)
+
+    (record,) = records
+    structured = json.loads(customlogging._record_to_railway_json(record))
+    assert structured["level"] == "WARNING"
+    assert structured["logger"] == "py.warnings"
+    assert structured["experiment_id"] == "exp_1"
+    assert "RuntimeWarning: invalid value encountered in multiply" in structured["message"]
