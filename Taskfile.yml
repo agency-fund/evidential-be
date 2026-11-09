@@ -242,8 +242,10 @@ tasks:
     deps:
       - bootstrap-dwh-database
     cmds:
-      # -n0 comes last so that it wins: coverage only measures the pytest process it starts, not pytest-xdist workers.
-      - uv run coverage run -m pytest {{.CLI_ARGS}} -n0
+      # Discard data files left by an interrupted run, so that combine only merges this run's.
+      - uv run coverage erase
+      - uv run coverage run -m pytest -n auto {{.CLI_ARGS}}
+      - uv run coverage combine --quiet
       - uv run coverage html
       - uv run coverage report
       - echo "Open the HTML report at file://{{.USER_WORKING_DIR}}/htmlcov/index.html"

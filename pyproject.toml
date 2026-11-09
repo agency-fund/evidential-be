@@ -262,6 +262,9 @@ module = ["deepdiff", "statsmodels.*", "patsy.*", "sqlalchemy_bigquery.*", "pand
 ignore_missing_imports = true
 
 [tool.coverage.run]
+# Measure the pytest-xdist workers too: each process writes its own data file, which `coverage combine` merges.
+parallel = true
+patch = ["subprocess"]
 relative_files = true
 omit = ["src/xngin/apiserver/testing/*_api_client.py"]
 
