@@ -473,6 +473,29 @@ def test_analysis_with_a_baseline_without_variance(arms, values, clusters):
     assert _has_mean_ci(treatment)
 
 
+def test_clustered_analysis_with_an_empty_treatment_arm():
+    """An arm without values is omitted from a clustered analysis, leaving the baseline's inference intact."""
+    arms = ["control"] * 4 + ["treatment"] * 2
+    result = _analyze_small(arms, [1, 2, 3, 5, None, None], ["w", "w", "x", "x", "y", "z"])
+
+    assert set(result) == {"control"}
+    assert _has_inference(result["control"])
+    assert _has_mean_ci(result["control"])
+
+
+def test_clustered_analysis_with_an_empty_baseline_arm():
+    """Without baseline values, a clustered analysis reports only the other arm's mean and its interval."""
+    arms = ["control"] * 2 + ["treatment"] * 4
+    result = _analyze_small(arms, [None, None, 1, 2, 3, 5], ["w", "x", "y", "y", "z", "z"])
+
+    assert set(result) == {"treatment"}
+    treatment = result["treatment"]
+    assert treatment.mean == pytest.approx(2.75)
+    assert math.isnan(treatment.estimate)
+    assert _has_no_inference(treatment)
+    assert _has_mean_ci(treatment)
+
+
 def test_analysis_with_multiple_metrics(test_assignments):
     """Each metric's missing value counts are tallied independently of the other metrics'."""
     rand = random.Random(44)
