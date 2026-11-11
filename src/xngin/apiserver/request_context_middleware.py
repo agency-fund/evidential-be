@@ -32,8 +32,8 @@ _worker_request_seq = itertools.count(1)
 #
 # Sentry receives these separately below.
 #
-# Unlike logger.contextualize(), these fields remain set after middleware unwinds, so Uvicorn's unhandled-exception
-# logs retain the request context.
+# Unlike logger.contextualize(), these fields remain set after middleware unwinds, so Granian's access and
+# unhandled-exception logs retain the request context.
 _request_context: contextvars.ContextVar[dict[str, typing.Any] | None] = contextvars.ContextVar(
     "request_context", default=None
 )

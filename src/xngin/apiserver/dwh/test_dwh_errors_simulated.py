@@ -288,6 +288,7 @@ MAPPING = [
 @pytest.mark.parametrize(("exc", "dwh_config", "expected_cls", "code", "table_name"), MAPPING)
 def test_classify_dwh_error_mapping(exc, dwh_config, expected_cls, code, table_name):
     result = classify_dwh_error(exc, dwh_config)
+    assert result is not None
     assert type(result) is expected_cls
     assert result.code == code
     assert result.http_status == 424

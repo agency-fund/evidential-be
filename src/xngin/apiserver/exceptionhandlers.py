@@ -4,7 +4,7 @@ import psycopg.errors
 import sqlalchemy
 from fastapi import Request
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from loguru import logger
 from pydantic import BaseModel, ValidationError
 
@@ -48,19 +48,19 @@ def setup(app):
     """
 
     @app.exception_handler(CannotFindDatasourceError)
-    def exception_handler_cannotfinddatasourceerror(_request: Request, exc: CannotFindDatasourceError):
+    async def exception_handler_cannotfinddatasourceerror(_request: Request, exc: CannotFindDatasourceError):
         return JSONResponse(status_code=404, content={"message": str(exc)})
 
     @app.exception_handler(ExperimentsAssignmentError)
-    def exception_handler_experimentserror(_request: Request, exc: StatsError):
+    async def exception_handler_experimentserror(_request: Request, exc: StatsError):
         return JSONResponse(status_code=422, content=as_fastapi_http_validation_error(str(exc), "assignment"))
 
     @app.exception_handler(StatsError)
-    def exception_handler_statsmodelerror(_request: Request, exc: StatsError):
+    async def exception_handler_statsmodelerror(_request: Request, exc: StatsError):
         return JSONResponse(status_code=422, content=as_fastapi_http_validation_error(str(exc), exc.type))
 
     @app.exception_handler(sqlalchemy.exc.OperationalError)
-    def exception_handler_sqlalchemy_opex(_request: Request, exc: sqlalchemy.exc.OperationalError):
+    async def exception_handler_sqlalchemy_opex(_request: Request, exc: sqlalchemy.exc.OperationalError):
         """Answers OperationalErrors from the application database."""
         status = 500
         cause = getattr(exc, "orig", None) or exc.__cause__
@@ -79,15 +79,15 @@ def setup(app):
         return JSONResponse(status_code=status, content={"message": str(cause) or str(exc)})
 
     @app.exception_handler(BaseApiKeyError)
-    def exception_handler_apikeys(_request: Request, exc: BaseApiKeyError):
+    async def exception_handler_apikeys(_request: Request, exc: BaseApiKeyError):
         return JSONResponse(status_code=exc.status_code, content={"message": str(exc)})
 
     @app.exception_handler(LateValidationError)
-    def exception_handler_latevalidation(_request: Request, exc: LateValidationError):
+    async def exception_handler_latevalidation(_request: Request, exc: LateValidationError):
         return JSONResponse(status_code=422, content=as_fastapi_http_validation_error(str(exc), "late"))
 
     @app.exception_handler(ValidationError)
-    def exception_handler_pydantic_validationerror(_request: Request, exc: ValidationError):
+    async def exception_handler_pydantic_validationerror(_request: Request, exc: ValidationError):
         # This resembles FastAPI's request_validation_exception_handler but handles Pydantic ValidationErrors raised
         # by the implementation of the handlers.
         return JSONResponse(
@@ -96,11 +96,11 @@ def setup(app):
         )
 
     @app.exception_handler(CredentialsUnavailableError)
-    def exception_handler_credentialsunavailable(_request: Request, exc: CredentialsUnavailableError):
+    async def exception_handler_credentialsunavailable(_request: Request, exc: CredentialsUnavailableError):
         return JSONResponse(status_code=422, content=as_fastapi_http_validation_error(str(exc), "credentials"))
 
     @app.exception_handler(DwhError)
-    def exception_handler_dwherror(_request: Request, exc: DwhError):
+    async def exception_handler_dwherror(_request: Request, exc: DwhError):
         cause = f" (cause: {type(exc.__cause__).__name__})" if exc.__cause__ is not None else ""
         logger.warning(f"Data warehouse error {exc.code}{cause}: {exc}")
         return JSONResponse(
@@ -117,16 +117,16 @@ def setup(app):
         )
 
     @app.exception_handler(DnsLookupError)
-    def exception_handler_dnslookuperror(_request: Request, exc: DnsLookupError):
+    async def exception_handler_dnslookuperror(_request: Request, exc: DnsLookupError):
         return JSONResponse(status_code=502, content={"message": str(exc)})
 
     @app.exception_handler(OidcProviderTimeoutError)
-    def exception_handler_oidcprovidertimeout(_request: Request, exc: OidcProviderTimeoutError):
+    async def exception_handler_oidcprovidertimeout(_request: Request, exc: OidcProviderTimeoutError):
         logger.warning(f"Identity provider request timed out: {exc}")
         return JSONResponse(status_code=504, content={"detail": "Identity provider request timed out."})
 
     @app.exception_handler(OidcProviderError)
-    def exception_handler_oidcprovidererror(_request: Request, exc: OidcProviderError):
+    async def exception_handler_oidcprovidererror(_request: Request, exc: OidcProviderError):
         logger.warning(f"Identity provider request failed: {exc}")
         return JSONResponse(
             status_code=502,
@@ -134,5 +134,15 @@ def setup(app):
         )
 
     @app.exception_handler(InvalidPageTokenError)
-    def exception_handler_invalidpagetokenerror(_request: Request, _exc: InvalidPageTokenError):
+    async def exception_handler_invalidpagetokenerror(_request: Request, _exc: InvalidPageTokenError):
         return JSONResponse(status_code=400, content={"detail": "Invalid page_token."})
+
+    # Exceptions not handled by the above get handled by Starlette's machinery, but Starlette doesn't decorate
+    # the structured log entries with the exception. We want the exceptions to be indexable, so we implement our
+    # own unhandled exception handler. The response is the same that Starlette sends.
+    @app.exception_handler(Exception)
+    async def exception_handler_unhandled(request: Request, exc: Exception):
+        logger.bind(http_method=request.method, http_path=request.url.path).opt(exception=exc).error(
+            "Unhandled exception while handling a request"
+        )
+        return PlainTextResponse("Internal Server Error", status_code=500)

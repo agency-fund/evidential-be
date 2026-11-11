@@ -1386,6 +1386,7 @@ def analyze_experiment_freq_impl(
                         std_error=arm_result.std_error,
                         ci_lower=arm_result.ci_lower,
                         ci_upper=arm_result.ci_upper,
+                        mean=arm_result.mean,
                         mean_ci_lower=arm_result.mean_ci_lower,
                         mean_ci_upper=arm_result.mean_ci_upper,
                         num_missing_values=arm_result.num_missing_values,
@@ -1399,12 +1400,13 @@ def analyze_experiment_freq_impl(
                         arm_name=arm.name,
                         arm_description=arm.description,
                         is_baseline=arm.id == baseline_arm_id,
-                        estimate=0,
+                        estimate=float("nan"),
                         p_value=float("nan"),
                         t_stat=float("nan"),
                         std_error=float("nan"),
                         ci_lower=float("nan"),
                         ci_upper=float("nan"),
+                        mean=float("nan"),
                         mean_ci_lower=float("nan"),
                         mean_ci_upper=float("nan"),
                         num_missing_values=-1,  # -1 indicates arm analysis not available
@@ -1440,7 +1442,7 @@ def read_assignments_efficiently(
         column_names.append(tables.ArmAssignment.cluster_key.name)
 
     joined_column_names = sql.SQL(", ").join(sql.Identifier(name) for name in column_names)
-    select_query = t"SELECT {joined_column_names:q} FROM arm_assignments WHERE experiment_id = {experiment_id}"  # type: ignore
+    select_query = t"SELECT {joined_column_names:q} FROM arm_assignments WHERE experiment_id = {experiment_id}"
     arm_ids: list[str] = []
     participant_ids: list[str] = []
     cluster_keys: list[str | None] = []
