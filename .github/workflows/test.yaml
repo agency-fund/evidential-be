@@ -21,6 +21,7 @@ env:
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   PIP_PROGRESS_BAR: "off"
   PYTHONUNBUFFERED: "1"
+  UV_PYTHON_PREFERENCE: only-managed
 
   # Relax hostname checks in safe_resolve.
   ALLOW_CONNECTING_TO_PRIVATE_IPS: "1"
@@ -219,7 +220,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.pydependencies == 'true'
     timeout-minutes: 15
-    runs-on: macos-14
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
