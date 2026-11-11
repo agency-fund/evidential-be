@@ -76,7 +76,7 @@
 | src/xngin/apiserver/test\_handler\_routes.py                                       |       49 |        4 |     92% |90, 93, 99, 103 |
 | src/xngin/apiserver/test\_request\_context\_middleware.py                          |      143 |        2 |     99% |    40, 44 |
 | src/xngin/apiserver/testing/assertions.py                                          |       61 |        5 |     92% |20, 41, 58, 61, 96 |
-| src/xngin/apiserver/testing/database\_plugin.py                                    |       33 |       12 |     64% |34-37, 39-42, 48, 54-57 |
+| src/xngin/apiserver/testing/database\_plugin.py                                    |       33 |       11 |     67% |34-37, 39-42, 54-57 |
 | src/xngin/apiserver/testing/helpers.py                                             |      104 |       21 |     80% |39, 58, 73, 75, 88, 98, 102, 104, 108, 148, 165-179 |
 | src/xngin/apiserver/testing/pg\_helpers.py                                         |       90 |        8 |     91% |   149-157 |
 | src/xngin/apiserver/testing/stress\_dwh\_def.py                                    |       73 |        1 |     99% |       299 |
@@ -118,7 +118,7 @@
 | src/xngin/xsecrets/secretservice.py                                                |       64 |        7 |     89% |37, 45-46, 51-52, 104, 126 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                                     |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                                         |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                                          | **20928** | **1108** | **95%** |           |
+| **TOTAL**                                                                          | **20928** | **1107** | **95%** |           |
 
 123 files skipped due to complete coverage.
 
