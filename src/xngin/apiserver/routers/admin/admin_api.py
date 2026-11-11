@@ -20,6 +20,7 @@ from fastapi import (
     Response,
     status,
 )
+from humanize import precisedelta
 from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy import delete, func, literal, select, update
@@ -1503,13 +1504,12 @@ def update_experiment(
         if end_date <= body.start_date:
             raise LateValidationError("New start date must be before end date.")
         experiment.start_date = body.start_date
-    # A request that re-sends the current end date, such as saving the date field without changing it, is a no-op.
     if body.end_date is not None and body.end_date != experiment.end_date:
         if body.end_date <= experiment.start_date:
             raise LateValidationError("New end date must be after start date.")
-        if body.end_date <= datetime.now(UTC) + MIN_TIME_UNTIL_NEW_END_DATE:
-            hours = MIN_TIME_UNTIL_NEW_END_DATE // timedelta(hours=1)
-            raise LateValidationError(f"New end date must be at least {hours} hours from now.")
+        if body.end_date < datetime.now(UTC) + MIN_TIME_UNTIL_NEW_END_DATE:
+            minimum_notice = precisedelta(MIN_TIME_UNTIL_NEW_END_DATE, minimum_unit="minutes")
+            raise LateValidationError(f"New end date must be at least {minimum_notice} from now.")
         experiment.end_date = body.end_date
         # Resume assignments that stopped because the old end date passed. Other stop reasons (e.g. preassigned) stay.
         # The reason is checked in the database, not on the loaded experiment, so a stop committed since this request

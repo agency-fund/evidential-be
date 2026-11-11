@@ -1,8 +1,9 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Annotated, Literal
 from urllib.parse import urlparse
 
 from annotated_types import Ge, Le
+from humanize import precisedelta
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from xngin.apiserver.common_field_types import FieldName
@@ -551,7 +552,8 @@ class UpdateExperimentRequest(AdminApiBaseModel):
         Field(
             description=(
                 "New end date. Must be after the start date and at least "
-                f"{MIN_TIME_UNTIL_NEW_END_DATE // timedelta(hours=1)} hours from now. If the experiment stopped making "
+                f"{precisedelta(MIN_TIME_UNTIL_NEW_END_DATE, minimum_unit='minutes')} from now. "
+                "If the experiment stopped making "
                 "new assignments because its previous end date passed, a later end date resumes them."
             )
         ),
