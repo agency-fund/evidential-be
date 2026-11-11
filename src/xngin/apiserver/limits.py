@@ -48,9 +48,9 @@ MAX_NUMBER_OF_POWER_CURVE_POINTS = 100
 # Maximum length of GCP service account info JSON.
 MAX_GCP_SERVICE_ACCOUNT_LEN = 8000
 
-# Minimum time between now and an experiment's new end date when the end date is changed. Background jobs (snapshots,
-# warehouse pulls) run every few hours on a schedule derived from the end date, so this lets at least one full cycle
-# run against the new end date. It also prevents an edit from ending an experiment immediately by accident.
+# Minimum notice for end date changes. Lets running jobs (snapshots, warehouse pulls) finish using the old end date
+# and allows a full cycle on the new schedule, which runs every few hours. Also prevents accidentally ending an
+# experiment immediately.
 MIN_TIME_UNTIL_NEW_END_DATE = timedelta(hours=6)
 
 # Turn.io related limits
