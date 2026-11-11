@@ -614,8 +614,8 @@ def test_formatted_cells_preserve_missing_zero_false_and_textual_ids(sheets_api)
 @pytest.mark.parametrize("cluster_key", [None, "region"])
 def test_create_launch_and_analyze_a_sheet_experiment(sheets_api, aclient, xngin_session, blank_outcomes, cluster_key):
     api, values = sheets_api
-    examples = Path(__file__).parents[4] / "tools"
-    with (examples / "google_sheets_example.csv").open(newline="") as source:
+    testdata = Path(__file__).parents[1] / "testdata"
+    with (testdata / "google_sheets_example.csv").open(newline="") as source:
         observed_values = list(csv.reader(source))
     if blank_outcomes:
         values[:] = [observed_values[0].copy(), *[row[:2] + [""] * (len(row) - 2) for row in observed_values[1:]]]
