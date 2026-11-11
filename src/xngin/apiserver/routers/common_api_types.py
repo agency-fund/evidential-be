@@ -1828,22 +1828,13 @@ class ExperimentConfig(ApiBaseModel):
         dt.datetime | None,
         Field(
             description=(
-                "The date and time new assignments were stopped. Null if no stop has been recorded. A stop because the "
-                "end date passed is recorded by the first assignment request after the end date, so this can be null "
-                "for an experiment whose end date has passed; either way, no new assignments are made after the end "
-                "date. Extending the end date clears a stop recorded for that reason."
+                "The date and time when assignments were stopped. Null if the experiment is "
+                "still accepting assignments. This date can change if the experiment's "
+                "end date is modified."
             )
         ),
     ]
-    stopped_assignments_reason: Annotated[
-        StopAssignmentReason | None,
-        Field(
-            description=(
-                "Why new assignments were stopped, e.g. preassigned (participants were fixed when the experiment was "
-                "created) or end_date (the end date passed). Null if no stop has been recorded."
-            )
-        ),
-    ]
+    stopped_assignments_reason: StopAssignmentReason | None
     design_spec: DesignSpec
     power_analyses: PowerResponse | None
     assign_summary: AssignSummary | None
