@@ -1881,13 +1881,7 @@ class GetParticipantAssignmentResponse(ApiBaseModel):
     participant_id: str
     assignment: Annotated[
         Assignment | None,
-        Field(
-            description=(
-                "The participant's assignment, without strata. Null if the participant has no assignment and none was "
-                "created: create_if_none is false, the participant fails the filters or is not in a preassigned "
-                "experiment, or the experiment has stopped assigning (see stopped_assignments_reason)."
-            )
-        ),
+        Field(description="Null if no assignment. Strata are not included."),
     ]
 
 
