@@ -66,6 +66,7 @@ from xngin.apiserver.routers.common_enums import (
     UpdateTypeBeta,
     UpdateTypeNormal,
 )
+from xngin.apiserver.routers.experiments.experiments_common_csv import get_experiment_assignments_impl
 from xngin.apiserver.routers.experiments.property_filters import passes_filters, validate_filter_value
 from xngin.apiserver.settings import DatasourceConfig, GoogleSheetsDsn
 from xngin.apiserver.sql.queries import stream
@@ -576,25 +577,6 @@ def create_bandit_online_experiment_impl(
     return experiment_converter.get_create_experiment_response(empty_assign_summary, webhook_ids)
 
 
-def get_google_sheets_assignment_data(
-    xngin_session: Session, experiment: tables.Experiment
-) -> tuple[str, str, dict[str, str], set[str]]:
-    """Returns the source tab ID, participant ID column, arm name per participant, and experiment field names."""
-    uid = experiment.unique_id_field()
-    if uid is None or experiment.datasource_table is None:
-        raise LateValidationError("A Google Sheets experiment needs a participant ID and spreadsheet tab.")
-    assignments = {
-        pid: arm_name
-        for pid, arm_name in xngin_session.execute(
-            select(tables.ArmAssignment.participant_id, tables.Arm.name)
-            .join(tables.Arm, tables.Arm.id == tables.ArmAssignment.arm_id)
-            .where(tables.ArmAssignment.experiment_id == experiment.id)
-        ).all()
-    }
-    field_names = {field.field_name for field in experiment.experiment_fields}
-    return experiment.datasource_table, uid.field_name, assignments, field_names
-
-
 def commit_experiment_impl(xngin_session: Session, experiment: tables.Experiment) -> CommitExperimentResult:
     is_google_sheets = isinstance(experiment.datasource.get_config().dwh, GoogleSheetsDsn)
     if is_google_sheets:
@@ -618,14 +600,22 @@ def commit_experiment_impl(xngin_session: Session, experiment: tables.Experiment
         return CommitExperimentResult.INVALID_STATE
 
     if is_google_sheets:
-        source_tab_id, unique_id_field, assignments, field_names = get_google_sheets_assignment_data(
-            xngin_session, experiment
-        )
+        uid = experiment.unique_id_field()
+        if not uid or not experiment.datasource_table:
+            raise LateValidationError("A Google Sheets experiment needs a participant ID and spreadsheet tab.")
+        assignments = {
+            assignment["participant_id"]: assignment["arm_name"]
+            for assignment in get_experiment_assignments_impl(xngin_session, experiment)
+        }
         with DwhSession.open(experiment.datasource.get_config().dwh) as dwh:
             # The tab and the state are saved in the same DB transaction. A rollback
             # retains the source tab; a retry finds the owned tab by experiment ID.
             experiment.datasource_table = dwh.create_sheet_experiment_tab(
-                source_tab_id, unique_id_field, experiment.id, assignments, field_names
+                source_tab_id=experiment.datasource_table,
+                unique_id_field=uid.field_name,
+                experiment_id=experiment.id,
+                assignments=assignments,
+                field_names={field.field_name for field in experiment.experiment_fields},
             )
 
     experiment.state = ExperimentState.COMMITTED
