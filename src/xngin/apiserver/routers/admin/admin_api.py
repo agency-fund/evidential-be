@@ -1511,9 +1511,6 @@ def update_experiment(
             minimum_notice = precisedelta(MIN_TIME_UNTIL_NEW_END_DATE, minimum_unit="minutes")
             raise LateValidationError(f"New end date must be at least {minimum_notice} from now.")
         experiment.end_date = body.end_date
-        # Resume assignments that stopped because the old end date passed. Other stop reasons (e.g. preassigned) stay.
-        # The reason is checked in the database, not on the loaded experiment, so a stop committed since this request
-        # loaded it is cleared too.
         session.execute(
             update(tables.Experiment)
             .where(
