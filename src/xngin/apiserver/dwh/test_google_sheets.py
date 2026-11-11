@@ -727,10 +727,7 @@ def test_create_launch_and_analyze_a_sheet_experiment(sheets_api, aclient, xngin
     outcome_gid = int(experiment.datasource_table)
     assert outcome_gid != 42
     config = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=experiment_id).data.config
-    assert (
-        config.google_sheets_experiment_url
-        == f"https://docs.google.com/spreadsheets/d/demo_sheet/edit#gid={outcome_gid}"
-    )
+    assert config.spreadsheet_full_url == f"https://docs.google.com/spreadsheets/d/demo_sheet/edit#gid={outcome_gid}"
     assert config.design_spec.table_name == str(outcome_gid)
     assert values[0] == headers
     expected_fields = {"participant_id", *(metric.field_name for metric in metrics)}
@@ -885,7 +882,7 @@ def test_shared_raw_sheet_has_isolated_experiment_outcomes(sheets_api, aclient, 
                 )
             ),
         ).data
-        assert response.google_sheets_experiment_url is None
+        assert response.spreadsheet_full_url is None
         aclient.commit_experiment(datasource_id=ds_id, experiment_id=response.experiment_id)
         return response.experiment_id
 
@@ -918,9 +915,7 @@ def test_shared_raw_sheet_has_isolated_experiment_outcomes(sheets_api, aclient, 
         assert experiment_table is not None
         gid = int(experiment_table)
         config = aclient.get_experiment_for_ui(datasource_id=ds_id, experiment_id=experiment_id).data.config
-        assert (
-            config.google_sheets_experiment_url == f"https://docs.google.com/spreadsheets/d/demo_sheet/edit#gid={gid}"
-        )
+        assert config.spreadsheet_full_url == f"https://docs.google.com/spreadsheets/d/demo_sheet/edit#gid={gid}"
         gids[experiment_id] = gid
         assert gid != 42
         tab = api.tabs[gid]

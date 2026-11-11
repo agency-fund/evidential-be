@@ -1862,9 +1862,9 @@ class ExperimentConfig(ApiBaseModel):
 
     experiment_id: Annotated[str, Field(description="Server-generated ID of the experiment.")]
     datasource_id: str
-    google_sheets_experiment_url: Annotated[
+    spreadsheet_full_url: Annotated[
         str | None,
-        Field(description="Link derived from the datasource spreadsheet and the launched experiment's tab ID."),
+        Field(description="Full URL of the datasource spreadsheet, including the launched experiment's outcomes tab."),
     ] = None
     state: Annotated[ExperimentState, Field(description="Current state of this experiment.")]
     stopped_assignments_at: Annotated[

@@ -377,8 +377,8 @@ class ExperimentStorageConverter:
             return None
         return capi.PowerResponse.model_validate(self.experiment.power_analyses)
 
-    def get_google_sheets_experiment_url(self) -> str | None:
-        """Link to a committed Google Sheets experiment's outcomes tab; None for anything else."""
+    def get_spreadsheet_full_url(self) -> str | None:
+        """Full URL of a committed spreadsheet experiment's outcomes tab; None for anything else."""
         if self.experiment.state != ExperimentState.COMMITTED or self.experiment.datasource_table is None:
             return None
         # Check the stored driver first: get_config() would decrypt other datasources' credentials.
@@ -399,7 +399,7 @@ class ExperimentStorageConverter:
         return capi.GetExperimentResponse(
             experiment_id=self.experiment.id,
             datasource_id=self.experiment.datasource_id,
-            google_sheets_experiment_url=self.get_google_sheets_experiment_url(),
+            spreadsheet_full_url=self.get_spreadsheet_full_url(),
             state=ExperimentState(self.experiment.state),
             stopped_assignments_at=self.experiment.stopped_assignments_at,
             stopped_assignments_reason=StopAssignmentReason.from_str(self.experiment.stopped_assignments_reason),
