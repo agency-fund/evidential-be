@@ -262,6 +262,7 @@ jobs:
       - run: task test-coverage
         env:
           DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
+          PYTEST_XDIST_AUTO_NUM_WORKERS: "3"
       - name: Coverage comment
         if: github.event_name != 'workflow_dispatch'
         id: coverage_comment
