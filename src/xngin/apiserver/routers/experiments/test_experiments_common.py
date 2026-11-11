@@ -13,12 +13,14 @@ import numpy as np
 import pytest
 from deepdiff import DeepDiff
 from pydantic import HttpUrl, TypeAdapter
-from sqlalchemy import Boolean, Column, MetaData, String, Table, insert, select
+from sqlalchemy import Boolean, Column, MetaData, String, Table, insert, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from xngin.apiserver import database
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.exceptions_common import LateValidationError
+from xngin.apiserver.routers.admin import admin_api
+from xngin.apiserver.routers.admin.admin_api_types import UpdateExperimentRequest
 from xngin.apiserver.routers.common_api_types import (
     Arm,
     ArmBandit,
@@ -2736,6 +2738,59 @@ def test_create_assignment_for_participant_stopped_reason(
         assert datetime.now(UTC) - experiment.stopped_assignments_at < timedelta(seconds=1)
     else:
         assert experiment.stopped_assignments_at is None
+
+
+def test_create_assignment_for_participant_does_not_stop_an_experiment_extended_concurrently(
+    xngin_session, testing_datasource
+):
+    """A request that loaded the experiment before its end date was extended must not record an end date stop."""
+    experiment = insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.FREQ_ONLINE,
+        end_date=datetime.now(UTC) - timedelta(days=1),
+    )
+    # Another request extends the end date and commits, while this session still holds the old end date.
+    with database.get_engine().begin() as conn:
+        conn.execute(
+            update(tables.Experiment)
+            .where(tables.Experiment.id == experiment.id)
+            .values(end_date=datetime.now(UTC) + timedelta(days=7))
+        )
+
+    assert create_assignment_for_participant(xngin_session, experiment, "new_id", random_state=66) is None
+
+    xngin_session.refresh(experiment)
+    assert experiment.stopped_assignments_at is None
+    assert experiment.stopped_assignments_reason is None
+
+
+def test_update_experiment_clears_an_end_date_stop_recorded_concurrently(xngin_session, testing_datasource):
+    """Extending the end date clears an end date stop committed after the update request loaded the experiment."""
+    experiment = insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.FREQ_ONLINE,
+        end_date=datetime.now(UTC) - timedelta(days=1),
+    )
+    assert experiment.stopped_assignments_at is None
+    # An assignment request records the end date stop and commits, while this session still sees no stop.
+    with database.get_engine().begin() as conn:
+        conn.execute(
+            update(tables.Experiment)
+            .where(tables.Experiment.id == experiment.id)
+            .values(stopped_assignments_at=datetime.now(UTC), stopped_assignments_reason=StopAssignmentReason.END_DATE)
+        )
+
+    admin_api.update_experiment(
+        experiment=experiment,
+        session=xngin_session,
+        body=UpdateExperimentRequest(end_date=datetime.now(UTC) + timedelta(days=7)),
+    )
+
+    xngin_session.refresh(experiment)
+    assert experiment.stopped_assignments_at is None
+    assert experiment.stopped_assignments_reason is None
 
 
 @pytest.mark.parametrize(

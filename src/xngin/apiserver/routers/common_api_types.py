@@ -1866,13 +1866,14 @@ class ExperimentConfig(ApiBaseModel):
     stopped_assignments_at: Annotated[
         dt.datetime | None,
         Field(
-            description="The date and time assignments were stopped. Null if assignments are still allowed to be made."
+            description=(
+                "The date and time when assignments were stopped. Null if the experiment is "
+                "still accepting assignments. This date can change if the experiment's "
+                "end date is modified."
+            )
         ),
     ]
-    stopped_assignments_reason: Annotated[
-        StopAssignmentReason | None,
-        Field(description="The reason assignments were stopped. Null if assignments are still allowed to be made."),
-    ]
+    stopped_assignments_reason: StopAssignmentReason | None
     design_spec: DesignSpec
     power_analyses: PowerResponse | None
     assign_summary: AssignSummary | None
@@ -1919,7 +1920,7 @@ class GetParticipantAssignmentResponse(ApiBaseModel):
     participant_id: str
     assignment: Annotated[
         Assignment | None,
-        Field(description="Null if no assignment. assignment.strata are not included."),
+        Field(description="Null if no assignment. Strata are not included."),
     ]
 
 

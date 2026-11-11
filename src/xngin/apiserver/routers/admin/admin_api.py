@@ -20,9 +20,10 @@ from fastapi import (
     Response,
     status,
 )
+from humanize import precisedelta
 from loguru import logger
 from pydantic import BaseModel
-from sqlalchemy import delete, func, literal, select
+from sqlalchemy import delete, func, literal, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, selectinload
 
@@ -35,7 +36,7 @@ from xngin.apiserver.dwh.field_aliases import FieldAliases
 from xngin.apiserver.dwh.inspections import create_inspect_table_response_from_table
 from xngin.apiserver.exceptionhandlers import XHTTPValidationError
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.limits import MAX_LENGTH_OF_EMAIL_VALUE, MAX_LENGTH_OF_NAME_VALUE
+from xngin.apiserver.limits import MAX_LENGTH_OF_EMAIL_VALUE, MAX_LENGTH_OF_NAME_VALUE, MIN_TIME_UNTIL_NEW_END_DATE
 from xngin.apiserver.pagination import (
     PaginationQuery,
     SortField,
@@ -119,7 +120,7 @@ from xngin.apiserver.routers.common_api_types import (
     PreassignedFrequentistExperimentSpec,
     Relation,
 )
-from xngin.apiserver.routers.common_enums import ExperimentState
+from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers.experiments import experiments_common, experiments_common_csv
 from xngin.apiserver.routers.experiments.experiments_common import (
     AbandonExperimentResult,
@@ -1504,10 +1505,22 @@ def update_experiment(
         if end_date <= body.start_date:
             raise LateValidationError("New start date must be before end date.")
         experiment.start_date = body.start_date
-    if body.end_date is not None:
+    if body.end_date is not None and body.end_date != experiment.end_date:
         if body.end_date <= experiment.start_date:
             raise LateValidationError("New end date must be after start date.")
+        if body.end_date < datetime.now(UTC) + MIN_TIME_UNTIL_NEW_END_DATE:
+            minimum_notice = precisedelta(MIN_TIME_UNTIL_NEW_END_DATE, minimum_unit="minutes")
+            raise LateValidationError(f"New end date must be at least {minimum_notice} from now.")
         experiment.end_date = body.end_date
+        session.execute(
+            update(tables.Experiment)
+            .where(
+                tables.Experiment.id == experiment.id,
+                tables.Experiment.stopped_assignments_reason == StopAssignmentReason.END_DATE,
+            )
+            .values(stopped_assignments_at=None, stopped_assignments_reason=None)
+            .execution_options(synchronize_session="fetch")
+        )
     if body.decision is not None:
         experiment.decision = body.decision
     if body.impact is not None:

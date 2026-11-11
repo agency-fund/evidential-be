@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 # Maximum length of fields that describe a value in human readable, free-form text.
 MAX_LENGTH_OF_DESCRIPTION_VALUE = 2000
 
@@ -48,6 +50,11 @@ MAX_NUMBER_OF_POWER_CURVE_POINTS = 100
 
 # Maximum length of GCP service account info JSON.
 MAX_GCP_SERVICE_ACCOUNT_LEN = 8000
+
+# Minimum notice for end date changes. Lets running jobs (snapshots, warehouse pulls) finish using the old end date
+# and allows a full cycle on the new schedule, which runs every few hours. Also prevents accidentally ending an
+# experiment immediately.
+MIN_TIME_UNTIL_NEW_END_DATE = timedelta(hours=6)
 
 # Turn.io related limits
 TURN_REQUEST_TIMEOUT_SECONDS = 10
