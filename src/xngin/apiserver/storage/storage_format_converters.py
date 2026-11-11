@@ -385,7 +385,7 @@ class ExperimentStorageConverter:
         dwh_config = self.experiment.datasource.config["dwh"]
         if dwh_config["driver"] != "google_sheets":
             return None
-        spreadsheet_id = GoogleSheetsDsn.model_validate(dwh_config).spreadsheet_id
+        spreadsheet_id = GoogleSheetsDsn.model_validate(dwh_config).get_spreadsheet_id()
         return f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={self.experiment.datasource_table}"
 
     def get_experiment_config(

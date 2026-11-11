@@ -1106,7 +1106,7 @@ def update_datasource(
         if (
             isinstance(cfg.dwh, GoogleSheetsDsn)
             and isinstance(new_dwh, GoogleSheetsDsn)
-            and cfg.dwh.spreadsheet_id != new_dwh.spreadsheet_id
+            and cfg.dwh.get_spreadsheet_id() != new_dwh.get_spreadsheet_id()
             and session.scalar(select(tables.Experiment.id).where(tables.Experiment.datasource_id == datasource.id))
         ):
             raise LateValidationError(

@@ -318,13 +318,11 @@ class GoogleSheetsDsn(ConfigBaseModel, BaseDsn):
         dwh_utils.parse_spreadsheet_url(value)
         return value
 
-    @property
-    def spreadsheet_id(self) -> str:
+    def get_spreadsheet_id(self) -> str:
         """The ID of the whole spreadsheet"""
         return dwh_utils.parse_spreadsheet_url(self.spreadsheet_url)[0]
 
-    @property
-    def default_gid(self) -> int | None:
+    def get_default_gid(self) -> int | None:
         """The tab ID (gid) the URL points to, used as the datasource's default tab. None means the first tab."""
         return dwh_utils.parse_spreadsheet_url(self.spreadsheet_url)[1]
 

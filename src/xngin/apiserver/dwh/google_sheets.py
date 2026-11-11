@@ -234,8 +234,8 @@ class GoogleSheetsClient:
     """
 
     def __init__(self, dsn: GoogleSheetsDsn) -> None:
-        self.spreadsheet_id = dsn.spreadsheet_id
-        self._default_gid = dsn.default_gid
+        self.spreadsheet_id = dsn.get_spreadsheet_id()
+        self._default_gid = dsn.get_default_gid()
         self._data: dict[int, SheetData] = {}
         if not flags.GSHEETS_DEMO_CREDS_BASE64:
             raise DwhConnectionError(
