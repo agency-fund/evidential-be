@@ -1,3 +1,4 @@
+import base64
 import csv
 import json
 from concurrent.futures import ThreadPoolExecutor
@@ -52,7 +53,7 @@ OUTCOME = FieldAliases(["outcome"]).alias("outcome")
 
 @pytest.fixture
 def sheets_api(mocker):
-    mocker.patch.object(flags, "GOOGLE_SHEETS_CREDENTIALS_FILE", "/configured/service-account.json")
+    mocker.patch.object(flags, "GSHEETS_DEMO_CREDS_BASE64", base64.b64encode(b'{"type": "service_account"}').decode())
     values = [
         ["participant_id", "region", "outcome", "converted"],
         ["001", "north", "10", "TRUE"],
@@ -162,7 +163,7 @@ def sheets_api(mocker):
     api.spreadsheet.worksheet.side_effect = worksheet_by_title
     api.client.open_by_key.return_value = api.spreadsheet
     api.service_account = mocker.patch(
-        "xngin.apiserver.dwh.google_sheets.gspread.service_account", return_value=api.client
+        "xngin.apiserver.dwh.google_sheets.gspread.service_account_from_dict", return_value=api.client
     )
     return api, values
 
@@ -466,32 +467,42 @@ def test_sheet_limits_accept_the_full_supported_grid():
     assert data.rows[-1][1] == [str(MAX_SHEET_ROWS - 1), *[None] * (MAX_SHEET_COLUMNS - 1)]
 
 
-@pytest.mark.parametrize("configured_path", [None, ""])
-def test_missing_credentials_explain_required_configuration(mocker, configured_path):
-    mocker.patch.object(flags, "GOOGLE_SHEETS_CREDENTIALS_FILE", configured_path)
-    with pytest.raises(DwhConnectionError, match="XNGIN_GOOGLE_SHEETS_CREDENTIALS_FILE"):
+def test_credentials_are_decoded_in_memory(sheets_api):
+    api, _ = sheets_api
+    GoogleSheetsClient(DSN)
+    api.service_account.assert_called_once_with(
+        info={"type": "service_account"}, scopes=["https://www.googleapis.com/auth/spreadsheets"]
+    )
+
+
+@pytest.mark.parametrize("configured_credentials", [None, ""])
+def test_missing_credentials_explain_required_configuration(mocker, configured_credentials):
+    mocker.patch.object(flags, "GSHEETS_DEMO_CREDS_BASE64", configured_credentials)
+    with pytest.raises(DwhConnectionError, match="GSHEETS_DEMO_CREDS_BASE64"):
         GoogleSheetsClient(DSN)
 
 
-@pytest.mark.parametrize("keyfile", ["missing", "malformed", "invalid_private_key"])
-def test_invalid_keyfile_reports_configuration_without_exposing_contents(mocker, tmp_path, keyfile):
-    path = tmp_path / "service-account.json"
+@pytest.mark.parametrize("invalid_credentials", ["base64", "json", "non_object", "missing_fields", "private_key"])
+def test_invalid_credentials_report_configuration_without_exposing_contents(mocker, invalid_credentials):
     secret = "PRIVATE-CREDENTIAL-CONTENT-MUST-NOT-LEAK"
-    if keyfile == "malformed":
-        path.write_text(f"not-json {secret}")
-    elif keyfile == "invalid_private_key":
-        path.write_text(
-            json.dumps({
-                "type": "service_account",
-                "client_email": "reader@example.iam.gserviceaccount.com",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "private_key": secret,
-            })
-        )
-    mocker.patch.object(flags, "GOOGLE_SHEETS_CREDENTIALS_FILE", str(path))
-    with pytest.raises(DwhConnectionError, match="XNGIN_GOOGLE_SHEETS_CREDENTIALS_FILE") as error:
+    payload = {
+        "base64": secret,
+        "json": f"not-json {secret}",
+        "non_object": json.dumps([secret]),
+        "missing_fields": json.dumps({"private_key": secret}),
+        "private_key": json.dumps({
+            "type": "service_account",
+            "client_email": "reader@example.iam.gserviceaccount.com",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "private_key": secret,
+        }),
+    }[invalid_credentials]
+    encoded = payload if invalid_credentials == "base64" else base64.b64encode(payload.encode()).decode()
+    mocker.patch.object(flags, "GSHEETS_DEMO_CREDS_BASE64", encoded)
+    with pytest.raises(DwhConnectionError, match="GSHEETS_DEMO_CREDS_BASE64") as error:
         GoogleSheetsClient(DSN)
     assert secret not in str(error.value)
+    assert encoded not in str(error.value)
 
 
 @pytest.mark.parametrize("error_type", [PermissionError, gspread.SpreadsheetNotFound])

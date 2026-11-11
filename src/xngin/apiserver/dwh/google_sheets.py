@@ -1,5 +1,7 @@
 """Google Sheets datasource: tabs are read into an in-memory SQLite table per session for the warehouse queries."""
 
+import base64
+import json
 import math
 import re
 import secrets
@@ -218,6 +220,13 @@ class SheetsAccessError(DwhConnectionError):
         return self.message
 
 
+def _decode_credentials(encoded: str) -> dict:
+    credentials = json.loads(base64.b64decode(encoded, validate=True))
+    if not isinstance(credentials, dict):
+        raise TypeError("Google Sheets service-account credentials must be a JSON object.")
+    return credentials
+
+
 class GoogleSheetsClient:
     """A spreadsheet connection whose tables are its tabs, named by tab ID (the gid in a tab's URL).
 
@@ -228,24 +237,22 @@ class GoogleSheetsClient:
         self.spreadsheet_id = dsn.spreadsheet_id
         self._default_gid = dsn.default_gid
         self._data: dict[int, SheetData] = {}
-        if not flags.GOOGLE_SHEETS_CREDENTIALS_FILE:
+        if not flags.GSHEETS_DEMO_CREDS_BASE64:
             raise DwhConnectionError(
                 ValueError(
-                    "Google Sheets service-account credentials are not configured. "
-                    "Set XNGIN_GOOGLE_SHEETS_CREDENTIALS_FILE."
+                    "Google Sheets service-account credentials are not configured. Set GSHEETS_DEMO_CREDS_BASE64."
                 )
             )
         try:
-            self.client = gspread.service_account(
-                filename=flags.GOOGLE_SHEETS_CREDENTIALS_FILE,
+            self.client = gspread.service_account_from_dict(
+                info=_decode_credentials(flags.GSHEETS_DEMO_CREDS_BASE64),
                 # Editor scope to create outcome tab.
                 scopes=["https://www.googleapis.com/auth/spreadsheets"],
             )
-        except (OSError, ValueError, GoogleAuthError) as exc:
+        except (TypeError, ValueError, GoogleAuthError) as exc:
             raise DwhConnectionError(
                 ValueError(
-                    "Could not load the Google Sheets service-account credentials. "
-                    "Check XNGIN_GOOGLE_SHEETS_CREDENTIALS_FILE."
+                    "Could not load the Google Sheets service-account credentials. Check GSHEETS_DEMO_CREDS_BASE64."
                 )
             ) from exc
         self.client.set_timeout(10)
