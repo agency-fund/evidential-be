@@ -55,7 +55,7 @@ def _maintenance_connection(dsn: str) -> Generator[psycopg.Connection]:
 def _create_database(conn: psycopg.Connection, name: str) -> bool:
     """Creates a database, returning False if it already existed."""
     try:
-        conn.execute(t"CREATE DATABASE {name:i}")  # type: ignore[misc]
+        conn.execute(t"CREATE DATABASE {name:i}")
     except psycopg.errors.DuplicateDatabase:
         return False
     return True
@@ -140,10 +140,10 @@ def create_database(
 def _drop_database(conn: psycopg.Connection, name: str) -> None:
     """Drops a database, terminating its sessions. Template databases are unmarked first, as Postgres requires."""
     try:
-        row = conn.execute(t"SELECT datistemplate FROM pg_database WHERE datname = {name}").fetchone()  # type: ignore[misc]
+        row = conn.execute(t"SELECT datistemplate FROM pg_database WHERE datname = {name}").fetchone()
         if row is not None and row[0]:
-            conn.execute(t"ALTER DATABASE {name:i} IS_TEMPLATE false")  # type: ignore[misc]
-        conn.execute(t"DROP DATABASE {name:i} WITH (FORCE)")  # type: ignore[misc]
+            conn.execute(t"ALTER DATABASE {name:i} IS_TEMPLATE false")
+        conn.execute(t"DROP DATABASE {name:i} WITH (FORCE)")
     except psycopg.errors.InvalidCatalogName:
         console.print(f"Database [cyan]{name}[/cyan] does not exist.")
     except psycopg.errors.ObjectInUse as exc:
@@ -171,7 +171,7 @@ def drop_database(
             _drop_database(conn, name)
         for p in prefix or []:
             matches = conn.execute(
-                t"SELECT datname FROM pg_database WHERE starts_with(datname, {p})"  # type: ignore[misc]
+                t"SELECT datname FROM pg_database WHERE starts_with(datname, {p})"
                 t" AND datname NOT IN ('postgres', 'template0', 'template1') ORDER BY datname"
             ).fetchall()
             for (name,) in matches:

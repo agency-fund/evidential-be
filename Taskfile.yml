@@ -18,6 +18,11 @@ vars:
 
 env:
 
+  GRANIAN_INTERFACE: "asgi"
+  GRANIAN_PORT: "8000"
+  GRANIAN_LOG_CONFIG: "src/xngin/apiserver/granian_log_config.json"
+  GRANIAN_LOG_ACCESS_ENABLED: "true"
+
   # Disable Atlas telemetry.
   ATLAS_NO_ANON_TELEMETRY: "true"
   ATLAS_NO_UPDATE_NOTIFIER: "true"
@@ -142,6 +147,29 @@ tasks:
       --template src/xngin/apiserver/testdata/warehouses.json
       --allow-existing
       --create-db
+  bootstrap-cloud-dwh:
+    desc: >-
+      Loads the sample data warehouses into your cloud data warehouses (BigQuery and Redshift), replacing them. A
+      warehouse is skipped when its variables are unset. See src/xngin/apiserver/testdata/README.md.
+    interactive: true
+    dotenv:
+      - .env
+    cmds:
+      - |
+        if [ -z "$XNGIN_DEVDWH_GCP_BIGQUERY_DSN" ]; then
+          echo "Skipping BigQuery: XNGIN_DEVDWH_GCP_BIGQUERY_DSN is not set."
+        else
+          uv run xngin-cli create-testing-dwh --dsn "$XNGIN_DEVDWH_GCP_BIGQUERY_DSN" \
+            --template src/xngin/apiserver/testdata/warehouses.json
+        fi
+      - |
+        if [ -z "$XNGIN_DEVDWH_AWS_REDSHIFT_DSN" ]; then
+          echo "Skipping Redshift: XNGIN_DEVDWH_AWS_REDSHIFT_DSN is not set."
+        else
+          uv run xngin-cli create-testing-dwh --dsn "$XNGIN_DEVDWH_AWS_REDSHIFT_DSN" \
+            --bucket "$XNGIN_DEVDWH_AWS_BUCKET" --iam-role "$XNGIN_DEVDWH_AWS_REDSHIFT_IAM_ROLE" \
+            --template src/xngin/apiserver/testdata/warehouses.json
+        fi
   bootstrap-app-database:
     interactive: true
     desc: >-
@@ -168,12 +196,15 @@ tasks:
     env:
       DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
       XNGIN_SESSION_TOKEN_KEYSET: "local"
+      GRANIAN_RELOAD: "true"
+      GRANIAN_RELOAD_PATHS: "src"
+      GRANIAN_RELOAD_IGNORE_PATTERNS: '^test_ ^(?!.*\.py$)'
+      GRANIAN_RELOAD_IGNORE_WORKER_FAILURE: "true"
     deps:
       - bootstrap-dwh-database
       - bootstrap-app-database
       - local-session-token-keyset
-    cmds:
-      - uv run xngin-apiserver-dev
+    cmd: uv run granian xngin.apiserver.main:app
   start-live:
     desc: "Starts apiserver locally with settings similar to the Railway environment."
     interactive: false
@@ -186,8 +217,7 @@ tasks:
       RAILWAY_REPLICA_ID: "local-replica"
       RAILWAY_DEPLOYMENT_ID: "local-deployment"
       XNGIN_SESSION_TOKEN_KEYSET: "local"
-    cmds:
-      - uv run --no-dev xngin-apiserver-live
+    cmd: uv run --no-dev granian xngin.apiserver.main:app
   start-airplane:
     desc: "Like start, but runs the backend in airplane mode. All Admin API interactions will be authenticated as testing@example.com automatically."
     interactive: false
@@ -212,8 +242,10 @@ tasks:
     deps:
       - bootstrap-dwh-database
     cmds:
-      # -n0 comes last so that it wins: coverage only measures the pytest process it starts, not pytest-xdist workers.
-      - uv run coverage run -m pytest {{.CLI_ARGS}} -n0
+      # Discard data files left by an interrupted run, so that combine only merges this run's.
+      - uv run coverage erase
+      - uv run coverage run -m pytest -n auto {{.CLI_ARGS}}
+      - uv run coverage combine --quiet
       - uv run coverage html
       - uv run coverage report
       - echo "Open the HTML report at file://{{.USER_WORKING_DIR}}/htmlcov/index.html"
@@ -265,10 +297,19 @@ tasks:
     cmds:
       - task test
   test-integration:
-    desc: "Runs Google integration tests. Requires GOOGLE_APPLICATION_CREDENTIALS environment variable to be set."
+    dotenv:
+      - .env
+    desc: >-
+      Runs the integration tests, which use real cloud services. Tests whose variables are unset are skipped. GCP
+      integration tests: XNGIN_DEVDWH_GCP_CREDENTIALS, the path to a service account key file that may create BigQuery
+      datasets, for the BigQuery tests; XNGIN_SECRETS_GCP_CREDENTIALS and XNGIN_SECRETS_GCP_KMS_KEY_URI for the KMS
+      secrets tests. AWS integration tests: XNGIN_DEVDWH_AWS_REDSHIFT_DSN, a Redshift user that may create schemas,
+      for the Redshift tests.
     interactive: true
     env:
       DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"
+    deps:
+      - bootstrap-dwh-database
     cmds:
       - uv run pytest -m integration
   make-migrations:

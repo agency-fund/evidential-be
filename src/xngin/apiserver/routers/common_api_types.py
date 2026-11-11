@@ -2,6 +2,7 @@ import datetime as dt
 import json
 import math
 import uuid
+from collections import Counter
 from collections.abc import Sequence
 from typing import Annotated, Literal, NotRequired, Self, TypedDict
 
@@ -279,6 +280,15 @@ def _validate_one_time_metric_scope(
         )
 
 
+def _validate_unique_metric_field_names(metrics: list[DesignSpecMetricRequest]) -> None:
+    """Ensure each metric's field_name appears only once."""
+    counts = Counter(metric.field_name for metric in metrics)
+    duplicates = sorted(name for name, count in counts.items() if count > 1)
+    if duplicates:
+        listed = ", ".join(f'"{name}"' for name in duplicates)
+        raise ValueError(f"Each metric can be listed only once; listed more than once: {listed}. Remove the repeats.")
+
+
 class ParticipantProperty(ApiBaseModel):
     """A single participant property used when applying the experiment's filters.
 
@@ -390,8 +400,14 @@ class Arm(ApiBaseModel):
 
 class ArmAnalysis(Arm):
     estimate: Annotated[
-        float,
-        Field(description="The estimated treatment effect relative to the baseline arm."),
+        float | None,
+        Field(
+            description=(
+                "The estimated treatment effect relative to the baseline arm. For the baseline arm itself, "
+                "its mean. None when the baseline arm has no values for this metric, or when this arm's "
+                "analysis is not available."
+            )
+        ),
     ]
     p_value: Annotated[
         float | None,
@@ -420,6 +436,15 @@ class ArmAnalysis(Arm):
         float | None,
         Field(description="Confidence interval upper bound for the regression coefficient estimate."),
     ] = None
+    mean: Annotated[
+        float | None,
+        Field(
+            description=(
+                "The arm's mean value for this metric. Unlike the treatment effect, it is available even "
+                "when the baseline arm has no values. None when this arm's analysis is not available."
+            )
+        ),
+    ] = None
     mean_ci_lower: Annotated[
         float | None,
         Field(description="Confidence interval lower bound for the arm's mean."),
@@ -445,6 +470,8 @@ class ArmAnalysis(Arm):
     ]
 
     @field_serializer(
+        "estimate",
+        "mean",
         "t_stat",
         "p_value",
         "std_error",
@@ -1130,6 +1157,12 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
         return value.isoformat()
 
+    @field_validator("metrics")
+    @classmethod
+    def validate_unique_metrics(cls, v: list[DesignSpecMetricRequest]) -> list[DesignSpecMetricRequest]:
+        _validate_unique_metric_field_names(v)
+        return v
+
     @model_validator(mode="after")
     def validate_strata(self) -> Self:
         """Validate that the strata are valid."""
@@ -1560,6 +1593,12 @@ class PowerRequest(ApiBaseModel):
             ),
         ),
     ] = None
+
+    @field_validator("metrics")
+    @classmethod
+    def validate_unique_metrics(cls, v: list[DesignSpecMetricRequest]) -> list[DesignSpecMetricRequest]:
+        _validate_unique_metric_field_names(v)
+        return v
 
     @model_validator(mode="after")
     def validate_cluster_randomization(self) -> Self:

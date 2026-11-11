@@ -47,6 +47,8 @@ from xngin.db_extensions import custom_functions
 
 # Gives the assertions in the helpers that tests import pytest's detailed failure messages, as in test modules.
 pytest.register_assert_rewrite("xngin.apiserver.testing.assertions")
+pytest.register_assert_rewrite("xngin.apiserver.testing.dwh_identifiers_helpers")
+pytest.register_assert_rewrite("xngin.apiserver.testing.dwh_time_types_helpers")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -83,6 +85,18 @@ def safe_resolve_testing_mode():
     """Configure safe_resolve for unit tests: never perform real DNS resolution and allow private IPs."""
     safe_resolve.ALLOW_CONNECTING_TO_PRIVATE_IPS = True
     safe_resolve.INTERCEPT_DNS_FOR_TESTING = True
+
+
+@pytest.fixture(autouse=True)
+def fixture_without_cloud_dev_warehouses(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keeps tests other than integration tests from reaching the cloud warehouses a developer's environment names.
+
+    A dev environment's first user gets a data source for each warehouse that XNGIN_DEVDWH_GCP_BIGQUERY_DSN and
+    XNGIN_DEVDWH_AWS_REDSHIFT_DSN name, which would make tests that create a first user depend on them.
+    """
+    if request.node.get_closest_marker("integration") is None:
+        monkeypatch.setattr(flags, "XNGIN_DEVDWH_GCP_BIGQUERY_DSN", "")
+        monkeypatch.setattr(flags, "XNGIN_DEVDWH_AWS_REDSHIFT_DSN", "")
 
 
 @pytest.fixture(scope="session", autouse=True)

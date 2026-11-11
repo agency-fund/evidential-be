@@ -1344,12 +1344,13 @@ def analyze_experiment_freq_impl(
     if assignments_df.empty:
         raise StatsNoParticipantsError()
 
+    metric_names = [metric.field_name for metric in metrics]
     with DwhSession.open(dsconfig.dwh, timeout=dwh_timeout) as dwh:
         # Mark the start of the analysis as when we begin pulling outcomes.
         created_at = datetime.now(UTC)
         participant_outcomes = dwh.get_participant_metrics(
             experiment.datasource_table,
-            metric_names=[metric.field_name for metric in metrics],
+            metric_names=metric_names,
             unique_id_field=unique_id_field.field_name,
             participant_ids=participant_ids,
         )
@@ -1370,6 +1371,7 @@ def analyze_experiment_freq_impl(
     analyze_results = analyze_freq_experiment(
         assignments_df,
         participant_outcomes,
+        metric_names,
         unit_col=tables.ArmAssignment.participant_id.name,
         arm_col=tables.ArmAssignment.arm_id.name,
         cluster_col=tables.ArmAssignment.cluster_key.name if include_cluster else None,
@@ -1396,6 +1398,7 @@ def analyze_experiment_freq_impl(
                         std_error=arm_result.std_error,
                         ci_lower=arm_result.ci_lower,
                         ci_upper=arm_result.ci_upper,
+                        mean=arm_result.mean,
                         mean_ci_lower=arm_result.mean_ci_lower,
                         mean_ci_upper=arm_result.mean_ci_upper,
                         num_missing_values=arm_result.num_missing_values,
@@ -1409,12 +1412,13 @@ def analyze_experiment_freq_impl(
                         arm_name=arm.name,
                         arm_description=arm.description,
                         is_baseline=arm.id == baseline_arm_id,
-                        estimate=0,
+                        estimate=float("nan"),
                         p_value=float("nan"),
                         t_stat=float("nan"),
                         std_error=float("nan"),
                         ci_lower=float("nan"),
                         ci_upper=float("nan"),
+                        mean=float("nan"),
                         mean_ci_lower=float("nan"),
                         mean_ci_upper=float("nan"),
                         num_missing_values=-1,  # -1 indicates arm analysis not available
@@ -1450,7 +1454,7 @@ def read_assignments_efficiently(
         column_names.append(tables.ArmAssignment.cluster_key.name)
 
     joined_column_names = sql.SQL(", ").join(sql.Identifier(name) for name in column_names)
-    select_query = t"SELECT {joined_column_names:q} FROM arm_assignments WHERE experiment_id = {experiment_id}"  # type: ignore
+    select_query = t"SELECT {joined_column_names:q} FROM arm_assignments WHERE experiment_id = {experiment_id}"
     arm_ids: list[str] = []
     participant_ids: list[str] = []
     cluster_keys: list[str | None] = []
