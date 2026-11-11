@@ -21,7 +21,6 @@ env:
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   PIP_PROGRESS_BAR: "off"
   PYTHONUNBUFFERED: "1"
-  UV_PYTHON_PREFERENCE: only-managed
 
   # Relax hostname checks in safe_resolve.
   ALLOW_CONNECTING_TO_PRIVATE_IPS: "1"

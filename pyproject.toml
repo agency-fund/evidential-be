@@ -224,6 +224,7 @@ banned-from = [
 
 [tool.uv]
 required-version = ">=0.13.5"
+python-preference = "only-managed"
 environments = [
     "sys_platform == 'darwin'",
     "sys_platform == 'linux'",
