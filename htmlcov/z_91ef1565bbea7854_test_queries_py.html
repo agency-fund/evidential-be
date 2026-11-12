@@ -54,8 +54,8 @@
             </div>
         </aside>
         <h2>
-            <span class="text">69 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">68<span class="text"> run</span></button>
+            <span class="text">71 statements &nbsp;</span>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">70<span class="text"> run</span></button>
             <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">1<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_91ef1565bbea7854_test_query_constructors_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.2">coverage.py v7.17.2</a>,
-            created at 2026-11-11 00:49 +0000
+            created at 2026-11-12 17:08 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -89,7 +89,7 @@
     <p class="pln"><span class="n"><a id="t7" href="#t7">7</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t8" href="#t8">8</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span><span class="op">.</span><span class="nam">dwh</span><span class="op">.</span><span class="nam">dwh_session</span> <span class="key">import</span> <span class="nam">DwhSession</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t9" href="#t9">9</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span><span class="op">.</span><span class="nam">dwh</span><span class="op">.</span><span class="nam">queries</span> <span class="key">import</span> <span class="nam">get_raw_metric_stats</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t10" href="#t10">10</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span><span class="op">.</span><span class="nam">exceptions_common</span> <span class="key">import</span> <span class="nam">LateValidationError</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t10" href="#t10">10</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span><span class="op">.</span><span class="nam">exceptions_common</span> <span class="key">import</span> <span class="nam">DwhConfigurationError</span><span class="op">,</span> <span class="nam">LateValidationError</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t11" href="#t11">11</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span><span class="op">.</span><span class="nam">routers</span><span class="op">.</span><span class="nam">common_api_types</span> <span class="key">import</span> <span class="nam">DesignSpecMetric</span><span class="op">,</span> <span class="nam">DesignSpecMetricRequest</span><span class="op">,</span> <span class="nam">Filter</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t12" href="#t12">12</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span><span class="op">.</span><span class="nam">routers</span><span class="op">.</span><span class="nam">common_enums</span> <span class="key">import</span> <span class="nam">MetricType</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t13" href="#t13">13</a></span><span class="t"><span class="key">from</span> <span class="nam">xngin</span><span class="op">.</span><span class="nam">apiserver</span><span class="op">.</span><span class="nam">routers</span><span class="op">.</span><span class="nam">power_adapters</span> <span class="key">import</span> <span class="nam">build_metric_stats</span>&nbsp;</span><span class="r"></span></p>
@@ -283,12 +283,15 @@
     <p class="pln"><span class="n"><a id="t201" href="#t201">201</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t202" href="#t202">202</a></span><span class="t"><span class="key">def</span> <span class="nam">test_search_path_injection_attempt_is_rejected</span><span class="op">(</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t203" href="#t203">203</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Check that a malicious search_path string is safely passed as a value, not interpreted as SQL.&quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t204" href="#t204">204</a></span><span class="t">    <span class="com"># Postgres rejects the value as invalid search_path list syntax, rather than interpolating.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t205" href="#t205">205</a></span><span class="t">    <span class="key">with</span> <span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t206" href="#t206">206</a></span><span class="t">        <span class="nam">pytest</span><span class="op">.</span><span class="nam">raises</span><span class="op">(</span><span class="nam">DataError</span><span class="op">,</span> <span class="nam">match</span><span class="op">=</span><span class="str">&quot;invalid value for parameter&quot;</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t207" href="#t207">207</a></span><span class="t">        <span class="nam">DwhSession</span><span class="op">.</span><span class="nam">open</span><span class="op">(</span><span class="nam">_pg_dsn</span><span class="op">(</span><span class="str">&#x27;public&quot;; DROP TABLE users; --&#x27;</span><span class="op">)</span><span class="op">)</span> <span class="key">as</span> <span class="nam">dwh</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t208" href="#t208">208</a></span><span class="t">    <span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t209" href="#t209">209</a></span><span class="t">        <span class="nam">dwh</span><span class="op">.</span><span class="nam">_on_worker</span><span class="op">(</span><span class="str">&quot;select 1&quot;</span><span class="op">,</span> <span class="key">lambda</span><span class="op">:</span> <span class="nam">dwh</span><span class="op">.</span><span class="nam">_session</span><span class="op">.</span><span class="nam">execute</span><span class="op">(</span><span class="nam">text</span><span class="op">(</span><span class="str">&quot;SELECT 1&quot;</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t204" href="#t204">204</a></span><span class="t">    <span class="com"># Postgres rejects the value as invalid search_path list syntax, rather than interpolating. DwhSession</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t205" href="#t205">205</a></span><span class="t">    <span class="com"># reports that as a configuration problem and keeps the driver&#x27;s error as the cause.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t206" href="#t206">206</a></span><span class="t">    <span class="key">with</span> <span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t207" href="#t207">207</a></span><span class="t">        <span class="nam">pytest</span><span class="op">.</span><span class="nam">raises</span><span class="op">(</span><span class="nam">DwhConfigurationError</span><span class="op">)</span> <span class="key">as</span> <span class="nam">excinfo</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t208" href="#t208">208</a></span><span class="t">        <span class="nam">DwhSession</span><span class="op">.</span><span class="nam">open</span><span class="op">(</span><span class="nam">_pg_dsn</span><span class="op">(</span><span class="str">&#x27;public&quot;; DROP TABLE users; --&#x27;</span><span class="op">)</span><span class="op">)</span> <span class="key">as</span> <span class="nam">dwh</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t209" href="#t209">209</a></span><span class="t">    <span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t210" href="#t210">210</a></span><span class="t">        <span class="nam">dwh</span><span class="op">.</span><span class="nam">_on_worker</span><span class="op">(</span><span class="str">&quot;select 1&quot;</span><span class="op">,</span> <span class="key">lambda</span><span class="op">:</span> <span class="nam">dwh</span><span class="op">.</span><span class="nam">_session</span><span class="op">.</span><span class="nam">execute</span><span class="op">(</span><span class="nam">text</span><span class="op">(</span><span class="str">&quot;SELECT 1&quot;</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t211" href="#t211">211</a></span><span class="t">    <span class="key">assert</span> <span class="nam">isinstance</span><span class="op">(</span><span class="nam">excinfo</span><span class="op">.</span><span class="nam">value</span><span class="op">.</span><span class="nam">__cause__</span><span class="op">,</span> <span class="nam">DataError</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t212" href="#t212">212</a></span><span class="t">    <span class="key">assert</span> <span class="str">&quot;invalid value for parameter&quot;</span> <span class="key">in</span> <span class="nam">str</span><span class="op">(</span><span class="nam">excinfo</span><span class="op">.</span><span class="nam">value</span><span class="op">.</span><span class="nam">__cause__</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -298,7 +301,7 @@
             <a class="nav" href="z_91ef1565bbea7854_test_query_constructors_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.2">coverage.py v7.17.2</a>,
-            created at 2026-11-11 00:49 +0000
+            created at 2026-11-12 17:08 +0000
         </p>
     </div>
 </footer>
