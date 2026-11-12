@@ -231,13 +231,34 @@ def test_check_table_readable_reports_a_missing_table(dwh_config):
     assert excinfo.value.table_name == "no_such_table_xyz"
 
 
-def test_check_table_readable_reports_a_role_without_select(restricted_dsn: Dsn):
+@pytest.mark.parametrize("use_sa_autoload", [True, False])
+def test_inspect_table_reports_a_role_without_select(restricted_dsn: Dsn, use_sa_autoload: bool):
+    """The role may read the table's definition but not its rows, so reflection alone would succeed."""
     with DwhSession.open(restricted_dsn) as dwh:
-        # Reflection reads only the catalog, so inspection alone does not notice.
-        dwh.inspect_table(TESTING_DWH_TABLE_NAME)
+        # The internal inspection used by paths that query the rows next does not check.
+        dwh._on_worker("inspecting", dwh._inspect_table_blocking, TESTING_DWH_TABLE_NAME, use_sa_autoload=True)
         with pytest.raises(DwhPermissionDeniedError) as excinfo:
-            dwh.check_table_readable(TESTING_DWH_TABLE_NAME)
+            dwh.inspect_table(TESTING_DWH_TABLE_NAME, use_sa_autoload=use_sa_autoload)
     assert excinfo.value.table_name == TESTING_DWH_TABLE_NAME
+
+
+@pytest.mark.parametrize("use_sa_autoload", [True, False])
+def test_inspect_table_reads_from_the_table_once_per_session(dwh_config, use_sa_autoload: bool):
+    """Inspecting from a cursor already selects from the table, so only reflection needs the probe after it."""
+    selects: list[str] = []
+
+    def record(_conn, _cursor, statement: str, *_args):
+        if statement.startswith("SELECT") and " LIMIT " in statement and TESTING_DWH_TABLE_NAME in statement:
+            selects.append(statement)
+
+    sqlalchemy.event.listen(sqlalchemy.engine.Engine, "before_cursor_execute", record)
+    try:
+        with DwhSession.open(dwh_config) as dwh:
+            dwh.inspect_table(TESTING_DWH_TABLE_NAME, use_sa_autoload=use_sa_autoload)
+            dwh.inspect_table(TESTING_DWH_TABLE_NAME, use_sa_autoload=use_sa_autoload)
+    finally:
+        sqlalchemy.event.remove(sqlalchemy.engine.Engine, "before_cursor_execute", record)
+    assert len(selects) == 1
 
 
 def _admin_dsn(search_path: str, driver: str = "postgresql+psycopg") -> Dsn:

@@ -1174,13 +1174,9 @@ def inspect_table_in_datasource(
     session.commit()
 
     with DwhSession.open(config.dwh) as dwh:
-        # CannotFindTableError will be handled by exceptionhandlers.py.
+        # CannotFindTableError and DwhPermissionDeniedError will be handled by exceptionhandlers.py, before anything
+        # is cached.
         table = dwh.inspect_table(table_name)
-        # Probed here rather than in DwhSession.inspect_table, which every participants, metrics and analysis path
-        # calls internally and which must not gain a query; a failure here is raised before anything is cached.
-        # Without SQLAlchemy reflection (Redshift), inspect_table already ran the probe's statement.
-        if config.dwh.supports_sa_autoload():
-            dwh.check_table_readable(table_name)
     response = create_inspect_table_response_from_table(table)
 
     session.add(

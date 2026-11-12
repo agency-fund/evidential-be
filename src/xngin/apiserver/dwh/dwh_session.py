@@ -139,6 +139,8 @@ class DwhSession:
         self._timeout = deadline
         self._timeout_secs = timeout_secs
         self._inspected_tables: dict[tuple[str, bool], sqlalchemy.Table] = {}
+        # Tables whose rows this session has shown the configured role may read.
+        self._readable_tables: set[str] = set()
 
     def _connect_blocking(self) -> None:
         self._engine = self._create_engine()
@@ -193,7 +195,11 @@ class DwhSession:
             raise classified from exc
 
     def _inspect_table_blocking(self, table_name: str, *, use_sa_autoload: bool | None = None) -> sqlalchemy.Table:
-        """Returns the Table for table_name, inspecting the DWH only the first time it is requested."""
+        """Returns the Table for table_name, inspecting the DWH only the first time it is requested.
+
+        Unlike inspect_table(), this does not check that the role may read the table's rows. It is for callers that
+        query the rows next, where that query reports a role that cannot read them.
+        """
         self._check_table_name(table_name)
         if use_sa_autoload is None:
             use_sa_autoload = self._dwh_config.supports_sa_autoload()
@@ -202,6 +208,16 @@ class DwhSession:
         if sa_table is None:
             sa_table = self._reflect_table_blocking(table_name, use_sa_autoload=use_sa_autoload)
             self._inspected_tables[key] = sa_table
+            if not use_sa_autoload:
+                # Inspecting from a cursor ran a SELECT on the table, which succeeded only because the role may
+                # read it.
+                self._readable_tables.add(table_name)
+        return sa_table
+
+    def _inspect_readable_table_blocking(self, table_name: str, *, use_sa_autoload: bool | None) -> sqlalchemy.Table:
+        sa_table = self._inspect_table_blocking(table_name, use_sa_autoload=use_sa_autoload)
+        if table_name not in self._readable_tables:
+            self._check_table_readable_blocking(table_name)
         return sa_table
 
     def _check_table_name(self, table_name: str) -> None:
@@ -304,7 +320,12 @@ class DwhSession:
             raise CannotFindTableError(table_name) from nste
 
     def inspect_table(self, table_name: str, use_sa_autoload: bool | None = None) -> sqlalchemy.Table:
-        """Inspect table structure using a variety of backend-specific workarounds.
+        """Inspect table structure using a variety of backend-specific workarounds, and check that the configured
+        role may read the table's rows.
+
+        Permission to see a table's definition is not permission to read its rows: on Postgres and BigQuery, a
+        role can reflect the columns of a table it has no SELECT privilege on. So unless inspecting already read
+        from the table, as it does on Redshift, this also runs check_table_readable().
 
         The only fields guaranteed to be set on the the returned Table.columns field are
         .name, .type, and .nullable. Inspecting the same table again on this DwhSession returns the
@@ -316,10 +337,14 @@ class DwhSession:
 
         Returns:
             SQLAlchemy Table object
+
+        Raises:
+            CannotFindTableError: If the table does not exist.
+            DwhPermissionDeniedError: If the configured role cannot read the table.
         """
         return self._on_worker(
             "inspecting a table",
-            self._inspect_table_blocking,
+            self._inspect_readable_table_blocking,
             table_name,
             use_sa_autoload=use_sa_autoload,
         )
@@ -329,8 +354,9 @@ class DwhSession:
         probe = query_constructors.create_inspect_table_from_cursor_query(table_name)
         if isinstance(self._dwh_config, BqDsn):
             self._dry_run_bigquery_blocking(self._dwh_config, probe)
-            return
-        self._session.execute(probe)
+        else:
+            self._session.execute(probe)
+        self._readable_tables.add(table_name)
 
     def _dry_run_bigquery_blocking(self, dwh_config: BqDsn, query: sqlalchemy.Select) -> None:
         """Submits query as a dry run, which BigQuery validates and authorizes but never executes.
@@ -358,8 +384,7 @@ class DwhSession:
         Postgres and Redshift, which check privileges before executing even a zero-row query. On BigQuery the
         same statement is submitted as a dry run, because a real query can bill a scan even with LIMIT 0.
 
-        Table reflection reads only the catalog, which every role may do, so inspect_table() succeeds on a table
-        the role cannot read. This catches that case.
+        inspect_table() already runs this check when it needs to.
 
         Args:
             table_name: Name of the table to check. Only unqualified table names are supported.
