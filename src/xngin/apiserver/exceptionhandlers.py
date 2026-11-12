@@ -10,7 +10,6 @@ from pydantic import BaseModel, ValidationError
 
 from xngin.apiserver.apikeys import BaseApiKeyError
 from xngin.apiserver.dependencies import CannotFindDatasourceError
-from xngin.apiserver.dns.safe_resolve import DnsLookupError
 from xngin.apiserver.exceptions_common import DwhError, LateValidationError
 from xngin.apiserver.pagination import InvalidPageTokenError
 from xngin.apiserver.request_context_middleware import current_request_id
@@ -127,10 +126,6 @@ def setup(app):
                 request_id=current_request_id(),
             ).model_dump(mode="json"),
         )
-
-    @app.exception_handler(DnsLookupError)
-    async def exception_handler_dnslookuperror(_request: Request, exc: DnsLookupError):
-        return JSONResponse(status_code=502, content={"message": str(exc)})
 
     @app.exception_handler(OidcProviderTimeoutError)
     async def exception_handler_oidcprovidertimeout(_request: Request, exc: OidcProviderTimeoutError):
