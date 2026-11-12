@@ -4,10 +4,11 @@ These create datasources against the test warehouse with credentials that are wr
 errors are the real driver's rather than synthetic ones.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 
 import pytest
+import sqlalchemy
 
 from xngin.apiserver import flags
 from xngin.apiserver.routers.admin.admin_api import HTTPExceptionError
@@ -62,6 +63,47 @@ def test_a_role_without_select_is_reported_when_the_table_is_inspected(restricte
     assert any(field.field_name == "current_income" for field in inspected.fields)
     with expect_status_code(424, code_eq="dwh_permission_denied"):
         aclient.inspect_table_in_datasource(datasource_id=ds_id, table_name=TESTING_DWH_TABLE_NAME)
+
+
+@pytest.fixture(name="cursor_inspection")
+def fixture_cursor_inspection(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
+    """Inspects tables the way Redshift does, from a zero-row SELECT's cursor description, and records each SELECT
+    of the test table that has a LIMIT."""
+    monkeypatch.setattr(Dsn, "supports_sa_autoload", lambda _self: False)
+    probes: list[str] = []
+
+    def record(_conn, _cursor, statement: str, *_args):
+        if statement.startswith("SELECT") and " LIMIT " in statement and TESTING_DWH_TABLE_NAME in statement:
+            probes.append(statement)
+
+    sqlalchemy.event.listen(sqlalchemy.engine.Engine, "before_cursor_execute", record)
+    try:
+        yield probes
+    finally:
+        sqlalchemy.event.remove(sqlalchemy.engine.Engine, "before_cursor_execute", record)
+
+
+def test_cursor_inspection_reads_the_table_only_once(cursor_inspection: list[str], aclient: AdminAPIClient):
+    """Inspecting from a cursor already runs the readability probe's statement, so it is not run again."""
+    ds_id = _create_datasource(aclient, Dsn.from_url(flags.XNGIN_DEVDWH_DSN), "cursor inspection")
+
+    inspected = aclient.inspect_table_in_datasource(datasource_id=ds_id, table_name=TESTING_DWH_TABLE_NAME).data
+
+    assert any(field.field_name == "current_income" for field in inspected.fields)
+    assert len(cursor_inspection) == 1
+
+
+def test_cursor_inspection_reports_a_role_without_select(
+    cursor_inspection: list[str], restricted_dsn: Dsn, aclient: AdminAPIClient
+):
+    ds_id = _create_datasource(aclient, restricted_dsn, "cursor inspection without select")
+
+    with expect_status_code(424, code_eq="dwh_permission_denied") as match:
+        aclient.inspect_table_in_datasource(datasource_id=ds_id, table_name=TESTING_DWH_TABLE_NAME)
+    body = match.http_response().json()
+    assert body["table_name"] == TESTING_DWH_TABLE_NAME
+    assert body["hint_command"] == f"GRANT SELECT ON <schema>.{TESTING_DWH_TABLE_NAME} TO {restricted_dsn.user};"
+    assert len(cursor_inspection) == 1
 
 
 def test_power_check_reports_a_role_without_select(restricted_dsn: Dsn, aclient: AdminAPIClient):
