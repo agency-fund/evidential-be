@@ -101,8 +101,20 @@ def setup(app):
 
     @app.exception_handler(DwhError)
     async def exception_handler_dwherror(_request: Request, exc: DwhError):
-        cause = f" (cause: {type(exc.__cause__).__name__})" if exc.__cause__ is not None else ""
-        logger.warning(f"Data warehouse error {exc.code}{cause}: {exc}")
+        # This line is the only server-side record of the error: DwhErrors are not sent to Sentry. Log what the
+        # response shows the user and the cause's type, but not the cause's text, which may contain SQL and bind
+        # parameters.
+        cause = type(exc.__cause__).__name__ if exc.__cause__ is not None else None
+        logger.bind(
+            dwh_code=exc.code.value, dwh_message=exc.dwh_message, table_name=exc.table_name, cause=cause
+        ).warning(
+            "Data warehouse error {} (cause: {}, table: {}): {} [dwh_message: {}]",
+            exc.code.value,
+            cause,
+            exc.table_name,
+            exc,
+            exc.dwh_message,
+        )
         return JSONResponse(
             status_code=exc.http_status,
             content=DwhErrorResponse(
