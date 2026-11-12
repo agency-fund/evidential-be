@@ -1783,6 +1783,7 @@ def test_create_and_get_freq_preassigned_experiment(
 
 
 def test_create_freq_preassigned_experiment_fields_use_roundtrip(
+    use_deterministic_random,
     testing_datasource,
     aclient: AdminAPIClient,
 ):
