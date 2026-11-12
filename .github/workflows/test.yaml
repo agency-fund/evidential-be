@@ -249,16 +249,11 @@ jobs:
         run: |
           mkdir -p ~/.config && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > ~/.config/service_account.json
           openssl sha256 ~/.config/service_account.json
+          echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS_RESTRICTED}" > ~/.config/service_account_restricted.json
+          openssl sha256 ~/.config/service_account_restricted.json
         env:
           GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
-      - name: integration tests
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        run: |
-          export XNGIN_DEVDWH_GCP_CREDENTIALS=$HOME/.config/service_account.json
-          task test-integration
-        env:
-          # The integration tests that call the admin API use the application database.
-          DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
+          GCLOUD_SERVICE_ACCOUNT_CREDENTIALS_RESTRICTED: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_RESTRICTED_CONTENT }}
       - run: task test-coverage
         env:
           DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
@@ -275,6 +270,15 @@ jobs:
         with:
           name: python-coverage-comment-action
           path: python-coverage-comment-action.txt
+      - name: integration tests
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          export XNGIN_DEVDWH_GCP_CREDENTIALS=$HOME/.config/service_account.json
+          export XNGIN_DEVDWH_GCP_CREDENTIALS_RESTRICTED=$HOME/.config/service_account_restricted.json
+          task test-integration
+        env:
+          # The integration tests that call the admin API use the application database.
+          DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
 
   smoke-cli:
     timeout-minutes: 15

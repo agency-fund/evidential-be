@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from threading import Event
 
 import pytest
+import sqlalchemy.exc
 from sqlalchemy import case, select, text, update
 
 from xngin.apiserver import database
@@ -442,6 +443,35 @@ def test_misconfigured_dwh_pull_fails_without_alerting(xngin_session, testing_da
     assert status.consecutive_failures == 1
     assert status.last_error.startswith("LateValidationError: MAB-DWH experiment is missing")
     capture_exception.assert_not_called()
+
+
+def test_dwh_pull_from_missing_table_fails_without_alerting(xngin_session, testing_datasource, mocker):
+    experiment = make_dwh_experiment(xngin_session, testing_datasource.ds)
+    experiment.datasource_table = "no_such_table"
+    xngin_session.commit()
+    capture_exception = mocker.patch("xngin.apiserver.worker.attempts.sentry_sdk.capture_exception")
+    assert attempt_due((PULL,)).result is AttemptResult.JOB_RAN
+    status = status_for(experiment.id, PULL)
+    assert status.consecutive_failures == 1
+    assert status.last_error.startswith("CannotFindTableError: The table 'no_such_table' does not exist.")
+    capture_exception.assert_not_called()
+
+
+def test_dwh_pull_with_unclassified_driver_error_alerts(xngin_session, testing_datasource, mocker):
+    experiment = make_dwh_experiment(xngin_session, testing_datasource.ds)
+    # A driver error classify_dwh_error does not recognize may be a bug in our own SQL, so it must alert.
+    mocker.patch.object(
+        DwhSession,
+        "_get_participant_metrics_blocking",
+        side_effect=sqlalchemy.exc.ProgrammingError("SELECT", {}, Exception("syntax error")),
+    )
+    capture_exception = mocker.patch("xngin.apiserver.worker.attempts.sentry_sdk.capture_exception")
+    assert attempt_due((PULL,)).result is AttemptResult.JOB_RAN
+    status = status_for(experiment.id, PULL)
+    assert status.consecutive_failures == 1
+    assert status.last_error.startswith("sqlalchemy.exc.ProgrammingError:")
+    capture_exception.assert_called_once()
+    assert read_outcomes(xngin_session, experiment.id) == {"1": None}
 
 
 def test_snapshot_connection_loss_does_not_commit_failure_or_schedule(

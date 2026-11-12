@@ -39,6 +39,16 @@ _request_context: contextvars.ContextVar[dict[str, typing.Any] | None] = context
 )
 
 
+def current_request_id() -> str | None:
+    """Returns the ID of the request being handled, or None when there is none or the request did not carry one.
+
+    See RequestContextMiddleware for where the ID comes from.
+    """
+    if fields := _request_context.get():
+        return fields.get("request_id")
+    return None
+
+
 def add_request_context(record: loguru_Record) -> None:
     """Adds request fields to a log record, preserving explicitly bound fields."""
     if fields := _request_context.get():

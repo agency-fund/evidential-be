@@ -7,7 +7,21 @@ from typing import ClassVar, Protocol
 from sqlalchemy import ColumnElement, DateTime, SQLColumnExpression, and_, case, column, func, select, values
 from sqlalchemy.orm import Session
 
+from xngin.apiserver.exceptions_common import DwhError, LateValidationError
 from xngin.apiserver.sqla import tables
+from xngin.stats.stats_errors import StatsError
+
+# Failures of the organization's warehouse, or of the experiment's configuration or data, rather than of our code.
+# The API answers these with a 4xx rather than a 500, and jobs record them without alerting.
+EXPECTED_FAILURES = (DwhError, LateValidationError, StatsError)
+
+
+def describe_failure(exc: Exception) -> str:
+    """Describe an expected failure in one line, with a DwhError's hint, for job statuses and snapshots."""
+    parts: list[str | None] = [f"{type(exc).__name__}: {exc}"]
+    if isinstance(exc, DwhError):
+        parts += [exc.hint, exc.hint_command]
+    return " ".join(part for part in parts if part)
 
 
 @dataclass(slots=True, frozen=True)

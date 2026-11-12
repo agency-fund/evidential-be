@@ -16,6 +16,7 @@ from xngin.apiserver.request_context_middleware import (
     REQUEST_ID_HEADER,
     RequestContextMiddleware,
     add_request_fields,
+    current_request_id,
 )
 from xngin.apiserver.testing.logs_like_uvicorn import LogsLikeUvicorn
 
@@ -30,6 +31,10 @@ async def _handler_adding_fields_from_a_thread(request):
     await run_in_threadpool(add_request_fields, experiment_id=request.query_params["experiment_id"])
     logger.info("handled")
     return PlainTextResponse("ok")
+
+
+def _request_id_handler(_request):
+    return PlainTextResponse(str(current_request_id()))
 
 
 def _failing_handler(_request):
@@ -51,6 +56,7 @@ def client():
             Route("/", _handler),
             Route("/boom", _failing_handler),
             Route("/fields", _handler_adding_fields_from_a_thread),
+            Route("/request-id", _request_id_handler),
         ]
     )
     app.add_middleware(RequestContextMiddleware)
@@ -232,3 +238,8 @@ def test_overlapping_requests_keep_their_own_request_ids(records, sentry_tags, s
 
     handled = _handled(records)
     assert {r["extra"]["path"]: r["extra"]["request_id"] for r in handled} == request_ids
+
+
+def test_current_request_id_returns_the_header_value_inside_a_request(client):
+    assert client.get("/request-id", headers={REQUEST_ID_HEADER: "from-header"}).text == "from-header"
+    assert current_request_id() is None

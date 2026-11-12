@@ -107,6 +107,7 @@ from xngin.apiserver.routers.common_api_types import (
     ContextType,
     CreateExperimentRequest,
     CreateExperimentResponse,
+    DwhErrorResponse,
     ExperimentAnalysisResponse,
     ExperimentsType,
     Filter,
@@ -144,10 +145,6 @@ class HTTPExceptionError(BaseModel):
     detail: str
 
 
-class MessageError(BaseModel):
-    message: str
-
-
 # This defines the response codes we can expect our API to return in the normal course of operation and would be
 # useful for our developers to think about.
 #
@@ -183,23 +180,11 @@ VALIDATION_RESPONSE: dict[str, Any] = {
     "description": "Validation error.",
 }
 
-DWH_CONNECTION_RESPONSES: dict[str | int, dict[str, Any]] = {
+DWH_ERROR_RESPONSES: dict[str | int, dict[str, Any]] = {
     "422": VALIDATION_RESPONSE,
-    "502": {
-        "model": MessageError,
-        "description": "Unable to connect to the datasource.",
-    },
-    "504": {
-        "model": MessageError,
-        "description": "Datasource request timed out.",
-    },
-}
-
-DWH_CONNECTION_AND_NOT_FOUND_RESPONSES: dict[str | int, dict[str, Any]] = {
-    **DWH_CONNECTION_RESPONSES,
-    "404": {
-        "model": MessageError,
-        "description": "Requested datasource metadata could not be found.",
+    "424": {
+        "model": DwhErrorResponse,
+        "description": "The data warehouse failed to produce a usable response.",
     },
 }
 
@@ -1056,7 +1041,7 @@ def list_organization_datasources(
 
 @router.post(
     "/datasources",
-    responses=DWH_CONNECTION_RESPONSES,
+    responses=DWH_ERROR_RESPONSES,
 )
 def create_datasource(
     session: Annotated[Session, Depends(xngin_sync_db_session)],
@@ -1124,7 +1109,7 @@ def get_datasource(
 
 @router.get(
     "/datasources/{datasource_id}/inspect",
-    responses=DWH_CONNECTION_AND_NOT_FOUND_RESPONSES,
+    responses=DWH_ERROR_RESPONSES,
 )
 def inspect_datasource(
     datasource: Annotated[tables.Datasource, Depends(adeps.datasource)],
@@ -1156,7 +1141,7 @@ def invalidate_inspect_table_cache(session: Session, datasource_id: str) -> None
 
 @router.get(
     "/datasources/{datasource_id}/inspect/{table_name}",
-    responses=DWH_CONNECTION_AND_NOT_FOUND_RESPONSES,
+    responses=DWH_ERROR_RESPONSES,
 )
 def inspect_table_in_datasource(
     datasource: Annotated[tables.Datasource, Depends(adeps.datasource)],
@@ -1186,7 +1171,8 @@ def inspect_table_in_datasource(
     session.commit()
 
     with DwhSession.open(config.dwh) as dwh:
-        # CannotFindTableError will be handled by exceptionhandlers.py.
+        # CannotFindTableError and DwhPermissionDeniedError will be handled by exceptionhandlers.py, before anything
+        # is cached.
         table = dwh.inspect_table(table_name)
     response = create_inspect_table_response_from_table(table)
 
@@ -1301,7 +1287,7 @@ def delete_api_key(
     return response
 
 
-@router.post("/datasources/{datasource_id}/experiments")
+@router.post("/datasources/{datasource_id}/experiments", responses=DWH_ERROR_RESPONSES)
 def create_experiment(
     datasource: Annotated[tables.Datasource, Depends(adeps.datasource)],
     session: Annotated[Session, Depends(xngin_sync_db_session)],
@@ -1345,6 +1331,7 @@ def create_experiment(
     description="""
     For preassigned experiments, and online experiments (except contextual bandits),
     returns an analysis of the experiment's performance, given datasource and experiment ID.""",
+    responses=DWH_ERROR_RESPONSES,
 )
 def analyze_experiment(
     experiment: Annotated[tables.Experiment, Depends(adeps.experiment_for_analysis)],
@@ -1600,7 +1587,7 @@ def update_arm(
 
 @router.post(
     "/datasources/{datasource_id}/power",
-    responses=DWH_CONNECTION_AND_NOT_FOUND_RESPONSES,
+    responses=DWH_ERROR_RESPONSES,
 )
 def power_check(
     datasource: Annotated[tables.Datasource, Depends(adeps.datasource)],
@@ -1637,7 +1624,7 @@ def power_check(
         metric_stats = [m.to_design_spec_metric() for m in body.metrics]
     else:
         with DwhSession.open(dsconfig.dwh) as dwh:
-            sa_table = dwh.inspect_table(body.table_name)
+            sa_table = dwh.inspect_table(body.table_name, check_readable=False)
             # Validate the fields used in the request are present in the table and that filter values are valid.
             _ = validate_power_fields_or_raise(
                 sa_table,

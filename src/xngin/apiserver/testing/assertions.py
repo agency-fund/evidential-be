@@ -63,6 +63,12 @@ class StatusCodeMatcher:
         expected_msg = msg.lower()
         return expected_msg in actual_msg if contains else actual_msg == expected_msg
 
+    def _code(self) -> object:
+        body = self.http_response().json()
+        if not isinstance(body, dict):
+            raise TypeError(f"Expected JSON object response body, got {type(body).__name__}.")
+        return body.get("code")
+
 
 @contextmanager
 def expect_status_code(
@@ -73,6 +79,7 @@ def expect_status_code(
     detail_contains: str | None = None,
     detail_eq: str | None = None,
     text: str | None = None,
+    code_eq: str | None = None,
 ) -> Generator[StatusCodeMatcher]:
     """Like pytest.raises(), but for checking the non-default response codes of an AdminAPIClient request."""
     match = StatusCodeMatcher()
@@ -112,3 +119,5 @@ def expect_status_code(
         )
     if text is not None:
         assert match._has_text(text), f"Expected '{text}' to be in the response: {http_response.content}"
+    if code_eq is not None:
+        assert match._code() == code_eq, f"Expected '{code_eq}' to be equal to the .code field: {http_response.content}"
