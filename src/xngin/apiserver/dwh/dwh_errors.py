@@ -64,8 +64,6 @@ _PG_SCHEMA_RE = re.compile(r'schema "(?P<name>[^"]+)" does not exist')
 _PG_IDENTIFIER_PREPARER = sqlalchemy.dialects.postgresql.dialect().identifier_preparer
 # Connect-time failures carry no SQLSTATE, only libpq's text. These phrases identify the rejected-credentials ones.
 _PG_AUTH_PHRASES = ("password authentication failed", "authentication failed")
-# No pg_hba.conf rule matched the client address, user, database, and encryption. The server refuses before it
-# checks the password, usually because it does not allow Evidential's address or requires SSL.
 _PG_HBA_PHRASE = "no pg_hba.conf entry"
 # libpq's connect_timeout reports this phrase; psycopg 3 additionally raises its own ConnectionTimeout type.
 _PG_CONNECT_TIMEOUT_PHRASE = "timeout expired"
