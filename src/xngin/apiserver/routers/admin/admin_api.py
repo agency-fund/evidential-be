@@ -182,12 +182,9 @@ VALIDATION_RESPONSE: dict[str, Any] = {
 
 DWH_ERROR_RESPONSES: dict[str | int, dict[str, Any]] = {
     "422": VALIDATION_RESPONSE,
-    # Every failure of the customer's data warehouse answers 424, and DwhErrorResponse.code says which kind:
-    # unreachable, bad credentials, missing database or table, permission denied, timeout, or a failed query.
-    # 404 stays reserved for a missing datasource or experiment (see the dependencies).
     "424": {
         "model": DwhErrorResponse,
-        "description": "The data warehouse could not be reached, rejected the request, or lacks the requested object.",
+        "description": "The data warehouse failed to produce a usable response.",
     },
 }
 
