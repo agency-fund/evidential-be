@@ -42,6 +42,10 @@ HINT_CHECK_HOSTNAME = "Check the hostname in the data source configuration."
 HINT_UNSAFE_HOSTNAME = "The hostname resolves to a private or reserved address, which Evidential does not connect to."
 HINT_CHECK_CONNECTION = "Check the host, port, and network settings in the data source configuration."
 HINT_CHECK_CREDENTIALS = "Check the username and password in the data source configuration."
+HINT_CHECK_HOST_ACCESS = (
+    "Ask your database administrator to allow connections from Evidential for this user and database, and check the "
+    "SSL mode in the data source configuration."
+)
 HINT_CHECK_DATABASE = "Check the database name in the data source configuration."
 HINT_CHECK_COLUMN = "Check the column name, and the columns in the table, and try again."
 HINT_CHECK_BQ_CREDENTIALS = "Check the service account credentials in the data source configuration."
@@ -59,7 +63,10 @@ _PG_DATABASE_RE = re.compile(r'database "(?P<name>[^"]+)" does not exist')
 _PG_SCHEMA_RE = re.compile(r'schema "(?P<name>[^"]+)" does not exist')
 _PG_IDENTIFIER_PREPARER = sqlalchemy.dialects.postgresql.dialect().identifier_preparer
 # Connect-time failures carry no SQLSTATE, only libpq's text. These phrases identify the rejected-credentials ones.
-_PG_AUTH_PHRASES = ("password authentication failed", "no pg_hba.conf entry", "authentication failed")
+_PG_AUTH_PHRASES = ("password authentication failed", "authentication failed")
+# No pg_hba.conf rule matched the client address, user, database, and encryption. The server refuses before it
+# checks the password, usually because it does not allow Evidential's address or requires SSL.
+_PG_HBA_PHRASE = "no pg_hba.conf entry"
 # libpq's connect_timeout reports this phrase; psycopg 3 additionally raises its own ConnectionTimeout type.
 _PG_CONNECT_TIMEOUT_PHRASE = "timeout expired"
 # psycopg 3 prefixes libpq's connection error text with this; psycopg2 does not.
@@ -205,6 +212,8 @@ def _classify_postgres(exc: psycopg.Error | psycopg2.Error, dwh_config: Dwh) -> 
     if sqlstate == "3D000":
         return _database_not_found(primary, dwh_config)
     if sqlstate.startswith("28"):
+        if _PG_HBA_PHRASE in primary.lower():
+            return _host_not_allowed(primary)
         return _authentication_failed(primary)
     if sqlstate == "57014":
         return DwhTimeoutError("The data warehouse canceled the query before it finished.", hint=HINT_STATEMENT_TIMEOUT)
@@ -253,6 +262,8 @@ def _classify_postgres_connect_failure(
         return DwhTimeoutError("Connecting to the data warehouse timed out.", hint=HINT_CHECK_CONNECTION)
     if _is_postgres_database_not_found_error(text):
         return _database_not_found(text, dwh_config)
+    if _PG_HBA_PHRASE in lowered:
+        return _host_not_allowed(text)
     if any(phrase in lowered for phrase in _PG_AUTH_PHRASES):
         return _authentication_failed(text)
     return _connection_failed(text)
@@ -332,6 +343,14 @@ def _authentication_failed(text: str) -> DwhAuthenticationError:
     return DwhAuthenticationError(
         f"The data warehouse rejected the configured credentials: {_libpq_reason(text)}.",
         hint=HINT_CHECK_CREDENTIALS,
+        dwh_message=text,
+    )
+
+
+def _host_not_allowed(text: str) -> DwhAuthenticationError:
+    return DwhAuthenticationError(
+        f"The data warehouse refused the connection: {_libpq_reason(text)}.",
+        hint=HINT_CHECK_HOST_ACCESS,
         dwh_message=text,
     )
 

@@ -19,6 +19,8 @@ from google.cloud.bigquery.dbapi import exceptions as dbapi_exceptions
 from xngin.apiserver import flags
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, DnsLookupUnsafeError
 from xngin.apiserver.dwh.dwh_errors import (
+    HINT_CHECK_CREDENTIALS,
+    HINT_CHECK_HOST_ACCESS,
     HINT_CHECK_HOSTNAME,
     HINT_UNSAFE_HOSTNAME,
     classify_dwh_error,
@@ -352,6 +354,27 @@ def test_database_not_found_falls_back_to_the_configured_name():
     assert result.message == 'The database "warehouse" does not exist.'
 
 
+# What each driver reported when a server that requires SSL refused sslmode=disable.
+PG_HBA_REASON = 'no pg_hba.conf entry for host "203.0.113.5", user "readonly", database "warehouse", no encryption'
+
+
+@pytest.mark.parametrize(
+    "orig",
+    [
+        pytest.param(psycopg.OperationalError(PG3_CONNECT + "FATAL:  " + PG_HBA_REASON), id="pg3"),
+        pytest.param(psycopg2.OperationalError(PG2_CONNECT + "FATAL:  " + PG_HBA_REASON + "\n"), id="pg2"),
+        pytest.param(_pg2("28000", PG_HBA_REASON), id="pg2-sqlstate"),
+    ],
+)
+def test_a_connection_no_pg_hba_rule_allows_is_not_blamed_on_the_credentials(orig):
+    """The server refuses before it checks the password, so the hint points at its access rules and the SSL mode."""
+    result = classify_dwh_error(_wrapped(orig), PG_DSN)
+    assert isinstance(result, DwhAuthenticationError)
+    assert result.message == f"The data warehouse refused the connection: {PG_HBA_REASON}."
+    assert result.hint == HINT_CHECK_HOST_ACCESS
+    assert result.dwh_message == str(orig).strip()
+
+
 def test_dns_errors_carry_the_host_and_a_hint():
     plain = classify_dwh_error(DnsLookupError("db.example.com"), PG_DSN)
     unsafe = classify_dwh_error(DnsLookupUnsafeError("db.example.com"), PG_DSN)
@@ -496,6 +519,7 @@ PG3_REFUSED_THEN = (
 def test_a_refused_address_before_a_rejected_password_is_an_authentication_error(orig):
     result = classify_dwh_error(_wrapped(orig), PG_DSN)
     assert isinstance(result, DwhAuthenticationError)
+    assert result.hint == HINT_CHECK_CREDENTIALS
     assert result.dwh_message is not None
     assert result.dwh_message.endswith('FATAL:  password authentication failed for user "postgres"')
 
