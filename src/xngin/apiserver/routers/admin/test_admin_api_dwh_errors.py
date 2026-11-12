@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from xngin.apiserver import flags
+from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.routers.admin.admin_api import HTTPExceptionError
 from xngin.apiserver.routers.admin.admin_api_types import CreateDatasourceRequest, CreateOrganizationRequest
 from xngin.apiserver.routers.common_api_types import (
@@ -74,6 +75,15 @@ def test_power_check_reports_a_role_without_select(restricted_dsn: Dsn, aclient:
     assert body["hint_command"] == f"GRANT SELECT ON <schema>.{TESTING_DWH_TABLE_NAME} TO {restricted_dsn.user};"
     assert "SELECT " not in body["message"]
     assert "[SQL" not in body["message"]
+
+
+def test_power_check_leaves_the_readability_check_to_its_stats_queries(aclient: AdminAPIClient, mocker):
+    check = mocker.spy(DwhSession, "_check_table_readable_blocking")
+    ds_id = _create_datasource(aclient, Dsn.from_url(flags.XNGIN_DEVDWH_DSN), "power check with select")
+
+    aclient.power_check(datasource_id=ds_id, body=_power_request())
+
+    check.assert_not_called()
 
 
 @pytest.mark.parametrize(

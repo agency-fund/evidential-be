@@ -235,8 +235,7 @@ def test_check_table_readable_reports_a_missing_table(dwh_config):
 def test_inspect_table_reports_a_role_without_select(restricted_dsn: Dsn, use_sa_autoload: bool):
     """The role may read the table's definition but not its rows, so reflection alone would succeed."""
     with DwhSession.open(restricted_dsn) as dwh:
-        # The internal inspection used by paths that query the rows next does not check.
-        dwh._on_worker("inspecting", dwh._inspect_table_blocking, TESTING_DWH_TABLE_NAME, use_sa_autoload=True)
+        dwh.inspect_table(TESTING_DWH_TABLE_NAME, use_sa_autoload=True, check_readable=False)
         with pytest.raises(DwhPermissionDeniedError) as excinfo:
             dwh.inspect_table(TESTING_DWH_TABLE_NAME, use_sa_autoload=use_sa_autoload)
     assert excinfo.value.table_name == TESTING_DWH_TABLE_NAME

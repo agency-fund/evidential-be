@@ -214,9 +214,11 @@ class DwhSession:
                 self._readable_tables.add(table_name)
         return sa_table
 
-    def _inspect_readable_table_blocking(self, table_name: str, *, use_sa_autoload: bool | None) -> sqlalchemy.Table:
+    def _inspect_readable_table_blocking(
+        self, table_name: str, *, use_sa_autoload: bool | None, check_readable: bool
+    ) -> sqlalchemy.Table:
         sa_table = self._inspect_table_blocking(table_name, use_sa_autoload=use_sa_autoload)
-        if table_name not in self._readable_tables:
+        if check_readable and table_name not in self._readable_tables:
             self._check_table_readable_blocking(table_name)
         return sa_table
 
@@ -319,34 +321,39 @@ class DwhSession:
         except NoSuchTableError as nste:
             raise CannotFindTableError(table_name) from nste
 
-    def inspect_table(self, table_name: str, use_sa_autoload: bool | None = None) -> sqlalchemy.Table:
+    def inspect_table(
+        self, table_name: str, use_sa_autoload: bool | None = None, *, check_readable: bool = True
+    ) -> sqlalchemy.Table:
         """Inspect table structure using a variety of backend-specific workarounds, and check that the configured
         role may read the table's rows.
 
         Permission to see a table's definition is not permission to read its rows: on Postgres and BigQuery, a
-        role can reflect the columns of a table it has no SELECT privilege on. So unless inspecting already read
-        from the table, as it does on Redshift, this also runs check_table_readable().
+        role can reflect the columns of a table it has no SELECT privilege on. So unless check_readable is False
+        or inspecting already read from the table, as it does on Redshift, this also runs check_table_readable().
 
-        The only fields guaranteed to be set on the the returned Table.columns field are
+        The only fields guaranteed to be set on the returned Table.columns field are
         .name, .type, and .nullable. Inspecting the same table again on this DwhSession returns the
         same Table without contacting the DWH.
 
         Args:
             table_name: Name of the table to inspect. Only unqualified table names are supported.
             use_sa_autoload: Whether to use SQLAlchemy reflection. If None, uses config default.
+            check_readable: Whether to check that we have permission to read the table's rows. Callers that also
+              invoke other query methods on the DwhSession may set check_readable to False, saving a round-trip.
 
         Returns:
             SQLAlchemy Table object
 
         Raises:
             CannotFindTableError: If the table does not exist.
-            DwhPermissionDeniedError: If the configured role cannot read the table.
+            DwhPermissionDeniedError: If check_readable and the configured role cannot read the table.
         """
         return self._on_worker(
             "inspecting a table",
             self._inspect_readable_table_blocking,
             table_name,
             use_sa_autoload=use_sa_autoload,
+            check_readable=check_readable,
         )
 
     def _check_table_readable_blocking(self, table_name: str) -> None:

@@ -1627,7 +1627,7 @@ def power_check(
         metric_stats = [m.to_design_spec_metric() for m in body.metrics]
     else:
         with DwhSession.open(dsconfig.dwh) as dwh:
-            sa_table = dwh.inspect_table(body.table_name)
+            sa_table = dwh.inspect_table(body.table_name, check_readable=False)
             # Validate the fields used in the request are present in the table and that filter values are valid.
             _ = validate_power_fields_or_raise(
                 sa_table,
