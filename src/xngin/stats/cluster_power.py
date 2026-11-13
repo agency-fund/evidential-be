@@ -18,6 +18,9 @@ from xngin.stats.individual_power import (
     solve_for_sample_size_individual,
 )
 
+# Above this coefficient of variation in cluster sizes, estimates of the number of clusters are approximate.
+HIGH_CLUSTER_SIZE_CV = 1.0
+
 
 def _normalize_arm_weights(arm_weights: list[float] | None, n_arms: int) -> list[float]:
     """Return per-arm allocation probabilities that sum to 1.
@@ -180,10 +183,10 @@ def _build_cluster_sample_size_message(
             "Warning: High cluster size variation (CV={cluster_size_cv:.2f}).  "
             "Number of clusters estimates are approximate."
         )
-        if metric.cv is not None and metric.cv > 1.0
+        if metric.cv is not None and metric.cv > HIGH_CLUSTER_SIZE_CV
         else ""
     )
-    if metric.cv is not None and metric.cv > 1.0:
+    if metric.cv is not None and metric.cv > HIGH_CLUSTER_SIZE_CV:
         values_map["cluster_size_cv"] = metric.cv
 
     if sufficient_n:
@@ -222,7 +225,7 @@ def _build_cluster_sample_size_message(
         msg=source_msg.format_map(values_map),
         source_msg=source_msg,
         values=values_map,
-        high_cluster_variation=metric.cv is not None and metric.cv > 1.0,
+        high_cluster_variation=metric.cv is not None and metric.cv > HIGH_CLUSTER_SIZE_CV,
     )
 
 
@@ -402,6 +405,10 @@ def solve_for_sample_size_cluster(
     )
 
     if individual_analysis.target_n is None:
+        msg = individual_analysis.msg
+        # Cluster size variation does not depend on the outcome, so it is flagged even without a sample size.
+        if msg is not None and metric.cv > HIGH_CLUSTER_SIZE_CV:
+            msg = msg.model_copy(update={"high_cluster_variation": True})
         cluster_analysis = MetricPowerAnalysis(
             metric_spec=metric,
             target_n=None,
@@ -410,7 +417,7 @@ def solve_for_sample_size_cluster(
             pct_change_possible=individual_analysis.pct_change_possible,
             target_possible_lower=individual_analysis.target_possible_lower,
             pct_change_possible_lower=individual_analysis.pct_change_possible_lower,
-            msg=individual_analysis.msg,
+            msg=msg,
         )
     else:
         # 2) Calculate the "design effect" due to clustering, which reduces the effective sample size.
