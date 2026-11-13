@@ -13,7 +13,7 @@ from psycopg import sql
 from sqlalchemy import Integer, Select, Table, func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
 
 from xngin.apiserver import constants, flags
 from xngin.apiserver.dwh.dwh_session import DwhSession
@@ -67,6 +67,12 @@ from xngin.apiserver.routers.common_enums import (
     UpdateTypeNormal,
 )
 from xngin.apiserver.routers.experiments.property_filters import passes_filters, validate_filter_value
+from xngin.apiserver.routers.preloads import (
+    EXPERIMENT_ARMS_WITH_STATS,
+    EXPERIMENT_FIELDS_WITH_FILTERS,
+    EXPERIMENT_WEBHOOKS_AND_CONTEXTS,
+    build_preload_options,
+)
 from xngin.apiserver.settings import DatasourceConfig
 from xngin.apiserver.sql.queries import stream
 from xngin.apiserver.sqla import tables
@@ -624,14 +630,11 @@ def abandon_experiment_impl(experiment: tables.Experiment):
     return AbandonExperimentResult.ABANDONED
 
 
-def get_experiment_impl(
-    xngin_session: Session,
-    experiment: tables.Experiment,
-) -> GetExperimentResponse:
+def get_experiment_impl(experiment: tables.Experiment) -> GetExperimentResponse:
+    """Builds the full experiment response. Requires Experiment.arms with Arm.stats to be preloaded."""
     converter = ExperimentStorageConverter(experiment)
     assign_summary = get_assign_summary(
-        xngin_session,
-        experiment_id=experiment.id,
+        experiment.arms,
         experiment_type=ExperimentsType(experiment.experiment_type),
         balance_check=converter.get_balance_check(),
         include_cluster_counts=experiment.cluster_key_field() is not None,
@@ -651,12 +654,12 @@ def list_organization_or_datasource_experiments_impl(
     If both are provided, datasource_id takes precedence.
     Raises ValueError if neither is provided.
     """
-    stmt = select(tables.Experiment).options(
-        selectinload(tables.Experiment.arms),
-        selectinload(tables.Experiment.contexts),
-        selectinload(tables.Experiment.webhooks),
-        selectinload(tables.Experiment.experiment_fields).selectinload(tables.ExperimentField.experiment_filters),
+
+    preload_options = build_preload_options(
+        preload=EXPERIMENT_WEBHOOKS_AND_CONTEXTS,
+        nested_preload=[EXPERIMENT_ARMS_WITH_STATS, EXPERIMENT_FIELDS_WITH_FILTERS],
     )
+    stmt = select(tables.Experiment).options(*preload_options)
 
     if datasource_id:
         stmt = stmt.where(tables.Experiment.datasource_id == datasource_id)
@@ -667,9 +670,7 @@ def list_organization_or_datasource_experiments_impl(
             & (tables.Datasource.organization_id == organization_id),
         )
     else:
-        raise ValueError(
-            "Either datasource_id or organization_id must be provided",
-        )
+        raise ValueError("Either datasource_id or organization_id must be provided")
 
     stmt = stmt.where(
         tables.Experiment.state.in_([
@@ -684,8 +685,7 @@ def list_organization_or_datasource_experiments_impl(
         converter = ExperimentStorageConverter(e)
         balance_check = converter.get_balance_check()
         assign_summary = get_assign_summary(
-            xngin_session=xngin_session,
-            experiment_id=e.id,
+            e.arms,
             experiment_type=ExperimentsType(e.experiment_type),
             balance_check=balance_check,
             include_cluster_counts=e.cluster_key_field() is not None,
@@ -1271,33 +1271,23 @@ def convert_assignment_results_to_assign_summary(
 
 
 def get_assign_summary(
-    xngin_session: Session,
+    arms: Sequence[tables.Arm],
     *,
-    experiment_id: str,
     experiment_type: ExperimentsType,
     balance_check: BalanceCheck | None,
     include_cluster_counts: bool = False,
 ) -> AssignSummary:
-    """Constructs an AssignSummary from the experiment's arms and arm_assignments."""
-    result = xngin_session.execute(
-        select(
-            tables.Arm.id,
-            tables.Arm.name,
-            func.coalesce(tables.ArmStats.population, 0),
-            tables.ArmStats.cluster_count,
-        )
-        .outerjoin(tables.ArmStats, tables.Arm.id == tables.ArmStats.arm_id)
-        .where(tables.Arm.experiment_id == experiment_id)
-        .order_by(tables.Arm.position)
-    )
+    """Constructs an AssignSummary from the experiment's arms and their denormalized arm_stats counters.
 
+    Callers must preload Arm.stats. An arm without an arm_stats row has no assignments yet.
+    """
     arm_sizes = [
         ArmSize(
-            arm=Arm(arm_id=arm_id, arm_name=name),
-            size=count,
-            cluster_count=cluster_count if include_cluster_counts else None,
+            arm=Arm(arm_id=arm.id, arm_name=arm.name),
+            size=0 if arm.stats is None else arm.stats.population,
+            cluster_count=arm.stats.cluster_count if include_cluster_counts and arm.stats is not None else None,
         )
-        for arm_id, name, count, cluster_count in result
+        for arm in arms
     ]
 
     if experiment_type in {ExperimentsType.MAB_ONLINE, ExperimentsType.MAB_ONLINE_DWH, ExperimentsType.CMAB_ONLINE}:

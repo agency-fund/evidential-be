@@ -569,6 +569,8 @@ class Arm(Base):
         back_populates="arm",
         cascade="all, delete-orphan",
     )
+    # Consumers must explicitly preload. Db constraint handles the cascading delete.
+    stats: Mapped[ArmStats | None] = relationship(uselist=False, lazy="raise", passive_deletes=True)
 
 
 class ArmStats(Base):
