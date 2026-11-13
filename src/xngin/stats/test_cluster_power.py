@@ -891,3 +891,24 @@ def test_solve_for_sample_size_cluster_cv_warning_message(cv: float, expected_wa
         assert expected_warning in result.msg.msg
     else:
         assert "Warning:" not in result.msg.msg
+
+
+@pytest.mark.parametrize(("cv", "expected_flag"), [(1.0, False), (1.5, True)])
+def test_solve_for_sample_size_cluster_flags_high_cv_without_outcomes(cv: float, expected_flag: bool):
+    """High cluster size variation is flagged even when every outcome is null and no sample size can be estimated."""
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_pct_change=0.1,
+        available_n=1000,
+        available_nonnull_n=0,
+        icc=0.15,
+        avg_cluster_size=30,
+        cv=cv,
+    )
+
+    result = solve_for_sample_size_cluster(metric=metric, n_arms=2)
+
+    assert result.target_n is None
+    assert result.msg is not None
+    assert result.msg.high_cluster_variation is expected_flag

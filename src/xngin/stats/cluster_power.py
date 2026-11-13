@@ -402,6 +402,10 @@ def solve_for_sample_size_cluster(
     )
 
     if individual_analysis.target_n is None:
+        msg = individual_analysis.msg
+        # Cluster size variation does not depend on the outcome, so it is flagged even without a sample size.
+        if msg is not None and metric.cv > 1.0:
+            msg = msg.model_copy(update={"high_cluster_variation": True})
         cluster_analysis = MetricPowerAnalysis(
             metric_spec=metric,
             target_n=None,
@@ -410,7 +414,7 @@ def solve_for_sample_size_cluster(
             pct_change_possible=individual_analysis.pct_change_possible,
             target_possible_lower=individual_analysis.target_possible_lower,
             pct_change_possible_lower=individual_analysis.pct_change_possible_lower,
-            msg=individual_analysis.msg,
+            msg=msg,
         )
     else:
         # 2) Calculate the "design effect" due to clustering, which reduces the effective sample size.
