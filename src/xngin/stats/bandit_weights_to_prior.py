@@ -88,7 +88,7 @@ def bandit_weights_to_normal_prior(expected_probabilities: np.ndarray) -> tuple[
             def integrand(x: float) -> float:
                 pdf_n = norm.pdf(x, loc=mus, scale=sigma_params)
                 cdf_n = norm.cdf(x, loc=mus, scale=sigma_params)
-                return float((np.prod(cdf_n) / (cdf_n[n] + 0.00001)) * pdf_n[n])  # type: ignore
+                return float((np.prod(cdf_n) / (cdf_n[n] + 0.00001)) * pdf_n[n])  # type: ignore[index]
 
             result, _ = quad(integrand, -np.inf, np.inf)
             return float(result)

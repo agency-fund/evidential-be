@@ -21,7 +21,7 @@ from pydantic import (
 )
 
 from xngin.apiserver.common_field_types import FieldName
-from xngin.apiserver.exceptions_common import LateValidationError
+from xngin.apiserver.exceptions_common import DwhErrorCode, LateValidationError
 from xngin.apiserver.limits import (
     MAX_GCP_SERVICE_ACCOUNT_LEN,
     MAX_LENGTH_OF_CLUSTER_KEY_VALUE,
@@ -66,6 +66,24 @@ class PaginatedResponse(ApiBaseModel):
         str,
         Field(description="Token to retrieve the next page. Empty when no more results."),
     ] = ""
+
+
+class DwhErrorResponse(ApiBaseModel):
+    """Describes an error that occurred while working with a data warehouse."""
+
+    message: Annotated[str, Field(description="A human-readable summary of the error.")]
+    code: Annotated[DwhErrorCode, Field(description="A stable, machine-readable category for the error.")]
+    hint: Annotated[str | None, Field(description="A suggested next step for resolving the error.")] = None
+    hint_command: Annotated[
+        str | None, Field(description="A statement for the data warehouse administrator to run, such as a GRANT.")
+    ] = None
+    dwh_message: Annotated[
+        str | None, Field(description="The data warehouse's own error message, when it is safe to show.")
+    ] = None
+    table_name: Annotated[str | None, Field(description="The table involved in the error, if any.")] = None
+    request_id: Annotated[
+        str | None, Field(description="An identifier for the request, for correlating it with server logs.")
+    ] = None
 
 
 class DesignSpecMetricBase(ApiBaseModel):

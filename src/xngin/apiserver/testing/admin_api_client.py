@@ -36,10 +36,7 @@ from pydantic import (
 )
 
 from xngin.apiserver.exceptionhandlers import XHTTPValidationError
-from xngin.apiserver.routers.admin.admin_api import (
-    HTTPExceptionError,
-    MessageError,
-)
+from xngin.apiserver.routers.admin.admin_api import HTTPExceptionError
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddExperimentCreatedWebhookRequest,
     AddMemberToOrganizationRequest,
@@ -79,6 +76,7 @@ from xngin.apiserver.routers.common_api_types import (
     CMABContextInputRequest,
     CreateExperimentRequest,
     CreateExperimentResponse,
+    DwhErrorResponse,
     ExperimentAnalysisResponse,
     ListExperimentsResponse,
     PowerRequest,
@@ -2211,8 +2209,7 @@ class AdminAPIClient:
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
-        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FAILED_DEPENDENCY], DwhErrorResponse]
     ): ...
     def create_datasource(
         self,
@@ -2228,8 +2225,7 @@ class AdminAPIClient:
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
-        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FAILED_DEPENDENCY], DwhErrorResponse]
     ):
         return cast(
             (
@@ -2239,8 +2235,7 @@ class AdminAPIClient:
                 | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
                 | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
                 | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
-                | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FAILED_DEPENDENCY], DwhErrorResponse]
             ),
             self._route_handler(
                 path="/v1/m/datasources",
@@ -2253,8 +2248,7 @@ class AdminAPIClient:
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
                     HTTPStatus.NOT_FOUND: HTTPExceptionError,
                     HTTPStatus.UNPROCESSABLE_CONTENT: XHTTPValidationError,
-                    HTTPStatus.BAD_GATEWAY: MessageError,
-                    HTTPStatus.GATEWAY_TIMEOUT: MessageError,
+                    HTTPStatus.FAILED_DEPENDENCY: DwhErrorResponse,
                 },
                 query_params={
                     "connectivity_check": connectivity_check,
@@ -2427,10 +2421,9 @@ class AdminAPIClient:
         | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
-        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FAILED_DEPENDENCY], DwhErrorResponse]
     ): ...
     def inspect_datasource(
         self,
@@ -2444,10 +2437,9 @@ class AdminAPIClient:
         | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
-        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FAILED_DEPENDENCY], DwhErrorResponse]
     ):
         return cast(
             (
@@ -2455,10 +2447,9 @@ class AdminAPIClient:
                 | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
                 | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
                 | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
                 | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
-                | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FAILED_DEPENDENCY], DwhErrorResponse]
             ),
             self._route_handler(
                 path="/v1/m/datasources/{datasource_id}/inspect",
@@ -2469,10 +2460,9 @@ class AdminAPIClient:
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
-                    HTTPStatus.NOT_FOUND: MessageError,
+                    HTTPStatus.NOT_FOUND: HTTPExceptionError,
                     HTTPStatus.UNPROCESSABLE_CONTENT: XHTTPValidationError,
-                    HTTPStatus.BAD_GATEWAY: MessageError,
-                    HTTPStatus.GATEWAY_TIMEOUT: MessageError,
+                    HTTPStatus.FAILED_DEPENDENCY: DwhErrorResponse,
                 },
                 path_params={
                     "datasource_id": datasource_id,
@@ -2509,10 +2499,9 @@ class AdminAPIClient:
         | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
-        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FAILED_DEPENDENCY], DwhErrorResponse]
     ): ...
     def inspect_table_in_datasource(
         self,
@@ -2527,10 +2516,9 @@ class AdminAPIClient:
         | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
-        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FAILED_DEPENDENCY], DwhErrorResponse]
     ):
         return cast(
             (
@@ -2538,10 +2526,9 @@ class AdminAPIClient:
                 | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
                 | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
                 | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
                 | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
-                | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FAILED_DEPENDENCY], DwhErrorResponse]
             ),
             self._route_handler(
                 path="/v1/m/datasources/{datasource_id}/inspect/{table_name}",
@@ -2552,10 +2539,9 @@ class AdminAPIClient:
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
-                    HTTPStatus.NOT_FOUND: MessageError,
+                    HTTPStatus.NOT_FOUND: HTTPExceptionError,
                     HTTPStatus.UNPROCESSABLE_CONTENT: XHTTPValidationError,
-                    HTTPStatus.BAD_GATEWAY: MessageError,
-                    HTTPStatus.GATEWAY_TIMEOUT: MessageError,
+                    HTTPStatus.FAILED_DEPENDENCY: DwhErrorResponse,
                 },
                 path_params={
                     "datasource_id": datasource_id,
@@ -2880,7 +2866,8 @@ class AdminAPIClient:
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FAILED_DEPENDENCY], DwhErrorResponse]
     ): ...
     def create_experiment(
         self,
@@ -2897,7 +2884,8 @@ class AdminAPIClient:
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FAILED_DEPENDENCY], DwhErrorResponse]
     ):
         return cast(
             (
@@ -2906,7 +2894,8 @@ class AdminAPIClient:
                 | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
                 | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
                 | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FAILED_DEPENDENCY], DwhErrorResponse]
             ),
             self._route_handler(
                 path="/v1/m/datasources/{datasource_id}/experiments",
@@ -2918,7 +2907,8 @@ class AdminAPIClient:
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
                     HTTPStatus.NOT_FOUND: HTTPExceptionError,
-                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: XHTTPValidationError,
+                    HTTPStatus.FAILED_DEPENDENCY: DwhErrorResponse,
                 },
                 path_params={
                     "datasource_id": datasource_id,
@@ -2960,7 +2950,8 @@ class AdminAPIClient:
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FAILED_DEPENDENCY], DwhErrorResponse]
     ): ...
     def analyze_experiment(
         self,
@@ -2976,7 +2967,8 @@ class AdminAPIClient:
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FAILED_DEPENDENCY], DwhErrorResponse]
     ):
         return cast(
             (
@@ -2985,7 +2977,8 @@ class AdminAPIClient:
                 | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
                 | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
                 | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FAILED_DEPENDENCY], DwhErrorResponse]
             ),
             self._route_handler(
                 path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/analyze",
@@ -2997,7 +2990,8 @@ class AdminAPIClient:
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
                     HTTPStatus.NOT_FOUND: HTTPExceptionError,
-                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: XHTTPValidationError,
+                    HTTPStatus.FAILED_DEPENDENCY: DwhErrorResponse,
                 },
                 path_params={
                     "datasource_id": datasource_id,
@@ -3112,8 +3106,7 @@ class AdminAPIClient:
         | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.CONFLICT], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
-        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FAILED_DEPENDENCY], DwhErrorResponse]
     ): ...
     def commit_experiment(
         self,
@@ -3130,8 +3123,7 @@ class AdminAPIClient:
         | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.CONFLICT], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
-        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FAILED_DEPENDENCY], DwhErrorResponse]
     ):
         return cast(
             (
@@ -3142,8 +3134,7 @@ class AdminAPIClient:
                 | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
                 | AdminAPIClientResult[Literal[HTTPStatus.CONFLICT], HTTPExceptionError]
                 | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
-                | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FAILED_DEPENDENCY], DwhErrorResponse]
             ),
             self._route_handler(
                 path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/commit",
@@ -3157,8 +3148,7 @@ class AdminAPIClient:
                     HTTPStatus.NOT_FOUND: HTTPExceptionError,
                     HTTPStatus.CONFLICT: HTTPExceptionError,
                     HTTPStatus.UNPROCESSABLE_CONTENT: XHTTPValidationError,
-                    HTTPStatus.BAD_GATEWAY: MessageError,
-                    HTTPStatus.GATEWAY_TIMEOUT: MessageError,
+                    HTTPStatus.FAILED_DEPENDENCY: DwhErrorResponse,
                 },
                 path_params={
                     "datasource_id": datasource_id,
@@ -3780,10 +3770,9 @@ class AdminAPIClient:
         | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
-        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FAILED_DEPENDENCY], DwhErrorResponse]
     ): ...
     def power_check(
         self,
@@ -3797,10 +3786,9 @@ class AdminAPIClient:
         | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
-        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
-        | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
-        | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FAILED_DEPENDENCY], DwhErrorResponse]
     ):
         return cast(
             (
@@ -3808,10 +3796,9 @@ class AdminAPIClient:
                 | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
                 | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
                 | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
-                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], MessageError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
                 | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
-                | AdminAPIClientResult[Literal[HTTPStatus.BAD_GATEWAY], MessageError]
-                | AdminAPIClientResult[Literal[HTTPStatus.GATEWAY_TIMEOUT], MessageError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FAILED_DEPENDENCY], DwhErrorResponse]
             ),
             self._route_handler(
                 path="/v1/m/datasources/{datasource_id}/power",
@@ -3822,10 +3809,9 @@ class AdminAPIClient:
                     HTTPStatus.BAD_REQUEST: HTTPExceptionError,
                     HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
-                    HTTPStatus.NOT_FOUND: MessageError,
+                    HTTPStatus.NOT_FOUND: HTTPExceptionError,
                     HTTPStatus.UNPROCESSABLE_CONTENT: XHTTPValidationError,
-                    HTTPStatus.BAD_GATEWAY: MessageError,
-                    HTTPStatus.GATEWAY_TIMEOUT: MessageError,
+                    HTTPStatus.FAILED_DEPENDENCY: DwhErrorResponse,
                 },
                 path_params={
                     "datasource_id": datasource_id,

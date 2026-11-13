@@ -12,6 +12,11 @@ def is_railway() -> bool:
     return os.environ.get("RAILWAY_SERVICE_NAME", "") != ""
 
 
+def is_using_reverse_proxy() -> bool:
+    """Return True if FORWARDED_ALLOW_IPS names reverse proxies whose X-Forwarded-* headers we trust."""
+    return FORWARDED_ALLOW_IPS != ""
+
+
 def truthy_env(env_var: str):
     """Return True if the environment variable is "true" or "1", or False otherwise."""
     return os.environ.get(env_var, "").lower() in {"true", "1"}
@@ -74,6 +79,12 @@ XNGIN_SUPPORT_EMAIL = os.environ.get("XNGIN_SUPPORT_EMAIL", "support@example.com
 
 LOG_SQL_APP_DB = truthy_env("LOG_SQL_APP_DB")
 LOG_SQL_DWH = truthy_env("LOG_SQL_DWH")
+
+# FORWARDED_ALLOW_IPS: comma-separated addresses or CIDR ranges of the reverse proxies whose X-Forwarded-For and
+# X-Forwarded-Proto headers are trusted, or "*" to trust any peer. When unset, the headers are ignored. This is the
+# variable and syntax that Uvicorn and Gunicorn use.
+# Example: FORWARDED_ALLOW_IPS=10.0.0.0/8,127.0.0.1
+FORWARDED_ALLOW_IPS = os.environ.get("FORWARDED_ALLOW_IPS", "")
 
 # CORS_ALLOWED_ORIGINS: comma-separated list of frontends permitted by the CORS policy.
 # In dev mode (ENVIRONMENT unset or "dev"), defaults to ["*"] for convenience.

@@ -530,7 +530,7 @@ def test_datasource_access_error_identifies_the_configured_account(sheets_api, a
         connectivity_check=True,
         raise_if_not_default_status=False,
     )
-    assert response.status == 502
+    assert response.status == 424
     assert email in response.data.message
     assert "CONNECTION ERROR" not in response.data.message
     assert "PRIVATE-CREDENTIAL-CONTENT" not in response.data.message
@@ -1262,7 +1262,7 @@ def test_commit_failures_retain_source_table_and_leave_no_events(
     response = aclient.commit_experiment(
         datasource_id=setup.datasource_id, experiment_id=setup.experiment_id, raise_if_not_default_status=False
     )
-    assert response.status == (422 if failure in {"missing_id", "duplicate_id"} else 502)
+    assert response.status == (422 if failure in {"missing_id", "duplicate_id"} else 424)
     if failure == "editor":
         assert "as Editor" in response.data.message
         assert api.client.http_client.auth.service_account_email in response.data.message

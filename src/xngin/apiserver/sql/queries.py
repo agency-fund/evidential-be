@@ -42,8 +42,8 @@ def select_as_csv(
         CSV byte chunks from the COPY stream. The final yielded chunk may be smaller than
         buffer_size_bytes.
     """
-    header_sql = t", HEADER TRUE" if include_header else t""  # type: ignore[misc]
-    copy_query = t"COPY ({select_sql:q}) TO STDOUT WITH (FORMAT CSV{header_sql:q})"  # type: ignore[misc]
+    header_sql = t", HEADER TRUE" if include_header else t""
+    copy_query = t"COPY ({select_sql:q}) TO STDOUT WITH (FORMAT CSV{header_sql:q})"
     yield_count = 0
     with performance.timing() as timings, with_driver_connection(session) as driver_conn:
         buffer = bytearray()

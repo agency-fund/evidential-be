@@ -1,28 +1,25 @@
 from collections.abc import Sequence
-from datetime import date, datetime
 
 import sqlalchemy
 from sqlalchemy import ColumnElement, Table, and_, or_, select, text
 
-from xngin.apiserver.routers.common_api_types import Filter, FilterValueTypes
+from xngin.apiserver.routers.common_api_types import Filter
 from xngin.apiserver.routers.common_enums import DataType, Relation
-from xngin.apiserver.routers.experiments.property_filters import validate_filter_value
+from xngin.apiserver.routers.experiments.property_filters import ParsedFilterValue, validate_filter_value
 from xngin.db_extensions import custom_functions
 
 
-def create_one_filter(filter_: Filter, sa_table: sqlalchemy.Table):
+def create_one_filter(filter_: Filter, sa_table: sqlalchemy.Table) -> ColumnElement[bool]:
     """Converts a Filter into a SQLAlchemy filter."""
     return create_filter(sa_table.columns[filter_.field_name], filter_)
 
 
-def create_query_filters(sa_table: sqlalchemy.Table, filters: list[Filter]):
+def create_query_filters(sa_table: sqlalchemy.Table, filters: list[Filter]) -> list[ColumnElement[bool]]:
     """Converts a list of Filter into a list of SQLAlchemy filters."""
     return [create_one_filter(filter_, sa_table) for filter_ in filters]
 
 
-def general_excludes_filter(
-    col: sqlalchemy.Column, value: FilterValueTypes | Sequence[datetime | None] | Sequence[date | None]
-) -> ColumnElement[bool]:
+def general_excludes_filter(col: sqlalchemy.Column, value: Sequence[ParsedFilterValue]) -> ColumnElement[bool]:
     if None in value:
         non_null_list = [v for v in value if v is not None]
         if len(non_null_list) == 0:
@@ -38,9 +35,7 @@ def general_excludes_filter(
     )
 
 
-def general_includes_filter(
-    col: sqlalchemy.Column, value: FilterValueTypes | Sequence[datetime | None] | Sequence[date | None]
-) -> ColumnElement[bool]:
+def general_includes_filter(col: sqlalchemy.Column, value: Sequence[ParsedFilterValue]) -> ColumnElement[bool]:
     if None in value:
         non_null_list = [v for v in value if v is not None]
         if len(non_null_list) == 0:
@@ -52,7 +47,7 @@ def general_includes_filter(
     return col.in_(value)
 
 
-def create_between_filter(col: sqlalchemy.Column, values: Sequence) -> ColumnElement:
+def create_between_filter(col: sqlalchemy.Column, values: Sequence[ParsedFilterValue]) -> ColumnElement[bool]:
     """Helper function to create a BETWEEN SQLAlchemy filter expression.
 
     Args:
@@ -61,9 +56,9 @@ def create_between_filter(col: sqlalchemy.Column, values: Sequence) -> ColumnEle
     """
     match values:
         case (left, None):
-            return col >= left  # type: ignore
+            return col >= left
         case (None, right):
-            return col <= right  # type: ignore
+            return col <= right
         case (left, right):
             return col.between(left, right)
         case (left, None, None):
@@ -76,9 +71,9 @@ def create_between_filter(col: sqlalchemy.Column, values: Sequence) -> ColumnEle
             raise RuntimeError("Bug: invalid filter.")
 
 
-def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:
+def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement[bool]:
     """Converts a single Filter to a sqlalchemy filter."""
-    parsed_values: Sequence = [
+    parsed_values = [
         validate_filter_value(filter_.field_name, value, DataType.match(col.type)) for value in filter_.value
     ]
     match filter_.relation:
@@ -98,6 +93,9 @@ def create_filter(col: sqlalchemy.Column, filter_: Filter) -> ColumnElement:
 
 def create_inspect_table_from_cursor_query(table_name: str, schema_name: str | None = None) -> sqlalchemy.Select:
     """Returns a zero-row SELECT used to read column metadata via cursor.description (driver-dependent).
+
+    Postgres and Redshift check SELECT privilege before executing even a zero-row query, so running it also tells
+    whether the role may read the table.
 
     SQLAlchemy's identifier quoting is used to prevent SQL injection attacks.
     """

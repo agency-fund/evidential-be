@@ -1482,7 +1482,7 @@ def read_assignments_efficiently(
         column_names.append(tables.ArmAssignment.cluster_key.name)
 
     joined_column_names = sql.SQL(", ").join(sql.Identifier(name) for name in column_names)
-    select_query = t"SELECT {joined_column_names:q} FROM arm_assignments WHERE experiment_id = {experiment_id}"  # type: ignore
+    select_query = t"SELECT {joined_column_names:q} FROM arm_assignments WHERE experiment_id = {experiment_id}"
     arm_ids: list[str] = []
     participant_ids: list[str] = []
     cluster_keys: list[str | None] = []

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, TypeIs
 import pytest
 from pydantic import TypeAdapter
 
+from xngin.apiserver.exceptionhandlers import XHTTPValidationError
 from xngin.apiserver.routers.common_api_types import (
     AnyBanditDesignSpec,
     AnyFrequentistDesignSpec,
@@ -44,7 +45,6 @@ from xngin.apiserver.routers.common_enums import (
 )
 from xngin.apiserver.routers.experiments.test_experiments_common import insert_experiment_and_arms
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.testing.admin_api_client import AdminAPIClientHTTPValidationError
 from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClientNotDefaultStatusError
 from xngin.apiserver.testing.helpers import DatasourceMetadata
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
@@ -285,7 +285,7 @@ def test_create_experiment_api_table_name_and_primary_key_in_design_spec(
 
     assert result.status == expected_status, result.data
     if expected_in_loc is not None:
-        assert isinstance(result.data, AdminAPIClientHTTPValidationError)
+        assert isinstance(result.data, XHTTPValidationError)
         msgs = [d.msg for d in result.data.detail]
         assert any("Field required" in m for m in msgs), msgs
         locs = [loc for d in result.data.detail for loc in d.loc]

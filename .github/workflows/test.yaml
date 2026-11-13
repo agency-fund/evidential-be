@@ -38,7 +38,7 @@ jobs:
   ruff-annotations:
     needs: changes
     if: needs.changes.outputs.ruffannotations == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
       - name: Checkout code
@@ -50,7 +50,7 @@ jobs:
         run: uv run ruff check --output-format=github .
 
   prek:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
@@ -60,7 +60,7 @@ jobs:
       - uses: j178/prek-action@4e14d07f9231acabce116ccfca13b13dd9755ece # v3.0.0
 
   secret-scan:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
@@ -78,7 +78,7 @@ jobs:
   check-migrations:
     needs: changes
     if: needs.changes.outputs.pydependencies == 'true' || needs.changes.outputs.migrations == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -219,7 +219,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.pydependencies == 'true'
     timeout-minutes: 15
-    runs-on: macos-14
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
@@ -231,7 +231,7 @@ jobs:
 
   unittests:
     timeout-minutes: 15
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       pull-requests: write
       contents: write
@@ -249,19 +249,15 @@ jobs:
         run: |
           mkdir -p ~/.config && echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS}" > ~/.config/service_account.json
           openssl sha256 ~/.config/service_account.json
+          echo "${GCLOUD_SERVICE_ACCOUNT_CREDENTIALS_RESTRICTED}" > ~/.config/service_account_restricted.json
+          openssl sha256 ~/.config/service_account_restricted.json
         env:
           GCLOUD_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
-      - name: integration tests
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        run: |
-          export XNGIN_DEVDWH_GCP_CREDENTIALS=$HOME/.config/service_account.json
-          task test-integration
-        env:
-          # The integration tests that call the admin API use the application database.
-          DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
+          GCLOUD_SERVICE_ACCOUNT_CREDENTIALS_RESTRICTED: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_RESTRICTED_CONTENT }}
       - run: task test-coverage
         env:
           DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
+          PYTEST_XDIST_AUTO_NUM_WORKERS: "3"
       - name: Coverage comment
         if: github.event_name != 'workflow_dispatch'
         id: coverage_comment
@@ -274,10 +270,19 @@ jobs:
         with:
           name: python-coverage-comment-action
           path: python-coverage-comment-action.txt
+      - name: integration tests
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          export XNGIN_DEVDWH_GCP_CREDENTIALS=$HOME/.config/service_account.json
+          export XNGIN_DEVDWH_GCP_CREDENTIALS_RESTRICTED=$HOME/.config/service_account_restricted.json
+          task test-integration
+        env:
+          # The integration tests that call the admin API use the application database.
+          DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
 
   smoke-cli:
     timeout-minutes: 15
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     services:
       postgres:
         image: postgres:18
@@ -325,7 +330,7 @@ jobs:
 
   bq-integration:
     timeout-minutes: 10
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: changes
     if: (needs.changes.outputs.queries == 'true' || needs.changes.outputs.bigquery == 'true') &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
@@ -390,7 +395,7 @@ jobs:
 
   docker-builds:
     timeout-minutes: 15
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
@@ -401,7 +406,7 @@ jobs:
     needs: changes
     if: github.event_name == 'pull_request' && needs.changes.outputs.openapi == 'true'
     timeout-minutes: 15
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
       pull-requests: write

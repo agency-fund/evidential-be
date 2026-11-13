@@ -213,11 +213,7 @@ class SheetsAccessError(DwhConnectionError):
     """A sharing instruction that can be shown directly to the user."""
 
     def __init__(self, service_account_email: str) -> None:
-        self.message = f"Please share this spreadsheet with {service_account_email} as Editor, then try again."
-        super().__init__(ValueError(self.message))
-
-    def __str__(self) -> str:
-        return self.message
+        super().__init__(f"Please share this spreadsheet with {service_account_email} as Editor, then try again.")
 
 
 def _decode_credentials(encoded: str) -> dict:
@@ -239,9 +235,7 @@ class GoogleSheetsClient:
         self._data: dict[int, SheetData] = {}
         if not flags.GSHEETS_DEMO_CREDS_BASE64:
             raise DwhConnectionError(
-                ValueError(
-                    "Google Sheets service-account credentials are not configured. Set GSHEETS_DEMO_CREDS_BASE64."
-                )
+                "Google Sheets service-account credentials are not configured. Set GSHEETS_DEMO_CREDS_BASE64."
             )
         try:
             self.client = gspread.service_account_from_dict(
@@ -251,9 +245,7 @@ class GoogleSheetsClient:
             )
         except (TypeError, ValueError, GoogleAuthError) as exc:
             raise DwhConnectionError(
-                ValueError(
-                    "Could not load the Google Sheets service-account credentials. Check GSHEETS_DEMO_CREDS_BASE64."
-                )
+                "Could not load the Google Sheets service-account credentials. Check GSHEETS_DEMO_CREDS_BASE64."
             ) from exc
         self.client.set_timeout(10)
         try:
@@ -287,7 +279,7 @@ class GoogleSheetsClient:
                 worksheet = self.spreadsheet.get_worksheet(0)
         except WorksheetNotFound as exc:
             raise DwhConnectionError(
-                ValueError("Google Sheets could not find the selected tab. Restore it in the spreadsheet.")
+                "Google Sheets could not find the selected tab. Restore it in the spreadsheet."
             ) from exc
         except (
             PermissionError,
@@ -300,7 +292,7 @@ class GoogleSheetsClient:
             raise self._connection_error(exc) from exc
 
         if worksheet is None:
-            raise DwhConnectionError(ValueError("The Google Sheets spreadsheet has no tabs."))
+            raise DwhConnectionError("The Google Sheets spreadsheet has no tabs.")
         return worksheet
 
     def _connection_error(self, exc: Exception) -> DwhConnectionError:
@@ -319,7 +311,7 @@ class GoogleSheetsClient:
             message = "Google Sheets could not authenticate the configured service account. Check its credentials."
         else:
             message = "Google Sheets did not return a readable response. Please try again."
-        return DwhConnectionError(ValueError(message))
+        return DwhConnectionError(message)
 
     def close(self) -> None:
         self.client.http_client.session.close()

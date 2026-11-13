@@ -1,7 +1,5 @@
 """Task queue implementation using Postgres."""
 
-# mypy: disable-error-code="misc"
-
 import asyncio
 import inspect
 import os
