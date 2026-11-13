@@ -9,6 +9,7 @@ from xngin.apiserver.routers.common_enums import MetricPowerAnalysisMessageType,
 from xngin.stats.cluster_power import solve_for_mde_cluster, solve_for_sample_size_cluster
 from xngin.stats.individual_power import (
     power_analysis_error,
+    requested_direction_is_down,
     solve_for_mde_individual,
     solve_for_sample_size_individual,
 )
@@ -23,6 +24,7 @@ def analyze_metric_power(
     desired_n: int | None = None,
     power: float = 0.8,
     alpha: float = 0.05,
+    is_primary: bool = True,
 ) -> MetricPowerAnalysis:
     """
     Analyze power for a single metric.
@@ -35,6 +37,7 @@ def analyze_metric_power(
         arm_weights: Optional list of weights (summing to 100) for unbalanced arms, else assumes equal allocation.
         desired_n: Optional desired sample size. If provided, calculates MDE for the desired_n
             instead of the minimum sample size for a desired effect. Applies to all metrics.
+        is_primary: Whether this is the design's primary metric, the only one that may use one-time mode.
 
     Returns:
         MetricPowerAnalysis containing power analysis results
@@ -57,6 +60,7 @@ def analyze_metric_power(
             power=power,
             alpha=alpha,
             arm_weights=arm_weights,
+            is_primary=is_primary,
         )
 
     # else MDE mode:
@@ -194,12 +198,13 @@ def check_power(
 
         Optionally, if `desired_n` or `desired_n_clusters` is provided, it will also include
         `pct_change_with_desired_n`, i.e. the corresponding MDE as a % change from baseline for the
-        desired sample size. This MDE calculation is done in a best-effort manner and assumes there
+        desired sample size, in the direction of the requested change (negative when the requested
+        change is a decrease). This MDE calculation is done in a best-effort manner and assumes there
         are enough units to meet the desired size, so it can still succeed despite insufficient
         available units. If it fails, `pct_change_with_desired_n` will be None.
     """
     analyses = []
-    for metric in metrics:
+    for index, metric in enumerate(metrics):
         metric_desired_n = desired_n
         if desired_n_clusters is not None:
             if metric.avg_cluster_size is None:
@@ -210,8 +215,9 @@ def check_power(
             metric_desired_n = round(desired_n_clusters * metric.avg_cluster_size)
 
         try:
+            # metrics[0] is the primary metric, the only one that may use one-time mode.
             analysis = analyze_metric_power(
-                metric=metric, n_arms=n_arms, arm_weights=arm_weights, power=power, alpha=alpha
+                metric=metric, n_arms=n_arms, arm_weights=arm_weights, power=power, alpha=alpha, is_primary=index == 0
             )
 
             # Optional desired-size MDE calculation added to the min sample size analysis:
@@ -225,9 +231,15 @@ def check_power(
                     alpha=alpha,
                 )
                 # pct_change_possible may be None if there was any error created with
-                # power_analysis_error().
-                if mde_analysis.pct_change_possible is not None:
-                    analysis.pct_change_with_desired_n = mde_analysis.pct_change_possible
+                # power_analysis_error(). Report the bound in the direction of the user's
+                # requested change.
+                pct_change_reported = (
+                    mde_analysis.pct_change_possible_lower
+                    if requested_direction_is_down(metric)
+                    else mde_analysis.pct_change_possible
+                )
+                if pct_change_reported is not None:
+                    analysis.pct_change_with_desired_n = pct_change_reported
 
             analysis.mde_curve = _mde_curve_for_metric(
                 metric,

@@ -1,3 +1,10 @@
+"""Query planning and execution behind DwhSession.get_participant_metrics.
+
+Reading many participants by id is split into batches of IN and BETWEEN filters; the planning is
+pure and tested on its own. The Session get_participant_metrics takes is DwhSession's own, handed
+over on its helper thread. Application code reaches it only through the DwhSession method.
+"""
+
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -10,9 +17,10 @@ from sqlalchemy import Float, Integer, Label, String, Table, cast, or_, select
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.dwh.analysis_types import MetricValue, ParticipantOutcome
+from xngin.apiserver.dwh.field_aliases import FieldAliases
 from xngin.apiserver.dwh.query_constructors import create_one_filter
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.routers.common_api_types import DesignSpecMetricRequest, Filter
+from xngin.apiserver.routers.common_api_types import Filter
 from xngin.apiserver.routers.common_enums import MetricType, Relation
 
 if TYPE_CHECKING:
@@ -92,7 +100,8 @@ class QueryPlan:
 
 @dataclass(frozen=True)
 class ParticipantMetricsPlans:
-    field_names: list[str]
+    # The metrics, whose aliases label their values in the queries.
+    metric_aliases: FieldAliases
     plans: list[QueryPlan]
 
 
@@ -200,26 +209,23 @@ def coalesce_chunks_into_disjunctives(participant_filters: list[ParticipantChunk
 
 def build_participant_metrics_plan(
     sa_table: Table,
-    metrics: list[DesignSpecMetricRequest],
+    metric_names: list[str],
     unique_id_field: str,
     participant_ids: list[str],
 ) -> ParticipantMetricsPlans:
     unique_id_col: sqlalchemy.Column = sa_table.c[unique_id_field]
     select_columns: list[Label] = [cast(unique_id_col, String).label("participant_id")]
 
-    # query for a participant_id column (the unique id column) and the metrics columns.
-    field_names = ["participant_id"]
-    metric_types = [MetricType.from_python_type(sa_table.c[m.field_name].type.python_type) for m in metrics]
-    for metric, metric_type in zip(metrics, metric_types, strict=False):
-        field_name = metric.field_name
-        field_names.append(field_name)
+    # query for a participant_id column (the unique id column) and the metrics columns, labeled by alias.
+    metric_aliases = FieldAliases(metric_names)
+    for field_name, alias in metric_aliases.name_to_aliases():
         col = sa_table.c[field_name]
         # Coerce everything to Float to avoid Decimal/Integer/Boolean issues across backends.
-        if metric_type is MetricType.NUMERIC:
+        if MetricType.from_python_type(col.type.python_type) is MetricType.NUMERIC:
             cast_column = cast(col, Float)
         else:  # re: avg(boolean) doesn't work on pg-like backends
             cast_column = cast(cast(col, Integer), Float)
-        select_columns.append(cast_column.label(field_name))
+        select_columns.append(cast_column.label(alias))
 
     chunks = make_participant_chunks(unique_id_col, participant_ids)
     coalesced_chunks = coalesce_chunks_into_disjunctives(chunks)
@@ -239,7 +245,7 @@ def build_participant_metrics_plan(
         query_plans.append(QueryPlan(query=select(*select_columns).filter(group_filter), chunks=batch_chunks))
 
     return ParticipantMetricsPlans(
-        field_names=field_names,
+        metric_aliases=metric_aliases,
         plans=query_plans,
     )
 
@@ -247,7 +253,7 @@ def build_participant_metrics_plan(
 def get_participant_metrics(
     session: Session,
     sa_table: Table,
-    metrics: list[DesignSpecMetricRequest],
+    metric_names: list[str],
     unique_id_field: str,
     participant_ids: list[str],
 ) -> list[ParticipantOutcome]:
@@ -256,9 +262,9 @@ def get_participant_metrics(
         sa_table.name,
         unique_id_field,
         len(participant_ids),
-        [metric.field_name for metric in metrics],
+        metric_names,
     )
-    missing_metrics = {m.field_name for m in metrics if m.field_name not in sa_table.c}
+    missing_metrics = {name for name in metric_names if name not in sa_table.c}
     if len(missing_metrics) > 0:
         raise LateValidationError(f"Missing metrics (check your Datasource configuration): {missing_metrics}")
     if unique_id_field not in sa_table.columns:
@@ -266,30 +272,27 @@ def get_participant_metrics(
 
     pmplans = build_participant_metrics_plan(
         sa_table=sa_table,
-        metrics=metrics,
+        metric_names=metric_names,
         unique_id_field=unique_id_field,
         participant_ids=participant_ids,
     )
     participant_outcomes: list[ParticipantOutcome] = []
     for batch_index, plan in enumerate(pmplans.plans, start=1):
         logger.info("Running participant metrics batch {}/{}: {}", batch_index, len(pmplans.plans), plan.summary())
-        results = session.execute(plan.query)
+        results = session.execute(plan.query).mappings()
 
         batch_outcome_count = 0
         for result in results:
             metric_values: list[MetricValue] = []
-            participant_id = None
-            for i, field_name in enumerate(pmplans.field_names):
-                if field_name == "participant_id":
-                    participant_id = result[i]
-                else:
-                    value = result[i]
-                    metric_values.append(
-                        MetricValue(
-                            metric_name=field_name,
-                            metric_value=None if value is None else float(value),
-                        )
+            participant_id = result["participant_id"]
+            for field_name, alias in pmplans.metric_aliases.name_to_aliases():
+                value = result[alias]
+                metric_values.append(
+                    MetricValue(
+                        metric_name=field_name,
+                        metric_value=None if value is None else float(value),
                     )
+                )
             if participant_id is None:
                 # Should never happen as we filter on the participant_id field.
                 raise LateValidationError("Participant ID is required.")

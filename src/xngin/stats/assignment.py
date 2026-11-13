@@ -1,10 +1,11 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
 from stochatreat import stochatreat
 
+from xngin.apiserver.dwh.field_aliases import FieldAliases
 from xngin.stats.balance import (
     BalanceResult,
     check_balance_of_preprocessed_df,
@@ -77,31 +78,41 @@ def assign_treatment_and_check_balance(
             stratum_cols - deduplicated and sorted list of stratum_cols for *individual*
                 assignment. Empty for clustered assignment.
     """
+    # Assignment works on df's columns by alias, so that no column of df can collide with the columns stochatreat, the
+    # balance check and this module add beside them, such as treat, stratum_id and Intercept.
+    aliases = FieldAliases(df.columns)
+    aliased_df = df.copy(deep=False)
+    aliased_df.columns = [aliases.alias(column) for column in df.columns]
+
     if cluster_col is not None:
-        return _assign_clusters_to_arms(
-            df=df,
-            id_col=id_col,
-            cluster_col=cluster_col,
+        result = _assign_clusters_to_arms(
+            df=aliased_df,
+            aliases=aliases,
+            id_col=aliases.alias(id_col),
+            cluster_col=aliases.alias(cluster_col),
             n_arms=n_arms,
             quantiles=quantiles,
             random_state=random_state,
             arm_weights=arm_weights,
         )
-
-    return _assign_individuals_to_arms(
-        df=df,
-        id_col=id_col,
-        stratum_cols=stratum_cols,
-        n_arms=n_arms,
-        quantiles=quantiles,
-        random_state=random_state,
-        arm_weights=arm_weights,
-    )
+    else:
+        result = _assign_individuals_to_arms(
+            df=aliased_df,
+            aliases=aliases,
+            id_col=aliases.alias(id_col),
+            stratum_cols=[aliases.alias(column) for column in stratum_cols],
+            n_arms=n_arms,
+            quantiles=quantiles,
+            random_state=random_state,
+            arm_weights=arm_weights,
+        )
+    return replace(result, stratum_cols=[aliases.name(column) for column in result.stratum_cols])
 
 
 def _assign_individuals_to_arms(
     df: pd.DataFrame,
     *,
+    aliases: FieldAliases,
     id_col: str,
     stratum_cols: list[str],
     n_arms: int,
@@ -109,9 +120,14 @@ def _assign_individuals_to_arms(
     random_state: int | None = None,
     arm_weights: list[float] | None = None,
 ) -> AssignmentResult:
-    """Helper to assign individuals to arms using stratified random assignment and do a balance check."""
+    """Helper to assign individuals to arms using stratified random assignment and do a balance check.
+
+    df's columns are named by their aliases, which also name id_col and stratum_cols.
+    """
     if id_col in stratum_cols:
-        raise StatsAssignmentError(f"Columns with only unique values should not be used as strata: {id_col}")
+        raise StatsAssignmentError(
+            f"Columns with only unique values should not be used as strata: {aliases.name(id_col)}"
+        )
 
     if len(stratum_cols) == 0:
         # No stratification, so use simple random assignment
@@ -124,8 +140,8 @@ def _assign_individuals_to_arms(
             arm_pop=np.bincount(treatment_ids, minlength=n_arms),
         )
 
-    # Dedupe the strata names and then sort them for a stable output ordering
-    orig_stratum_cols = sorted(set(stratum_cols))
+    # Dedupe the strata names and then sort them by field name for a stable output ordering
+    orig_stratum_cols = sorted(set(stratum_cols), key=aliases.name)
 
     # Create copy for analysis while attempting to convert any numeric "object" types that pandas
     # didn't originally recognize when creating the dataframe. This might have arisen from nullable
@@ -136,7 +152,7 @@ def _assign_individuals_to_arms(
         data=orig_data_to_stratify, exclude_cols=[id_col], quantiles=quantiles
     )
     # Our original target of columns to stratify on may have gotten smaller:
-    post_stratum_cols = sorted(set(orig_stratum_cols) - exclude_cols_set)
+    post_stratum_cols = sorted(set(orig_stratum_cols) - exclude_cols_set, key=aliases.name)
 
     if len(post_stratum_cols) == 0:
         # No stratification, so use simple random assignment while still outputting strata, even
@@ -169,7 +185,7 @@ def _assign_individuals_to_arms(
     if len(df) != len(df_cleaned):
         raise StatsAssignmentError(
             f"Expected {len(df)} assignments but only have {len(df_cleaned)}. "
-            f"Check if your {id_col} values could be causing problems."
+            f"Check if your {aliases.name(id_col)} values could be causing problems."
         )
 
     # Put back non-null numeric columns for a more robust balance check.
@@ -202,6 +218,7 @@ def _assign_individuals_to_arms(
 
 def _assign_clusters_to_arms(
     df: pd.DataFrame,
+    aliases: FieldAliases,
     id_col: str,
     cluster_col: str,
     n_arms: int,
@@ -213,7 +230,8 @@ def _assign_clusters_to_arms(
     Assign clusters to arms as a unit using cluster-size bucketing, and run a balance check.
 
     Args:
-        df: pandas DataFrame containing the data
+        df: pandas DataFrame containing the data, its columns named by their aliases
+        aliases: The aliases of df's columns, which also name id_col and cluster_col
         id_col: Name of column containing unit identifiers
         cluster_col: Name of column containing cluster identifiers
         n_arms: Number of arms in your experiment
@@ -261,7 +279,7 @@ def _assign_clusters_to_arms(
     if len(df) != len(df_with_assignments):
         raise StatsAssignmentError(
             f"Expected {len(df)} assignments but only have {len(df_with_assignments)}. "
-            f"Check if your {cluster_col} values could be causing problems."
+            f"Check if your {aliases.name(cluster_col)} values could be causing problems."
         )
 
     treatment_ids = df_with_assignments[STOCHATREAT_TREAT_NAME]

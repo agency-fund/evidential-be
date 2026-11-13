@@ -18,9 +18,10 @@ from deepdiff import DeepDiff
 from pydantic import HttpUrl
 
 from xngin.apiserver import flags
-from xngin.apiserver.conftest import convert_dwh_to_create_api_dsn, expect_status_code
+from xngin.apiserver.dependencies import random_seed_dependency
 from xngin.apiserver.dns import safe_resolve
 from xngin.apiserver.dwh.dwh_session import DwhSession
+from xngin.apiserver.main import app
 from xngin.apiserver.routers.admin.admin_api_converters import CREDENTIALS_UNAVAILABLE_MESSAGE
 from xngin.apiserver.routers.admin.admin_api_types import (
     AddExperimentCreatedWebhookRequest,
@@ -90,11 +91,15 @@ from xngin.apiserver.routers.experiments.test_experiments_common import (
     make_createexperimentrequest_json,
 )
 from xngin.apiserver.settings import Dsn
+from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
+from xngin.apiserver.testing.assertions import expect_status_code
 from xngin.apiserver.testing.experiments_api_client import (
     ExperimentsAPIClient,
     ExperimentsAPIClientNotDefaultStatusError,
 )
+from xngin.apiserver.testing.helpers import convert_dwh_to_create_api_dsn
+from xngin.apiserver.testing.snapshots import commit_snapshot
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
 from xngin.apiserver.testing.wide_dwh_def import WIDE_DWH_TABLE_NAME
 
@@ -1561,6 +1566,30 @@ def test_power_check_answers_504_when_the_warehouse_stalls(testing_datasource, a
         release.set()
 
 
+def test_power_check_rejects_nodwh_datasource(aclient: AdminAPIClient):
+    org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="nodwh power check")).data.id
+    nodwh_ds_id = aclient.get_organization(organization_id=org_id).data.datasources[0].id
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test power check on nodwh",
+        description="Power checks require a data warehouse.",
+        table_name="dwh",
+        primary_key="id",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="control", arm_description="Control group"),
+            Arm(arm_name="treatment", arm_description="Treatment group"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="current_income", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+    )
+
+    with expect_status_code(400, text="not supported for datasources without a data warehouse"):
+        aclient.power_check(datasource_id=nodwh_ds_id, body=design_spec_to_power_request(design_spec))
+
+
 def test_power_check_validations(testing_datasource, aclient: AdminAPIClient):
     """Test power check validations."""
     ds_id = testing_datasource.datasource_id
@@ -1603,6 +1632,15 @@ def test_power_check_validations(testing_datasource, aclient: AdminAPIClient):
         bad_design_spec = design_spec.model_copy(deep=True)
         bad_design_spec.metrics = [DesignSpecMetricRequest(field_name="gender", metric_pct_change=0.1)]
         aclient.power_check(datasource_id=ds_id, body=design_spec_to_power_request(bad_design_spec))
+
+    # Raw JSON, since PowerRequest itself refuses to build with a repeated metric.
+    with expect_status_code(422, detail_contains='listed more than once: "current_income"'):
+        body = design_spec_to_power_request(design_spec).model_dump(mode="json")
+        body["metrics"] = [
+            {"field_name": "current_income", "metric_pct_change": 0.1},
+            {"field_name": "current_income", "metric_pct_change": 0.2},
+        ]
+        aclient.power_check(datasource_id=ds_id, body=body)
 
 
 def test_create_experiment_with_invalid_design_url(testing_datasource, aclient: AdminAPIClient):
@@ -2281,7 +2319,7 @@ def test_update_arm(testing_experiment, aclient: AdminAPIClient):
     assert arm.arm_description == "updated desc"
 
 
-def test_update_arm_invalid(testing_datasource, testing_experiment, aclient: AdminAPIClient, use_deterministic_random):
+def test_update_arm_invalid(use_deterministic_random, testing_datasource, testing_experiment, aclient: AdminAPIClient):
     """Test arm update validation checks.
 
     The 10-participant experiment created below is sampled with SQL random(). Some samples leave a
@@ -2320,7 +2358,7 @@ def test_update_arm_invalid(testing_datasource, testing_experiment, aclient: Adm
         )
 
 
-def test_freq_experiments_analyze(testing_experiment, aclient: AdminAPIClient, use_deterministic_random):
+def test_freq_experiments_analyze(use_deterministic_random, testing_experiment, aclient: AdminAPIClient):
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
 
@@ -2342,10 +2380,12 @@ def test_freq_experiments_analyze(testing_experiment, aclient: AdminAPIClient, u
         for analysis in metric_analysis.arm_analyses:
             assert analysis.ci_lower is not None
             assert analysis.ci_upper is not None
+            assert analysis.estimate is not None
             assert analysis.ci_lower <= analysis.estimate <= analysis.ci_upper
             assert analysis.mean_ci_lower is not None
             assert analysis.mean_ci_upper is not None
-            assert analysis.mean_ci_lower <= analysis.mean_ci_upper
+            assert analysis.mean is not None
+            assert analysis.mean_ci_lower <= analysis.mean <= analysis.mean_ci_upper
 
 
 @pytest.mark.parametrize(
@@ -2422,7 +2462,7 @@ def test_create_and_assign_mab_dwh_rejects_pushed_outcome(
 ):
     """End-to-end path for a MAB-DWH experiment through the public APIs: create it via the admin
     client and assign a participant. Outcomes arrive from the organization's data warehouse via
-    xngin-dwh-pull, so the push endpoint rejects them and the draw stays unresolved."""
+    xngin-worker, so the push endpoint rejects them and the draw stays unresolved."""
     experiment = make_bandit_online_experiment(
         aclient,
         testing_datasource.datasource_id,
@@ -2647,11 +2687,63 @@ def test_analyze_experiment_with_no_assignments_in_one_arm_yet(
             assert analysis.std_error is not None
             assert analysis.num_missing_values == 0
         else:
-            assert analysis.estimate == 0
+            assert analysis.estimate is None
+            assert analysis.mean is None
             assert analysis.p_value is None
             assert analysis.t_stat is None
             assert analysis.std_error is None
             assert analysis.num_missing_values == -1
+
+
+def test_analyze_experiment_with_no_assignments_in_baseline_arm_yet(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+):
+    datasource_id = testing_datasource.datasource_id
+    experiment = make_freq_online_experiment(aclient, datasource_id)
+    experiment_id = experiment.config.experiment_id
+    arm_ids = {arm.arm_name: arm.arm_id for arm in experiment.config.design_spec.arms}
+
+    # Seed 0 assigns every participant to arm "T", leaving the baseline arm "C" without participants.
+    previous_seed = app.dependency_overrides[random_seed_dependency]
+    app.dependency_overrides[random_seed_dependency] = lambda: 0
+    try:
+        for participant_id in ("1", "2", "3"):
+            assignment = eclient.get_assignment(
+                api_key=testing_datasource.key, experiment_id=experiment_id, participant_id=participant_id
+            ).data.assignment
+            assert assignment is not None
+            assert assignment.arm_id == arm_ids["T"]
+    finally:
+        app.dependency_overrides[random_seed_dependency] = previous_seed
+
+    analysis_response = aclient.analyze_experiment(datasource_id=datasource_id, experiment_id=experiment_id).data
+    assert isinstance(analysis_response, FreqExperimentAnalysisResponse)
+    assert analysis_response.num_participants == 3
+    metric_analysis = analysis_response.metric_analyses[0]
+    analyses = {analysis.arm_id: analysis for analysis in metric_analysis.arm_analyses}
+    assert set(analyses) == set(arm_ids.values())
+
+    # The baseline arm's analysis is not available.
+    baseline = analyses[arm_ids["C"]]
+    assert baseline.is_baseline
+    assert baseline.estimate is None
+    assert baseline.mean is None
+    assert baseline.num_missing_values == -1
+
+    # The treatment arm reports its mean, but can't be compared to the empty baseline.
+    treatment = analyses[arm_ids["T"]]
+    assert not treatment.is_baseline
+    assert treatment.mean is not None
+    assert 0 <= treatment.mean <= 1
+    assert treatment.estimate is None
+    assert treatment.p_value is None
+    assert treatment.t_stat is None
+    assert treatment.std_error is None
+    assert treatment.ci_lower is None
+    assert treatment.ci_upper is None
+    assert treatment.num_missing_values == 0
 
 
 @pytest.mark.parametrize(
@@ -2953,52 +3045,75 @@ def test_snapshots(aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
     # Experiments must be in an eligible state to be snapshotted.
     aclient.commit_experiment(datasource_id=create_datasource_response.id, experiment_id=experiment_id)
 
-    # In tests, the underlying TestClient waits for the backend handler before returning.
-    # to finish all of its background tasks. Therefore this test will not observe the experiment in a "pending" state.
-    create_snapshot_response = aclient.create_snapshot(
+    first = commit_snapshot(experiment_id)
+    second = commit_snapshot(experiment_id)
+    list_snapshot = aclient.list_snapshots(
         organization_id=create_organization_response.id,
         datasource_id=create_datasource_response.id,
         experiment_id=experiment_id,
     ).data
+    assert [item.id for item in list_snapshot.items] == [second.id, first.id]
+    assert second.created_at > first.created_at
+    success_snapshot = list_snapshot.items[0]
+    assert success_snapshot.experiment_id == experiment_id
+    assert success_snapshot.status == SnapshotStatus.SUCCESS
+    assert success_snapshot.details is None
+    assert success_snapshot.updated_at == second.updated_at
+    assert list_snapshot.latest_failure is None
 
-    # Force the second snapshot to fail by misconfiguring the Postgres port.
+    # Force the next snapshot to fail by misconfiguring the Postgres port.
     aclient.update_datasource(
         datasource_id=create_datasource_response.id,
         body=UpdateDatasourceRequest(dsn=valid_dsn.model_copy(update={"port": valid_dsn.port + 1})),
     )
-
-    create_bad_snapshot_response = aclient.create_snapshot(
-        organization_id=create_organization_response.id,
-        datasource_id=create_datasource_response.id,
-        experiment_id=experiment_id,
-    ).data
+    bad = commit_snapshot(experiment_id)
 
     # get the snapshot we just created and verify it is failed
     get_snapshot_response = aclient.get_snapshot(
         organization_id=create_organization_response.id,
         datasource_id=create_datasource_response.id,
         experiment_id=experiment_id,
-        snapshot_id=create_bad_snapshot_response.id,
+        snapshot_id=bad.id,
     ).data
+    assert get_snapshot_response.snapshot is not None
     assert get_snapshot_response.snapshot.status == SnapshotStatus.FAILED
     assert get_snapshot_response.snapshot.data is None
 
-    list_snapshot_response = aclient.list_snapshots(
+    list_snapshot = aclient.list_snapshots(
         organization_id=create_organization_response.id,
         datasource_id=create_datasource_response.id,
         experiment_id=experiment_id,
-    )
-    list_snapshot = list_snapshot_response.data
-    assert len(list_snapshot.items) == 2, list_snapshot
-    assert list_snapshot.items[0].updated_at > list_snapshot.items[1].updated_at, list_snapshot
-
-    failed_snapshot, success_snapshot = list_snapshot.items
+    ).data
+    assert [item.id for item in list_snapshot.items] == [bad.id, second.id, first.id]
+    failed_snapshot = list_snapshot.items[0]
     assert list_snapshot.latest_failure == failed_snapshot.updated_at
+    assert failed_snapshot.experiment_id == experiment_id
+    assert failed_snapshot.status == SnapshotStatus.FAILED
+    assert failed_snapshot.data is None
+    assert failed_snapshot.details is not None and "OperationalError: " in failed_snapshot.details["message"]
 
-    assert success_snapshot.id == create_snapshot_response.id
-    assert success_snapshot.experiment_id == experiment_id
-    assert success_snapshot.status == "success"
-    assert success_snapshot.details is None
+    for status_filter, expected_ids in [
+        (SnapshotStatus.SUCCESS, [second.id, first.id]),
+        (SnapshotStatus.FAILED, [bad.id]),
+    ]:
+        list_snapshot = aclient.list_snapshots(
+            organization_id=create_organization_response.id,
+            datasource_id=create_datasource_response.id,
+            experiment_id=experiment_id,
+            status_=[status_filter],
+        ).data
+        assert [item.id for item in list_snapshot.items] == expected_ids, status_filter
+        assert list_snapshot.latest_failure == failed_snapshot.updated_at, status_filter
+
+    # list snapshots with empty string in status_ param
+    with expect_status_code(422):
+        aclient.list_snapshots(
+            organization_id=create_organization_response.id,
+            datasource_id=create_datasource_response.id,
+            experiment_id=experiment_id,
+            status_=[""],  # type: ignore[list-item]  # Deliberately invalid; expect HTTP 422.
+        )
+
     # Verify the snapshot data.
     analysis_response = FreqExperimentAnalysisResponse.model_validate(success_snapshot.data)
     assert analysis_response.experiment_id == experiment_id
@@ -3026,12 +3141,6 @@ def test_snapshots(aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
         assert analysis.num_missing_values == 0
         assert analysis.is_baseline == is_baseline
 
-    assert failed_snapshot.id == create_bad_snapshot_response.id
-    assert failed_snapshot.experiment_id == experiment_id
-    assert failed_snapshot.status == "failed"
-    assert failed_snapshot.data is None
-    assert failed_snapshot.details is not None and "OperationalError: " in failed_snapshot.details["message"]
-
     get_snapshot_response = aclient.get_snapshot(
         organization_id=create_organization_response.id,
         datasource_id=create_datasource_response.id,
@@ -3041,51 +3150,7 @@ def test_snapshots(aclient: AdminAPIClient, aclient_unpriv: AdminAPIClient):
     assert get_snapshot_response.snapshot is not None
     assert get_snapshot_response.snapshot.id == success_snapshot.id
     assert get_snapshot_response.snapshot.experiment_id == success_snapshot.experiment_id
-    assert get_snapshot_response.snapshot.status == success_snapshot.status
     assert get_snapshot_response.snapshot.data == success_snapshot.data
-
-    # list snapshots with empty string in status_ param
-    with expect_status_code(422):
-        aclient.list_snapshots(
-            organization_id=create_organization_response.id,
-            datasource_id=create_datasource_response.id,
-            experiment_id=experiment_id,
-            status_=[""],  # type: ignore
-        )
-
-    # list snapshots filtered for running
-    list_snapshot_response = aclient.list_snapshots(
-        organization_id=create_organization_response.id,
-        datasource_id=create_datasource_response.id,
-        experiment_id=experiment_id,
-        status_=[SnapshotStatus.RUNNING],
-    )
-    list_snapshot = list_snapshot_response.data
-    assert len(list_snapshot.items) == 0, list_snapshot
-    assert list_snapshot.latest_failure == failed_snapshot.updated_at, list_snapshot
-
-    # list snapshots restricted to success
-    list_snapshot_response = aclient.list_snapshots(
-        organization_id=create_organization_response.id,
-        datasource_id=create_datasource_response.id,
-        experiment_id=experiment_id,
-        status_=[SnapshotStatus.SUCCESS],
-    )
-    list_snapshot = list_snapshot_response.data
-    assert len(list_snapshot.items) == 1, list_snapshot
-    assert list_snapshot.latest_failure == failed_snapshot.updated_at, list_snapshot
-
-    # list snapshots restricted to failed
-    list_snapshot_response = aclient.list_snapshots(
-        organization_id=create_organization_response.id,
-        datasource_id=create_datasource_response.id,
-        experiment_id=experiment_id,
-        status_=[SnapshotStatus.FAILED],
-    )
-    list_snapshot = list_snapshot_response.data
-    assert len(list_snapshot.items) == 1, list_snapshot
-    assert list_snapshot.latest_failure == list_snapshot.items[0].updated_at, list_snapshot
-    assert list_snapshot.latest_failure == failed_snapshot.updated_at, list_snapshot
 
     # Attempt to read a snapshot as a user that doesn't have access to the snapshot.
     with expect_status_code(404):
@@ -3125,12 +3190,8 @@ def test_delete_snapshot_scopes_resource_to_datasource(
     aclient_unpriv: AdminAPIClient,
 ):
     victim_org_id, victim_datasource_id = create_org_with_default_datasource(aclient, "snapshot-delete-victim-org")
-    victim_experiment = make_freq_online_experiment(aclient, victim_datasource_id)
-    snapshot = aclient.create_snapshot(
-        organization_id=victim_org_id,
-        datasource_id=victim_datasource_id,
-        experiment_id=victim_experiment.config.experiment_id,
-    ).data
+    victim_experiment = make_bandit_online_experiment(aclient, victim_datasource_id)
+    snapshot = commit_snapshot(victim_experiment.config.experiment_id)
     caller_org_id, caller_datasource_id = create_org_with_default_datasource(
         aclient_unpriv, "snapshot-delete-caller-org"
     )
@@ -3150,79 +3211,6 @@ def test_delete_snapshot_scopes_resource_to_datasource(
         snapshot_id=snapshot.id,
     ).data
     assert response.snapshot.id == snapshot.id
-
-
-def test_snapshot_on_ineligible_experiments(testing_datasource, aclient: AdminAPIClient):
-    ds_id = testing_datasource.datasource_id
-    org_id = testing_datasource.organization_id
-    # The experiment created below is both too old and not yet committed.
-    experiment_id = aclient.create_experiment(
-        datasource_id=ds_id,
-        body=CreateExperimentRequest(
-            design_spec=PreassignedFrequentistExperimentSpec(
-                experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-                table_name="dwh",
-                primary_key="id",
-                experiment_name="test old experiment",
-                description="too old to be snapshotted",
-                start_date=datetime(2024, 1, 1, tzinfo=UTC),
-                end_date=datetime.now(UTC) - timedelta(hours=25),
-                arms=[
-                    Arm(arm_name="control", arm_description="Control group"),
-                    Arm(arm_name="treatment", arm_description="Treatment group"),
-                ],
-                metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
-                strata=[],
-                filters=[],
-                desired_n=20,
-            ),
-        ),
-    ).data.experiment_id
-
-    # Assert non-committed experiments cannot be snapshotted.
-    with expect_status_code(422, detail_eq="You can only snapshot committed experiments."):
-        aclient.create_snapshot(
-            organization_id=org_id,
-            datasource_id=ds_id,
-            experiment_id=experiment_id,
-        )
-
-    # So commit the experiment.
-    aclient.commit_experiment(datasource_id=ds_id, experiment_id=experiment_id)
-
-    # Assert old experiments cannot be snapshotted.
-    with expect_status_code(422, detail_eq="You can only snapshot active experiments."):
-        aclient.create_snapshot(
-            organization_id=org_id,
-            datasource_id=ds_id,
-            experiment_id=experiment_id,
-        )
-
-    # But recently ended experiments can be snapshotted within a 1 day buffer.
-    experiment_id = aclient.create_experiment(
-        datasource_id=ds_id,
-        body=CreateExperimentRequest(
-            design_spec=PreassignedFrequentistExperimentSpec(
-                experiment_type=ExperimentsType.FREQ_PREASSIGNED,
-                table_name="dwh",
-                primary_key="id",
-                experiment_name="test just ended experiment",
-                description="just ended within a day of now, so can be snapshotted",
-                start_date=datetime(2024, 1, 1, tzinfo=UTC),
-                end_date=datetime.now(UTC) - timedelta(hours=23),
-                arms=[
-                    Arm(arm_name="control", arm_description="Control group"),
-                    Arm(arm_name="treatment", arm_description="Treatment group"),
-                ],
-                metrics=[DesignSpecMetricRequest(field_name="income", metric_pct_change=5)],
-                strata=[],
-                filters=[],
-                desired_n=20,
-            ),
-        ),
-    ).data.experiment_id
-    aclient.commit_experiment(datasource_id=ds_id, experiment_id=experiment_id)
-    aclient.create_snapshot(organization_id=org_id, datasource_id=ds_id, experiment_id=experiment_id)
 
 
 def test_snapshot_with_nan(testing_datasource, aclient: AdminAPIClient):
@@ -3256,9 +3244,7 @@ def test_snapshot_with_nan(testing_datasource, aclient: AdminAPIClient):
     aclient.commit_experiment(datasource_id=ds_id, experiment_id=experiment_id)
 
     # Take a snapshot.
-    create_snapshot_response = aclient.create_snapshot(
-        organization_id=org_id, datasource_id=ds_id, experiment_id=experiment_id
-    ).data
+    create_snapshot_response = commit_snapshot(experiment_id)
 
     # Verify the snapshot.
     snapshot_id = create_snapshot_response.id
@@ -3270,7 +3256,6 @@ def test_snapshot_with_nan(testing_datasource, aclient: AdminAPIClient):
     ).data.snapshot
     assert snapshot is not None
     assert snapshot.id == snapshot_id
-    assert snapshot.status == "success"
     assert snapshot.experiment_id == experiment_id
     assert snapshot.data is not None
     analysis_response = FreqExperimentAnalysisResponse.model_validate(snapshot.data)
@@ -3388,11 +3373,7 @@ def test_delete_experiment_data_snapshots(
     org_id = testing_experiment.organization_id
     experiment_id = testing_experiment.id
 
-    snapshot = aclient.create_snapshot(
-        organization_id=org_id,
-        datasource_id=ds_id,
-        experiment_id=experiment_id,
-    ).data
+    snapshot = commit_snapshot(experiment_id)
     snapshots_before = aclient.list_snapshots(
         organization_id=org_id,
         datasource_id=ds_id,
@@ -3431,7 +3412,7 @@ def test_delete_experiment_data_multiple(
     org_id = testing_experiment.organization_id
     experiment_id = testing_experiment.id
 
-    aclient.create_snapshot(organization_id=org_id, datasource_id=ds_id, experiment_id=experiment_id)
+    commit_snapshot(experiment_id)
     assignments_before = eclient.get_experiment_assignments(
         api_key=testing_experiment.api_key,
         experiment_id=experiment_id,
@@ -3473,7 +3454,7 @@ def test_delete_experiment_data_none_specified(
     org_id = testing_experiment.organization_id
     experiment_id = testing_experiment.id
 
-    snapshot = aclient.create_snapshot(organization_id=org_id, datasource_id=ds_id, experiment_id=experiment_id).data
+    snapshot = commit_snapshot(experiment_id)
     assignments_before = eclient.get_experiment_assignments(
         api_key=testing_experiment.api_key,
         experiment_id=experiment_id,
@@ -3598,13 +3579,9 @@ def test_list_snapshots_pagination(aclient: AdminAPIClient):
     aclient.commit_experiment(datasource_id=ds.id, experiment_id=experiment_id)
 
     # Create two snapshots
-    aclient.create_snapshot(organization_id=org.id, datasource_id=ds.id, experiment_id=experiment_id)
+    commit_snapshot(experiment_id)
 
-    # Force second snapshot to fail
-    aclient.update_datasource(
-        datasource_id=ds.id, body=UpdateDatasourceRequest(dsn=valid_dsn.model_copy(update={"port": valid_dsn.port + 1}))
-    )
-    aclient.create_snapshot(organization_id=org.id, datasource_id=ds.id, experiment_id=experiment_id)
+    commit_snapshot(experiment_id)
 
     # Page through with page_size=1
     page1 = aclient.list_snapshots(
@@ -3612,7 +3589,6 @@ def test_list_snapshots_pagination(aclient: AdminAPIClient):
     ).data
     assert len(page1.items) == 1
     assert page1.next_page_token != ""
-    assert page1.latest_failure is not None
 
     page2 = aclient.list_snapshots(
         organization_id=org.id,
@@ -3623,12 +3599,11 @@ def test_list_snapshots_pagination(aclient: AdminAPIClient):
     ).data
     assert len(page2.items) == 1
     assert page2.next_page_token == ""
-    assert page2.latest_failure is not None
 
     # No overlap between pages
     assert page1.items[0].id != page2.items[0].id
     # Descending order maintained
-    assert page1.items[0].updated_at >= page2.items[0].updated_at
+    assert page1.items[0].created_at >= page2.items[0].created_at
 
     # Without pagination params, all results returned on one page
     all_items = aclient.list_snapshots(organization_id=org.id, datasource_id=ds.id, experiment_id=experiment_id).data
@@ -4688,3 +4663,45 @@ def test_org_scoped_routes_reject_datasource_from_another_organization(
         experiment_id=experiment_id,
     ).data
     assert listed.items == []
+
+
+def test_inspecting_a_schema_qualified_table_does_not_reach_the_schema(testing_datasource, aclient: AdminAPIClient):
+    """On Postgres, the dot is part of the quoted table name; public.dwh does not name the dwh table in public."""
+    with expect_status_code(404, message_contains="The table 'public.dwh' does not exist"):
+        aclient.inspect_table_in_datasource(datasource_id=testing_datasource.datasource_id, table_name="public.dwh")
+
+
+def test_historical_snapshot_fields_and_filtering(xngin_session, testing_datasource, aclient: AdminAPIClient):
+    experiment_id = make_bandit_online_experiment(aclient, testing_datasource.datasource_id).config.experiment_id
+    captured = datetime(2025, 1, 1, tzinfo=UTC)
+    failed = tables.Snapshot(
+        experiment_id=experiment_id,
+        status="failed",
+        message="Analysis failed.",
+        created_at=captured - timedelta(minutes=1),
+        updated_at=captured,
+        data=None,
+    )
+    xngin_session.add(failed)
+    xngin_session.commit()
+
+    response = aclient.get_snapshot(
+        organization_id=testing_datasource.organization_id,
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=experiment_id,
+        snapshot_id=failed.id,
+    ).data.snapshot
+    assert response.status == SnapshotStatus.FAILED
+    assert response.details == {"message": "Analysis failed."}
+    assert response.updated_at == captured
+    assert response.created_at == captured - timedelta(minutes=1)
+    assert response.data is None
+
+    listing = aclient.list_snapshots(
+        organization_id=testing_datasource.organization_id,
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=experiment_id,
+        status_=[SnapshotStatus.FAILED],
+    ).data
+    assert [item.id for item in listing.items] == [failed.id]
+    assert listing.latest_failure == captured

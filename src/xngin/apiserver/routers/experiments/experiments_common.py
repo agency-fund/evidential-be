@@ -1,5 +1,5 @@
 import enum
-import io
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -18,7 +18,6 @@ from sqlalchemy.orm import Session, selectinload
 from xngin.apiserver import constants, flags
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.inspection_types import FieldDescriptor, ParticipantsSchema
-from xngin.apiserver.dwh.participant_metrics_queries import get_participant_metrics
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.assignment_adapters import (
     RowProtocol,
@@ -69,20 +68,20 @@ from xngin.apiserver.routers.common_enums import (
 )
 from xngin.apiserver.routers.experiments.property_filters import passes_filters, validate_filter_value
 from xngin.apiserver.settings import DatasourceConfig
-from xngin.apiserver.sql.queries import select_as_csv
+from xngin.apiserver.sql.queries import stream
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.webhooks.webhook_types import ExperimentCreatedWebhookBody
+from xngin.apiserver.worker.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
 from xngin.events.experiment_created import ExperimentCreatedEvent
 from xngin.stats.analysis import analyze_experiment as analyze_freq_experiment
 from xngin.stats.assignment import AssignmentResult
 from xngin.stats.bandit_analysis import analyze_experiment as analyze_bandit_experiment
 from xngin.stats.bandit_sampling import choose_arm as choose_bandit_arm
 from xngin.stats.bandit_sampling import update_arm as update_bandit_arm
-from xngin.stats.stats_errors import StatsAnalysisError
-from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE, WebhookOutboundTask
+from xngin.stats.stats_errors import StatsAnalysisError, StatsNoParticipantsError
 
-CSV_PARSE_CHUNK_SIZE_BYTES = 5 << 20
+ASSIGNMENT_STREAM_FETCH_SIZE_ROWS = 16_384
 
 
 class ExperimentsAssignmentError(Exception):
@@ -121,9 +120,9 @@ def make_schema_from_experiment(experiment: tables.Experiment) -> ParticipantsSc
             schema[ef.field_name] = fd
         if ef.is_unique_id:
             fd.is_unique_id = True
-        if ef.is_metric:
+        if ef.is_primary_metric or ef.metric_pct_change is not None or ef.metric_target is not None:
             fd.is_metric = True
-        if ef.is_filter:
+        if ef.experiment_filters:
             fd.is_filter = True
         if ef.is_strata:
             fd.is_strata = True
@@ -135,7 +134,7 @@ def make_schema_from_experiment(experiment: tables.Experiment) -> ParticipantsSc
 
 
 def fetch_fields_or_raise(
-    datasource: tables.Datasource,
+    dwh: DwhSession,
     design_spec: AnyFrequentistDesignSpec,
 ) -> dict[str, DataType]:
     """Inspect an explicit table/primary_key experiment request and return field metadata.
@@ -144,13 +143,12 @@ def fetch_fields_or_raise(
     Raises: LateValidationError if any fields used in the request are not found, invalid for a
     certain use, or if filter values are invalid for the field type.
     """
-    with DwhSession.open(datasource.get_config().dwh) as dwh:
-        sa_table = dwh.inspect_table(design_spec.table_name)
-        return convert_table_to_fields_or_raise(sa_table, design_spec)
+    sa_table = dwh.inspect_table(design_spec.table_name)
+    return convert_table_to_fields_or_raise(sa_table, design_spec)
 
 
 def fetch_mab_dwh_fields_or_raise(
-    datasource: tables.Datasource,
+    dwh: DwhSession,
     design_spec: MABDwhExperimentSpec,
 ) -> dict[str, DataType]:
     """Inspect the DWH table referenced by a MAB-DWH design spec and return field metadata
@@ -159,8 +157,7 @@ def fetch_mab_dwh_fields_or_raise(
     Returns: Field name => datatype map (covering primary_key and target_field_name only).
     Raises: LateValidationError if either column is missing from the table.
     """
-    with DwhSession.open(datasource.get_config().dwh) as dwh:
-        sa_table = dwh.inspect_table(design_spec.table_name)
+    sa_table = dwh.inspect_table(design_spec.table_name)
 
     referenced_fields_and_types = _resolve_referenced_field_types(
         sa_table, {design_spec.primary_key, design_spec.target_field_name}
@@ -283,7 +280,6 @@ def create_experiment_impl(
 
             table_name = preassigned_spec.table_name
             primary_key = preassigned_spec.primary_key
-            field_type_map = fetch_fields_or_raise(datasource, preassigned_spec)
 
             # Get participants and their schema info from the client dwh.
             # Only fetch the columns we might need for stratified random assignment.
@@ -292,6 +288,16 @@ def create_experiment_impl(
             stratum_cols = strata_names + metric_names if stratify_on_metrics else strata_names
             select_columns = {*stratum_cols, primary_key}
             eligibility_filters = request.design_spec.filters
+
+            # One-time mode: only assign participants with a null value for the metric. It is validated to be
+            # primary-only, so at most one null filter is added.
+            primary_metric = request.design_spec.metrics[0]
+            if primary_metric.use_one_time_metric:
+                eligibility_filters = [
+                    *eligibility_filters,
+                    Filter(field_name=primary_metric.field_name, relation=Relation.INCLUDES, value=[None]),
+                ]
+
             if cluster_key is not None:
                 select_columns.add(cluster_key)
                 eligibility_filters = [
@@ -301,6 +307,9 @@ def create_experiment_impl(
 
             ds_config = datasource.get_config()
             with DwhSession.open(ds_config.dwh) as dwh:
+                # Validate first so a bad field name fails before the participants query. Both share
+                # one inspection of the table.
+                field_type_map = fetch_fields_or_raise(dwh, preassigned_spec)
                 if cluster_key is not None:
                     assert desired_n_clusters is not None  # covered by CreateExperimentRequest validation
                     result = dwh.get_clusters_of_participants(
@@ -320,6 +329,16 @@ def create_experiment_impl(
                     )
                 sa_table, participants = result.sa_table, result.participants
 
+            # One-time mode can only assign the rows where the primary metric is still null. Block creation when
+            # there are fewer of those than requested rather than silently running a smaller experiment.
+            if primary_metric.use_one_time_metric and desired_n is not None and len(participants) < desired_n:
+                raise LateValidationError(
+                    f"Cannot create the experiment because only {len(participants)} participants have no value "
+                    f'for "{primary_metric.field_name}", fewer than the desired sample size of {desired_n}. '
+                    "Turn off one-time mode to sample from all participants, or adjust your filters to include "
+                    "more participants with no value."
+                )
+
             if not participants:
                 raise LateValidationError("Preassigned experiments must have eligible participants data")
 
@@ -338,7 +357,8 @@ def create_experiment_impl(
 
         case OnlineFrequentistExperimentSpec():
             online_spec = request.design_spec
-            field_type_map = fetch_fields_or_raise(datasource, online_spec)
+            with DwhSession.open(datasource.get_config().dwh) as dwh:
+                field_type_map = fetch_fields_or_raise(dwh, online_spec)
 
             return create_freq_online_experiment_impl(
                 request=request,
@@ -350,7 +370,8 @@ def create_experiment_impl(
             )
 
         case MABDwhExperimentSpec():
-            field_type_map = fetch_mab_dwh_fields_or_raise(datasource, request.design_spec)
+            with DwhSession.open(datasource.get_config().dwh) as dwh:
+                field_type_map = fetch_mab_dwh_fields_or_raise(dwh, request.design_spec)
             return create_bandit_online_experiment_impl(
                 xngin_session=xngin_session,
                 organization_id=datasource.organization_id,
@@ -920,7 +941,6 @@ def create_assignment_for_participant(
                             participant_id=participant_id,
                             arm_id=chosen_arm.id,
                             context_vals=sorted_context_vals,
-                            enable_autofail=experiment.enable_autofail,
                         )
                         .returning(tables.Draw.created_at)
                     )
@@ -1310,19 +1330,17 @@ def analyze_experiment_freq_impl(
         xngin_session, experiment.id, include_cluster_key=include_cluster
     )
     if assignments_df.empty:
-        raise StatsAnalysisError("No participants found for experiment.")
+        raise StatsNoParticipantsError()
 
+    metric_names = [metric.field_name for metric in metrics]
     with DwhSession.open(dsconfig.dwh, timeout=dwh_timeout) as dwh:
-        sa_table = dwh.inspect_table(experiment.datasource_table)
-
         # Mark the start of the analysis as when we begin pulling outcomes.
         created_at = datetime.now(UTC)
-        participant_outcomes = dwh.run(
-            get_participant_metrics,
-            sa_table,
-            metrics,
-            unique_id_field.field_name,
-            participant_ids,
+        participant_outcomes = dwh.get_participant_metrics(
+            experiment.datasource_table,
+            metric_names=metric_names,
+            unique_id_field=unique_id_field.field_name,
+            participant_ids=participant_ids,
         )
 
     if len(participant_outcomes) == 0:
@@ -1341,6 +1359,7 @@ def analyze_experiment_freq_impl(
     analyze_results = analyze_freq_experiment(
         assignments_df,
         participant_outcomes,
+        metric_names,
         unit_col=tables.ArmAssignment.participant_id.name,
         arm_col=tables.ArmAssignment.arm_id.name,
         cluster_col=tables.ArmAssignment.cluster_key.name if include_cluster else None,
@@ -1367,6 +1386,7 @@ def analyze_experiment_freq_impl(
                         std_error=arm_result.std_error,
                         ci_lower=arm_result.ci_lower,
                         ci_upper=arm_result.ci_upper,
+                        mean=arm_result.mean,
                         mean_ci_lower=arm_result.mean_ci_lower,
                         mean_ci_upper=arm_result.mean_ci_upper,
                         num_missing_values=arm_result.num_missing_values,
@@ -1380,12 +1400,13 @@ def analyze_experiment_freq_impl(
                         arm_name=arm.name,
                         arm_description=arm.description,
                         is_baseline=arm.id == baseline_arm_id,
-                        estimate=0,
+                        estimate=float("nan"),
                         p_value=float("nan"),
                         t_stat=float("nan"),
                         std_error=float("nan"),
                         ci_lower=float("nan"),
                         ci_upper=float("nan"),
+                        mean=float("nan"),
                         mean_ci_lower=float("nan"),
                         mean_ci_upper=float("nan"),
                         num_missing_values=-1,  # -1 indicates arm analysis not available
@@ -1408,9 +1429,10 @@ def read_assignments_efficiently(
     *,
     include_cluster_key: bool = False,
 ) -> tuple[list[str], DataFrame]:
-    """Reads assignments directly from Postgres via a COPY statement.
+    """Reads an experiment's assignments by streaming rows directly from Postgres.
 
-    Reads CSV output in row-bounded chunks and concatenates the parsed frames.
+    Participant IDs and cluster keys are opaque strings and are returned exactly as stored. A NULL cluster_key is
+    returned as None.
     """
     column_names = [
         tables.ArmAssignment.arm_id.name,
@@ -1420,18 +1442,23 @@ def read_assignments_efficiently(
         column_names.append(tables.ArmAssignment.cluster_key.name)
 
     joined_column_names = sql.SQL(", ").join(sql.Identifier(name) for name in column_names)
-    select_query = t"SELECT {joined_column_names:q} FROM arm_assignments WHERE experiment_id = {experiment_id}"  # type: ignore
-    dfs = [
-        pd.read_csv(io.BytesIO(chunk), names=column_names, dtype=str)
-        for chunk in select_as_csv(
-            xngin_session, select_query, buffer_size_bytes=CSV_PARSE_CHUNK_SIZE_BYTES, newline_framed=True
-        )
-    ]
-    if dfs:
-        df = pd.concat(dfs, ignore_index=True)
-    else:
-        df = pd.DataFrame(columns=column_names).astype(str)
-    return df[tables.ArmAssignment.participant_id.name].to_list(), df
+    select_query = t"SELECT {joined_column_names:q} FROM arm_assignments WHERE experiment_id = {experiment_id}"
+    arm_ids: list[str] = []
+    participant_ids: list[str] = []
+    cluster_keys: list[str | None] = []
+    for row in stream(xngin_session, select_query, ASSIGNMENT_STREAM_FETCH_SIZE_ROWS):
+        arm_ids.append(sys.intern(row[0]))  # reduce memory by only storing one instance of each arm_id
+        participant_ids.append(row[1])
+        if include_cluster_key:
+            cluster_keys.append(row[2])
+
+    data: dict[str, list[str] | list[str | None]] = {
+        tables.ArmAssignment.arm_id.name: arm_ids,
+        tables.ArmAssignment.participant_id.name: participant_ids,
+    }
+    if include_cluster_key:
+        data[tables.ArmAssignment.cluster_key.name] = cluster_keys
+    return participant_ids, pd.DataFrame(data, dtype=object, copy=False)
 
 
 @dataclass(frozen=True, slots=True)

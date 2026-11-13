@@ -9,7 +9,7 @@ data "external_schema" "sqlalchemy_pg" {
 env "sa_postgres" {
   src = data.external_schema.sqlalchemy_pg.url
   // Specify the version of Postgres that we are running in production.
-  dev = "docker://postgres/17/railway"
+  dev = "docker://postgres/18/railway"
   migration {
     dir = "file://migrations/sa_postgres"
   }

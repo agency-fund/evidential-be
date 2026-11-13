@@ -139,7 +139,12 @@ class DataType(enum.StrEnum):
         return DataType.is_supported_type(self)
 
     def storage_class(self):
-        """Classifies a DataType into a storage class."""
+        """Returns the DataTypeStorageClass for this type.
+
+        DataTypeStorageClass.NUMERIC covers INTEGER, DOUBLE PRECISION, NUMERIC, and BIGINT. They all
+        use numeric_values (NUMERIC[]), which loads as Decimal. Those types still differ as API
+        filter values; to convert back, see ExperimentStorageConverter.get_design_spec_filters().
+        """
         match self:
             case (
                 DataType.CHARACTER_VARYING
@@ -151,12 +156,7 @@ class DataType(enum.StrEnum):
                 return DataTypeStorageClass.STRING
             case DataType.BOOLEAN:
                 return DataTypeStorageClass.BOOLEAN
-            case (
-                DataType.INTEGER
-                | DataType.DOUBLE_PRECISION
-                | DataType.NUMERIC
-                | DataType.BIGINT  # note: must be converted to string for API
-            ):
+            case DataType.INTEGER | DataType.DOUBLE_PRECISION | DataType.NUMERIC | DataType.BIGINT:
                 return DataTypeStorageClass.NUMERIC
             case _:
                 raise RuntimeError(f"Unsupported data type {self}")
@@ -173,7 +173,12 @@ class DataType(enum.StrEnum):
 
 
 class DataTypeStorageClass(enum.StrEnum):
-    """Internal helper for grouping our supported data types by how to store them."""
+    """Which experiment_filters.*_values column stores a DataType value.
+
+    STRING uses string_values, NUMERIC uses numeric_values, and BOOLEAN uses boolean_values.
+    Several DataType values share one class; see DataType.storage_class().  See
+    ExperimentStorageConverter.get_design_spec_filters() for how to convert back to API filters.
+    """
 
     STRING = enum.auto()
     NUMERIC = enum.auto()
@@ -189,7 +194,9 @@ class Relation(enum.StrEnum):
     EXCLUDES matches when the value does not match any of the provided values, including null if
     explicitly specified. If null is not explicitly excluded, we include nulls in the result.
 
-    BETWEEN matches when the value is between the two provided values (inclusive).
+    BETWEEN matches when the value is between the two provided bounds (inclusive). Either bound can be
+    null for an open-ended range. A null value matches only if a 3rd value of null is provided. BETWEEN
+    applies to numeric, date and timestamp values.
     """
 
     INCLUDES = "includes"
@@ -368,5 +375,4 @@ class SnapshotStatus(enum.StrEnum):
     """Describes the status of a snapshot."""
 
     SUCCESS = "success"
-    RUNNING = "running"
     FAILED = "failed"

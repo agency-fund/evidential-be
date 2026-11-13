@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 import json
 import threading
 from collections.abc import Callable
@@ -13,13 +13,13 @@ from loguru import logger
 from xngin.apiserver import flags
 from xngin.apiserver.routers.auth.oidc_settings import OidcSettings, check_absolute_https_url
 
-DISCOVERY_CACHE_LIFETIME = datetime.timedelta(minutes=60)
+DISCOVERY_CACHE_LIFETIME = dt.timedelta(minutes=60)
 
 LOGIN_UNAVAILABLE_DETAIL = "Login is not configured on this server."
 
 
-def _utc_now() -> datetime.datetime:
-    return datetime.datetime.now(datetime.UTC)
+def _utc_now() -> dt.datetime:
+    return dt.datetime.now(dt.UTC)
 
 
 class OidcProviderError(Exception):
@@ -55,13 +55,13 @@ class _Endpoints:
 class _DiscoverySnapshot:
     endpoints: _Endpoints
     signing_keys: tuple[dict, ...]
-    refreshed_at: datetime.datetime
+    refreshed_at: dt.datetime
 
 
 @dataclass(slots=True)
 class _RefreshAttempts:
-    discovery: datetime.datetime
-    jwks: datetime.datetime
+    discovery: dt.datetime
+    jwks: dt.datetime
 
 
 class OidcDiscoveryClient(Protocol):
@@ -102,7 +102,7 @@ class OidcDiscovery:
         settings: OidcSettings,
         client: httpx2.Client | None = None,
         *,
-        clock: Callable[[], datetime.datetime] = _utc_now,
+        clock: Callable[[], dt.datetime] = _utc_now,
     ):
         self.settings = settings
         self._client = client or httpx2.Client(
@@ -179,8 +179,8 @@ class OidcDiscovery:
     def _snapshot_is_current(self) -> bool:
         return self._snapshot.refreshed_at >= self._clock() - DISCOVERY_CACHE_LIFETIME
 
-    def _should_retry_fetch(self, attempted_at: datetime.datetime) -> bool:
-        return attempted_at <= self._clock() - datetime.timedelta(minutes=1)
+    def _should_retry_fetch(self, attempted_at: dt.datetime) -> bool:
+        return attempted_at <= self._clock() - dt.timedelta(minutes=1)
 
     @staticmethod
     def _find_signing_key(snapshot: _DiscoverySnapshot, kid: str) -> dict | None:

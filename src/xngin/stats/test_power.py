@@ -7,6 +7,7 @@ from xngin.apiserver.routers.common_enums import (
     MetricPowerAnalysisMessageType,
     MetricType,
 )
+from xngin.stats.individual_power import solve_for_mde_individual_impl
 from xngin.stats.power import analyze_metric_power, check_power
 from xngin.stats.stats_errors import StatsPowerError
 
@@ -85,11 +86,11 @@ def test_analyze_metric_power_numeric_insufficient(available_nonnull_n, availabl
         "metric_target": 14.5272,
     }
 
-    # Check that null warning appears when there are nulls
+    # Check that null note appears when there are nulls
     if available_nonnull_n != available_n:
-        assert "WARNING" in result.msg.msg
+        assert "NOTE" in result.msg.msg
     else:
-        assert "WARNING" not in result.msg.msg
+        assert "NOTE" not in result.msg.msg
 
     assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
 
@@ -110,10 +111,13 @@ def test_analyze_metric_power_binary():
     assert result.metric_spec.metric_baseline == 0.5
     assert result.metric_spec.metric_target == 0.55
     assert result.target_n == 3130
-    # Given the available_n, here's the best we can do (cross-checked with R's power.prop.test):
-    # (since it's 2-sided, an equivalent change down is fine, too)
-    assert result.target_possible == pytest.approx(1 - 0.588163, abs=1e-4)
-    assert result.pct_change_possible == pytest.approx(1 - 1.176327, abs=1e-4)
+    # Given the available_n, here's the best we can do (cross-checked with R's power.prop.test).
+    # The reported bound is the positive lift; the test is 2-sided, so the _lower fields report
+    # the detectable change down (symmetric here because the baseline is 0.5).
+    assert result.target_possible == pytest.approx(0.588163, abs=1e-4)
+    assert result.pct_change_possible == pytest.approx(0.176327, abs=1e-4)
+    assert result.target_possible_lower == pytest.approx(1 - 0.588163, abs=1e-4)
+    assert result.pct_change_possible_lower == pytest.approx(1 - 1.176327, abs=1e-4)
     assert not result.sufficient_n
     assert result.msg is not None
     assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
@@ -123,10 +127,97 @@ def test_analyze_metric_power_binary():
         "target_n": 3130,
         "additional_n_needed": 3130 - 1000,
         "metric_baseline": 0.5,
-        "target_possible": pytest.approx(1 - 0.588163, abs=1e-4),
+        "target_possible": pytest.approx(0.588163, abs=1e-4),
         "metric_target": 0.55,
     }
     assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
+
+
+def test_analyze_metric_power_binary_insufficient_decrease_target():
+    """The message reports the bound in the user's requested (downward) direction."""
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.BINARY,
+        metric_baseline=0.5,
+        metric_target=0.45,
+        available_nonnull_n=1000,
+        available_n=1000,
+    )
+
+    result = analyze_metric_power(metric, n_arms=2)
+
+    assert result.target_n == 3130
+    assert not result.sufficient_n
+    # The analysis fields keep fixed semantics: positive lift, plus the _lower bound.
+    assert result.target_possible == pytest.approx(0.588163, abs=1e-4)
+    assert result.target_possible_lower == pytest.approx(1 - 0.588163, abs=1e-4)
+    # The message follows the requested direction (a decrease).
+    assert result.msg is not None
+    assert result.msg.values is not None
+    assert result.msg.values["target_possible"] == pytest.approx(1 - 0.588163, abs=1e-4)
+    assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
+
+
+def test_analyze_metric_power_mde_decrease_direction():
+    """MDE mode: the message reports the bound in the requested (downward) direction."""
+    metric = DesignSpecMetric(
+        field_name="conversion_rate",
+        metric_type=MetricType.BINARY,
+        metric_baseline=0.05,
+        metric_pct_change=-0.5,
+        available_n=10000,
+        available_nonnull_n=10000,
+    )
+
+    result = analyze_metric_power(metric, n_arms=2, desired_n=1000)
+
+    assert result.target_possible == pytest.approx(0.0955, abs=1e-4)
+    assert result.target_possible_lower == pytest.approx(0.0186, abs=1e-4)
+    assert result.msg is not None
+    assert result.msg.values is not None
+    assert result.msg.values["target_possible"] == pytest.approx(0.0186, abs=1e-4)
+
+
+def test_analyze_metric_power_mde_unreachable_direction_message():
+    """MDE mode: when no target in the requested direction reaches the power, the message says so."""
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.BINARY,
+        metric_baseline=0.95,
+        metric_pct_change=0.04,
+        available_n=10000,
+        available_nonnull_n=10000,
+    )
+
+    result = analyze_metric_power(metric, n_arms=2, desired_n=40)
+
+    assert result.target_possible is None
+    assert result.pct_change_possible is None
+    assert result.target_possible_lower is not None
+    assert result.msg is not None
+    assert "no metric target in the direction of your specified change" in result.msg.msg
+    assert result.msg.values is not None
+    assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
+
+
+def test_check_power_with_desired_n_decrease_target():
+    """pct_change_with_desired_n follows the requested direction (negative for a decrease)."""
+    metrics = [
+        DesignSpecMetric(
+            field_name="metric2",
+            metric_type=MetricType.BINARY,
+            metric_baseline=0.05,
+            metric_pct_change=-0.10,
+            available_n=10000,
+            available_nonnull_n=10000,
+        ),
+    ]
+
+    results = check_power(metrics, n_arms=2, desired_n=500)
+
+    # Same magnitude of desired_n as test_check_power_with_desired_n; the increase-goal
+    # counterpart there reports +1.3619.
+    assert results[0].pct_change_with_desired_n == pytest.approx(-0.7998, abs=1e-4)
 
 
 def test_check_power_multiple_metrics():
@@ -221,11 +312,177 @@ def test_analyze_metric_with_zero_available_nonnull_n_returns_insufficient():
 
     assert result.msg is not None
     assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
-    assert "You have no units with non-null values" in result.msg.msg
+    assert result.msg.msg == (
+        "Cannot estimate the minimum sample size. All participants have null for this metric. "
+        "Adjust your filters to target units with non-null values."
+    )
     # When returning early error, values is None
     assert result.msg.values is None
     assert result.target_n is None
     assert result.sufficient_n is None
+
+
+def make_metric_with_nulls(*, use_one_time_metric: bool, available_nonnull_n: int = 800):
+    # 1000 units, 800 non-null by default, so the column has 200 nulls and is one-time eligible.
+    return DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=1000,
+        available_nonnull_n=available_nonnull_n,
+        is_one_time_eligible=use_one_time_metric,
+        use_one_time_metric=use_one_time_metric,
+    )
+
+
+def test_analyze_metric_power_null_warning_suggests_handling_nulls():
+    result = analyze_metric_power(make_metric_with_nulls(use_one_time_metric=False), n_arms=2)
+
+    assert result.metric_spec.is_one_time_eligible
+    assert result.msg is not None
+    assert "NOTE: Only 800 of 1000 units have non-null values." in result.msg.msg
+    assert "Consider assigning only participants with nulls to the experiment" in result.msg.msg
+
+
+def test_analyze_metric_power_one_time_mode_skips_null_warning():
+    result = analyze_metric_power(make_metric_with_nulls(use_one_time_metric=True), n_arms=2)
+
+    # The user already opted into one-time mode, so there is nothing to suggest.
+    assert result.metric_spec.use_one_time_metric
+    assert result.msg is not None
+    assert "NOTE" not in result.msg.msg
+    assert "Consider" not in result.msg.msg
+
+
+def test_analyze_metric_power_one_time_mode_errors_when_no_nulls_remain():
+    # The request still carries one-time flags from an earlier check, but the column has since filled up, so there
+    # is nobody left to assign. This is reported as an error rather than silently switching one-time mode off.
+    metric = make_metric_with_nulls(use_one_time_metric=True, available_nonnull_n=1000)
+
+    result = analyze_metric_power(metric, n_arms=2)
+
+    assert result.target_n is None
+    assert result.sufficient_n is None
+    assert result.metric_spec.use_one_time_metric
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
+    assert "every unit already has a value for this metric" in result.msg.msg
+
+
+def test_analyze_metric_power_one_time_mode_sufficient_uses_null_pool():
+    # 900 nulls but only 100 non-null rows. The design needs ~128 units, which the null pool covers,
+    # so one-time mode is sufficient even though the non-null count alone would not be.
+    result = analyze_metric_power(make_metric_with_nulls(use_one_time_metric=True, available_nonnull_n=100), n_arms=2)
+
+    assert result.target_n is not None
+    assert 100 < result.target_n <= 900
+    assert result.sufficient_n
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
+    assert "One-time mode: 900 of 1000 units have no value for this metric yet" in result.msg.msg
+    assert result.msg.values is not None
+    assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
+
+
+def test_analyze_metric_power_one_time_mode_insufficient_null_pool_uses_null_mde():
+    # Only 50 nulls, fewer than the ~128 units the design needs.
+    metric = make_metric_with_nulls(use_one_time_metric=True, available_nonnull_n=950)
+
+    result = analyze_metric_power(metric, n_arms=2)
+
+    assert result.target_n is not None
+    assert result.target_n > 50
+    assert not result.sufficient_n
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
+    # The MDE must be computed for the 50 null rows that will be assigned, not the 950 non-null rows.
+    expected = solve_for_mde_individual_impl(metric, desired_n=50, n_arms=2)
+    assert result.target_possible == pytest.approx(expected.target_possible)
+    assert result.pct_change_possible == pytest.approx(expected.pct_change_possible)
+    assert result.msg.values is not None
+    assert result.msg.values["additional_n_needed"] == result.target_n - 50
+    assert "There are not enough units without a value for this metric." in result.msg.msg
+    assert "with the 50 units without a value" in result.msg.msg
+    assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
+
+
+def test_analyze_metric_power_one_time_mode_binary_insufficient_null_pool():
+    metric = DesignSpecMetric(
+        field_name="test_metric",
+        metric_type=MetricType.BINARY,
+        metric_baseline=0.5,
+        metric_target=0.55,
+        available_n=1000,
+        available_nonnull_n=900,
+        use_one_time_metric=True,
+    )
+
+    result = analyze_metric_power(metric, n_arms=2)
+
+    assert not result.sufficient_n
+    expected = solve_for_mde_individual_impl(metric, desired_n=100, n_arms=2)
+    assert result.target_possible == pytest.approx(expected.target_possible)
+
+
+def test_analyze_metric_power_one_time_mode_too_few_nulls_for_mde():
+    # A single null row can't be split across arms, so the MDE can't be solved; we still report insufficient.
+    result = analyze_metric_power(make_metric_with_nulls(use_one_time_metric=True, available_nonnull_n=999), n_arms=2)
+
+    assert not result.sufficient_n
+    assert result.target_possible is None
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
+    assert "too few units to estimate a detectable effect" in result.msg.msg
+    assert result.msg.values is not None
+    assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
+
+
+def test_analyze_metric_power_one_time_mode_desired_n_within_null_pool():
+    metric = make_metric_with_nulls(use_one_time_metric=True)  # 200 nulls
+
+    result = analyze_metric_power(metric, n_arms=2, desired_n=200)
+
+    assert result.pct_change_possible is not None
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
+
+
+def test_analyze_metric_power_one_time_mode_desired_n_exceeds_null_pool():
+    metric = make_metric_with_nulls(use_one_time_metric=True)  # 200 nulls
+
+    result = analyze_metric_power(metric, n_arms=2, desired_n=500)
+
+    assert result.pct_change_possible is None
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
+    assert "only 200 units have no value for this metric yet" in result.msg.msg
+
+
+def test_analyze_metric_power_one_time_mode_desired_n_with_no_nulls():
+    # Every row has a value, so one-time mode can assign nobody. Report that instead of an MDE that creation
+    # could never use.
+    metric = make_metric_with_nulls(use_one_time_metric=True, available_nonnull_n=1000)
+
+    result = analyze_metric_power(metric, n_arms=2, desired_n=500)
+
+    assert result.pct_change_possible is None
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
+    assert "only 0 units have no value for this metric yet" in result.msg.msg
+
+
+def test_check_power_one_time_mode_desired_ns_beyond_null_pool():
+    metric = make_metric_with_nulls(use_one_time_metric=True)  # 200 nulls
+
+    (analysis,) = check_power([metric], n_arms=2, desired_n=500, desired_ns=[200, 500])
+
+    # Sizes beyond the null pool get no MDE; sizes within it still do.
+    assert analysis.pct_change_with_desired_n is None
+    assert analysis.mde_curve is not None
+    assert analysis.mde_curve[0].pct_change is not None
+    assert analysis.mde_curve[1].pct_change is None
 
 
 def test_analyze_metric_zero_effect_size_returns_friendly_error():
@@ -391,6 +648,9 @@ def test_analyze_metric_power_numeric_with_desired_n():
     assert result.target_n == 500
     assert result.target_possible == pytest.approx(105.0213)
     assert result.pct_change_possible == pytest.approx(0.0502, abs=1e-4)
+    # Numeric bounds are symmetric around the baseline.
+    assert result.target_possible_lower == pytest.approx(94.9787)
+    assert result.pct_change_possible_lower == pytest.approx(-0.0502, abs=1e-4)
     assert result.sufficient_n is None  # Not applicable in MDE mode
 
     # Message should mention MDE
@@ -412,9 +672,14 @@ def test_analyze_metric_power_binary_with_desired_n():
 
     # Should return MDE results
     assert result.target_n == 1000
-    assert result.target_possible == pytest.approx(0.0186, abs=1e-4)
+    # The reported MDE is the minimum detectable positive lift; the _lower fields report the
+    # detectable decrease. The bounds are asymmetric: the MDE is symmetric in Cohen's h space,
+    # but the conversion back to probability space is not.
+    assert result.target_possible == pytest.approx(0.0955, abs=1e-4)
     # re: % change = (target possible / baseline) - 1
-    assert result.pct_change_possible == pytest.approx(-0.6274, abs=1e-4)
+    assert result.pct_change_possible == pytest.approx(0.9092, abs=1e-4)
+    assert result.target_possible_lower == pytest.approx(0.0186, abs=1e-4)
+    assert result.pct_change_possible_lower == pytest.approx(-0.6274, abs=1e-4)
     assert result.sufficient_n is None
 
     # Message should mention MDE
@@ -455,16 +720,19 @@ def test_check_power_with_desired_n():
     # Currently when there's sufficient units, we don't report the tightest MDE possible if all samples were used.
     assert results[0].target_possible is None
     assert results[0].pct_change_possible is None
-    # If there are insufficient units, we report the smallest MDE possible if all samples were used.
+    # If there are insufficient units, we report the smallest MDE possible if all samples were used
+    # (positive lift, with the detectable decrease in the _lower fields).
     assert results[1].target_n == 62436
     assert results[1].sufficient_n is False
-    assert results[1].target_possible == pytest.approx(0.0385, abs=1e-4)
-    assert results[1].pct_change_possible == pytest.approx(-0.2300, abs=1e-4)
+    assert results[1].target_possible == pytest.approx(0.0629, abs=1e-4)
+    assert results[1].pct_change_possible == pytest.approx(0.2582, abs=1e-4)
+    assert results[1].target_possible_lower == pytest.approx(0.0385, abs=1e-4)
+    assert results[1].pct_change_possible_lower == pytest.approx(-0.2300, abs=1e-4)
 
     # Since desired_n=500 is set, MDE for this size is in the new field:
     assert results[0].pct_change_with_desired_n == pytest.approx(0.0502, abs=1e-4)
     # standardized effect size (Cohen's h) = 0.2505810918259752
-    assert results[1].pct_change_with_desired_n == pytest.approx(-0.7998, abs=1e-4)
+    assert results[1].pct_change_with_desired_n == pytest.approx(1.3619, abs=1e-4)
 
 
 def test_check_power_with_invalid_desired_n_raises():
@@ -661,7 +929,9 @@ def test_analyze_metric_power_desired_n_with_unbalanced_arms():
     assert result.target_n == 1000
     assert metric.metric_baseline is not None
     assert result.target_possible is not None
-    assert result.target_possible < metric.metric_baseline
+    assert result.target_possible > metric.metric_baseline
+    assert result.target_possible_lower is not None
+    assert result.target_possible_lower < metric.metric_baseline
 
 
 def make_curve_metric(**overrides):
@@ -752,3 +1022,24 @@ def test_check_power_mde_curve_cluster_counts_take_precedence_over_desired_ns():
 
     assert both[0].mde_curve == clusters_only[0].mde_curve
     assert both[0].mde_curve != individuals_only[0].mde_curve
+
+
+def test_check_power_only_primary_metric_is_one_time_eligible():
+    # Both metrics have nulls, but one-time mode is only allowed on the primary (first) metric.
+    primary = make_metric_with_nulls(use_one_time_metric=False)
+    secondary = make_metric_with_nulls(use_one_time_metric=False).model_copy(update={"field_name": "secondary"})
+
+    primary_analysis, secondary_analysis = check_power([primary, secondary], n_arms=2)
+
+    assert primary_analysis.metric_spec.is_one_time_eligible
+    assert primary_analysis.msg is not None
+    assert "Consider assigning only participants with nulls" in primary_analysis.msg.msg
+
+    assert not secondary_analysis.metric_spec.is_one_time_eligible
+    assert secondary_analysis.msg is not None
+    # Still warned about nulls, but not told to use a mode it can't use.
+    assert "NOTE: Only 800 of 1000 units have non-null values." in secondary_analysis.msg.msg
+    assert (
+        "Consider adding a filter to explicitly exclude participants with a null value." in secondary_analysis.msg.msg
+    )
+    assert "assigning only participants with nulls" not in secondary_analysis.msg.msg

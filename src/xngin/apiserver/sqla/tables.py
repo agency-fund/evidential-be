@@ -3,6 +3,7 @@
 import json
 import secrets
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any, ClassVar, Literal, Self
 
 import sqlalchemy
@@ -10,7 +11,6 @@ from pydantic import TypeAdapter
 from sqlalchemy import Boolean, CheckConstraint, Float, ForeignKey, ForeignKeyConstraint, Index, Numeric, String
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import ARRAY
-from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeEngine
 
@@ -41,7 +41,7 @@ webhook_id_factory = unique_id_factory("wh")
 context_id_factory = unique_id_factory("ctx")
 
 # Describes the status of a snapshot. SQLAlchemy will represent this Literal type as a string type.
-type SnapshotStatus = Literal["pending", "success", "failed"]
+type SnapshotStatus = Literal["success", "failed"]
 
 
 class Base(DeclarativeBase):
@@ -217,9 +217,7 @@ class Event(Base):
         self.data = json.loads(as_json)
         return self
 
-    def get_data(self) -> EventDataTypes | None:
-        if self.data is None:
-            return None
+    def get_data(self) -> EventDataTypes:
         return TypeAdapter(EventDataTypes).validate_python(self.data)
 
     __table_args__ = (Index("event_stream", "organization_id", created_at),)
@@ -249,7 +247,17 @@ class Task(Base):
     # An optional informative message about the state of this task.
     message: Mapped[str | None] = mapped_column()
 
-    __table_args__ = (Index("idx_tasks_embargo", "embargo_until"),)
+    # The queue claims the oldest pending or stale running task and sweeps for orphaned running tasks. Finished rows
+    # are never deleted, so only the live ones are indexed.
+    __table_args__ = (
+        Index(
+            "idx_tasks_active",
+            "created_at",
+            # Written as an OR rather than IN, which Postgres rewrites on every round trip and so makes Atlas emit
+            # a spurious migration each time.
+            postgresql_where=sqlalchemy.text("status = 'pending' OR status = 'running'"),
+        ),
+    )
 
 
 class User(Base):
@@ -452,7 +460,6 @@ class Experiment(Base):
     prior_type: Mapped[str | None] = mapped_column()
     reward_type: Mapped[str | None] = mapped_column()
 
-    # enable_autofail must match draws.enable_autofail.
     enable_autofail: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
     autofail_window: Mapped[int] = mapped_column(server_default="24")
     autofail_outcome_value: Mapped[float] = mapped_column(server_default="0.0")
@@ -473,6 +480,8 @@ class Experiment(Base):
     # Experiment Registry
     impact: Mapped[str] = mapped_column(server_default="")
     decision: Mapped[str] = mapped_column(server_default="")
+
+    __table_args__ = (CheckConstraint("end_date >= start_date", name="ck_experiments_end_not_before_start"),)
 
     # ArmAssignment table has many rows and is subject to bulk data operations;
     # for efficiency, we do not have a database-enforced ForeignKey constraint. This
@@ -584,9 +593,6 @@ class Draw(Base):
     participant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     arm_id: Mapped[str] = mapped_column(ForeignKey("arms.id", ondelete="CASCADE"))
     created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
-    # Denormalized enable_autofail column allows us to build a partial index containing only outcomes eligible for
-    # autofailing. This value must match experiment.enable_autofail.
-    enable_autofail: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
 
     # Observation data: these fields are set when an outcome is observed for this draw
     # after arm parameters are updated.
@@ -603,18 +609,17 @@ class Draw(Base):
     arm: Mapped[Arm] = relationship("Arm", back_populates="draws", lazy="joined")
     experiment: Mapped[Experiment] = relationship("Experiment", back_populates="draws", lazy="joined")
     __table_args__ = (
+        # Each arm's resolved draws, newest outcome first, for the arm's recent outcomes that every outcome report
+        # reads while it holds the arm's lock.
         Index(
-            "ix_draws_arm_id_created_at",
+            "ix_draws_resolved",
             arm_id,
-            created_at.desc(),
+            observed_at.desc(),
             postgresql_where=sqlalchemy.text("outcome IS NOT NULL"),
         ),
-        Index(
-            "ix_draws_pending_autofail",
-            experiment_id,
-            created_at,
-            postgresql_where=sqlalchemy.text("enable_autofail IS TRUE AND outcome IS NULL"),
-        ),
+        # The worker's view of an experiment's draws without outcomes, oldest first: autofail reads their deadlines
+        # and DWH pulls read which ones to fill, without reading the resolved draws.
+        Index("ix_draws_pending", experiment_id, created_at, postgresql_where=sqlalchemy.text("outcome IS NULL")),
         CheckConstraint(
             "(outcome IS NULL) = (autofailed_outcome IS NULL)",
             name="ck_draws_outcome_autofailed_paired",
@@ -670,27 +675,17 @@ class ExperimentField(Base):
     is_primary_metric: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
     metric_pct_change: Mapped[float | None] = mapped_column(Float)
     metric_target: Mapped[float | None] = mapped_column(Float)
+    # True when the experiment was created in one-time mode for this (primary) metric, i.e. only participants
+    # with a null value for it were assigned.
+    use_one_time_metric: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
     # Bandit target metadata:
     # is_target is true when this field is the DWH-backed outcome column that a bandit (e.g. MAB-DWH)
     # optimises. The stored data_type is used to validate each outcome, pushed or pulled.
     is_target: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
     # Filters metadata: not here, but determined by joining with ExperimentFilter
 
-    @hybrid_property
-    def is_filter(self) -> bool:
-        """
-        Determine if this field is a filter by checking if it has any experiment_filters.
-
-        WARNING: The relation must already be loaded!
-        """
-        return self.experiment_filters is not None
-
-    @hybrid_property
-    def is_metric(self) -> bool:
-        return self.is_primary_metric or self.metric_pct_change is not None or self.metric_target is not None
-
     experiment: Mapped[Experiment] = relationship(back_populates="experiment_fields")
-    experiment_filters: Mapped[list[ExperimentFilter] | None] = relationship(
+    experiment_filters: Mapped[list[ExperimentFilter]] = relationship(
         back_populates="experiment_field",
         order_by="asc(ExperimentFilter.position)",
         cascade="all, delete-orphan",
@@ -712,7 +707,7 @@ class ExperimentFilter(Base):
     string_values: Mapped[list[str | None] | None] = mapped_column(ARRAY(String(255)))
     # We're ok with storing all numeric types as NUMERIC since it can hold any length up to the impl
     # limits, and we're not doing any indexing or aggregation of these values.
-    numeric_values: Mapped[list[Numeric | None] | None] = mapped_column(ARRAY(Numeric))
+    numeric_values: Mapped[list[Decimal | None] | None] = mapped_column(ARRAY(Numeric))
     boolean_values: Mapped[list[bool | None] | None] = mapped_column(ARRAY(Boolean))
 
     experiment: Mapped[Experiment] = relationship(
@@ -743,6 +738,7 @@ class Snapshot(Base):
     """Snapshots of experiment data."""
 
     __tablename__ = "snapshots"
+    __table_args__ = (CheckConstraint("status IN ('success', 'failed')", name="ck_snapshots_status"),)
 
     experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True)
     id: Mapped[str] = mapped_column(primary_key=True, default=snapshot_id_factory, unique=True)
@@ -750,7 +746,7 @@ class Snapshot(Base):
     updated_at: Mapped[datetime] = mapped_column(
         server_default=sqlalchemy.sql.func.now(), onupdate=sqlalchemy.sql.func.now()
     )
-    status: Mapped[SnapshotStatus] = mapped_column(server_default="pending")
+    status: Mapped[SnapshotStatus] = mapped_column()
     # An optional informative message about the state of this task (for example, if a snapshot fails, it might contain
     # an informative error message).
     message: Mapped[str | None] = mapped_column()
@@ -758,3 +754,30 @@ class Snapshot(Base):
     data: Mapped[dict | None] = mapped_column(postgresql.JSONB(none_as_null=True))
 
     experiment: Mapped[Experiment] = relationship(back_populates="snapshots", viewonly=True)
+
+
+class JobStatus(Base):
+    """The most recent outcomes and backoff of one worker job for one experiment.
+
+    There is at most one row for each (experiment_id, job_name) pair. It is created when the job is first run for
+    that experiment and updated in place after each later run. Only workers update these rows.
+    """
+
+    __tablename__ = "job_statuses"
+
+    experiment_id: Mapped[str] = mapped_column(ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True)
+    # Corresponds to Job.name.
+    job_name: Mapped[str] = mapped_column(String(32), primary_key=True)
+    # When the attempt that last ran this job started; attempts that run no job leave it unchanged.
+    last_run_at: Mapped[datetime | None] = mapped_column()
+    # When the job last successfully completed. This may be different from last_run_at if there was an error.
+    last_success_at: Mapped[datetime | None] = mapped_column()
+    # Crashes roll back the attempt along with its effects; only recorded failures count here.
+    consecutive_failures: Mapped[int] = mapped_column(server_default="0")
+    # The Python exception type and message from the last failed run, or the explicit error text the job returned.
+    # Cleared when the job succeeds.
+    last_error: Mapped[str | None] = mapped_column(String(2048))
+    # The earliest time the job may run again. After a failure, this is the run's finish time plus the job's backoff
+    # delay for its consecutive_failures; after a deferred run, it is the finish time plus the run's retry_after;
+    # after a success, NULL.
+    retry_not_before: Mapped[datetime | None] = mapped_column()

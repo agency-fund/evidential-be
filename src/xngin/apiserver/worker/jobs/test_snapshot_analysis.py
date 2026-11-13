@@ -1,0 +1,607 @@
+import math
+import threading
+import warnings
+from datetime import UTC, datetime, timedelta
+from typing import assert_never
+
+import pytest
+from sqlalchemy import select
+
+from xngin.apiserver.dwh.dwh_session import DwhSession
+from xngin.apiserver.routers.common_api_types import (
+    Arm,
+    ArmBandit,
+    BanditExperimentAnalysisResponse,
+    CMABContextInputRequest,
+    CMABExperimentSpec,
+    Context,
+    ContextInput,
+    ContextType,
+    CreateExperimentRequest,
+    DesignSpec,
+    DesignSpecMetricRequest,
+    ExperimentsType,
+    FreqExperimentAnalysisResponse,
+    LikelihoodTypes,
+    MABDwhExperimentSpec,
+    MABExperimentSpec,
+    OnlineFrequentistExperimentSpec,
+    PreassignedFrequentistExperimentSpec,
+    PriorTypes,
+    UpdateBanditArmOutcomeRequest,
+)
+from xngin.apiserver.routers.common_enums import DataType, ExperimentState, StopAssignmentReason
+from xngin.apiserver.routers.experiments.experiments_common import fetch_fields_or_raise, fetch_mab_dwh_fields_or_raise
+from xngin.apiserver.sqla import tables
+from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
+from xngin.apiserver.testing.admin_api_client import AdminAPIClient
+from xngin.apiserver.testing.experiments_api_client import ExperimentsAPIClient
+from xngin.apiserver.testing.snapshots import commit_snapshot
+from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
+
+
+def normalize_bandit_analysis(response: BanditExperimentAnalysisResponse) -> BanditExperimentAnalysisResponse:
+    return response.model_copy(update={"created_at": datetime(2000, 1, 1, tzinfo=UTC)})
+
+
+def make_experiment(
+    xngin_session,
+    datasource: tables.Datasource,
+    design_spec: DesignSpec,
+) -> tables.Experiment:
+    field_type_map: dict[str, DataType] | None
+    match design_spec:
+        case PreassignedFrequentistExperimentSpec() | OnlineFrequentistExperimentSpec():
+            with DwhSession.open(datasource.get_config().dwh) as dwh:
+                field_type_map = fetch_fields_or_raise(dwh, design_spec)
+        case MABExperimentSpec() | CMABExperimentSpec():
+            field_type_map = None
+        case MABDwhExperimentSpec():
+            with DwhSession.open(datasource.get_config().dwh) as dwh:
+                field_type_map = fetch_mab_dwh_fields_or_raise(dwh, design_spec)
+        case _:
+            assert_never(design_spec)
+
+    experiment_converter = ExperimentStorageConverter.init_from_components(
+        datasource_id=datasource.id,
+        organization_id=datasource.organization_id,
+        design_spec=design_spec,
+        state=ExperimentState.COMMITTED,
+        stopped_assignments_at=datetime.now(UTC),
+        stopped_assignments_reason=StopAssignmentReason.PREASSIGNED,
+        field_type_map=field_type_map,
+    )
+    experiment = experiment_converter.get_experiment()
+    xngin_session.add(experiment)
+    xngin_session.commit()
+    # Add assignments to the experiment so analysis doesn't error.
+    arm_assignments = [
+        tables.ArmAssignment(
+            experiment_id=experiment.id,
+            participant_id="1",
+            arm_id=experiment.arms[0].id,
+            strata=[],
+        ),
+        tables.ArmAssignment(
+            experiment_id=experiment.id,
+            participant_id="2",
+            arm_id=experiment.arms[1].id,
+            strata=[],
+        ),
+    ]
+    xngin_session.add_all(arm_assignments)
+    xngin_session.commit()
+    xngin_session.refresh(experiment, ["arms", "arm_assignments"])
+    return experiment
+
+
+def get_latest_snapshot_analysis(xngin_session, experiment_id):
+    """Helper to fetch the latest snapshot analysis payload for an experiment."""
+    snapshot = (
+        xngin_session.execute(
+            select(tables.Snapshot)
+            .where(tables.Snapshot.experiment_id == experiment_id)
+            .order_by(tables.Snapshot.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one()
+    return FreqExperimentAnalysisResponse.model_validate(snapshot.data)
+
+
+def make_snapshot_design_spec(
+    name: str,
+    *,
+    end_date: datetime | None = None,
+    desired_n: int | None = None,
+) -> PreassignedFrequentistExperimentSpec:
+    return PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name=name,
+        description=name,
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=end_date or (datetime.now(UTC) + timedelta(days=1)),
+        arms=[
+            Arm(arm_name="C", arm_description="C"),
+            Arm(arm_name="T", arm_description="T"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+        table_name=TESTING_DWH_TABLE_NAME,
+        primary_key="id",
+        desired_n=desired_n,
+    )
+
+
+def create_snapshot_experiment(
+    aclient: AdminAPIClient,
+    testing_datasource,
+    *,
+    name: str,
+    desired_n: int = 2,
+    end_date: datetime | None = None,
+    commit: bool = True,
+) -> str:
+    """Creates a preassigned frequentist experiment.
+
+    If commit is True, the experiment will be in a COMMITTED state. If commit is False, the experiment will be in
+    an ASSIGNED state.
+    """
+    design_spec = make_snapshot_design_spec(name, end_date=end_date).model_copy(update={"desired_n": desired_n})
+    experiment_id = aclient.create_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        body=CreateExperimentRequest(design_spec=design_spec),
+    ).data.experiment_id
+    if commit:
+        aclient.commit_experiment(datasource_id=testing_datasource.datasource_id, experiment_id=experiment_id)
+    return experiment_id
+
+
+def get_bandit_snapshot_analysis(
+    aclient: AdminAPIClient,
+    testing_datasource,
+    experiment_id: str,
+    snapshot_id: str,
+) -> BanditExperimentAnalysisResponse:
+    snapshot = aclient.get_snapshot(
+        organization_id=testing_datasource.organization_id,
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=experiment_id,
+        snapshot_id=snapshot_id,
+    ).data.snapshot
+    data = snapshot.data
+    assert isinstance(data, BanditExperimentAnalysisResponse)
+    return data
+
+
+def get_sorted_cmab_context_inputs(
+    aclient: AdminAPIClient,
+    testing_datasource,
+    experiment_id: str,
+    values: list[float],
+) -> list[ContextInput]:
+    sorted_contexts = get_sorted_cmab_contexts(aclient, testing_datasource, experiment_id)
+    assert len(sorted_contexts) == len(values)
+    return [
+        ContextInput(context_id=context.context_id or "", context_value=value)
+        for context, value in zip(sorted_contexts, values, strict=True)
+    ]
+
+
+def get_sorted_cmab_contexts(
+    aclient: AdminAPIClient,
+    testing_datasource,
+    experiment_id: str,
+) -> list[Context]:
+    config = aclient.get_experiment_for_ui(
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=experiment_id,
+    ).data.config
+    assert isinstance(config.design_spec, CMABExperimentSpec)
+    assert config.design_spec.contexts is not None
+    return sorted(config.design_spec.contexts, key=lambda c: c.context_id or "")
+
+
+def test_capture_snapshot_of_freq_preassigned(xngin_session, testing_datasource):
+    datasource = testing_datasource.ds
+
+    # Create a preassigned frequentist experiment design spec
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test experiment",
+        description="test experiment",
+        table_name=TESTING_DWH_TABLE_NAME,
+        primary_key="id",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        arms=[
+            Arm(arm_name="C", arm_description="C"),
+            Arm(arm_name="T", arm_description="T"),
+        ],
+        metrics=[DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1)],
+        strata=[],
+        filters=[],
+    )
+
+    experiment = make_experiment(xngin_session, datasource, design_spec)
+    # Arms' intial position should reflect design spec ordering
+    arm1 = experiment.arms[0]
+    assert arm1.position == 1
+    arm2 = experiment.arms[1]
+    assert arm2.position == 2
+
+    # Test 1: baseline arm is the position 1 arm.
+    # Suppress expected statsmodels warnings due to not actually assigning any units to the arms for
+    # this test, as we're not focused on the actual analysis.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(action="ignore", message=r"(divide by zero|invalid value).*", category=RuntimeWarning)
+        commit_snapshot(experiment.id)
+    analysis = get_latest_snapshot_analysis(xngin_session, experiment.id)
+    # Verify analysis payload is in the order of experiment.arms above.
+    assert isinstance(analysis, FreqExperimentAnalysisResponse)
+    assert len(analysis.metric_analyses) == 1
+    arm_analyses = analysis.metric_analyses[0].arm_analyses
+    assert len(arm_analyses) == 2
+    assert arm_analyses[0].arm_id == arm1.id
+    assert arm_analyses[0].is_baseline
+    assert arm_analyses[1].arm_id == arm2.id
+    assert not arm_analyses[1].is_baseline
+
+    # Test 2: swap the arm positions, verifying baseline switches
+    arm1.position = 2
+    arm2.position = 1
+    xngin_session.commit()
+    xngin_session.refresh(experiment, ["arms"])
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings(action="ignore", message=r"(divide by zero|invalid value).*", category=RuntimeWarning)
+        commit_snapshot(experiment.id)
+    analysis = get_latest_snapshot_analysis(xngin_session, experiment.id)
+
+    assert isinstance(analysis, FreqExperimentAnalysisResponse)
+    assert len(analysis.metric_analyses) == 1
+    arm_analyses = analysis.metric_analyses[0].arm_analyses
+    assert len(arm_analyses) == 2
+    assert arm_analyses[0].arm_id == arm2.id
+    assert arm_analyses[0].is_baseline
+    assert arm_analyses[1].arm_id == arm1.id
+    assert not arm_analyses[1].is_baseline
+
+    # Test 3: wipe the positions, verifying baseline is the arm in the 0th index
+    arm1.position = None
+    arm2.position = None
+    xngin_session.commit()
+    xngin_session.refresh(experiment, ["arms"])
+    assert experiment.arms[0].position is None
+    assert experiment.arms[1].position is None
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings(action="ignore", message=r"(divide by zero|invalid value).*", category=RuntimeWarning)
+        commit_snapshot(experiment.id)
+    analysis = get_latest_snapshot_analysis(xngin_session, experiment.id)
+
+    assert isinstance(analysis, FreqExperimentAnalysisResponse)
+    assert len(analysis.metric_analyses) == 1
+    arm_analyses = analysis.metric_analyses[0].arm_analyses
+    # With no position info, the order of experiment.arms is not guaranteed,
+    # but we expect baseline to be arm 0.
+    baseline_arm = next(a for a in arm_analyses if a.is_baseline)
+    non_baseline_arm = next(a for a in arm_analyses if not a.is_baseline)
+    assert baseline_arm.arm_id == experiment.arms[0].id
+    assert non_baseline_arm.arm_id == experiment.arms[1].id
+
+
+def test_timeout_records_failed_snapshot(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    mocker,
+):
+    """A stalled warehouse read leaves a failed snapshot that users can inspect."""
+    experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="handle snapshot timeout test")
+    release = threading.Event()
+
+    def stall(*_args, **_kwargs):
+        release.wait()
+
+    mocker.patch.object(DwhSession, "_inspect_table_blocking", stall)
+    try:
+        commit_snapshot(experiment_id, dwh_timeout=0.05)
+    finally:
+        release.set()
+
+    snapshots = aclient.list_snapshots(
+        organization_id=testing_datasource.organization_id,
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=experiment_id,
+    ).data.items
+    assert len(snapshots) == 1
+    assert snapshots[0].status == "failed"
+    assert snapshots[0].data is None
+    assert snapshots[0].details is not None
+    assert "DwhTimeoutError" in snapshots[0].details["message"]
+
+
+def test_bandit_snapshots_do_not_open_a_warehouse_connection(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+    mocker,
+):
+    """Bandit analysis reads only the application database, which is why it gets no deadline."""
+    experiment_id = create_bandit_snapshot_experiment(
+        aclient, eclient, testing_datasource, experiment_type=ExperimentsType.MAB_ONLINE
+    )
+    mocker.patch.object(DwhSession, "_connect_blocking", side_effect=AssertionError("connected to a warehouse"))
+
+    commit_snapshot(experiment_id)
+
+    snapshots = aclient.list_snapshots(
+        organization_id=testing_datasource.organization_id,
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=experiment_id,
+    ).data.items
+    assert len(snapshots) == 1
+
+
+def create_bandit_snapshot_experiment(
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+    testing_datasource,
+    *,
+    experiment_type: ExperimentsType,
+    with_draws: bool = True,
+    prior_type: PriorTypes = PriorTypes.NORMAL,
+    reward_type: LikelihoodTypes = LikelihoodTypes.BERNOULLI,
+) -> str:
+    """Helper to create a bandit experiment for the test_create_snapshot_bandit_succeeds test."""
+    design_spec: MABExperimentSpec | CMABExperimentSpec
+    match experiment_type:
+        case ExperimentsType.MAB_ONLINE:
+            design_spec = MABExperimentSpec(
+                experiment_type=experiment_type,
+                experiment_name="snapshot mab test",
+                description="snapshot mab test",
+                start_date=datetime(2024, 1, 1, tzinfo=UTC),
+                end_date=datetime.now(UTC) + timedelta(days=1),
+                arms=[
+                    ArmBandit(
+                        arm_name="control",
+                        arm_description="",
+                        alpha_init=1 if prior_type == PriorTypes.BETA else None,
+                        beta_init=1 if prior_type == PriorTypes.BETA else None,
+                        mu_init=0 if prior_type == PriorTypes.NORMAL else None,
+                        sigma_init=1 if prior_type == PriorTypes.NORMAL else None,
+                    ),
+                    ArmBandit(
+                        arm_name="treatment",
+                        arm_description="",
+                        alpha_init=1 if prior_type == PriorTypes.BETA else None,
+                        beta_init=1 if prior_type == PriorTypes.BETA else None,
+                        mu_init=0 if prior_type == PriorTypes.NORMAL else None,
+                        sigma_init=1 if prior_type == PriorTypes.NORMAL else None,
+                    ),
+                ],
+                prior_type=prior_type,
+                reward_type=reward_type,
+            )
+        case ExperimentsType.CMAB_ONLINE:
+            design_spec = CMABExperimentSpec(
+                experiment_type=experiment_type,
+                experiment_name="snapshot cmab test",
+                description="snapshot cmab test",
+                start_date=datetime(2024, 1, 1, tzinfo=UTC),
+                end_date=datetime.now(UTC) + timedelta(days=1),
+                arms=[
+                    ArmBandit(arm_name="control", arm_description="", mu_init=0, sigma_init=1),
+                    ArmBandit(arm_name="treatment", arm_description="", mu_init=0, sigma_init=1),
+                ],
+                contexts=[
+                    Context(context_name="context1", context_description="", value_type=ContextType.BINARY),
+                    Context(context_name="context2", context_description="", value_type=ContextType.REAL_VALUED),
+                ],
+                prior_type=prior_type,
+                reward_type=reward_type,
+            )
+        case _:
+            raise ValueError(f"Unsupported experiment type: {experiment_type}")
+
+    experiment_id = aclient.create_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        body=CreateExperimentRequest(design_spec=design_spec),
+        random_state=42,
+    ).data.experiment_id
+    aclient.commit_experiment(datasource_id=testing_datasource.datasource_id, experiment_id=experiment_id)
+    if not with_draws:
+        return experiment_id
+    if experiment_type == ExperimentsType.CMAB_ONLINE:
+        config = aclient.get_experiment_for_ui(
+            datasource_id=testing_datasource.datasource_id,
+            experiment_id=experiment_id,
+        ).data.config
+        assert isinstance(config.design_spec, CMABExperimentSpec)
+        assert config.design_spec.contexts is not None
+        assert all(context.context_id is not None for context in config.design_spec.contexts)
+        context_inputs = [
+            ContextInput(context_id=context.context_id or "", context_value=1.0)
+            for context in sorted(config.design_spec.contexts, key=lambda c: c.context_id or "")
+        ]
+        for participant_id, outcome in [("0", 0.0), ("1", 1.0)]:
+            _ = eclient.get_assignment_cmab(
+                api_key=testing_datasource.key,
+                body=CMABContextInputRequest(context_inputs=context_inputs),
+                experiment_id=experiment_id,
+                participant_id=participant_id,
+            )
+            _ = eclient.update_bandit_arm_with_participant_outcome(
+                api_key=testing_datasource.key,
+                body=UpdateBanditArmOutcomeRequest(outcome=outcome),
+                experiment_id=experiment_id,
+                participant_id=participant_id,
+            )
+    else:
+        for participant_id, outcome in [("0", 0.0), ("1", 1.0)]:
+            _ = eclient.get_assignment(
+                api_key=testing_datasource.key,
+                experiment_id=experiment_id,
+                participant_id=participant_id,
+            )
+            _ = eclient.update_bandit_arm_with_participant_outcome(
+                api_key=testing_datasource.key,
+                body=UpdateBanditArmOutcomeRequest(outcome=outcome),
+                experiment_id=experiment_id,
+                participant_id=participant_id,
+            )
+    return experiment_id
+
+
+@pytest.mark.parametrize("experiment_type", [ExperimentsType.MAB_ONLINE, ExperimentsType.CMAB_ONLINE])
+def test_create_snapshot_bandit_succeeds(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+    experiment_type: ExperimentsType,
+):
+    """Ensures snapshots work end-to-end for bandits."""
+    experiment_id = create_bandit_snapshot_experiment(
+        aclient,
+        eclient,
+        testing_datasource,
+        experiment_type=experiment_type,
+    )
+
+    commit_snapshot(experiment_id)
+
+    snapshots = aclient.list_snapshots(
+        organization_id=testing_datasource.organization_id,
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=experiment_id,
+    ).data.items
+    assert len(snapshots) == 1
+    data = snapshots[0].data
+    assert isinstance(data, BanditExperimentAnalysisResponse)
+    assert data.n_outcomes == 2
+
+
+def test_create_snapshot_cmab_matches_admin_analysis_at_mean_contexts(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+):
+    experiment_id = create_bandit_snapshot_experiment(
+        aclient,
+        eclient,
+        testing_datasource,
+        experiment_type=ExperimentsType.CMAB_ONLINE,
+        with_draws=False,
+        reward_type=LikelihoodTypes.NORMAL,
+    )
+    sorted_contexts = get_sorted_cmab_contexts(aclient, testing_datasource, experiment_id)
+
+    participant_specs = [
+        ("p1", {ContextType.BINARY: 1.0, ContextType.REAL_VALUED: 1.0}, 0.0),
+        ("p2", {ContextType.BINARY: 0.0, ContextType.REAL_VALUED: 2.0}, 1.0),
+        ("p3", {ContextType.BINARY: 1.0, ContextType.REAL_VALUED: 4.0}, None),
+    ]
+    for participant_id, context_values_by_type, outcome in participant_specs:
+        context_inputs = [
+            ContextInput(
+                context_id=context.context_id or "",
+                context_value=context_values_by_type[context.value_type],
+            )
+            for context in sorted_contexts
+        ]
+        assignment_response = eclient.get_assignment_cmab(
+            api_key=testing_datasource.key,
+            body=CMABContextInputRequest(context_inputs=context_inputs),
+            experiment_id=experiment_id,
+            participant_id=participant_id,
+            raise_if_not_default_status=False,
+        )
+        assert assignment_response.status == 200, assignment_response.data
+        if outcome is not None:
+            eclient.update_bandit_arm_with_participant_outcome(
+                api_key=testing_datasource.key,
+                body=UpdateBanditArmOutcomeRequest(outcome=outcome),
+                experiment_id=experiment_id,
+                participant_id=participant_id,
+            )
+
+    # BINARY context uses rounded mean of values; REAL_VALUED maps values < 0.5 to 0, else 1.
+    expected_real_context = sum(
+        participant_context_values[ContextType.REAL_VALUED] for _, participant_context_values, _ in participant_specs
+    ) / len(participant_specs)
+    mean_binary_context = sum(
+        participant_context_values[ContextType.BINARY] for _, participant_context_values, _ in participant_specs
+    ) / len(participant_specs)
+    # See snapshot_analysis for details on thresholding behavior.
+    expected_binary_context = abs(float(math.ceil(mean_binary_context - 0.5)))
+    expected_contexts = [
+        expected_binary_context if context.value_type == ContextType.BINARY else expected_real_context
+        for context in sorted_contexts
+    ]
+    admin_analysis = aclient.analyze_cmab_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=experiment_id,
+        body=CMABContextInputRequest(
+            context_inputs=get_sorted_cmab_context_inputs(
+                aclient,
+                testing_datasource,
+                experiment_id,
+                expected_contexts,
+            )
+        ),
+    ).data
+    assert isinstance(admin_analysis, BanditExperimentAnalysisResponse)
+
+    create_snapshot_response = commit_snapshot(experiment_id)
+    snapshot_analysis = get_bandit_snapshot_analysis(
+        aclient,
+        testing_datasource,
+        experiment_id,
+        create_snapshot_response.id,
+    )
+
+    assert snapshot_analysis.n_outcomes == 2
+    assert snapshot_analysis.contexts == expected_contexts
+    assert normalize_bandit_analysis(snapshot_analysis) == normalize_bandit_analysis(admin_analysis)
+
+
+def test_create_snapshot_cmab_with_zero_draws_matches_zero_context_admin_analysis(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    eclient: ExperimentsAPIClient,
+):
+    experiment_id = create_bandit_snapshot_experiment(
+        aclient,
+        eclient,
+        testing_datasource,
+        experiment_type=ExperimentsType.CMAB_ONLINE,
+        with_draws=False,
+    )
+
+    expected_contexts = [0.0, 0.0]
+    admin_analysis = aclient.analyze_cmab_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=experiment_id,
+        body=CMABContextInputRequest(
+            context_inputs=get_sorted_cmab_context_inputs(
+                aclient,
+                testing_datasource,
+                experiment_id,
+                expected_contexts,
+            )
+        ),
+    ).data
+    assert isinstance(admin_analysis, BanditExperimentAnalysisResponse)
+
+    create_snapshot_response = commit_snapshot(experiment_id)
+    snapshot_analysis = get_bandit_snapshot_analysis(
+        aclient,
+        testing_datasource,
+        experiment_id,
+        create_snapshot_response.id,
+    )
+
+    assert snapshot_analysis.n_outcomes == 0
+    assert snapshot_analysis.contexts == expected_contexts
+    assert normalize_bandit_analysis(snapshot_analysis) == normalize_bandit_analysis(admin_analysis)

@@ -1,7 +1,8 @@
-import datetime
+import datetime as dt
 import json
 import math
 import uuid
+from collections import Counter
 from collections.abc import Sequence
 from typing import Annotated, Literal, NotRequired, Self, TypedDict
 
@@ -126,6 +127,15 @@ class DesignSpecMetricBase(ApiBaseModel):
             )
         ),
     ] = None
+    use_one_time_metric: Annotated[
+        bool,
+        Field(
+            description=(
+                "Enable one-time metric mode: only assign participants with null values for this metric. "
+                "Only allowed on the primary (first) metric of an individually-randomized preassigned experiment."
+            )
+        ),
+    ] = False
 
     @model_validator(mode="after")
     def cluster_fields_check(self) -> Self:
@@ -152,10 +162,19 @@ class DesignSpecMetricBase(ApiBaseModel):
 class DesignSpecMetric(DesignSpecMetricBase):
     """Defines a metric to measure in an experiment with its baseline stats.
 
-    Same fields and validation as the base; kept as a distinct class so request and response
-    metrics stay separate types (and separate OpenAPI schemas) even though only
-    DesignSpecMetricRequest adds request-specific validation.
+    Adds the fields only the server can derive from the data, so request and response metrics stay
+    separate types (and separate OpenAPI schemas).
     """
+
+    is_one_time_eligible: Annotated[
+        bool,
+        Field(
+            description=(
+                "Set by the power check: True if the metric is eligible for one-time mode (it is the primary metric "
+                "and its column has both null and non-null values)."
+            )
+        ),
+    ] = False
 
 
 class DesignSpecMetricRequest(DesignSpecMetricBase):
@@ -218,6 +237,7 @@ class DesignSpecMetricRequest(DesignSpecMetricBase):
             field_name=self.field_name,
             metric_pct_change=self.metric_pct_change,
             metric_target=self.metric_target,
+            use_one_time_metric=self.use_one_time_metric,
             icc=self.icc,
             avg_cluster_size=self.avg_cluster_size,
             cv=self.cv,
@@ -227,6 +247,46 @@ class DesignSpecMetricRequest(DesignSpecMetricBase):
             available_nonnull_n=self.available_nonnull_n,
             available_n=self.available_n,
         )
+
+
+def _validate_one_time_metric_scope(
+    metrics: list[DesignSpecMetricRequest], cluster_key: str | None, filters: list[Filter]
+) -> None:
+    """One-time mode is only supported for the primary metric of an individually-randomized design.
+
+    It filters to rows where the metric is null. Enabling it on several metrics would AND those filters
+    together and drop more rows than any single metric's power check reports, so only the primary metric
+    (metrics[0]) may use it. Cluster designs are out of scope: their power math doesn't account for it.
+    A user filter on the same column is rejected too: ANDed with the null filter it either does nothing or
+    matches nobody, and the resulting "too few participants" error would hide the real cause.
+    """
+    for metric in metrics[1:]:
+        if metric.use_one_time_metric:
+            raise ValueError(
+                "use_one_time_metric can only be set on the primary metric (the first in the list), "
+                f'but it is set on "{metric.field_name}".'
+            )
+    if cluster_key is not None and metrics[0].use_one_time_metric:
+        raise ValueError(
+            "use_one_time_metric is not supported for cluster-randomized designs. "
+            "Turn off use_one_time_metric or remove cluster_key."
+        )
+    primary_field_name = metrics[0].field_name
+    if metrics[0].use_one_time_metric and any(f.field_name == primary_field_name for f in filters):
+        raise ValueError(
+            f'Cannot filter on "{primary_field_name}" while use_one_time_metric is set, because one-time mode '
+            "already limits participants to those with no value for it. "
+            f'Remove the filter on "{primary_field_name}" or turn off use_one_time_metric.'
+        )
+
+
+def _validate_unique_metric_field_names(metrics: list[DesignSpecMetricRequest]) -> None:
+    """Ensure each metric's field_name appears only once."""
+    counts = Counter(metric.field_name for metric in metrics)
+    duplicates = sorted(name for name, count in counts.items() if count > 1)
+    if duplicates:
+        listed = ", ".join(f'"{name}"' for name in duplicates)
+        raise ValueError(f"Each metric can be listed only once; listed more than once: {listed}. Remove the repeats.")
 
 
 class ParticipantProperty(ApiBaseModel):
@@ -340,8 +400,14 @@ class Arm(ApiBaseModel):
 
 class ArmAnalysis(Arm):
     estimate: Annotated[
-        float,
-        Field(description="The estimated treatment effect relative to the baseline arm."),
+        float | None,
+        Field(
+            description=(
+                "The estimated treatment effect relative to the baseline arm. For the baseline arm itself, "
+                "its mean. None when the baseline arm has no values for this metric, or when this arm's "
+                "analysis is not available."
+            )
+        ),
     ]
     p_value: Annotated[
         float | None,
@@ -370,6 +436,15 @@ class ArmAnalysis(Arm):
         float | None,
         Field(description="Confidence interval upper bound for the regression coefficient estimate."),
     ] = None
+    mean: Annotated[
+        float | None,
+        Field(
+            description=(
+                "The arm's mean value for this metric. Unlike the treatment effect, it is available even "
+                "when the baseline arm has no values. None when this arm's analysis is not available."
+            )
+        ),
+    ] = None
     mean_ci_lower: Annotated[
         float | None,
         Field(description="Confidence interval lower bound for the arm's mean."),
@@ -395,6 +470,8 @@ class ArmAnalysis(Arm):
     ]
 
     @field_serializer(
+        "estimate",
+        "mean",
         "t_stat",
         "p_value",
         "std_error",
@@ -580,7 +657,7 @@ class FreqExperimentAnalysisResponse(ApiBaseModel):
         ),
     ] = None
     created_at: Annotated[
-        datetime.datetime,
+        dt.datetime,
         Field(description="The date and time the experiment analysis was created."),
     ]
 
@@ -613,7 +690,7 @@ class BanditExperimentAnalysisResponse(ApiBaseModel):
         ),
     ] = 0.0
     created_at: Annotated[
-        datetime.datetime,
+        dt.datetime,
         Field(description="The date and time the experiment analysis was created."),
     ]
     contexts: Annotated[
@@ -701,8 +778,11 @@ class MetricPowerAnalysis(ApiBaseModel):
         Field(
             description=(
                 "When the sample size is too small to reach the desired metric_target, this is the target "
-                "that is possible given available_n. It is the absolute counterpart of pct_change_possible. "
-                "None when the sample size is large enough to detect the desired change."
+                "that is possible given available_n, in the improvement (positive) direction from the "
+                "baseline. It is the absolute counterpart of pct_change_possible. "
+                "None when the sample size is large enough to detect the desired change, or (for BINARY "
+                "metrics) when no value above the baseline is a large enough change to reach the "
+                "requested power."
             )
         ),
     ] = None
@@ -713,7 +793,35 @@ class MetricPowerAnalysis(ApiBaseModel):
             description=(
                 "When the sample size is too small to reach the desired metric_pct_change, this is the percent "
                 "change that is possible given available_n. It is the relative counterpart of target_possible. "
-                "None when the sample size is large enough to detect the desired change."
+                "None whenever target_possible is None."
+            )
+        ),
+    ] = None
+
+    target_possible_lower: Annotated[
+        float | None,
+        Field(
+            description=(
+                "The detectable metric value below the baseline. (target_possible is the metric value above the "
+                "baseline.) Both detectable metric values above and below the baseline use the chosen confidence "
+                "and power, and are always reported together, regardless of the direction of the requested "
+                "change. For numeric metrics, this is the same distance below the baseline as target_possible is "
+                "above it. However, for binary metrics, an "
+                "increase and a decrease that are equally detectable can sit at different distances from the "
+                "baseline. None when the sample size is large enough to detect the desired change, or (for "
+                "BINARY metrics) when no value below the baseline is a large enough change to reach the "
+                "requested power."
+            )
+        ),
+    ] = None
+
+    pct_change_possible_lower: Annotated[
+        float | None,
+        Field(
+            description=(
+                "The relative counterpart of target_possible_lower, as a percent change from the baseline "
+                "(negative for a decrease). A value of -0.10 means a 10% decrease. "
+                "None whenever target_possible_lower is None."
             )
         ),
     ] = None
@@ -723,9 +831,10 @@ class MetricPowerAnalysis(ApiBaseModel):
         Field(
             description=(
                 "The minimum detectable effect (MDE) achievable for the desired sample size at the chosen "
-                "confidence and power. Present only when design_spec.desired_n or design_spec.desired_n_clusters "
-                "is set (frequentist design specs). When desired_n_clusters is set, the desired sample size is "
-                "desired_n_clusters times this metric's avg_cluster_size."
+                "confidence and power, reported in the direction of the requested change (negative when the "
+                "requested change is a decrease from the baseline). Present only when design_spec.desired_n or "
+                "design_spec.desired_n_clusters is set (frequentist design specs). When desired_n_clusters is "
+                "set, the desired sample size is desired_n_clusters times this metric's avg_cluster_size."
             )
         ),
     ] = None
@@ -784,26 +893,30 @@ class Filter(ApiBaseModel):
     | EXCLUDES | [None]            | Match `x IS NOT NULL`                             |
     | EXCLUDES | ["a", None]       | Match `x IS NOT NULL AND x NOT IN ("a")`          |
     | EXCLUDES | ["a", "b"]        | Match `x IS NULL OR (x NOT IN ("a", "b"))`        |
-    | BETWEEN  | ["a", "z"]        | Match `"a" <= x <= "z"`                           |
-    | BETWEEN  | ["a", "z", None]  | Match `"a" <= x <= "z"` or `x IS NULL`            |
-    | BETWEEN  | [None, "z"]       | Match `x <= "z"`                                  |
-    | BETWEEN  | ["a", None]       | Match `x >= "a"`                                  |
-    | BETWEEN  | [None, "a", None] | Match `x <= "a"` or `x IS NULL`                   |
+    | BETWEEN  | [20, 30]          | Match `20 <= x <= 30`                             |
+    | BETWEEN  | [20, 30, None]    | Match `20 <= x <= 30` or `x IS NULL`              |
+    | BETWEEN  | [None, 30]        | Match `x <= 30`                                   |
+    | BETWEEN  | [20, None]        | Match `x >= 20`                                   |
+    | BETWEEN  | [None, 30, None]  | Match `x <= 30` or `x IS NULL`                    |
 
     String comparisons are case-sensitive.
 
-    ### Special Handling for BETWEEN support of including NULL
+    ### BETWEEN ranges
 
-    When the relation is BETWEEN, we allow for up to 3 values to support the special case of
-    including null in addition to the values in the between range via an OR IS NULL clause, as
-    indicated by a 3rd value of None. Any other 3rd value is invalid.
+    BETWEEN applies to numeric, DATE, DATETIME and TIMESTAMP fields. Both bounds are inclusive.
+
+    The value has 2 or 3 items:
+    - The first 2 items are the lower and upper bounds. Either bound can be None for an open-ended range, but not both.
+    - An optional 3rd item, which must be None, also matches null values.
+
+    Without the 3rd item, null values never match.
 
     ### Handling of DATE, DATETIME and TIMESTAMP values
 
     DATE, DATETIME or TIMESTAMP-type columns support INCLUDES/EXCLUDES/BETWEEN, similar to numerics.
 
     Values must be expressed as ISO8601 datetime strings compatible with Python's datetime.fromisoformat()
-    (https://docs.python.org/3/library/datetime.html#datetime.datetime.fromisoformat).
+    (https://docs.python.org/3/library/datetime.html#dt.datetime.fromisoformat).
 
     If a timezone is provided, it must be UTC.
     """
@@ -899,11 +1012,18 @@ class BaseDesignSpec(ApiBaseModel):
         Field(description="Optional URL to a more detailed experiment design doc."),
     ] = None
 
-    start_date: datetime.datetime
-    end_date: datetime.datetime
+    start_date: dt.datetime
+    end_date: dt.datetime
 
     # arms (at least two)
     arms: Annotated[Sequence[Arm], Field(..., min_length=2, max_length=MAX_NUMBER_OF_ARMS)]
+
+    @model_validator(mode="after")
+    def ensure_end_date_not_before_start_date(self) -> BaseDesignSpec:
+        """Matches the experiments table's ck_experiments_end_not_before_start constraint."""
+        if self.end_date < self.start_date:
+            raise ValueError("end_date must not be before start_date.")
+        return self
 
     def ids_are_present(self) -> bool:
         """True if any IDs are present."""
@@ -1033,9 +1153,15 @@ class BaseFrequentistDesignSpec(BaseDesignSpec):
     ] = 0.6
 
     @field_serializer("start_date", "end_date", when_used="json")
-    def serialize_dt(self, dt: datetime.datetime, _info):
+    def serialize_dt(self, value: dt.datetime, _info):
         """Convert dates to iso strings in model_dump_json()/model_dump(mode='json')"""
-        return dt.isoformat()
+        return value.isoformat()
+
+    @field_validator("metrics")
+    @classmethod
+    def validate_unique_metrics(cls, v: list[DesignSpecMetricRequest]) -> list[DesignSpecMetricRequest]:
+        _validate_unique_metric_field_names(v)
+        return v
 
     @model_validator(mode="after")
     def validate_strata(self) -> Self:
@@ -1241,6 +1367,11 @@ class PreassignedFrequentistExperimentSpec(BaseFrequentistDesignSpec):
             raise ValueError("desired_ns_clusters can only be set when cluster_key is set.")
         return self
 
+    @model_validator(mode="after")
+    def validate_one_time_metric_scope(self) -> Self:
+        _validate_one_time_metric_scope(self.metrics, self.cluster_key, self.filters)
+        return self
+
 
 class OnlineFrequentistExperimentSpec(BaseFrequentistDesignSpec):
     """Describes an Online A/B experiment.
@@ -1250,6 +1381,16 @@ class OnlineFrequentistExperimentSpec(BaseFrequentistDesignSpec):
     """
 
     experiment_type: Literal[ExperimentsType.FREQ_ONLINE] = ExperimentsType.FREQ_ONLINE
+
+    @model_validator(mode="after")
+    def validate_no_one_time_metric(self) -> Self:
+        """One-time mode filters the pool at creation time, which only preassigned experiments have."""
+        if any(metric.use_one_time_metric for metric in self.metrics):
+            raise ValueError(
+                "use_one_time_metric is only supported for preassigned experiments. "
+                "Turn off use_one_time_metric for online experiments."
+            )
+        return self
 
 
 class MABExperimentSpec(BaseBanditExperimentSpec):
@@ -1453,6 +1594,12 @@ class PowerRequest(ApiBaseModel):
         ),
     ] = None
 
+    @field_validator("metrics")
+    @classmethod
+    def validate_unique_metrics(cls, v: list[DesignSpecMetricRequest]) -> list[DesignSpecMetricRequest]:
+        _validate_unique_metric_field_names(v)
+        return v
+
     @model_validator(mode="after")
     def validate_cluster_randomization(self) -> Self:
         """Mirrors PreassignedFrequentistExperimentSpec: cluster sizing needs a cluster key.
@@ -1463,6 +1610,11 @@ class PowerRequest(ApiBaseModel):
             raise ValueError("desired_n_clusters can only be set when cluster_key is set.")
         if self.cluster_key is None and self.desired_ns_clusters is not None:
             raise ValueError("desired_ns_clusters can only be set when cluster_key is set.")
+        return self
+
+    @model_validator(mode="after")
+    def validate_one_time_metric_scope(self) -> Self:
+        _validate_one_time_metric_scope(self.metrics, self.cluster_key, self.filters)
         return self
 
     @model_validator(mode="after")
@@ -1561,7 +1713,7 @@ class Assignment(ApiBaseModel):
         ),
     ]
     created_at: Annotated[
-        datetime.datetime | None,
+        dt.datetime | None,
         Field(description="The date and time the assignment was created."),
     ] = None
 
@@ -1579,7 +1731,7 @@ class Assignment(ApiBaseModel):
 
     # -- Bandit-specific fields --
     observed_at: Annotated[
-        datetime.datetime | None,
+        dt.datetime | None,
         Field(description="The date and time the outcome was recorded."),
     ] = None
 
@@ -1712,7 +1864,7 @@ class ExperimentConfig(ApiBaseModel):
     datasource_id: str
     state: Annotated[ExperimentState, Field(description="Current state of this experiment.")]
     stopped_assignments_at: Annotated[
-        datetime.datetime | None,
+        dt.datetime | None,
         Field(
             description="The date and time assignments were stopped. Null if assignments are still allowed to be made."
         ),

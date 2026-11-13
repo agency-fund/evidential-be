@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 from xngin.apiserver.dwh.analysis_types import MetricValue, ParticipantOutcome
-from xngin.stats.analysis import analyze_experiment
+from xngin.stats.analysis import ArmAnalysisResult, analyze_experiment
 from xngin.stats.stats_errors import StatsAnalysisError
 
 
@@ -45,7 +45,7 @@ def fixture_outcomes(n=1000, seed=43):
 
 
 def test_analysis(test_assignments, test_outcomes):
-    result = analyze_experiment(test_assignments, test_outcomes)
+    result = analyze_experiment(test_assignments, test_outcomes, ["bool_field"])
     assert len(result.keys()) == 1  # One metric
     assert len(next(iter(result.values())).keys()) == 3  # Three arms
 
@@ -78,7 +78,7 @@ def test_analysis(test_assignments, test_outcomes):
         assert results.mean_ci_lower < intercept + treatment_effect < results.mean_ci_upper
 
     # Lastly, redo the analysis with a looser alpha (90% CIs) to ensure CIs are *narrower*
-    result_a10 = analyze_experiment(test_assignments, test_outcomes, alpha=0.1)
+    result_a10 = analyze_experiment(test_assignments, test_outcomes, ["bool_field"], alpha=0.1)
     baseline_results_a10 = result_a10["bool_field"][baseline_id]
     assert baseline_results_a10.estimate == intercept
     assert baseline_results_a10.ci_lower > baseline_results.ci_lower
@@ -91,6 +91,7 @@ def test_analysis_with_custom_baseline(test_assignments, test_outcomes):
     result = analyze_experiment(
         test_assignments,
         test_outcomes,
+        ["bool_field"],
         baseline_arm_id="b1d90769-6e6e-4973-a7eb-d9da1c6ddcd5",
     )
     assert len(result.keys()) == 1  # One metric
@@ -134,7 +135,7 @@ def test_analysis_with_missing_outcomes(test_assignments, test_outcomes):
             participant_id=test_outcomes[i].participant_id,
             metric_values=[MetricValue(metric_name="bool_field", metric_value=none)],
         )
-    result = analyze_experiment(test_assignments, test_outcomes)
+    result = analyze_experiment(test_assignments, test_outcomes, ["bool_field"])
     assert len(result.keys()) == 1  # One metric
     assert len(next(iter(result.values())).keys()) == 3  # Three arms
 
@@ -180,47 +181,84 @@ def test_analysis_with_missing_outcomes(test_assignments, test_outcomes):
 
 
 def test_analysis_with_one_arm_missing_all_outcomes(test_assignments, test_outcomes):
-    # Make all outcomes missing for one arm. Should still be processed, but result in NaNs
+    # An arm whose outcomes are all missing is omitted, and the other arms get the same results as
+    # if that arm had never been assigned.
+    empty_arm_id = "b1d90769-6e6e-4973-a7eb-d9da1c6ddcd5"
     arm_map = test_assignments.set_index("participant_id")["arm_id"].to_dict()
-    num_missing_values = 0
-    for i in range(len(test_outcomes)):
-        if arm_map[test_outcomes[i].participant_id] == "b1d90769-6e6e-4973-a7eb-d9da1c6ddcd5":
-            test_outcomes[i].metric_values[0].metric_value = None
-            num_missing_values += 1
+    for outcome in test_outcomes:
+        if arm_map[outcome.participant_id] == empty_arm_id:
+            outcome.metric_values[0].metric_value = None
 
-    result = analyze_experiment(test_assignments, test_outcomes)
+    result = analyze_experiment(test_assignments, test_outcomes, ["bool_field"])
     assert len(result) == 1  # One metric
     metric_results = result["bool_field"]
-    assert len(metric_results) == 3  # Three arms
-    for arm_id in metric_results:
-        if arm_id == "b1d90769-6e6e-4973-a7eb-d9da1c6ddcd5":
-            assert metric_results[arm_id].estimate == 0
-            assert math.isnan(metric_results[arm_id].p_value)
-            assert math.isnan(metric_results[arm_id].t_stat)
-            assert metric_results[arm_id].std_error == 0
-            assert metric_results[arm_id].ci_lower == 0
-            assert metric_results[arm_id].ci_upper == 0
-            assert metric_results[arm_id].mean_ci_lower is not None
-            assert metric_results[arm_id].mean_ci_upper is not None
-            assert metric_results[arm_id].num_missing_values == num_missing_values
-        else:
-            assert metric_results[arm_id].estimate is not None
-            assert metric_results[arm_id].p_value is not None
-            assert metric_results[arm_id].t_stat is not None
-            assert metric_results[arm_id].std_error is not None
-            assert metric_results[arm_id].ci_lower is not None
-            assert metric_results[arm_id].ci_upper is not None
-            assert metric_results[arm_id].mean_ci_lower is not None
-            assert metric_results[arm_id].mean_ci_upper is not None
-            assert metric_results[arm_id].num_missing_values == 0
+    assert len(metric_results) == 2
+    assert empty_arm_id not in metric_results
+    without_empty_arm = test_assignments[test_assignments["arm_id"] != empty_arm_id]
+    assert metric_results == analyze_experiment(without_empty_arm, test_outcomes, ["bool_field"])["bool_field"]
 
     # But when *all* arms are missing values, we should get a dict with the metrics but no arm
     # analyses since no regression was performed.
     for i in range(len(test_outcomes)):
         test_outcomes[i].metric_values[0].metric_value = None
-    result = analyze_experiment(test_assignments, test_outcomes)
+    result = analyze_experiment(test_assignments, test_outcomes, ["bool_field"])
     assert len(result) == 1  # One metric
     assert len(result["bool_field"]) == 0  # No arm analyses
+
+
+def assert_only_means_reported(arm_result: ArmAnalysisResult, values: list[float | None]):
+    """The arm's mean is reported, but none of the fields comparing it to the baseline."""
+    assert not arm_result.is_baseline
+    assert arm_result.mean == pytest.approx(pd.Series(values).mean())
+    assert arm_result.mean_ci_lower < arm_result.mean < arm_result.mean_ci_upper
+    for field in ("estimate", "p_value", "t_stat", "std_error", "ci_lower", "ci_upper"):
+        assert math.isnan(getattr(arm_result, field)), field
+
+
+@pytest.mark.parametrize("baseline_arm_id", [None, "0ffe0995-6404-4622-934a-0d5cccfe3a59"])
+def test_analysis_with_baseline_arm_missing_all_outcomes(test_assignments, test_outcomes, baseline_arm_id):
+    # Without baseline values the other arms can't be compared to it, so only their own means are
+    # reported. With baseline_arm_id=None the baseline is the first arm in sorted order.
+    empty_arm_id = "0ffe0995-6404-4622-934a-0d5cccfe3a59"
+    arm_map = test_assignments.set_index("participant_id")["arm_id"].to_dict()
+    for outcome in test_outcomes:
+        if arm_map[outcome.participant_id] == empty_arm_id:
+            outcome.metric_values[0].metric_value = None
+
+    result = analyze_experiment(test_assignments, test_outcomes, ["bool_field"], baseline_arm_id=baseline_arm_id)
+
+    metric_results = result["bool_field"]
+    assert len(metric_results) == 2
+    assert empty_arm_id not in metric_results
+    for arm_id, arm_result in metric_results.items():
+        values = [o.metric_values[0].metric_value for o in test_outcomes if arm_map[o.participant_id] == arm_id]
+        assert_only_means_reported(arm_result, values)
+        assert arm_result.num_missing_values == 0
+
+
+def test_analysis_with_baseline_arm_never_assigned(test_assignments, test_outcomes):
+    # A baseline arm without any assignments (e.g. early in an online experiment) is handled like a
+    # baseline arm without values.
+    baseline_arm_id = "0ffe0995-6404-4622-934a-0d5cccfe3a59"
+    assignments = test_assignments[test_assignments["arm_id"] != baseline_arm_id]
+
+    result = analyze_experiment(assignments, test_outcomes, ["bool_field"], baseline_arm_id=baseline_arm_id)
+
+    metric_results = result["bool_field"]
+    assert len(metric_results) == 2
+    arm_map = assignments.set_index("participant_id")["arm_id"].to_dict()
+    for arm_id, arm_result in metric_results.items():
+        values = [o.metric_values[0].metric_value for o in test_outcomes if arm_map.get(o.participant_id) == arm_id]
+        assert_only_means_reported(arm_result, values)
+
+
+def test_analysis_mean_is_baseline_mean_plus_effect(test_assignments, test_outcomes):
+    result = analyze_experiment(test_assignments, test_outcomes, ["bool_field"])["bool_field"]
+
+    baseline = next(arm_result for arm_result in result.values() if arm_result.is_baseline)
+    for arm_result in result.values():
+        expected = baseline.estimate if arm_result.is_baseline else baseline.estimate + arm_result.estimate
+        assert arm_result.mean == pytest.approx(expected)
 
 
 def test_analysis_counts_participants_absent_from_outcomes(test_assignments, test_outcomes):
@@ -229,7 +267,7 @@ def test_analysis_counts_participants_absent_from_outcomes(test_assignments, tes
     outcomes = [outcome for outcome in test_outcomes if outcome.participant_id not in absent_ids]
     assert len(outcomes) == len(test_outcomes) - len(absent_ids)
 
-    result = analyze_experiment(test_assignments, outcomes)
+    result = analyze_experiment(test_assignments, outcomes, ["bool_field"])
 
     bool_field_results = result["bool_field"]
     assert len(bool_field_results) == 3  # Three arms
@@ -240,15 +278,8 @@ def test_analysis_counts_participants_absent_from_outcomes(test_assignments, tes
     assert sum(r.num_missing_values for r in bool_field_results.values()) == len(absent_ids)
 
 
-# sqrt() warns when cancellation makes a mathematically zero mean variance slightly negative.
-@pytest.mark.filterwarnings("ignore:invalid value encountered in sqrt:RuntimeWarning")
 def test_analysis_with_all_identical_outcomes_in_one_arm():
-    """A treatment arm whose outcomes are all identical still gets finite mean CIs.
-
-    Its predicted-mean variance is mathematically zero, but floating-point cancellation in
-    statsmodels (Var(Intercept) + Var(coef) + 2Cov) makes it slightly negative for this data,
-    which turned the mean CI bounds into NaN before analyze_experiment collapsed them.
-    """
+    """Identical treatment outcomes retain finite, zero-width mean confidence intervals."""
     arm_a, arm_b = "a" * 32, "b" * 32
     assignments = pd.DataFrame([{"participant_id": str(i), "arm_id": arm_a if i < 3 else arm_b} for i in range(7)])
     # Baseline arm a: [1, 0, 0]; treatment arm b: all zeros.
@@ -260,7 +291,7 @@ def test_analysis_with_all_identical_outcomes_in_one_arm():
         for i in range(7)
     ]
 
-    result = analyze_experiment(assignments, outcomes, baseline_arm_id=arm_a)
+    result = analyze_experiment(assignments, outcomes, ["bool_field"], baseline_arm_id=arm_a)
 
     degenerate_results = result["bool_field"][arm_b]
     # The arm mean is exactly zero, so the zero-variance CI collapses onto it.
@@ -270,28 +301,76 @@ def test_analysis_with_all_identical_outcomes_in_one_arm():
     assert math.isfinite(degenerate_results.mean_ci_upper)
 
 
+def test_clustered_analysis_with_equal_control_cluster_means():
+    assignments = pd.DataFrame({
+        "participant_id": [str(i) for i in range(8)],
+        "arm_id": ["control"] * 4 + ["treatment"] * 4,
+        "cluster_id": ["a", "a", "b", "b", "c", "c", "d", "d"],
+    })
+    # Control clusters both average 2 despite within-cluster variation; treatment averages 4 and 6.
+    outcomes = [
+        ParticipantOutcome(
+            participant_id=str(i),
+            metric_values=[MetricValue(metric_name="outcome", metric_value=value)],
+        )
+        for i, value in enumerate([1, 3, 0, 4, 3, 5, 5, 7])
+    ]
+    result = analyze_experiment(
+        assignments, outcomes, ["outcome"], cluster_col="cluster_id", baseline_arm_id="control"
+    )["outcome"]
+
+    control, treatment = result["control"], result["treatment"]
+    assert control.estimate == pytest.approx(2)
+    assert control.std_error == pytest.approx(0, abs=1e-12)
+    assert control.ci_lower == pytest.approx(2)
+    assert control.ci_upper == pytest.approx(2)
+    assert control.mean_ci_lower == pytest.approx(2)
+    assert control.mean_ci_upper == pytest.approx(2)
+    # Cluster-robust small-sample correction: (4/3) * (7/6); variance before correction is 1/2.
+    standard_error = math.sqrt(7 / 9)
+    assert treatment.estimate == pytest.approx(3)
+    assert treatment.std_error == pytest.approx(standard_error)
+    half_width = 1.959963984540054 * standard_error
+    assert treatment.ci_lower == pytest.approx(3 - half_width)
+    assert treatment.ci_upper == pytest.approx(3 + half_width)
+    assert treatment.mean_ci_lower == pytest.approx(5 - half_width)
+    assert treatment.mean_ci_upper == pytest.approx(5 + half_width)
+
+
+@pytest.mark.parametrize("clustered", [False, True])
+def test_zero_effect_with_zero_variance_keeps_inference_undefined(clustered):
+    assignments = pd.DataFrame({
+        "participant_id": [str(i) for i in range(8)],
+        "arm_id": ["control"] * 4 + ["treatment"] * 4,
+    })
+    if clustered:
+        assignments["cluster_id"] = ["a", "a", "b", "b", "c", "c", "d", "d"]
+    outcomes = [
+        ParticipantOutcome(
+            participant_id=str(i),
+            metric_values=[MetricValue(metric_name="outcome", metric_value=0)],
+        )
+        for i in range(8)
+    ]
+    result = analyze_experiment(
+        assignments, outcomes, ["outcome"], baseline_arm_id="control", cluster_col="cluster_id" if clustered else None
+    )["outcome"]
+
+    assert set(result) == {"control", "treatment"}
+    for arm in result.values():
+        assert arm.estimate == 0
+        assert arm.std_error == 0
+        assert arm.ci_lower == arm.ci_upper == 0
+        assert arm.mean_ci_lower == arm.mean_ci_upper == 0
+        assert math.isnan(arm.t_stat)
+        assert math.isnan(arm.p_value)
+
+
 # HC1 and the residual scale divide by df_resid, which is 0 with one observation per arm.
 @pytest.mark.filterwarnings("ignore:divide by zero encountered in scalar divide:RuntimeWarning")
-# That non-finite covariance makes the predicted-mean variance dot product warn.
-@pytest.mark.filterwarnings("ignore:invalid value encountered in dot:RuntimeWarning")
-# This one fires on some CI runners but never on macOS, so it is easy to miss locally. The chain:
-#   1. Two participants, two parameters: the fit is exact and df_resid is 0.
-#   2. HC1 multiplies the squared residuals by nobs / df_resid, which is 2 / 0 = inf (we ignore this)
-#   3. The residuals are mathematically 0, but BLAS returns either exactly 0.0 or a rounding
-#      crumb like 1e-16, depending on the build and CPU.
-#   4. inf * 0.0 is NaN and numpy warns "invalid value encountered in multiply".
-#      inf * 1e-16 is inf and nothing warns.
-# macOS produces the 1e-16; some GitHub runners land on 0. Either way the NaN this test checks
-# for arrives later, so the warning is part of the expected path.
 @pytest.mark.filterwarnings("ignore:invalid value encountered in multiply:RuntimeWarning")
 def test_analysis_with_inestimable_variance_keeps_nan_mean_cis():
-    """NaN mean CI bounds from causes other than identical outcomes are surfaced, not collapsed.
-
-    With one participant per arm there are zero residual degrees of freedom, so the HC1
-    covariance is inestimable and the mean CI bounds are NaN. Each arm's single outcome is
-    trivially "all identical", but a lone observation carries no variance information, so the
-    zero-width-CI collapse must not apply and the NaNs must reach the caller.
-    """
+    """With one observation per arm, HC1 variance and mean confidence intervals remain undefined."""
     arm_a, arm_b = "a" * 32, "b" * 32
     assignments = pd.DataFrame([{"participant_id": "0", "arm_id": arm_a}, {"participant_id": "1", "arm_id": arm_b}])
     outcomes = [
@@ -302,7 +381,7 @@ def test_analysis_with_inestimable_variance_keeps_nan_mean_cis():
         for i in range(2)
     ]
 
-    result = analyze_experiment(assignments, outcomes, baseline_arm_id=arm_a)
+    result = analyze_experiment(assignments, outcomes, ["bool_field"], baseline_arm_id=arm_a)
 
     for arm_id in (arm_a, arm_b):
         arm_results = result["bool_field"][arm_id]
@@ -333,7 +412,7 @@ def test_analysis_with_multiple_metrics(test_assignments):
         for i in range(len(test_assignments))
     ]
 
-    result = analyze_experiment(test_assignments, outcomes)
+    result = analyze_experiment(test_assignments, outcomes, ["bool_field", "revenue"])
 
     assert set(result.keys()) == {"bool_field", "revenue"}
     arm_map = test_assignments.set_index("participant_id")["arm_id"].to_dict()
@@ -346,11 +425,31 @@ def test_analysis_with_multiple_metrics(test_assignments):
         assert sum(r.num_missing_values for r in metric_results.values()) == len(missing_ids)
 
 
+@pytest.mark.parametrize("metric_name", ["Q", "C", "I", "outcome", "arm", "a.b c-d ~ 1"])
+def test_analysis_of_a_metric_whose_name_a_formula_would_use(test_assignments, test_outcomes, metric_name):
+    """Patsy's functions (Q, C, I), the model's own column names, and formula syntax are all possible metric names."""
+    renamed = [
+        ParticipantOutcome(
+            participant_id=outcome.participant_id,
+            metric_values=[MetricValue(metric_name=metric_name, metric_value=outcome.metric_values[0].metric_value)],
+        )
+        for outcome in test_outcomes
+    ]
+    expected = analyze_experiment(test_assignments, test_outcomes, ["bool_field"])["bool_field"]
+    assert analyze_experiment(test_assignments, renamed, [metric_name]) == {metric_name: expected}
+
+
+def test_analysis_includes_a_metric_absent_from_every_outcome(test_assignments, test_outcomes):
+    result = analyze_experiment(test_assignments, test_outcomes, ["bool_field", "revenue"])
+    assert len(result["bool_field"]) == 3
+    assert result["revenue"] == {}
+
+
 def test_analysis_rejects_assignments_with_extra_columns(test_assignments, test_outcomes):
     invalid_assignments = test_assignments.assign(strata=[[] for _ in range(len(test_assignments))])
 
     with pytest.raises(ValueError, match="assignments_df shape is wrong"):
-        analyze_experiment(invalid_assignments, test_outcomes)
+        analyze_experiment(invalid_assignments, test_outcomes, ["bool_field"])
 
 
 def test_analysis_with_cluster_col():
@@ -374,8 +473,8 @@ def test_analysis_with_cluster_col():
         for i in range(1000)
     ]
 
-    result_hc1 = analyze_experiment(assignments_df.drop(columns=["cluster"]), participant_outcomes)
-    result_clustered = analyze_experiment(assignments_df, participant_outcomes, cluster_col="cluster")
+    result_hc1 = analyze_experiment(assignments_df.drop(columns=["cluster"]), participant_outcomes, ["revenue"])
+    result_clustered = analyze_experiment(assignments_df, participant_outcomes, ["revenue"], cluster_col="cluster")
 
     hc1_treatment = result_hc1["revenue"]["treatment"]
     clustered_treatment = result_clustered["revenue"]["treatment"]
@@ -399,7 +498,7 @@ def test_analysis_with_cluster_col_missing_from_df_raises():
     unused_participant_outcomes: list[ParticipantOutcome] = []
 
     with pytest.raises(ValueError, match="assignments_df shape is wrong: expected=arm_id,participant_id, "):
-        analyze_experiment(assignments_df, unused_participant_outcomes)
+        analyze_experiment(assignments_df, unused_participant_outcomes, ["revenue"])
 
     with pytest.raises(
         ValueError,
@@ -408,6 +507,7 @@ def test_analysis_with_cluster_col_missing_from_df_raises():
         analyze_experiment(
             assignments_df,
             unused_participant_outcomes,
+            ["revenue"],
             unit_col="participant",
             arm_col="arm",
             cluster_col="missing_cluster_column",
@@ -423,7 +523,7 @@ def test_analysis_with_null_cluster_col_raises():
     })
 
     with pytest.raises(StatsAnalysisError, match="null cluster"):
-        analyze_experiment(assignments_df, [], cluster_col="cluster")
+        analyze_experiment(assignments_df, [], ["revenue"], cluster_col="cluster")
 
 
 def test_analysis_with_cluster_col_unequal_sizes():
@@ -448,7 +548,7 @@ def test_analysis_with_cluster_col_unequal_sizes():
         for i in range(n)
     ]
 
-    result = analyze_experiment(assignments_df, participant_outcomes, cluster_col="cluster")
+    result = analyze_experiment(assignments_df, participant_outcomes, ["revenue"], cluster_col="cluster")
     treatment_result = result["revenue"]["treatment"]
 
     assert treatment_result.is_baseline is False
@@ -487,7 +587,7 @@ def test_analysis_with_cluster_col_missing_values():
         for i in range(len(assignments_with_none_df))
     ]
 
-    result = analyze_experiment(assignments_with_none_df, participant_outcomes, cluster_col="cluster")
+    result = analyze_experiment(assignments_with_none_df, participant_outcomes, ["revenue"], cluster_col="cluster")
     treatment_result = result["revenue"]["treatment"]
 
     # Estimate & SE should match values in test_analysis_with_cluster_col since rows with missing outcomes are dropped.
@@ -519,7 +619,7 @@ def test_analysis_with_cluster_col_three_arms():
         for i in range(n_indv)
     ]
 
-    result = analyze_experiment(assignments_df, participant_outcomes, cluster_col="cluster")
+    result = analyze_experiment(assignments_df, participant_outcomes, ["revenue"], cluster_col="cluster")
 
     revenue_results = result["revenue"]
     assert set(revenue_results.keys()) == {"control", "treatment_1", "treatment_2"}

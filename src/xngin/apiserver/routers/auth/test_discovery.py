@@ -1,5 +1,5 @@
 import base64
-import datetime
+import datetime as dt
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
@@ -23,12 +23,12 @@ DISCOVERY_PATH = "/.well-known/openid-configuration"
 
 class FakeClock:
     def __init__(self):
-        self.now = datetime.datetime.now(datetime.UTC)
+        self.now = dt.datetime.now(dt.UTC)
 
-    def __call__(self) -> datetime.datetime:
+    def __call__(self) -> dt.datetime:
         return self.now
 
-    def advance(self, duration: datetime.timedelta) -> None:
+    def advance(self, duration: dt.timedelta) -> None:
         self.now += duration
 
 
@@ -361,7 +361,7 @@ def test_unknown_key_refreshes_only_jwks(idp_jwk):
     clock = FakeClock()
     with _idp_client(idp_jwk, keys=published_keys, requests=requests) as client:
         discovery = OidcDiscovery(_settings(), client, clock=clock)
-        clock.advance(datetime.timedelta(minutes=1))
+        clock.advance(dt.timedelta(minutes=1))
         rotated_jwk = {**idp_jwk, "kid": "rotated"}
         published_keys[:] = [rotated_jwk]
 
@@ -380,7 +380,7 @@ def test_expired_discovery_refreshes_document_and_jwks(idp_jwk):
     clock = FakeClock()
     with _idp_client(idp_jwk, requests=requests) as client:
         discovery = OidcDiscovery(_settings(), client, clock=clock)
-        clock.advance(DISCOVERY_CACHE_LIFETIME + datetime.timedelta(microseconds=1))
+        clock.advance(DISCOVERY_CACHE_LIFETIME + dt.timedelta(microseconds=1))
 
         discovery.authorization_endpoint()
 
@@ -398,13 +398,13 @@ def test_failed_expired_discovery_refresh_preserves_snapshot_and_rate_limits_att
     clock = FakeClock()
     with _idp_client(idp_jwk, requests=requests, discovery_status=discovery_status) as client:
         discovery = OidcDiscovery(_settings(), client, clock=clock)
-        clock.advance(DISCOVERY_CACHE_LIFETIME + datetime.timedelta(microseconds=1))
+        clock.advance(DISCOVERY_CACHE_LIFETIME + dt.timedelta(microseconds=1))
         discovery_status[0] = 503
 
         first_endpoint = discovery.authorization_endpoint()
         second_endpoint = discovery.authorization_endpoint()
         cached_key = discovery.get_signing_key(kid="k1", algorithm="RS256")
-        clock.advance(datetime.timedelta(minutes=1))
+        clock.advance(dt.timedelta(minutes=1))
         third_endpoint = discovery.authorization_endpoint()
 
     assert first_endpoint == second_endpoint == third_endpoint == f"{DISCOVERY_ISSUER}/authorize"
@@ -429,7 +429,7 @@ def test_unknown_key_refreshes_are_coalesced(idp_jwk, monkeypatch: pytest.Monkey
     clock = FakeClock()
     with _idp_client(idp_jwk, keys=published_keys, requests=requests) as client:
         discovery = OidcDiscovery(_settings(), client, clock=clock)
-        clock.advance(datetime.timedelta(minutes=1))
+        clock.advance(dt.timedelta(minutes=1))
         rotated_jwk = {**idp_jwk, "kid": "rotated"}
         published_keys[:] = [rotated_jwk]
         initial_lookups = threading.Barrier(2)
@@ -459,7 +459,7 @@ def test_failed_key_refresh_preserves_keys_and_rate_limits_attempts(idp_jwk):
     clock = FakeClock()
     with _idp_client(idp_jwk, requests=requests, jwks_status=jwks_status) as client:
         discovery = OidcDiscovery(_settings(), client, clock=clock)
-        clock.advance(datetime.timedelta(minutes=1))
+        clock.advance(dt.timedelta(minutes=1))
         jwks_status[0] = 503
 
         with pytest.raises(OidcDiscoveryError, match="status code: 503"):
@@ -477,7 +477,7 @@ def test_non_rs256_or_missing_key_ids_never_refresh(idp_jwk):
     clock = FakeClock()
     with _idp_client(idp_jwk, requests=requests) as client:
         discovery = OidcDiscovery(_settings(), client, clock=clock)
-        clock.advance(datetime.timedelta(minutes=1))
+        clock.advance(dt.timedelta(minutes=1))
 
         assert discovery.get_signing_key(kid="unknown", algorithm="HS256") is None
         assert discovery.get_signing_key(kid="", algorithm="RS256") is None

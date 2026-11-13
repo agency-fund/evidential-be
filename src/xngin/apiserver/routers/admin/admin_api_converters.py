@@ -114,8 +114,6 @@ def settings_dwh_to_api_dsn(dwh: settings.Dwh) -> aapi.Dsn:
 def convert_snapshot_to_api_snapshot(snapshot: tables.Snapshot) -> aapi.Snapshot:
     status: aapi.SnapshotStatus
     match snapshot.status:
-        case "pending":
-            status = aapi.SnapshotStatus.RUNNING
         case "success":
             status = aapi.SnapshotStatus.SUCCESS
         case "failed":
@@ -138,7 +136,5 @@ def convert_api_snapshot_status_to_snapshot_status(status: aapi.SnapshotStatus) 
     match status:
         case aapi.SnapshotStatus.SUCCESS:
             return "success"
-        case aapi.SnapshotStatus.RUNNING:
-            return "pending"
         case aapi.SnapshotStatus.FAILED:
             return "failed"

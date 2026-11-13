@@ -1,3 +1,3 @@
-# This file intentionally left blank. This allows pytest's rootdir-walk behavior to treat `src` as a package; otherwise
-# the conftest at src/xngin/apiserver/conftest.py is registered under both its file path and the dotted name
-# `xngin.apiserver.conftest`, which collides with some of the pytest_plugins entries.
+# This file intentionally left blank. It makes pytest's rootdir-walk treat `src` as a package, so test modules and
+# conftests are imported as `src.xngin...`. Don't import a conftest as a module or name one in pytest_plugins: that
+# would load a second copy of it, registering its fixtures and hooks twice.

@@ -18,6 +18,11 @@ vars:
 
 env:
 
+  GRANIAN_INTERFACE: "asgi"
+  GRANIAN_PORT: "8000"
+  GRANIAN_LOG_CONFIG: "src/xngin/apiserver/granian_log_config.json"
+  GRANIAN_LOG_ACCESS_ENABLED: "true"
+
   # Disable Atlas telemetry.
   ATLAS_NO_ANON_TELEMETRY: "true"
   ATLAS_NO_UPDATE_NOTIFIER: "true"
@@ -47,7 +52,7 @@ env:
   #XNGIN_OIDC_CLIENT_ID: "314428509782-j8fgiq5dvoic01432s2bcu3isinc9kam.apps.googleusercontent.com"
 
   # Configure customlogging.py to log dwh SQL to the custom log.
-  LOG_SQL_DWH: "true"
+  LOG_SQL_DWH: "false"
 
   # Configure customlogging.py to log app SQL to the custom log.
   LOG_SQL_APP_DB: "false"
@@ -61,7 +66,9 @@ env:
   XNGIN_DEVDWH_DSN: "postgresql+psycopg://postgres:postgres@localhost:5499/dwh?sslmode=disable"
 
   # Datasource for tests of the xngin app database that use the xngin_db_session dependency or the xngin_session
-  # test fixture.
+  # test fixture. Tests append a suffix identifying the test run and pytest-xdist worker to this database
+  # name (and to that of XNGIN_QUERIES_TEST_URI), so that concurrent runs can share one Postgres instance; see
+  # xngin.apiserver.testing.pg_helpers.
   DATABASE_URL_FOR_TEST: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
 
   # Datasource for the tests using the xngin.apiserver.dwh.test_queries.fixture_queries_dwh_session fixture.
@@ -134,21 +141,35 @@ tasks:
     interactive: true
     deps:
       - start-localpg
+    cmd: >-
+      uv run xngin-cli create-testing-dwh
+      --dsn "$XNGIN_DEVDWH_DSN"
+      --template src/xngin/apiserver/testdata/warehouses.json
+      --allow-existing
+      --create-db
+  bootstrap-cloud-dwh:
+    desc: >-
+      Loads the sample data warehouses into your cloud data warehouses (BigQuery and Redshift), replacing them. A
+      warehouse is skipped when its variables are unset. See src/xngin/apiserver/testdata/README.md.
+    interactive: true
+    dotenv:
+      - .env
     cmds:
-      - uv run xngin-cli create-testing-dwh --dsn "$XNGIN_DEVDWH_DSN" --allow-existing --create-db --views a_dwh,z_dwh
-      - >-
-        uv run xngin-cli create-testing-dwh
-        --dsn "$XNGIN_DEVDWH_DSN"
-        --src src/xngin/apiserver/testdata/wide_dwh.csv.zst
-        --table-name wide_dwh
-        --allow-existing
-        --views a_wide_dwh,z_wide_dwh
-      - >-
-        uv run xngin-cli create-testing-dwh
-        --dsn "$XNGIN_DEVDWH_DSN"
-        --src src/xngin/apiserver/testdata/clustered_dwh.csv.zst
-        --table-name clustered_dwh
-        --allow-existing
+      - |
+        if [ -z "$XNGIN_DEVDWH_GCP_BIGQUERY_DSN" ]; then
+          echo "Skipping BigQuery: XNGIN_DEVDWH_GCP_BIGQUERY_DSN is not set."
+        else
+          uv run xngin-cli create-testing-dwh --dsn "$XNGIN_DEVDWH_GCP_BIGQUERY_DSN" \
+            --template src/xngin/apiserver/testdata/warehouses.json
+        fi
+      - |
+        if [ -z "$XNGIN_DEVDWH_AWS_REDSHIFT_DSN" ]; then
+          echo "Skipping Redshift: XNGIN_DEVDWH_AWS_REDSHIFT_DSN is not set."
+        else
+          uv run xngin-cli create-testing-dwh --dsn "$XNGIN_DEVDWH_AWS_REDSHIFT_DSN" \
+            --bucket "$XNGIN_DEVDWH_AWS_BUCKET" --iam-role "$XNGIN_DEVDWH_AWS_REDSHIFT_IAM_ROLE" \
+            --template src/xngin/apiserver/testdata/warehouses.json
+        fi
   bootstrap-app-database:
     interactive: true
     desc: >-
@@ -175,12 +196,15 @@ tasks:
     env:
       DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
       XNGIN_SESSION_TOKEN_KEYSET: "local"
+      GRANIAN_RELOAD: "true"
+      GRANIAN_RELOAD_PATHS: "src"
+      GRANIAN_RELOAD_IGNORE_PATTERNS: '^test_ ^(?!.*\.py$)'
+      GRANIAN_RELOAD_IGNORE_WORKER_FAILURE: "true"
     deps:
       - bootstrap-dwh-database
       - bootstrap-app-database
       - local-session-token-keyset
-    cmds:
-      - uv run xngin-apiserver-dev
+    cmd: uv run granian xngin.apiserver.main:app
   start-live:
     desc: "Starts apiserver locally with settings similar to the Railway environment."
     interactive: false
@@ -193,8 +217,7 @@ tasks:
       RAILWAY_REPLICA_ID: "local-replica"
       RAILWAY_DEPLOYMENT_ID: "local-deployment"
       XNGIN_SESSION_TOKEN_KEYSET: "local"
-    cmds:
-      - uv run --no-dev xngin-apiserver-live
+    cmd: uv run --no-dev granian xngin.apiserver.main:app
   start-airplane:
     desc: "Like start, but runs the backend in airplane mode. All Admin API interactions will be authenticated as testing@example.com automatically."
     interactive: false
@@ -219,7 +242,10 @@ tasks:
     deps:
       - bootstrap-dwh-database
     cmds:
-      - uv run coverage run -m pytest {{.CLI_ARGS}}
+      # Discard data files left by an interrupted run, so that combine only merges this run's.
+      - uv run coverage erase
+      - uv run coverage run -m pytest -n auto {{.CLI_ARGS}}
+      - uv run coverage combine --quiet
       - uv run coverage html
       - uv run coverage report
       - echo "Open the HTML report at file://{{.USER_WORKING_DIR}}/htmlcov/index.html"
@@ -239,20 +265,30 @@ tasks:
       task test -- -k tests_matching_some_string_expression -rA    # run subset of tests, show all output in summary
       task test -- -m integration                                  # run tests annotated with @pytest.mark.integration
       task test -- --lf                                            # only re-run failed tests
+      task test -- -n0                                             # run serially (tests run in parallel by default)
+
+      Parallel runs use one worker fewer than the CPU cores, up to 8 (each holds a few Postgres connections; see
+      max_connections in tools/localpg.py). Runs filtered with -k or --lf use 2 workers, and runs of named tests
+      (path::test_name) run serially; see xngin.apiserver.testing.xdist_plugin.
+
+      When tests fail, the databases of the workers that ran them are kept for inspection (their names are printed just
+      before the short test summary) and dropped by test runs a day later. Each test clears the tables when it starts,
+      so a kept database shows the last test its worker ran: re-run just the failures serially to inspect them, e.g.
+      task test -- --lf -n0.
     interactive: true
     env:
       DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"
     deps:
       - bootstrap-dwh-database
     cmds:
-      - uv run pytest {{.CLI_ARGS}}
+      - uv run pytest -n auto {{.CLI_ARGS}}
   test-only:
     desc: "Runs unit tests without boostrapping the DWH database."
     interactive: true
     env:
       DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"
     cmds:
-      - uv run pytest {{.CLI_ARGS}}
+      - uv run pytest -n auto {{.CLI_ARGS}}
   test-airplane:
     desc: "Run unit tests (in airplane mode)."
     interactive: true
@@ -261,10 +297,19 @@ tasks:
     cmds:
       - task test
   test-integration:
-    desc: "Runs Google integration tests. Requires GOOGLE_APPLICATION_CREDENTIALS environment variable to be set."
+    dotenv:
+      - .env
+    desc: >-
+      Runs the integration tests, which use real cloud services. Tests whose variables are unset are skipped. GCP
+      integration tests: XNGIN_DEVDWH_GCP_CREDENTIALS, the path to a service account key file that may create BigQuery
+      datasets, for the BigQuery tests; XNGIN_SECRETS_GCP_CREDENTIALS and XNGIN_SECRETS_GCP_KMS_KEY_URI for the KMS
+      secrets tests. AWS integration tests: XNGIN_DEVDWH_AWS_REDSHIFT_DSN, a Redshift user that may create schemas,
+      for the Redshift tests.
     interactive: true
     env:
       DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"
+    deps:
+      - bootstrap-dwh-database
     cmds:
       - uv run pytest -m integration
   make-migrations:
@@ -316,26 +361,21 @@ tasks:
       DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
     cmd: |
       uv run xngin-cli add-user {{.CLI_ARGS}}
-  start-dwh-pull:
-    desc: "Reads bandit outcomes from organizations' data warehouses."
+  start-worker:
+    desc: "Runs experiment snapshots, autofail updates, data warehouse pulls, and the task queue (e.g. webhooks)."
     interactive: true
     env:
       DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
-    cmd: uv run xngin-dwh-pull {{.CLI_ARGS}}
-  start-snapshotter:
-    desc: "Starts the snapshot collector."
-    interactive: true
-    env:
-      DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
-    cmd: uv run xngin-snapshotter {{.CLI_ARGS}}
-  start-tq:
-    desc: "Start the task queue."
-    interactive: true
-    env:
-      DATABASE_URL: "{{.XNGIN_DEVAPP_STANDARD_DSN}}"  # tq uses psycopg3 directly (not SQLAlchemy).
     deps:
       - bootstrap-app-database
-    cmd: uv run xngin-tq
+    cmd: >-
+      uv run xngin-worker
+      --poll-interval 30
+      -j 2
+      --snapshot-interval 300
+      --dwh-pull-interval 300
+      --autofail-batch-size 10
+      {{.CLI_ARGS}}
   psql:
     desc: "Start interactive psql"
     interactive: true
@@ -343,9 +383,20 @@ tasks:
       - bootstrap-app-database
     cmd: psql "{{.XNGIN_DEVAPP_STANDARD_DSN}}"
   drop-databases:
-    desc: "Forcibly remove the local development databases."
+    desc: >-
+      Forcibly remove the local development databases, including the per-worker test databases and their templates
+      (for every checkout sharing this Postgres instance).
     interactive: true
-    cmd: uv run xngin-cli drop-database --dsn "{{.XNGIN_LOCALPG_DSN}}" dwh migration_lint test_xngin {{.XNGIN_DEVAPPDB_NAME}}
+    cmd: |
+      uv run xngin-cli drop-database --dsn "{{.XNGIN_LOCALPG_DSN}}" \
+        dwh \
+        migration_lint \
+        test_xngin \
+        test_queries \
+        {{.XNGIN_DEVAPPDB_NAME}} \
+        --prefix test_xngin_ \
+        --prefix test_queries_ \
+        --prefix xngin_tmpl_
   create-database:
     desc: "Create an empty database with the supplied name. Useful for prepping a pg_restore of your local database after dropping it."
     interactive: true

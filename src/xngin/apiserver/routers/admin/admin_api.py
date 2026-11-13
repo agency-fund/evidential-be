@@ -4,13 +4,13 @@ This module defines the internal Evidential UI-facing Admin API endpoints.
 """
 
 import secrets
+from collections.abc import Iterable
 from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal, assert_never
 
 from fastapi import (
     APIRouter,
-    BackgroundTasks,
     Body,
     Depends,
     FastAPI,
@@ -31,11 +31,8 @@ from xngin.apiserver.apikeys import hash_key_or_raise, make_key
 from xngin.apiserver.dependencies import xngin_sync_db_session
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
 from xngin.apiserver.dwh.dwh_session import DwhSession
+from xngin.apiserver.dwh.field_aliases import FieldAliases
 from xngin.apiserver.dwh.inspections import create_inspect_table_response_from_table
-from xngin.apiserver.dwh.queries import (
-    get_cluster_sufficient_stats,
-    get_raw_metric_stats,
-)
 from xngin.apiserver.exceptionhandlers import XHTTPValidationError
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.limits import MAX_LENGTH_OF_EMAIL_VALUE, MAX_LENGTH_OF_NAME_VALUE
@@ -64,11 +61,11 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     CreateDatasourceResponse,
     CreateOrganizationRequest,
     CreateOrganizationResponse,
-    CreateSnapshotResponse,
     CreateUserRequest,
     CreateUserResponse,
     DatasourceSummary,
     DeleteExperimentDataRequest,
+    Dsn,
     EventSummary,
     GetDatasourceResponse,
     GetExperimentForUiResponse,
@@ -132,12 +129,11 @@ from xngin.apiserver.routers.experiments.experiments_common import (
 from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
 from xngin.apiserver.routers.power_adapters import build_metric_stats, calculate_cluster_stats
 from xngin.apiserver.settings import NoDwh, RemoteDatabaseConfig
-from xngin.apiserver.snapshots import snapshotter
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
+from xngin.apiserver.worker.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE
 from xngin.events.webhook_sent import WebhookSentEvent
 from xngin.stats import check_power
-from xngin.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE
 
 GENERIC_SUCCESS = Response(status_code=status.HTTP_204_NO_CONTENT)
 RESPONSE_CACHE_MAX_AGE_SECONDS = timedelta(minutes=15).seconds
@@ -250,7 +246,10 @@ router = APIRouter(
     lifespan=lifespan,
     prefix=constants.API_PREFIX_V1 + "/m",
     responses=STANDARD_ADMIN_RESPONSES,
-    dependencies=[Depends(require_user_from_token)],  # All routes in this router require authentication.
+    dependencies=[
+        Depends(require_user_from_token),  # All routes in this router require authentication.
+        Depends(adeps.add_path_params_to_request_context),
+    ],
 )
 
 
@@ -616,29 +615,6 @@ def delete_snapshot(
     return response
 
 
-@router.post("/organizations/{organization_id}/datasources/{datasource_id}/experiments/{experiment_id}/snapshots")
-def create_snapshot(
-    experiment: Annotated[tables.Experiment, Depends(adeps.org_experiment)],
-    session: Annotated[Session, Depends(xngin_sync_db_session)],
-    background_tasks: BackgroundTasks,
-) -> CreateSnapshotResponse:
-    """Request the asynchronous creation of a snapshot for an experiment.
-
-    Returns the ID of the snapshot. Poll get_snapshot until the job is completed.
-    """
-    if experiment.state != ExperimentState.COMMITTED:
-        raise LateValidationError("You can only snapshot committed experiments.")
-    # Aligning with the buffer in snapshotter.py, as we wish to capture +/- 1 day on both sides.
-    if experiment.end_date < datetime.now(UTC) - timedelta(days=1):
-        raise LateValidationError("You can only snapshot active experiments.")
-
-    snapshot = tables.Snapshot(experiment_id=experiment.id)
-    session.add(snapshot)
-    session.commit()
-    background_tasks.add_task(snapshotter.make_first_snapshot, snapshot.experiment_id, snapshot.id)
-    return CreateSnapshotResponse(id=snapshot.id)
-
-
 @router.get("/organizations")
 def list_organizations(
     session: Annotated[Session, Depends(xngin_sync_db_session)],
@@ -781,7 +757,7 @@ def list_organization_webhooks(
     return ListWebhooksResponse(items=webhook_summaries)
 
 
-def convert_webhooks_to_webhooksummaries(webhooks):
+def convert_webhooks_to_webhooksummaries(webhooks: Iterable[tables.Webhook]) -> list[WebhookSummary]:
     return [
         WebhookSummary(
             id=webhook.id,
@@ -878,7 +854,7 @@ def list_organization_events(
     return ListOrganizationEventsResponse(items=event_summaries, next_page_token=next_page_token)
 
 
-def convert_events_to_eventsummaries(events):
+def convert_events_to_eventsummaries(events: list[tables.Event]) -> list[EventSummary]:
     event_summaries = []
     for event in events:
         data = event.get_data()
@@ -887,10 +863,10 @@ def convert_events_to_eventsummaries(events):
                 id=event.id,
                 created_at=event.created_at,
                 type=event.type,
-                summary=data.summarize() if data else "Unknown",
-                link=data.link() if data else None,
-                details=data.sanitize().model_dump() if data else None,
-                status_icon=data.status_icon() if data else "info",
+                summary=data.summarize(),
+                link=data.link(),
+                details=data.sanitize().model_dump(),
+                status_icon=data.status_icon(),
             )
         )
     return event_summaries
@@ -1637,12 +1613,12 @@ def power_check(
     metric has baseline stats, and cluster stats for cluster-randomized designs — the warehouse is
     not contacted at all, so the request is not validated against the participants table.
     """
-    if isinstance(datasource.get_config(), NoDwh):
+    dsconfig = datasource.get_config()
+    if isinstance(dsconfig.dwh, NoDwh):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Power checks are not supported for datasources without a data warehouse.",
         )
-    dsconfig = datasource.get_config()
 
     filters = body.filters
     cluster_key = body.cluster_key
@@ -1673,12 +1649,7 @@ def power_check(
             # Only queries run inside this block; stats are computed from the raw rows after
             # the DWH connection is closed. Metrics carrying baseline stats are not queried.
             raw_metric_stats = (
-                dwh.run(
-                    get_raw_metric_stats,
-                    sa_table,
-                    metrics_missing_stats,
-                    filters,
-                )
+                dwh.get_raw_metric_stats(sa_table, metrics=metrics_missing_stats, filters=filters)
                 if metrics_missing_stats
                 else None
             )
@@ -1691,21 +1662,25 @@ def power_check(
                 # sufficient-statistics query numerically stable. The mean comes from the raw
                 # query row for queried metrics and from the supplied baseline for echoed ones.
                 supplied_baselines = {m.field_name: m.metric_baseline for m in body.metrics if m.has_baseline_stats}
+                queried_aliases = FieldAliases(m.field_name for m in metrics_missing_stats)
                 outcome_shifts = {}
                 for field_name in db_derived_metrics:
                     if field_name in supplied_baselines:
                         mean = supplied_baselines[field_name]
                     else:
-                        mean = raw_metric_stats[f"{field_name}__mean"] if raw_metric_stats is not None else None
+                        mean = (
+                            raw_metric_stats[f"{queried_aliases.alias(field_name)}__mean"]
+                            if raw_metric_stats is not None
+                            else None
+                        )
                     if mean is not None:
                         outcome_shifts[field_name] = mean
-                raw_cluster_stats = dwh.run(
-                    get_cluster_sufficient_stats,
+                raw_cluster_stats = dwh.get_cluster_sufficient_stats(
                     sa_table,
-                    cluster_key,
-                    db_derived_metrics,
-                    filters,
-                    outcome_shifts,
+                    cluster_column_name=cluster_key,
+                    outcome_column_names=db_derived_metrics,
+                    filters=filters,
+                    outcome_shifts=outcome_shifts,
                 )
 
         queried_stats = (
@@ -1755,7 +1730,7 @@ def power_check(
     )
 
 
-def raise_unless_safe_hostname(dsn):
+def raise_unless_safe_hostname(dsn: Dsn) -> None:
     """Raises a 400 if the DNS name in dsn is possibly attempting to connect to resources on local network."""
     if isinstance(dsn, PostgresDsn | RedshiftDsn):
         try:

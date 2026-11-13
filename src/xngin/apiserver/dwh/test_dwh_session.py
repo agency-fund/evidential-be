@@ -15,15 +15,15 @@ def fixture_dwh_config(testing_datasource):
     return testing_datasource.ds.get_config().dwh
 
 
-def test_run_hands_fn_the_warehouse_session(dwh_config):
+def test_on_worker_can_query_the_warehouse_session(dwh_config):
     with DwhSession.open(dwh_config) as dwh:
-        assert dwh.run(lambda session: session.execute(text("SELECT 1")).scalar_one()) == 1
+        assert dwh._on_worker("select 1", lambda: dwh._session.execute(text("SELECT 1")).scalar_one()) == 1
 
 
 def test_all_warehouse_calls_run_on_one_helper_thread(dwh_config):
     """The block reuses one warehouse Session, which is only safe if every call shares one thread."""
     with DwhSession.open(dwh_config) as dwh:
-        idents = {dwh.run(lambda _session: threading.get_ident()) for _ in range(3)}
+        idents = {dwh._on_worker("get_ident", threading.get_ident) for _ in range(3)}
     assert len(idents) == 1
     assert idents != {threading.get_ident()}
 
@@ -145,6 +145,22 @@ def test_a_later_block_works_after_one_times_out(dwh_config, mocker):
         assert dwh.inspect_table("dwh") is not None
 
 
+def test_a_table_is_reflected_once_per_block(dwh_config, mocker):
+    """Callers validate against a table and then query it, and the query inspects the table again."""
+    reflect = mocker.spy(DwhSession, "_reflect_table_blocking")
+    with DwhSession.open(dwh_config) as dwh:
+        first = dwh.inspect_table(TESTING_DWH_TABLE_NAME)
+        assert dwh.inspect_table(TESTING_DWH_TABLE_NAME) is first
+        result = dwh.get_participants(TESTING_DWH_TABLE_NAME, select_columns={"id"}, filters=[], n=1)
+        assert result.sa_table is first
+    assert reflect.call_count == 1
+
+    # A Table belongs to the connection it was reflected over, so the next block reflects again.
+    with DwhSession.open(dwh_config) as dwh:
+        assert dwh.inspect_table(TESTING_DWH_TABLE_NAME) is not first
+    assert reflect.call_count == 2
+
+
 def test_inspecting_a_missing_table_names_only_that_table(dwh_config, mocker):
     """The error must not list the warehouse's other tables.
 
@@ -162,3 +178,14 @@ def test_inspecting_a_missing_table_names_only_that_table(dwh_config, mocker):
 
     assert TESTING_DWH_TABLE_NAME not in str(excinfo.value)
     reflect.assert_not_called()
+
+
+@pytest.mark.parametrize(("environment", "shows_parameters"), [("dev", True), ("production", False)])
+def test_bind_parameters_appear_in_exception_text_only_in_dev(dwh_config, monkeypatch, environment, shows_parameters):
+    monkeypatch.setenv("ENVIRONMENT", environment)
+    with DwhSession.open(dwh_config) as dwh, pytest.raises(sqlalchemy.exc.DBAPIError) as excinfo:
+        dwh._on_worker(
+            "failing query",
+            lambda: dwh._session.execute(text("SELECT CAST(:a AS text), 1 / 0"), {"a": "SECRET_VALUE"}),
+        )
+    assert ("SECRET_VALUE" in str(excinfo.value)) is shows_parameters

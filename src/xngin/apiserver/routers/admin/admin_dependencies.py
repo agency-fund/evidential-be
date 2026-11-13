@@ -18,11 +18,12 @@ may still trigger multiple queries because the dependency instance is different.
 
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Path, status
+from fastapi import Depends, HTTPException, Path, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import QueryableAttribute, Session, selectinload
 
 from xngin.apiserver.dependencies import xngin_sync_db_session
+from xngin.apiserver.request_context_middleware import add_request_fields
 from xngin.apiserver.routers.auth.auth_dependencies import require_user_from_token
 from xngin.apiserver.routers.preloads import (
     EXPERIMENT_FIELDS_WITH_FILTERS,
@@ -30,6 +31,18 @@ from xngin.apiserver.routers.preloads import (
     build_preload_options,
 )
 from xngin.apiserver.sqla import tables
+
+# Path parameters whose values are added to the request's log context.
+_LOGGED_PATH_PARAMS = ("organization_id", "datasource_id", "experiment_id")
+
+
+def add_path_params_to_request_context(request: Request) -> None:
+    """Adds the resource IDs named in the route path to the request's log context.
+
+    Use as a router-level dependency to cause FastAPI to resolve it before a handler's own dependencies. This allows a
+    request ending in 404 to still log the ID that was asked for.
+    """
+    add_request_fields(**{name: value for name, value in request.path_params.items() if name in _LOGGED_PATH_PARAMS})
 
 
 def raise_unless_privileged(user: tables.User) -> None:

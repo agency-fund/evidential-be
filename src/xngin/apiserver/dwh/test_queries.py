@@ -5,7 +5,6 @@ from sqlalchemy import Table, text
 from sqlalchemy.exc import DataError
 from sqlalchemy.orm import Session
 
-from xngin.apiserver.conftest import DbType, get_queries_test_uri
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.queries import get_raw_metric_stats
 from xngin.apiserver.exceptions_common import LateValidationError
@@ -13,8 +12,9 @@ from xngin.apiserver.routers.common_api_types import DesignSpecMetric, DesignSpe
 from xngin.apiserver.routers.common_enums import MetricType
 from xngin.apiserver.routers.power_adapters import build_metric_stats
 from xngin.apiserver.settings import Dsn
+from xngin.apiserver.testing.helpers import DbType, get_queries_test_uri
 
-pytest_plugins = ("xngin.apiserver.dwh.dwh_test_support",)
+pytest_plugins = ("xngin.apiserver.dwh.dwh_test_helpers",)
 
 
 def get_stats_on_metrics(
@@ -193,7 +193,9 @@ def _pg_dsn(search_path: str) -> Dsn:
 def test_search_path_is_set_on_session(search_path):
     """Verify that DwhSession sets search_path for every new PostgreSQL connection."""
     with DwhSession.open(_pg_dsn(search_path)) as dwh:
-        result = dwh.run(lambda session: session.execute(text("SELECT current_setting('search_path')")).scalar())
+        result = dwh._on_worker(
+            "search_path", lambda: dwh._session.execute(text("SELECT current_setting('search_path')")).scalar()
+        )
     assert result == search_path
 
 
@@ -204,4 +206,4 @@ def test_search_path_injection_attempt_is_rejected():
         pytest.raises(DataError, match="invalid value for parameter"),
         DwhSession.open(_pg_dsn('public"; DROP TABLE users; --')) as dwh,
     ):
-        dwh.run(lambda session: session.execute(text("SELECT 1")))
+        dwh._on_worker("select 1", lambda: dwh._session.execute(text("SELECT 1")))
