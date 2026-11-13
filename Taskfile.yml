@@ -132,10 +132,15 @@ tasks:
       - cmd: uv sync --compile-bytecode
       - task: check-docker
   start-localpg:
-    desc: "Starts a local Postgres server."
+    desc: "Starts a local Postgres server. LOCALPG_EXTERNAL=1 skips Docker and uses the server already on port 5499."
     run: once
     cmds:
-      - ./tools/localpg.py --allow-existing -d --wait --create-db {{.XNGIN_DEVAPPDB_NAME}}
+      - |
+        if [ "${LOCALPG_EXTERNAL:-}" = "1" ]; then
+          echo "LOCALPG_EXTERNAL=1: using the Postgres server already listening on port 5499."
+        else
+          ./tools/localpg.py --allow-existing -d --wait --create-db {{.XNGIN_DEVAPPDB_NAME}}
+        fi
   bootstrap-dwh-database:
     desc: "Loads sample data warehouses into the localpg server."
     interactive: true

@@ -280,6 +280,80 @@ jobs:
           # The integration tests that call the admin API use the application database.
           DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
 
+  # macos runners have no Docker and no service containers, so Postgres is installed with Homebrew and
+  # task test-coverage is told to use that server (LOCALPG_EXTERNAL) instead of tools/localpg.py.
+  unittests-macos:
+    timeout-minutes: 30
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          lfs: true
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@e06108dd0aef18192324c70427afc47652e63a82 # v7.5.0
+      - uses: go-task/setup-task@3be4020d41929789a01026e0e427a4321ce0ad44 # v2.0.0
+        with:
+          version: 3.x
+      - name: Start Postgres
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_ENV_HINTS: "1"
+        run: |
+          set -euo pipefail
+          brew install postgresql@18
+          pg_bin="$(brew --prefix postgresql@18)/bin"
+          pgdata="$(brew --prefix)/var/postgresql@18"
+          # brew install may have registered a service on the default port. Stop it before moving the server to 5499.
+          brew services stop postgresql@18 || true
+          if [[ ! -s "${pgdata}/PG_VERSION" ]]; then
+            "${pg_bin}/initdb" --locale=C --encoding=UTF8 -D "${pgdata}"
+          fi
+          if "${pg_bin}/pg_ctl" -D "${pgdata}" status >/dev/null 2>&1; then
+            "${pg_bin}/pg_ctl" -D "${pgdata}" stop
+          fi
+          cat >> "${pgdata}/postgresql.conf" <<'EOF'
+          port = 5499
+          fsync = off
+          synchronous_commit = off
+          full_page_writes = off
+          max_connections = 100
+          EOF
+          cat > "${pgdata}/pg_hba.conf" <<'EOF'
+          local all all trust
+          host all all 127.0.0.1/32 trust
+          host all all ::1/128 trust
+          EOF
+          "${pg_bin}/pg_ctl" -D "${pgdata}" -l "${RUNNER_TEMP}/postgres.log" start
+          for _ in $(seq 1 30); do
+            if "${pg_bin}/pg_isready" -h 127.0.0.1 -p 5499; then
+              break
+            fi
+            sleep 1
+          done
+          "${pg_bin}/pg_isready" -h 127.0.0.1 -p 5499 || {
+            cat "${RUNNER_TEMP}/postgres.log"
+            exit 1
+          }
+          "${pg_bin}/psql" -h 127.0.0.1 -p 5499 -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'postgres') THEN
+              CREATE ROLE postgres WITH LOGIN SUPERUSER PASSWORD 'postgres';
+            ELSE
+              ALTER ROLE postgres WITH LOGIN SUPERUSER PASSWORD 'postgres';
+            END IF;
+          END
+          $$;
+          SELECT 'CREATE DATABASE xngin OWNER postgres'
+          WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'xngin') \gexec
+          SQL
+      - name: Unit tests
+        run: task test-coverage
+        env:
+          DATABASE_URL: "postgresql+psycopg://postgres:postgres@localhost:5499/test_xngin?sslmode=disable"
+          LOCALPG_EXTERNAL: "1"
+          PYTEST_XDIST_AUTO_NUM_WORKERS: "3"
+
   smoke-cli:
     timeout-minutes: 15
     runs-on: ubuntu-26.04
