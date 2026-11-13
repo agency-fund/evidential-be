@@ -16,7 +16,7 @@ import sqlalchemy as sa
 from google.auth.exceptions import GoogleAuthError
 from google.oauth2.service_account import Credentials
 from gspread.exceptions import APIError, SpreadsheetNotFound, WorksheetNotFound
-from gspread.utils import GridRangeType, ValueRenderOption, rowcol_to_a1
+from gspread.utils import DateTimeOption, GridRangeType, ValueRenderOption, rowcol_to_a1
 from sqlalchemy import event
 
 from xngin.apiserver import flags
@@ -339,7 +339,8 @@ class GoogleSheetsClient:
             try:
                 values = worksheet.get(
                     READ_RANGE,
-                    value_render_option=ValueRenderOption.formatted,
+                    value_render_option=ValueRenderOption.unformatted,
+                    date_time_render_option=DateTimeOption.formatted_string,
                     return_type=GridRangeType.ListOfLists,
                 )
             except (APIError, GoogleAuthError, requests.RequestException, ValueError) as exc:
