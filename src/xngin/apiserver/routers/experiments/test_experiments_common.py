@@ -1,8 +1,8 @@
 import threading
 import time
 from collections import defaultdict
-from collections.abc import Sequence
-from contextlib import AbstractContextManager
+from collections.abc import Generator, Sequence
+from contextlib import AbstractContextManager, contextmanager
 from contextlib import nullcontext as does_not_raise
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -13,8 +13,8 @@ import numpy as np
 import pytest
 from deepdiff import DeepDiff
 from pydantic import HttpUrl, TypeAdapter
-from sqlalchemy import Boolean, Column, MetaData, String, Table, insert, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import Boolean, Column, MetaData, String, Table, event, insert, select
+from sqlalchemy.orm import Session
 
 from xngin.apiserver import database
 from xngin.apiserver.dwh.dwh_session import DwhSession
@@ -33,6 +33,7 @@ from xngin.apiserver.routers.common_api_types import (
     Filter,
     GetExperimentResponse,
     LikelihoodTypes,
+    ListExperimentsResponse,
     MABDwhExperimentSpec,
     MABExperimentSpec,
     MetricPowerAnalysis,
@@ -68,6 +69,12 @@ from xngin.apiserver.routers.experiments.experiments_common import (
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import get_experiment_assignments_as_csv_impl
 from xngin.apiserver.routers.experiments.property_filters import passes_filters
+from xngin.apiserver.routers.preloads import (
+    EXPERIMENT_FIELDS_WITH_FILTERS,
+    EXPERIMENT_JOINED_ARMS_WITH_STATS,
+    EXPERIMENT_WEBHOOKS_AND_CONTEXTS,
+    build_preload_options,
+)
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.testing.assertions import assert_dates_equal
@@ -420,14 +427,16 @@ def insert_experiment_and_arms(
 
 
 def get_experiment_preloaded(session: Session, experiment_id: str) -> tables.Experiment:
-    preload = [
-        selectinload(tables.Experiment.arms),
-        selectinload(tables.Experiment.experiment_fields).selectinload(tables.ExperimentField.experiment_filters),
-        selectinload(tables.Experiment.experiment_filters),
-        selectinload(tables.Experiment.webhooks),
-    ]
-    stmt = select(tables.Experiment).where(tables.Experiment.id == experiment_id).options(*preload)
-    return (session.scalars(stmt)).one()
+    """Loads the experiment with what an experiment_for_full_response dependency brings."""
+    preload_options = build_preload_options(
+        preload=EXPERIMENT_WEBHOOKS_AND_CONTEXTS,
+        nested_preload=[
+            EXPERIMENT_FIELDS_WITH_FILTERS,
+            EXPERIMENT_JOINED_ARMS_WITH_STATS,
+        ],
+    )
+    stmt = select(tables.Experiment).where(tables.Experiment.id == experiment_id).options(*preload_options)
+    return session.scalars(stmt).unique().one()
 
 
 @dataclass
@@ -816,7 +825,7 @@ def test_create_preassigned_experiment_impl_cluster_assignment(xngin_session, te
 
     # Reading back the experiment should match the creation-time summary.
     experiment = get_experiment_preloaded(xngin_session, response.experiment_id)
-    get_response = get_experiment_impl(xngin_session, experiment)
+    get_response = get_experiment_impl(experiment)
     get_summary = get_response.assign_summary
     assert get_summary is not None
     assert get_summary.arm_sizes is not None
@@ -2187,7 +2196,7 @@ def test_get_experiment_impl_of_legacy_experiment(xngin_session, testing_datasou
     xngin_session.commit()
 
     experiment_db = get_experiment_preloaded(xngin_session, experiment_db.id)
-    result: GetExperimentResponse = get_experiment_impl(xngin_session=xngin_session, experiment=experiment_db)
+    result: GetExperimentResponse = get_experiment_impl(experiment_db)
 
     # Simple field presence checks
     assert result.experiment_id == experiment_db.id
@@ -3076,9 +3085,9 @@ def test_arm_population_counter(xngin_session, testing_datasource):
     )
 
     # Initially no arm_stats rows exist, so get_assign_summary returns zeros
-    summary = get_assign_summary(
-        xngin_session, experiment_id=experiment.id, experiment_type=ExperimentsType.FREQ_ONLINE, balance_check=None
-    )
+    experiment = get_experiment_preloaded(xngin_session, experiment.id)
+    assert all(arm.stats is None for arm in experiment.arms)
+    summary = get_assign_summary(experiment.arms, experiment_type=ExperimentsType.FREQ_ONLINE, balance_check=None)
     assert summary.sample_size == 0
     assert summary.arm_sizes is not None
     assert all(a.size == 0 for a in summary.arm_sizes)
@@ -3096,11 +3105,97 @@ def test_arm_population_counter(xngin_session, testing_datasource):
     assert arm_stat is not None
     assert arm_stat.population == 1
 
-    # get_assign_summary reflects the new count
-    summary = get_assign_summary(
-        xngin_session, experiment_id=experiment.id, experiment_type=ExperimentsType.FREQ_ONLINE, balance_check=None
-    )
+    # The upsert bypassed the ORM, so the arms loaded at the start of this test still show no stats. Expire them to
+    # simulate a new request's fresh session with no stats loaded, so that get_assign_summary reflects the new count.
+    xngin_session.expire_all()
+    experiment = get_experiment_preloaded(xngin_session, experiment.id)
+    summary = get_assign_summary(experiment.arms, experiment_type=ExperimentsType.FREQ_ONLINE, balance_check=None)
     assert summary.sample_size == 1
+    assert summary.arm_sizes is not None
+    assert {a.arm.arm_id: a.size for a in summary.arm_sizes}[result.arm_id] == 1
+
+
+@contextmanager
+def capture_statements(session: Session) -> Generator[list[str]]:
+    """Collects the SQL statements this session sends to the database while the context is open."""
+    statements: list[str] = []
+
+    def record(_conn, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(statement)
+
+    connection = session.connection()
+    event.listen(connection, "before_cursor_execute", record)
+    try:
+        yield statements
+    finally:
+        event.remove(connection, "before_cursor_execute", record)
+
+
+def test_list_experiments_query_count_does_not_grow_with_experiments(xngin_session, testing_datasource):
+    """Listing variable-sized experiments loads in a fixed number of queries (an N+1 queries regression test)."""
+
+    def _list_experiments() -> tuple[list[str], ListExperimentsResponse]:
+        # Expire everything already loaded so that every list call issues the same queries.
+        xngin_session.expire_all()
+        with capture_statements(xngin_session) as statements:
+            response = experiments_common.list_organization_or_datasource_experiments_impl(
+                xngin_session, organization_id=testing_datasource.organization_id
+            )
+        return statements, response
+
+    # First test listing of two experiments (1 clustered, 1 individual)
+    clustered = create_experiment_impl(
+        request=CreateExperimentRequest(design_spec=make_design_spec_clustered(desired_n=100, desired_n_clusters=4)),
+        datasource=testing_datasource.ds,
+        xngin_session=xngin_session,
+        stratify_on_metrics=False,
+        random_state=42,
+        validated_webhooks=[],
+    )
+    individual = insert_experiment_and_arms(xngin_session, testing_datasource.ds)
+    xngin_session.add_all([
+        tables.ArmStats(arm_id=individual.arms[0].id, population=5),
+        tables.ArmStats(arm_id=individual.arms[1].id, population=6),
+    ])
+    xngin_session.commit()
+
+    statements_for_two, response = _list_experiments()
+    assert len(statements_for_two) == 5  # experiment, webhooks, contexts, arm+armstats, fields+filters
+    assert len(response.items) == 2
+    summaries = {item.experiment_id: item.assign_summary for item in response.items}
+
+    clustered_summary = summaries[clustered.experiment_id]
+    assert clustered_summary is not None
+    assert clustered_summary.arm_sizes is not None
+    assert clustered.assign_summary is not None
+    assert clustered_summary.arm_sizes == clustered.assign_summary.arm_sizes
+    assert sum(arm_size.cluster_count or 0 for arm_size in clustered_summary.arm_sizes) == 4
+
+    individual_summary = summaries[individual.id]
+    assert individual_summary is not None
+    assert individual_summary.arm_sizes is not None
+    assert [(a.arm.arm_id, a.size, a.cluster_count) for a in individual_summary.arm_sizes] == [
+        (individual.arms[0].id, 5, None),
+        (individual.arms[1].id, 6, None),
+    ]
+    assert individual_summary.sample_size == 11
+
+    # Now add 3 more experiments whose arms have no arm_stats rows yet; they should report zero-sized arms.
+    for _ in range(3):
+        insert_experiment_and_arms(xngin_session, testing_datasource.ds)
+
+    statements_for_five, response = _list_experiments()
+    assert len(response.items) == 5
+    for item in response.items:
+        assert item.assign_summary is not None
+        assert item.assign_summary.arm_sizes is not None
+        if item.experiment_id not in summaries:
+            assert [a.size for a in item.assign_summary.arm_sizes] == [0, 0]
+            assert item.assign_summary.sample_size == 0
+
+    # Finally verify we only issued 1 query for arm_stats regardless of the number of experiments.
+    assert len(statements_for_five) == len(statements_for_two), statements_for_five
+    assert sum("arm_stats" in statement for statement in statements_for_five) == 1
 
 
 def _in_memory_experiment(
