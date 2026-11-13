@@ -70,8 +70,8 @@ from xngin.apiserver.routers.experiments.experiments_common import (
 from xngin.apiserver.routers.experiments.experiments_common_csv import get_experiment_assignments_as_csv_impl
 from xngin.apiserver.routers.experiments.property_filters import passes_filters
 from xngin.apiserver.routers.preloads import (
-    EXPERIMENT_ARMS_WITH_STATS,
     EXPERIMENT_FIELDS_WITH_FILTERS,
+    EXPERIMENT_JOINED_ARMS_WITH_STATS,
     EXPERIMENT_WEBHOOKS_AND_CONTEXTS,
     build_preload_options,
 )
@@ -427,24 +427,16 @@ def insert_experiment_and_arms(
 
 
 def get_experiment_preloaded(session: Session, experiment_id: str) -> tables.Experiment:
-    """Loads the experiment with what an experiment_for_full_response dependency brings.
-
-    Refreshes objects already in the session that may have been updated outside the ORM, e.g. arm stats.
-    """
+    """Loads the experiment with what an experiment_for_full_response dependency brings."""
     preload_options = build_preload_options(
         preload=EXPERIMENT_WEBHOOKS_AND_CONTEXTS,
         nested_preload=[
-            EXPERIMENT_ARMS_WITH_STATS,
             EXPERIMENT_FIELDS_WITH_FILTERS,
+            EXPERIMENT_JOINED_ARMS_WITH_STATS,
         ],
     )
-    stmt = (
-        select(tables.Experiment)
-        .where(tables.Experiment.id == experiment_id)
-        .options(*preload_options)
-        .execution_options(populate_existing=True)
-    )
-    return (session.scalars(stmt)).one()
+    stmt = select(tables.Experiment).where(tables.Experiment.id == experiment_id).options(*preload_options)
+    return session.scalars(stmt).unique().one()
 
 
 @dataclass
@@ -3113,7 +3105,9 @@ def test_arm_population_counter(xngin_session, testing_datasource):
     assert arm_stat is not None
     assert arm_stat.population == 1
 
-    # get_assign_summary reflects the new count once the arms are reloaded; the upsert bypassed the ORM.
+    # The upsert bypassed the ORM, so the arms loaded at the start of this test still show no stats. Expire them to
+    # simulate a new request's fresh session with no stats loaded, so that get_assign_summary reflects the new count.
+    xngin_session.expire_all()
     experiment = get_experiment_preloaded(xngin_session, experiment.id)
     summary = get_assign_summary(experiment.arms, experiment_type=ExperimentsType.FREQ_ONLINE, balance_check=None)
     assert summary.sample_size == 1
@@ -3123,25 +3117,25 @@ def test_arm_population_counter(xngin_session, testing_datasource):
 
 @contextmanager
 def capture_statements(session: Session) -> Generator[list[str]]:
-    """Collects the SQL statements sent to the database through the session's engine while the context is open."""
+    """Collects the SQL statements this session sends to the database while the context is open."""
     statements: list[str] = []
 
     def record(_conn, _cursor, statement, _parameters, _context, _executemany):
         statements.append(statement)
 
-    engine = session.get_bind()
-    event.listen(engine, "before_cursor_execute", record)
+    connection = session.connection()
+    event.listen(connection, "before_cursor_execute", record)
     try:
         yield statements
     finally:
-        event.remove(engine, "before_cursor_execute", record)
+        event.remove(connection, "before_cursor_execute", record)
 
 
 def test_list_experiments_query_count_does_not_grow_with_experiments(xngin_session, testing_datasource):
     """Listing variable-sized experiments loads in a fixed number of queries (an N+1 queries regression test)."""
 
     def _list_experiments() -> tuple[list[str], ListExperimentsResponse]:
-        # Start from an empty identity map so that every list call loads the same rows.
+        # Expire everything already loaded so that every list call issues the same queries.
         xngin_session.expire_all()
         with capture_statements(xngin_session) as statements:
             response = experiments_common.list_organization_or_datasource_experiments_impl(

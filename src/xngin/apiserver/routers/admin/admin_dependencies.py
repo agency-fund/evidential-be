@@ -28,6 +28,7 @@ from xngin.apiserver.routers.auth.auth_dependencies import require_user_from_tok
 from xngin.apiserver.routers.preloads import (
     EXPERIMENT_ARMS_WITH_STATS,
     EXPERIMENT_FIELDS_WITH_FILTERS,
+    EXPERIMENT_WEBHOOKS_AND_CONTEXTS,
     PreloadChain,
     build_preload_options,
 )
@@ -265,7 +266,7 @@ experiment_for_analysis = _Experiment(
 experiment_for_commit = _Experiment(preload=[tables.Experiment.webhooks, tables.Experiment.datasource])
 experiment_for_csv_export = _Experiment(nested_preload=[EXPERIMENT_FIELDS_WITH_FILTERS])
 experiment_for_ui = _Experiment(
-    preload=[tables.Experiment.webhooks, tables.Experiment.contexts],
+    preload=EXPERIMENT_WEBHOOKS_AND_CONTEXTS,
     nested_preload=[EXPERIMENT_FIELDS_WITH_FILTERS, EXPERIMENT_ARMS_WITH_STATS],
 )
 # Note the contrast with the variants above: this loads the experiment's own filters, not the filters

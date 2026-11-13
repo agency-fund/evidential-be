@@ -1277,9 +1277,10 @@ def get_assign_summary(
     balance_check: BalanceCheck | None,
     include_cluster_counts: bool = False,
 ) -> AssignSummary:
-    """Constructs an AssignSummary from the experiment's arms and their denormalized arm_stats counters.
+    """Constructs an AssignSummary from the experiment's arms and their arm_stats counters.
 
     Callers must preload Arm.stats. An arm without an arm_stats row has no assignments yet.
+    Reads the stats as loaded; reload the arms if this session has since assigned or deleted data.
     """
     arm_sizes = [
         ArmSize(
