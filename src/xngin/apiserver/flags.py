@@ -53,6 +53,9 @@ XNGIN_DEVDWH_GCP_BIGQUERY_DSN = os.environ.get("XNGIN_DEVDWH_GCP_BIGQUERY_DSN", 
 # Optional Redshift warehouse for development and testing. Used in integration tests.
 XNGIN_DEVDWH_AWS_REDSHIFT_DSN = os.environ.get("XNGIN_DEVDWH_AWS_REDSHIFT_DSN", "")
 
+# Encoded service-account JSON needed for Google Sheets demo feature.
+GSHEETS_DEMO_CREDS_BASE64 = os.environ.get("GSHEETS_DEMO_CREDS_BASE64", "")
+
 # How long one block of interactions with a customer data warehouse may run in total before we stop waiting for it.
 # This defends against remote warehouses, not against our own application database, which we assume does not stall.
 DWH_TIMEOUT_SECS = float(os.environ.get("XNGIN_DWH_TIMEOUT_SECS", "120"))

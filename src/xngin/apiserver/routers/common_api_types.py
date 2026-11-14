@@ -1880,6 +1880,10 @@ class ExperimentConfig(ApiBaseModel):
 
     experiment_id: Annotated[str, Field(description="Server-generated ID of the experiment.")]
     datasource_id: str
+    spreadsheet_full_url: Annotated[
+        str | None,
+        Field(description="Full URL of the datasource spreadsheet, including the launched experiment's outcomes tab."),
+    ] = None
     state: Annotated[ExperimentState, Field(description="Current state of this experiment.")]
     stopped_assignments_at: Annotated[
         dt.datetime | None,

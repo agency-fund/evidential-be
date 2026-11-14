@@ -66,8 +66,9 @@ from xngin.apiserver.routers.common_enums import (
     UpdateTypeBeta,
     UpdateTypeNormal,
 )
+from xngin.apiserver.routers.experiments.experiments_common_csv import get_experiment_assignments_impl
 from xngin.apiserver.routers.experiments.property_filters import passes_filters, validate_filter_value
-from xngin.apiserver.settings import DatasourceConfig
+from xngin.apiserver.settings import DatasourceConfig, GoogleSheetsDsn
 from xngin.apiserver.sql.queries import stream
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
@@ -271,6 +272,10 @@ def create_experiment_impl(
     random_state: int | None,
     validated_webhooks: list[tables.Webhook],
 ) -> CreateExperimentResponse:
+    if isinstance(datasource.get_config().dwh, GoogleSheetsDsn) and not isinstance(
+        request.design_spec, PreassignedFrequentistExperimentSpec
+    ):
+        raise LateValidationError("Google Sheets supports preassigned A/B experiments only.")
     match request.design_spec:
         case PreassignedFrequentistExperimentSpec():
             preassigned_spec = request.design_spec
@@ -573,10 +578,45 @@ def create_bandit_online_experiment_impl(
 
 
 def commit_experiment_impl(xngin_session: Session, experiment: tables.Experiment) -> CommitExperimentResult:
+    is_google_sheets = isinstance(experiment.datasource.get_config().dwh, GoogleSheetsDsn)
+    if is_google_sheets:
+        # Lock the row so concurrent commits run one at a time: the second sees COMMITTED and
+        # returns, instead of also checking Google for a tab and creating a duplicate.
+        experiment = xngin_session.scalars(
+            select(tables.Experiment)
+            .where(tables.Experiment.id == experiment.id)
+            .options(
+                selectinload(tables.Experiment.datasource),
+                selectinload(tables.Experiment.webhooks),
+                selectinload(tables.Experiment.experiment_fields),
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).one()
+
     if experiment.state == ExperimentState.COMMITTED:
         return CommitExperimentResult.COMMITTED
     if experiment.state != ExperimentState.ASSIGNED:
         return CommitExperimentResult.INVALID_STATE
+
+    if is_google_sheets:
+        uid = experiment.unique_id_field()
+        if not uid or not experiment.datasource_table:
+            raise LateValidationError("A Google Sheets experiment needs a participant ID and spreadsheet tab.")
+        assignments = {
+            assignment["participant_id"]: assignment["arm_name"]
+            for assignment in get_experiment_assignments_impl(xngin_session, experiment)
+        }
+        with DwhSession.open(experiment.datasource.get_config().dwh) as dwh:
+            # The tab and the state are saved in the same DB transaction. A rollback
+            # retains the source tab; a retry finds the owned tab by experiment ID.
+            experiment.datasource_table = dwh.create_sheet_experiment_tab(
+                source_tab_id=experiment.datasource_table,
+                unique_id_field=uid.field_name,
+                experiment_id=experiment.id,
+                assignments=assignments,
+                field_names={field.field_name for field in experiment.experiment_fields},
+            )
 
     experiment.state = ExperimentState.COMMITTED
 
