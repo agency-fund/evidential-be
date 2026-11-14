@@ -12,7 +12,7 @@ from xngin.stats.assignment import (
     simple_random_assignment,
 )
 from xngin.stats.balance import BalanceResult
-from xngin.stats.stats_errors import StatsAssignmentError
+from xngin.stats.stats_errors import StatsAssignmentError, StatsBalanceError
 
 
 def make_sample_data_dict(n=1000):
@@ -410,6 +410,16 @@ def test_simple_random_assignment_unbalanced(sample_df):
     assert len(assignments) == len(sample_df)
     assert assignments.count(0) == 667
     assert assignments.count(1) == 333
+
+
+def test_assign_clusters_single_occupied_arm_raises_stats_balance_error():
+    """When both clusters land in one arm, the balance check raises instead of crashing."""
+    df = pd.DataFrame({"participant_id": range(3), "cluster": [1, 2, 2]})
+
+    with pytest.raises(StatsBalanceError, match=r"participants were randomly assigned to one arm"):
+        assign_treatment_and_check_balance(
+            df=df, stratum_cols=[], id_col="participant_id", n_arms=2, random_state=1, cluster_col="cluster"
+        )
 
 
 def test_assign_clusters_equal_sizes():
