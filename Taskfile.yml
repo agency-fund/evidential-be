@@ -1,6 +1,10 @@
 version: '3'
 output: prefixed
 vars:
+  # Whether `task start` logs in through the development identity provider served at /devidp (see
+  # src/xngin/apiserver/routers/devidp.py). Set XNGIN_DEVIDP=false to log in through Google instead.
+  XNGIN_DEVIDP: '{{default "true" .XNGIN_DEVIDP}}'
+
   # App database for the local dev environment (see tasks: start, apply-migrations)
   XNGIN_DEVAPPDB_NAME: '{{default "xngin" .XNGIN_DEVAPPDB_NAME}}'
 
@@ -32,8 +36,9 @@ env:
   ALLOW_CONNECTING_TO_PRIVATE_IPS: "1"
 
   # The identity provider used for login. Any OIDC provider supporting the authorization code flow with PKCE can be
-  # configured; see the "Enabling OIDC" page in evidential-docs.
-  XNGIN_OIDC_ISSUER: "https://accounts.google.com"
+  # configured, by setting this in .env; see the "Configuring OIDC" page in evidential-docs.
+  XNGIN_OIDC_ISSUER: >-
+    {{if eq .XNGIN_DEVIDP "true"}}http://localhost:8000/devidp{{else}}https://accounts.google.com{{end}}
 
   # The identity provider will redirect to this URL upon successful authentication. This URL is served by the frontend
   # application and the AuthProvider component will intercept the query arguments and handle them.
@@ -188,13 +193,16 @@ tasks:
       - test -s .xngin_session_token_keyset
     cmd: uv run xngin-cli create-nacl-keyset --output .xngin_session_token_keyset
   start:
-    desc: "Starts apiserver locally with settings compatible with local dash dev server."
+    desc: >-
+      Starts apiserver locally with settings compatible with local dash dev server. Log in by picking a user from
+      src/xngin/apiserver/routers/devidp_config.yaml, or run with XNGIN_DEVIDP=false to log in through Google.
     interactive: true
     dotenv:
       # Populate XNGIN_OIDC_CLIENT_SECRET (optional).
       - .env
     env:
       DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
+      XNGIN_DEVIDP: "{{.XNGIN_DEVIDP}}"
       XNGIN_SESSION_TOKEN_KEYSET: "local"
       GRANIAN_RELOAD: "true"
       GRANIAN_RELOAD_PATHS: "src"
@@ -217,17 +225,8 @@ tasks:
       RAILWAY_REPLICA_ID: "local-replica"
       RAILWAY_DEPLOYMENT_ID: "local-deployment"
       XNGIN_SESSION_TOKEN_KEYSET: "local"
+      XNGIN_DEVIDP: "{{.XNGIN_DEVIDP}}"
     cmd: uv run --no-dev granian xngin.apiserver.main:app
-  start-airplane:
-    desc: "Like start, but runs the backend in airplane mode. All Admin API interactions will be authenticated as testing@example.com automatically."
-    interactive: false
-    env:
-      AIRPLANE_MODE: "true"
-      XNGIN_SESSION_TOKEN_KEYSET: "local"
-    deps:
-      - local-session-token-keyset
-    cmds:
-      - task start
   test-coverage:
     desc: "Runs unit tests and generates a coverage report."
     summary: |
