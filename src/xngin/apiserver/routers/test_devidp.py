@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi import FastAPI
 from jwt.utils import base64url_encode
 from pydantic import ValidationError
+from sqlalchemy.orm import Session
 from starlette.testclient import TestClient
 
 from xngin.apiserver import flags, routes
@@ -18,6 +19,7 @@ from xngin.apiserver.routers import devidp
 from xngin.apiserver.routers.auth import auth_api
 from xngin.apiserver.routers.auth.discovery import OidcDiscovery
 from xngin.apiserver.routers.auth.oidc_settings import OidcSettings
+from xngin.apiserver.sqla import tables
 
 CLIENT_ID = "evidential"
 REDIRECT_URI = "http://localhost:3000/"
@@ -42,7 +44,7 @@ AUTHORIZE_PARAMS = {
 
 
 @pytest.fixture(name="client")
-def fixture_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[TestClient]:
+def fixture_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, xngin_session: Session) -> Iterator[TestClient]:
     monkeypatch.setattr(flags, "OIDC_CLIENT_ID", CLIENT_ID)
     monkeypatch.setattr(flags, "OIDC_REDIRECT_URI", REDIRECT_URI)
     monkeypatch.setattr(flags, "XNGIN_PUBLIC_API_BASE_URL", BASE_URL)
@@ -104,8 +106,24 @@ def test_authorize_highlights_and_labels_the_last_used_user(client: TestClient):
     page = client.get("/devidp/authorize", params=AUTHORIZE_PARAMS).text
     assert page.count('class="user remembered"') == 1
     assert card_for(page, "bob@example.com").startswith(' remembered"')
-    assert "last used" in pill_labels(card_for(page, "bob@example.com"))
-    assert "last used" not in pill_labels(card_for(page, "alice@example.com"))
+    assert pill_labels(card_for(page, "bob@example.com")) == ["last used"]
+    assert pill_labels(card_for(page, "alice@example.com")) == []
+
+
+def test_authorize_labels_whether_users_are_registered_and_privileged(client: TestClient, xngin_session: Session):
+    xngin_session.add_all([
+        tables.User(email="Alice@example.com", iss=None, sub=None, is_privileged=True),
+        tables.User(email="bob@example.com", iss=f"{BASE_URL}/devidp", sub="sub-bob"),
+        tables.User(email="eve@example.net", iss="http://localhost:5556/dex", sub="CiQw"),
+    ])
+    xngin_session.commit()
+
+    page = client.get("/devidp/authorize", params=AUTHORIZE_PARAMS).text
+
+    assert pill_labels(card_for(page, "alice@example.com")) == ["invited", "privileged"]
+    assert pill_labels(card_for(page, "bob@example.com")) == ["registered"]
+    assert pill_labels(card_for(page, "eve@example.net")) == ["registered to a different identity"]
+    assert 'title="iss=http://localhost:5556/dex sub=CiQw"' in card_for(page, "eve@example.net")
 
 
 def test_authorize_rereads_the_config_file(client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):

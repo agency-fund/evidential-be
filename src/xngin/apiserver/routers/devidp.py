@@ -25,13 +25,17 @@ import yaml
 from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from fastapi import APIRouter, Cookie, FastAPI, Query, Request, Response
+from fastapi import APIRouter, Cookie, Depends, FastAPI, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from jwt.utils import base64url_decode, base64url_encode
 from loguru import logger
 from pydantic import BaseModel, JsonValue, model_validator
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags
+from xngin.apiserver.dependencies import xngin_sync_db_session
+from xngin.apiserver.sqla import tables
 from xngin.cli.common import write_file_atomically
 
 PREFIX = "/devidp"
@@ -167,6 +171,12 @@ def _issuer() -> str:
     return f"{flags.XNGIN_PUBLIC_API_BASE_URL}{PREFIX}"
 
 
+def _registered_users_by_email(session: Session, emails: list[str]) -> dict[str, tables.User]:
+    lowercase_emails = [email.lower() for email in emails]
+    users = session.scalars(select(tables.User).where(func.lower(tables.User.email).in_(lowercase_emails)))
+    return {user.email.lower(): user for user in users}
+
+
 def _pkce_verifier_matches(code_verifier: str, code_challenge: str) -> bool:
     return base64url_encode(hashlib.sha256(code_verifier.encode()).digest()).decode() == code_challenge
 
@@ -202,16 +212,25 @@ async def jwks() -> dict[str, Any]:
 
 
 @router.get("/authorize", response_class=HTMLResponse)
-async def authorize(
+def authorize(
     authorization: Annotated[AuthorizationRequest, Query()],
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
     remembered_user: Annotated[str | None, Cookie(alias=REMEMBERED_USER_COOKIE)] = None,
 ) -> HTMLResponse:
     if mismatch := authorization.mismatch_with_configured_client():
         return HTMLResponse(_page("Invalid authorization request", f"<p>{html.escape(mismatch)}</p>"), 400)
     users = _read_config()
+    claims_by_user = {user_id: users.claims_for(user_id) for user_id in users.users}
+    registered_users = _registered_users_by_email(session, [str(claims["email"]) for claims in claims_by_user.values()])
     user_links = "".join(
-        _user_link(user_id, users.claims_for(user_id), authorization, is_remembered=user_id == remembered_user)
-        for user_id in users.users
+        _user_link(
+            user_id,
+            claims,
+            authorization,
+            is_remembered=user_id == remembered_user,
+            registered_user=registered_users.get(str(claims["email"]).lower()),
+        )
+        for user_id, claims in claims_by_user.items()
     )
     deny_link = f'<a class="deny" href="{PREFIX}/deny?{html.escape(authorization.as_query())}">Deny</a>'
     return HTMLResponse(_page("Sign in as…", user_links + deny_link))
@@ -285,13 +304,32 @@ def _oauth_error(error: str, description: str) -> JSONResponse:
     return JSONResponse({"error": error, "error_description": description}, status_code=400)
 
 
+def _registration_pills(registered_user: tables.User | None, claims: Claims) -> str:
+    if registered_user is None:
+        return ""
+    privileged_pill = _pill("privileged", "privileged") if registered_user.is_privileged else ""
+    if registered_user.iss is None:
+        return _pill("invited", "registered") + privileged_pill
+    if (registered_user.iss, registered_user.sub) == (_issuer(), claims["sub"]):
+        return _pill("registered", "registered") + privileged_pill
+    bound_identity = f"iss={registered_user.iss} sub={registered_user.sub}"
+    return _pill("registered to a different identity", "conflict", hover_text=bound_identity) + privileged_pill
+
+
 def _pill(label: str, kind: str, *, hover_text: str = "") -> str:
     return f'<span class="pill {kind}" title="{html.escape(hover_text)}">{html.escape(label)}</span>'
 
 
-def _user_link(user_id: str, claims: Claims, authorization: AuthorizationRequest, *, is_remembered: bool) -> str:
+def _user_link(
+    user_id: str,
+    claims: Claims,
+    authorization: AuthorizationRequest,
+    *,
+    is_remembered: bool,
+    registered_user: tables.User | None,
+) -> str:
     href = f"{PREFIX}/choose?{authorization.as_query(user=user_id)}"
-    pills = _pill("last used", "last-used") if is_remembered else ""
+    pills = (_pill("last used", "last-used") if is_remembered else "") + _registration_pills(registered_user, claims)
     return (
         f'<a class="user{" remembered" if is_remembered else ""}" href="{html.escape(href)}">'
         f"<strong>{html.escape(str(claims.get('name', user_id)))}</strong> {html.escape(str(claims['email']))}"
@@ -311,5 +349,8 @@ a.deny {{ color: #ce2c31; text-align: center; }}
 .pill {{ display: inline-block; margin-left: 0.5rem; padding: 0.05rem 0.5rem; border-radius: 999px;
          font-size: 0.75rem; vertical-align: 0.1rem; }}
 .pill.last-used {{ background: #e6edfe; color: #3a5bc7; }}
+.pill.registered {{ background: #e6f6eb; color: #218358; }}
+.pill.conflict {{ background: #feebec; color: #ce2c31; }}
+.pill.privileged {{ background: #f3e7fc; color: #8145b5; }}
 pre {{ margin: 0.5rem 0 0; font-size: 0.8rem; color: #60646c; }}
 </style></head><body><h1>{html.escape(title)}</h1>{body}</body></html>"""
