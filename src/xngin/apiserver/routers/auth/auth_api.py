@@ -68,8 +68,11 @@ async def lifespan(app: FastAPI):
         yield
         return
 
-    # Construction fetches the discovery document and signing keys, so keep that blocking I/O off the event loop.
-    app.state.oidc_discovery = await asyncio.to_thread(OidcDiscovery.startup, get_oidc_settings())
+    if flags.DEVIDP_ENABLED:
+        app.state.oidc_discovery = OidcDiscovery.lazy(get_oidc_settings())
+    else:
+        # Construction fetches the discovery document and signing keys, so keep that blocking I/O off the event loop.
+        app.state.oidc_discovery = await asyncio.to_thread(OidcDiscovery.startup, get_oidc_settings())
     try:
         yield
     finally:
