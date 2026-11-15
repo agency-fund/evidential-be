@@ -35,6 +35,10 @@ OIDC_REDIRECT_URI = os.environ.get(ENV_XNGIN_OIDC_REDIRECT_URI, "")
 ENV_XNGIN_OIDC_CLAIM_MAP = "XNGIN_OIDC_CLAIM_MAP"
 OIDC_CLAIM_MAP = os.environ.get(ENV_XNGIN_OIDC_CLAIM_MAP, "")
 
+# Serves a development-only OpenID Provider at /devidp; see routers/devidp.py.
+ENV_XNGIN_DEVIDP = "XNGIN_DEVIDP"
+DEVIDP_ENABLED = truthy_env(ENV_XNGIN_DEVIDP)
+
 # XNGIN_SESSION_TOKEN_KEYSET contains a keyset for encrypting session tokens. This is generated using the
 # `xngin-cli create-nacl-keyset` command. If set to "local", we will read from a local file (see:
 # token_cryptor).

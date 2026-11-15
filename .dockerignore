@@ -17,6 +17,7 @@
 .schemas
 .venv
 .xngin_session_token_keyset
+.xngin_devidp_signing_key
 /secrets
 CLAUDE*
 dist

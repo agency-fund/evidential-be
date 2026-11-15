@@ -168,6 +168,7 @@ cython_debug/
 # Contains a session token encryption key specific for this development environment. Created by the `task start`
 # command if it does not exist already.
 .xngin_session_token_keyset
+.xngin_devidp_signing_key
 
 # local cache
 xngin.db
