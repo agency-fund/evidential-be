@@ -108,6 +108,7 @@ from xngin.apiserver.routers.common_api_types import (
     ContextType,
     CreateExperimentRequest,
     CreateExperimentResponse,
+    DwhErrorResponse,
     ExperimentAnalysisResponse,
     ExperimentsType,
     Filter,
@@ -129,7 +130,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
 from xngin.apiserver.routers.power_adapters import build_metric_stats, calculate_cluster_stats
-from xngin.apiserver.settings import NoDwh, RemoteDatabaseConfig
+from xngin.apiserver.settings import GoogleSheetsDsn, NoDwh, RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.worker.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE
@@ -143,10 +144,6 @@ RESPONSE_CACHE_MAX_AGE_SECONDS = timedelta(minutes=15).seconds
 # Describes the structure of an error raised via `raise HTTPException`.
 class HTTPExceptionError(BaseModel):
     detail: str
-
-
-class MessageError(BaseModel):
-    message: str
 
 
 # This defines the response codes we can expect our API to return in the normal course of operation and would be
@@ -184,23 +181,11 @@ VALIDATION_RESPONSE: dict[str, Any] = {
     "description": "Validation error.",
 }
 
-DWH_CONNECTION_RESPONSES: dict[str | int, dict[str, Any]] = {
+DWH_ERROR_RESPONSES: dict[str | int, dict[str, Any]] = {
     "422": VALIDATION_RESPONSE,
-    "502": {
-        "model": MessageError,
-        "description": "Unable to connect to the datasource.",
-    },
-    "504": {
-        "model": MessageError,
-        "description": "Datasource request timed out.",
-    },
-}
-
-DWH_CONNECTION_AND_NOT_FOUND_RESPONSES: dict[str | int, dict[str, Any]] = {
-    **DWH_CONNECTION_RESPONSES,
-    "404": {
-        "model": MessageError,
-        "description": "Requested datasource metadata could not be found.",
+    "424": {
+        "model": DwhErrorResponse,
+        "description": "The data warehouse failed to produce a usable response.",
     },
 }
 
@@ -1057,7 +1042,7 @@ def list_organization_datasources(
 
 @router.post(
     "/datasources",
-    responses=DWH_CONNECTION_RESPONSES,
+    responses=DWH_ERROR_RESPONSES,
 )
 def create_datasource(
     session: Annotated[Session, Depends(xngin_sync_db_session)],
@@ -1070,6 +1055,8 @@ def create_datasource(
 ) -> CreateDatasourceResponse:
     """Creates a new datasource for the specified organization."""
     org = adeps.load_organization_or_raise(session, user, body.organization_id)
+    if body.dsn.type == "google_sheets":
+        adeps.raise_unless_privileged(user)
 
     raise_unless_safe_hostname(body.dsn)
 
@@ -1088,14 +1075,31 @@ def create_datasource(
 def update_datasource(
     datasource: Annotated[tables.Datasource, Depends(adeps.datasource)],
     session: Annotated[Session, Depends(xngin_sync_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     body: UpdateDatasourceRequest,
 ):
+    if body.dsn is not None and body.dsn.type == "google_sheets":
+        adeps.raise_unless_privileged(user)
     if body.name is not None:
         datasource.name = body.name
     if body.dsn is not None:
         raise_unless_safe_hostname(body.dsn)
         cfg = datasource.get_config()
-        cfg.dwh = api_dsn_to_settings_dwh(body.dsn, cfg.dwh)
+        new_dwh = api_dsn_to_settings_dwh(body.dsn, cfg.dwh)
+        # An experiment tab for Gsheets is identified by two things: the spreadsheet (this datasource's URL) and the
+        # tab ID (Experiment.datasource_table). So once experiments exist, the datasource can't switch to a
+        # different spreadsheet; switching tabs within the same spreadsheet is fine.
+        if (
+            isinstance(cfg.dwh, GoogleSheetsDsn)
+            and isinstance(new_dwh, GoogleSheetsDsn)
+            and cfg.dwh.get_spreadsheet_id() != new_dwh.get_spreadsheet_id()
+            and session.scalar(select(tables.Experiment.id).where(tables.Experiment.datasource_id == datasource.id))
+        ):
+            raise LateValidationError(
+                "Experiments read their outcomes from this datasource's spreadsheet. "
+                "Create a new datasource to connect a different spreadsheet."
+            )
+        cfg.dwh = new_dwh
         datasource.set_config(cfg)
 
     datasource.clear_table_list()
@@ -1125,7 +1129,7 @@ def get_datasource(
 
 @router.get(
     "/datasources/{datasource_id}/inspect",
-    responses=DWH_CONNECTION_AND_NOT_FOUND_RESPONSES,
+    responses=DWH_ERROR_RESPONSES,
 )
 def inspect_datasource(
     datasource: Annotated[tables.Datasource, Depends(adeps.datasource)],
@@ -1157,7 +1161,7 @@ def invalidate_inspect_table_cache(session: Session, datasource_id: str) -> None
 
 @router.get(
     "/datasources/{datasource_id}/inspect/{table_name}",
-    responses=DWH_CONNECTION_AND_NOT_FOUND_RESPONSES,
+    responses=DWH_ERROR_RESPONSES,
 )
 def inspect_table_in_datasource(
     datasource: Annotated[tables.Datasource, Depends(adeps.datasource)],
@@ -1187,7 +1191,8 @@ def inspect_table_in_datasource(
     session.commit()
 
     with DwhSession.open(config.dwh) as dwh:
-        # CannotFindTableError will be handled by exceptionhandlers.py.
+        # CannotFindTableError and DwhPermissionDeniedError will be handled by exceptionhandlers.py, before anything
+        # is cached.
         table = dwh.inspect_table(table_name)
     response = create_inspect_table_response_from_table(table)
 
@@ -1302,7 +1307,7 @@ def delete_api_key(
     return response
 
 
-@router.post("/datasources/{datasource_id}/experiments")
+@router.post("/datasources/{datasource_id}/experiments", responses=DWH_ERROR_RESPONSES)
 def create_experiment(
     datasource: Annotated[tables.Datasource, Depends(adeps.datasource)],
     session: Annotated[Session, Depends(xngin_sync_db_session)],
@@ -1346,6 +1351,7 @@ def create_experiment(
     description="""
     For preassigned experiments, and online experiments (except contextual bandits),
     returns an analysis of the experiment's performance, given datasource and experiment ID.""",
+    responses=DWH_ERROR_RESPONSES,
 )
 def analyze_experiment(
     experiment: Annotated[tables.Experiment, Depends(adeps.experiment_for_analysis)],
@@ -1416,7 +1422,7 @@ EXPERIMENT_STATE_TRANSITION_RESPONSES: dict[int | str, dict[str, Any]] = {
 
 @router.post(
     "/datasources/{datasource_id}/experiments/{experiment_id}/commit",
-    responses=EXPERIMENT_STATE_TRANSITION_RESPONSES,
+    responses={**EXPERIMENT_STATE_TRANSITION_RESPONSES, **DWH_ERROR_RESPONSES},
     status_code=status.HTTP_204_NO_CONTENT,
 )
 def commit_experiment(
@@ -1460,11 +1466,10 @@ def list_organization_experiments(
 @router.get("/datasources/{datasource_id}/experiments/{experiment_id}")
 def get_experiment_for_ui(
     experiment: Annotated[tables.Experiment, Depends(adeps.experiment_for_ui)],
-    session: Annotated[Session, Depends(xngin_sync_db_session)],
 ) -> GetExperimentForUiResponse:
     """Returns the experiment with the specified ID."""
     return GetExperimentForUiResponse(
-        config=experiments_common.get_experiment_impl(session, experiment),
+        config=experiments_common.get_experiment_impl(experiment),
         experiment_schema=make_schema_from_experiment(experiment),
     )
 
@@ -1613,7 +1618,7 @@ def update_arm(
 
 @router.post(
     "/datasources/{datasource_id}/power",
-    responses=DWH_CONNECTION_AND_NOT_FOUND_RESPONSES,
+    responses=DWH_ERROR_RESPONSES,
 )
 def power_check(
     datasource: Annotated[tables.Datasource, Depends(adeps.datasource)],
@@ -1650,7 +1655,7 @@ def power_check(
         metric_stats = [m.to_design_spec_metric() for m in body.metrics]
     else:
         with DwhSession.open(dsconfig.dwh) as dwh:
-            sa_table = dwh.inspect_table(body.table_name)
+            sa_table = dwh.inspect_table(body.table_name, check_readable=False)
             # Validate the fields used in the request are present in the table and that filter values are valid.
             _ = validate_power_fields_or_raise(
                 sa_table,

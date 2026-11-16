@@ -17,7 +17,15 @@ from sqlalchemy.orm import Session
 from xngin.apiserver import database
 from xngin.apiserver.routers.common_enums import ExperimentState
 from xngin.apiserver.sqla import tables
-from xngin.apiserver.worker.jobs.base import Job, JobDeferred, JobFailed, JobResult, JobSucceeded
+from xngin.apiserver.worker.jobs.base import (
+    EXPECTED_FAILURES,
+    Job,
+    JobDeferred,
+    JobFailed,
+    JobResult,
+    JobSucceeded,
+    describe_failure,
+)
 
 
 @dataclass(slots=True, frozen=True)
@@ -205,6 +213,9 @@ def _execute_job(session: Session, job: Job, experiment: tables.Experiment) -> J
         # An invalidated connection cannot record a failure or reconnect.
         if not session.is_active or session.connection().invalidated:
             raise
+        if isinstance(exc, EXPECTED_FAILURES):
+            logger.opt(exception=exc).warning("Worker job failed.")
+            return JobFailed(error=describe_failure(exc))
         logger.opt(exception=exc).error("Worker job failed.")
         sentry_sdk.capture_exception(exc)
         return JobFailed(error="".join(traceback.format_exception_only(exc)).strip())

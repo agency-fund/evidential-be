@@ -58,7 +58,9 @@ def test_postgres_search_path_is_the_boundary_for_unqualified_names(aclient: Adm
     """A table outside the search_path is neither listed nor found by its name in another schema."""
     datasource_id = create_datasource(aclient, pg_dsn("postgresql+psycopg", with_name_suffix("dwh_tn_plain")))
     assert "elsewhere" not in aclient.inspect_datasource(datasource_id=datasource_id).data.tables
-    with expect_status_code(404, message_contains="The table 'elsewhere' does not exist"):
+    with expect_status_code(
+        424, message_contains="The table 'elsewhere' does not exist", code_eq="dwh_table_not_found"
+    ):
         aclient.inspect_table_in_datasource(datasource_id=datasource_id, table_name="elsewhere")
 
 

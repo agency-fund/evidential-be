@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.dwh.queries import get_raw_metric_stats
-from xngin.apiserver.exceptions_common import LateValidationError
+from xngin.apiserver.exceptions_common import DwhConfigurationError, LateValidationError
 from xngin.apiserver.routers.common_api_types import DesignSpecMetric, DesignSpecMetricRequest, Filter
 from xngin.apiserver.routers.common_enums import MetricType
 from xngin.apiserver.routers.power_adapters import build_metric_stats
@@ -201,9 +201,12 @@ def test_search_path_is_set_on_session(search_path):
 
 def test_search_path_injection_attempt_is_rejected():
     """Check that a malicious search_path string is safely passed as a value, not interpreted as SQL."""
-    # Postgres rejects the value as invalid search_path list syntax, rather than interpolating.
+    # Postgres rejects the value as invalid search_path list syntax, rather than interpolating. DwhSession
+    # reports that as a configuration problem and keeps the driver's error as the cause.
     with (
-        pytest.raises(DataError, match="invalid value for parameter"),
+        pytest.raises(DwhConfigurationError) as excinfo,
         DwhSession.open(_pg_dsn('public"; DROP TABLE users; --')) as dwh,
     ):
         dwh._on_worker("select 1", lambda: dwh._session.execute(text("SELECT 1")))
+    assert isinstance(excinfo.value.__cause__, DataError)
+    assert "invalid value for parameter" in str(excinfo.value.__cause__)

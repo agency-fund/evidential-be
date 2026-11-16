@@ -45,9 +45,10 @@ def create_inspect_table_response_from_table(
                     description=column.comment or "",
                 )
             )
-
+    display_name = table.info.get("display_name")  # Only present for GSheets tabs.
     return InspectDatasourceTableResponse(
         primary_key_fields=list(sorted(primary_key_columns)),
         detected_unique_id_fields=list(sorted(possible_id_columns)),
         fields=list(sorted(collected, key=lambda f: f.field_name)),
+        display_name=display_name,
     )

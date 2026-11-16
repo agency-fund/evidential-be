@@ -74,7 +74,7 @@ class EncryptedDsn:
 
 class BaseDsn:
     def is_redshift(self):
-        """Return true iff the hostname indicates that this is connecting to Redshift."""
+        """Return true if the hostname indicates that this is connecting to Redshift."""
         return False
 
     def supports_sa_autoload(self):
@@ -306,6 +306,30 @@ class Dsn(ConfigBaseModel, BaseDsn, EncryptedDsn):
         return self
 
 
+class GoogleSheetsDsn(ConfigBaseModel, BaseDsn):
+    """A spreadsheet connection whose tables are its tabs, named by tab ID (the gid in a tab's URL)."""
+
+    driver: Literal["google_sheets"] = "google_sheets"
+    spreadsheet_url: str
+
+    @field_validator("spreadsheet_url")
+    @classmethod
+    def validate_spreadsheet_url(cls, value: str) -> str:
+        dwh_utils.parse_spreadsheet_url(value)
+        return value
+
+    def get_spreadsheet_id(self) -> str:
+        """The ID of the whole spreadsheet"""
+        return dwh_utils.parse_spreadsheet_url(self.spreadsheet_url)[0]
+
+    def get_default_gid(self) -> int | None:
+        """The tab ID (gid) the URL points to, used as the datasource's default tab. None means the first tab."""
+        return dwh_utils.parse_spreadsheet_url(self.spreadsheet_url)[1]
+
+    def to_sqlalchemy_url(self):
+        raise NotImplementedError("GoogleSheetsDsn does not support to_sqlalchemy_url()")
+
+
 class NoDwh(ConfigBaseModel):
     """NoDwh is used to indicate that no data warehouse is configured."""
 
@@ -318,7 +342,7 @@ class NoDwh(ConfigBaseModel):
         return False
 
 
-type Dwh = Annotated[Dsn | BqDsn | NoDwh, Field(discriminator="driver")]
+type Dwh = Annotated[Dsn | BqDsn | GoogleSheetsDsn | NoDwh, Field(discriminator="driver")]
 
 
 class RemoteDatabaseConfig(ConfigBaseModel):

@@ -10,19 +10,14 @@ from pydantic import BaseModel, ValidationError
 
 from xngin.apiserver.apikeys import BaseApiKeyError
 from xngin.apiserver.dependencies import CannotFindDatasourceError
-from xngin.apiserver.dns.safe_resolve import DnsLookupError
-from xngin.apiserver.dwh.dwh_session import CannotFindTableError
-from xngin.apiserver.exceptions_common import (
-    DwhConnectionError,
-    DwhDatabaseDoesNotExistError,
-    DwhTimeoutError,
-    LateValidationError,
-)
+from xngin.apiserver.exceptions_common import DwhError, LateValidationError
 from xngin.apiserver.pagination import InvalidPageTokenError
+from xngin.apiserver.request_context_middleware import current_request_id
 from xngin.apiserver.routers.admin.admin_api_converters import (
     CredentialsUnavailableError,
 )
 from xngin.apiserver.routers.auth.discovery import OidcProviderError, OidcProviderTimeoutError
+from xngin.apiserver.routers.common_api_types import DwhErrorResponse
 from xngin.apiserver.routers.experiments.experiments_common import (
     ExperimentsAssignmentError,
 )
@@ -55,10 +50,6 @@ def setup(app):
     async def exception_handler_cannotfinddatasourceerror(_request: Request, exc: CannotFindDatasourceError):
         return JSONResponse(status_code=404, content={"message": str(exc)})
 
-    @app.exception_handler(CannotFindTableError)
-    async def exception_handler_cannotfindthetableerror(_request: Request, exc: CannotFindTableError):
-        return JSONResponse(status_code=404, content={"message": exc.message})
-
     @app.exception_handler(ExperimentsAssignmentError)
     async def exception_handler_experimentserror(_request: Request, exc: StatsError):
         return JSONResponse(status_code=422, content=as_fastapi_http_validation_error(str(exc), "assignment"))
@@ -69,6 +60,7 @@ def setup(app):
 
     @app.exception_handler(sqlalchemy.exc.OperationalError)
     async def exception_handler_sqlalchemy_opex(_request: Request, exc: sqlalchemy.exc.OperationalError):
+        """Answers OperationalErrors from the application database."""
         status = 500
         cause = getattr(exc, "orig", None) or exc.__cause__
         if isinstance(cause, psycopg.errors.ConnectionTimeout):
@@ -106,23 +98,34 @@ def setup(app):
     async def exception_handler_credentialsunavailable(_request: Request, exc: CredentialsUnavailableError):
         return JSONResponse(status_code=422, content=as_fastapi_http_validation_error(str(exc), "credentials"))
 
-    @app.exception_handler(DwhConnectionError)
-    async def exception_handler_dwhconnectionerror(_request: Request, exc: DwhConnectionError):
-        return JSONResponse(status_code=502, content={"message": str(exc)})
-
-    @app.exception_handler(DwhTimeoutError)
-    async def exception_handler_dwhtimeouterror(_request: Request, exc: DwhTimeoutError):
-        # Not registered for the builtin TimeoutError: since 3.11 that is also asyncio.TimeoutError,
-        # so unrelated timeouts would start answering 504.
-        return JSONResponse(status_code=504, content={"message": str(exc)})
-
-    @app.exception_handler(DwhDatabaseDoesNotExistError)
-    async def exception_handler_dwhdatabasedoesnotexisterror(_request: Request, exc: DwhDatabaseDoesNotExistError):
-        return JSONResponse(status_code=404, content={"message": str(exc)})
-
-    @app.exception_handler(DnsLookupError)
-    async def exception_handler_dnslookuperror(_request: Request, exc: DnsLookupError):
-        return JSONResponse(status_code=502, content={"message": str(exc)})
+    @app.exception_handler(DwhError)
+    async def exception_handler_dwherror(_request: Request, exc: DwhError):
+        # This line is the only server-side record of the error: DwhErrors are not sent to Sentry. Log what the
+        # response shows the user and the cause's type, but not the cause's text, which may contain SQL and bind
+        # parameters.
+        cause = type(exc.__cause__).__name__ if exc.__cause__ is not None else None
+        logger.bind(
+            dwh_code=exc.code.value, dwh_message=exc.dwh_message, table_name=exc.table_name, cause=cause
+        ).warning(
+            "Data warehouse error {} (cause: {}, table: {}): {} [dwh_message: {}]",
+            exc.code.value,
+            cause,
+            exc.table_name,
+            exc,
+            exc.dwh_message,
+        )
+        return JSONResponse(
+            status_code=exc.http_status,
+            content=DwhErrorResponse(
+                message=str(exc),
+                code=exc.code,
+                hint=exc.hint,
+                hint_command=exc.hint_command,
+                dwh_message=exc.dwh_message,
+                table_name=exc.table_name,
+                request_id=current_request_id(),
+            ).model_dump(mode="json"),
+        )
 
     @app.exception_handler(OidcProviderTimeoutError)
     async def exception_handler_oidcprovidertimeout(_request: Request, exc: OidcProviderTimeoutError):
