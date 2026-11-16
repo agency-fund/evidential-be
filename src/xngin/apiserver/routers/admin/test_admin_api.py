@@ -1302,7 +1302,7 @@ def test_delete_experiment_scopes_resource_to_datasource(
     assert response.config.experiment_id == victim_experiment_id
 
 
-def test_abandon_experiment(testing_datasource, aclient: AdminAPIClient):
+def test_abandon_experiment(use_deterministic_random, testing_datasource, aclient: AdminAPIClient):
     datasource_id = testing_datasource.datasource_id
     design_spec = PreassignedFrequentistExperimentSpec(
         experiment_type=ExperimentsType.FREQ_PREASSIGNED,
@@ -1316,7 +1316,7 @@ def test_abandon_experiment(testing_datasource, aclient: AdminAPIClient):
         metrics=[DesignSpecMetricRequest(field_name="is_engaged", metric_pct_change=0.1)],
         strata=[],
         filters=[],
-        desired_n=1,
+        desired_n=2,
     )
     parsed_response = aclient.create_experiment(
         datasource_id=datasource_id,
@@ -2289,7 +2289,9 @@ def test_update_experiment_url_null_when_empty(testing_experiment, aclient: Admi
     assert parsed_response.config.design_spec.design_url is None, parsed_response
 
 
-def test_update_experiment_invalid(testing_datasource, testing_experiment, aclient: AdminAPIClient):
+def test_update_experiment_invalid(
+    use_deterministic_random, testing_datasource, testing_experiment, aclient: AdminAPIClient
+):
     """Test experiment update validation checks."""
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
