@@ -571,7 +571,6 @@ class Arm(Base):
         back_populates="arm",
         cascade="all, delete-orphan",
     )
-    # Consumers must explicitly preload
     stats: Mapped[ArmStats | None] = relationship(uselist=False, lazy="raise", viewonly=True)
 
 
