@@ -132,12 +132,13 @@ def _assign_individuals_to_arms(
     if len(stratum_cols) == 0:
         # No stratification, so use simple random assignment
         treatment_ids = simple_random_assignment(df, n_arms, random_state, arm_weights)
+        arm_pop = _arm_pop_or_raise(treatment_ids, n_arms, n_expected=len(df), id_column=aliases.name(id_col))
         return AssignmentResult(
             treatment_ids=treatment_ids,
             stratum_ids=None,
             balance_result=None,
             stratum_cols=[],
-            arm_pop=np.bincount(treatment_ids, minlength=n_arms),
+            arm_pop=arm_pop,
         )
 
     # Dedupe the strata names and then sort them by field name for a stable output ordering
@@ -158,12 +159,13 @@ def _assign_individuals_to_arms(
         # No stratification, so use simple random assignment while still outputting strata, even
         # though they're either all the same value or all unique values.
         treatment_ids = simple_random_assignment(df, n_arms, random_state, arm_weights)
+        arm_pop = _arm_pop_or_raise(treatment_ids, n_arms, n_expected=len(df), id_column=aliases.name(id_col))
         return AssignmentResult(
             treatment_ids=treatment_ids,
             stratum_ids=None,
             balance_result=None,
             stratum_cols=orig_stratum_cols,
-            arm_pop=np.bincount(treatment_ids, minlength=n_arms),
+            arm_pop=arm_pop,
         )
 
     # Do stratified random assignment
@@ -305,7 +307,7 @@ def _assign_clusters_to_arms(
 
 
 def _arm_pop_or_raise(
-    treatment_ids: pd.Series, n_arms: int, *, n_expected: int, id_column: str
+    treatment_ids: pd.Series | list[int], n_arms: int, *, n_expected: int, id_column: str
 ) -> npt.NDArray[np.intp]:
     """Count assignments per arm, rejecting a bad merge or an empty arm."""
     if len(treatment_ids) != n_expected:
@@ -317,7 +319,7 @@ def _arm_pop_or_raise(
     arm_pop = np.bincount(treatment_ids, minlength=n_arms)
     if (arm_pop[:n_arms] == 0).any():
         raise StatsAssignmentError(
-            "All participants were randomly assigned to one arm. Increase your sample size and try again."
+            "At least one arm received no participants. Increase your sample size and try again."
         )
     return arm_pop
 
