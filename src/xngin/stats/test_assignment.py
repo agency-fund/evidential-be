@@ -12,7 +12,7 @@ from xngin.stats.assignment import (
     simple_random_assignment,
 )
 from xngin.stats.balance import BalanceResult
-from xngin.stats.stats_errors import StatsAssignmentError, StatsBalanceError
+from xngin.stats.stats_errors import StatsAssignmentError
 
 
 def make_sample_data_dict(n=1000):
@@ -262,6 +262,35 @@ def test_assign_treatment_incorrectly_using_id_as_strata(sample_df):
         assign_treatment_and_check_balance(df=sample_df, stratum_cols=["id"], id_col="id", n_arms=2, random_state=42)
 
 
+def test_assign_treatment_empty_arm_raises_stats_assignment_error():
+    """An arm with no assignments would make the balance check fail."""
+    df = pd.DataFrame({"id": [1, 2], "score": [10.0, 20.0]})
+
+    with pytest.raises(
+        StatsAssignmentError,
+        match=r"All participants were randomly assigned to one arm\. Increase your sample size and try again\.",
+    ):
+        assign_treatment_and_check_balance(df=df, stratum_cols=["score"], id_col="id", n_arms=3, random_state=0)
+
+
+def test_assign_treatment_single_occupied_arm_raises_stats_assignment_error():
+    """When every participant lands in one arm, raise before the balance check."""
+    df = pd.DataFrame({"id": range(6), "group": ["A", "A", "A", "B", "B", "B"]})
+
+    with pytest.raises(
+        StatsAssignmentError,
+        match=r"All participants were randomly assigned to one arm\. Increase your sample size and try again\.",
+    ):
+        assign_treatment_and_check_balance(
+            df=df,
+            stratum_cols=["group"],
+            id_col="id",
+            n_arms=2,
+            random_state=1,
+            arm_weights=[99, 1],  # skew the weights to get all assignments into one arm
+        )
+
+
 def test_simple_random_assignment(sample_df):
     """Test simple random assignment function."""
     assignments = simple_random_assignment(sample_df, n_arms=2, random_state=42)
@@ -412,11 +441,14 @@ def test_simple_random_assignment_unbalanced(sample_df):
     assert assignments.count(1) == 333
 
 
-def test_assign_clusters_single_occupied_arm_raises_stats_balance_error():
-    """When both clusters land in one arm, the balance check raises instead of crashing."""
+def test_assign_clusters_single_occupied_arm_raises_stats_assignment_error():
+    """When both clusters land in one arm, assignment fails before the balance check."""
     df = pd.DataFrame({"participant_id": range(3), "cluster": [1, 2, 2]})
 
-    with pytest.raises(StatsBalanceError, match=r"participants were randomly assigned to one arm"):
+    with pytest.raises(
+        StatsAssignmentError,
+        match=r"All participants were randomly assigned to one arm\. Increase your sample size and try again\.",
+    ):
         assign_treatment_and_check_balance(
             df=df, stratum_cols=[], id_col="participant_id", n_arms=2, random_state=1, cluster_col="cluster"
         )
