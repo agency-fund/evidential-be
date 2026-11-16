@@ -25,7 +25,7 @@
 | src/xngin/apiserver/dwh/query\_constructors.py                                     |       80 |        4 |     95% |70-71, 90-91 |
 | src/xngin/apiserver/dwh/test\_dialect\_sql.py                                      |       74 |        6 |     92% |494, 507, 510-513 |
 | src/xngin/apiserver/dwh/test\_dwh\_errors\_bigquery.py                             |      259 |      170 |     34% |67, 72-74, 80-96, 102, 112-126, 131-137, 143-146, 152-156, 165-171, 178-189, 195-207, 215-249, 257-268, 274-286, 293-316, 324-326, 333-335, 342-349, 358-359, 366-382, 400-430 |
-| src/xngin/apiserver/dwh/test\_dwh\_errors\_postgres.py                             |      223 |        1 |     99% |        49 |
+| src/xngin/apiserver/dwh/test\_dwh\_errors\_postgres.py                             |      230 |        3 |     99% |50, 315-316 |
 | src/xngin/apiserver/dwh/test\_dwh\_identifiers\_bigquery.py                        |       77 |       44 |     43% |49-51, 58-59, 67-68, 82-115, 126-127, 131-132, 136-137, 143-144, 149-151, 167-171 |
 | src/xngin/apiserver/dwh/test\_dwh\_identifiers\_redshift.py                        |       34 |       10 |     71% |47-48, 53-54, 60, 66, 70, 76, 81-82 |
 | src/xngin/apiserver/dwh/test\_dwh\_records\_bigquery.py                            |       28 |       13 |     54% |24-25, 32-56 |
@@ -122,7 +122,7 @@
 | src/xngin/xsecrets/secretservice.py                                                |       64 |        7 |     89% |37, 45-46, 51-52, 104, 126 |
 | src/xngin/xsecrets/test\_gcp\_kms\_provider.py                                     |      103 |       26 |     75% |40-42, 170-175, 182-189, 195-199, 206, 213-224 |
 | src/xngin/xsecrets/test\_nacl\_provider.py                                         |       67 |        1 |     99% |        24 |
-| **TOTAL**                                                                          | **23325** | **1258** | **95%** |           |
+| **TOTAL**                                                                          | **23332** | **1260** | **95%** |           |
 
 126 files skipped due to complete coverage.
 
