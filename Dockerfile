@@ -6,6 +6,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.13.5 /uv /uvx /bin/
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
 ENV UV_PYTHON_DOWNLOADS=0
+ENV UV_PYTHON_PREFERENCE=only-system
 WORKDIR /code
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml,ro \
@@ -24,4 +25,10 @@ RUN apt-get update \
 ENV PYTHONUNBUFFERED=1
 WORKDIR /code
 COPY --from=builder /code /code
-CMD ["./.venv/bin/xngin-apiserver-live"]
+CMD exec ./.venv/bin/granian \
+    --interface asgi \
+    --host 0.0.0.0 \
+    --port "${PORT:-8000}" \
+    --log-config src/xngin/apiserver/granian_log_config.json \
+    --access-log \
+    xngin.apiserver.main:app

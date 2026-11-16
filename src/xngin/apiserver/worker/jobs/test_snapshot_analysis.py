@@ -304,6 +304,7 @@ def test_timeout_records_failed_snapshot(
         release.wait()
 
     mocker.patch.object(DwhSession, "_inspect_table_blocking", stall)
+    capture_exception = mocker.patch("xngin.apiserver.worker.jobs.snapshot_analysis.sentry_sdk.capture_exception")
     try:
         commit_snapshot(experiment_id, dwh_timeout=0.05)
     finally:
@@ -319,6 +320,26 @@ def test_timeout_records_failed_snapshot(
     assert snapshots[0].data is None
     assert snapshots[0].details is not None
     assert "DwhTimeoutError" in snapshots[0].details["message"]
+    # A customer's warehouse failing is not our bug, so it does not alert.
+    capture_exception.assert_not_called()
+
+
+def test_unexpected_analysis_failure_records_failed_snapshot_and_alerts(
+    testing_datasource,
+    aclient: AdminAPIClient,
+    mocker,
+):
+    experiment_id = create_snapshot_experiment(aclient, testing_datasource, name="unexpected snapshot failure test")
+    mocker.patch(
+        "xngin.apiserver.worker.jobs.snapshot_analysis._compute_snapshot_data", side_effect=RuntimeError("our bug")
+    )
+    capture_exception = mocker.patch("xngin.apiserver.worker.jobs.snapshot_analysis.sentry_sdk.capture_exception")
+
+    snapshot = commit_snapshot(experiment_id)
+
+    assert snapshot.status == "failed"
+    assert snapshot.message == "RuntimeError: our bug"
+    capture_exception.assert_called_once()
 
 
 def test_bandit_snapshots_do_not_open_a_warehouse_connection(

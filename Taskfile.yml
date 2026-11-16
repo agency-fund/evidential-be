@@ -18,6 +18,11 @@ vars:
 
 env:
 
+  GRANIAN_INTERFACE: "asgi"
+  GRANIAN_PORT: "8000"
+  GRANIAN_LOG_CONFIG: "src/xngin/apiserver/granian_log_config.json"
+  GRANIAN_LOG_ACCESS_ENABLED: "true"
+
   # Disable Atlas telemetry.
   ATLAS_NO_ANON_TELEMETRY: "true"
   ATLAS_NO_UPDATE_NOTIFIER: "true"
@@ -191,12 +196,15 @@ tasks:
     env:
       DATABASE_URL: "{{.XNGIN_DEVAPP_DSN}}"
       XNGIN_SESSION_TOKEN_KEYSET: "local"
+      GRANIAN_RELOAD: "true"
+      GRANIAN_RELOAD_PATHS: "src"
+      GRANIAN_RELOAD_IGNORE_PATTERNS: '^test_ ^(?!.*\.py$)'
+      GRANIAN_RELOAD_IGNORE_WORKER_FAILURE: "true"
     deps:
       - bootstrap-dwh-database
       - bootstrap-app-database
       - local-session-token-keyset
-    cmds:
-      - uv run xngin-apiserver-dev
+    cmd: uv run granian xngin.apiserver.main:app
   start-live:
     desc: "Starts apiserver locally with settings similar to the Railway environment."
     interactive: false
@@ -209,8 +217,7 @@ tasks:
       RAILWAY_REPLICA_ID: "local-replica"
       RAILWAY_DEPLOYMENT_ID: "local-deployment"
       XNGIN_SESSION_TOKEN_KEYSET: "local"
-    cmds:
-      - uv run --no-dev xngin-apiserver-live
+    cmd: uv run --no-dev granian xngin.apiserver.main:app
   start-airplane:
     desc: "Like start, but runs the backend in airplane mode. All Admin API interactions will be authenticated as testing@example.com automatically."
     interactive: false
@@ -235,8 +242,10 @@ tasks:
     deps:
       - bootstrap-dwh-database
     cmds:
-      # -n0 comes last so that it wins: coverage only measures the pytest process it starts, not pytest-xdist workers.
-      - uv run coverage run -m pytest {{.CLI_ARGS}} -n0
+      # Discard data files left by an interrupted run, so that combine only merges this run's.
+      - uv run coverage erase
+      - uv run coverage run -m pytest -n auto {{.CLI_ARGS}}
+      - uv run coverage combine --quiet
       - uv run coverage html
       - uv run coverage report
       - echo "Open the HTML report at file://{{.USER_WORKING_DIR}}/htmlcov/index.html"
@@ -295,7 +304,8 @@ tasks:
       integration tests: XNGIN_DEVDWH_GCP_CREDENTIALS, the path to a service account key file that may create BigQuery
       datasets, for the BigQuery tests; XNGIN_SECRETS_GCP_CREDENTIALS and XNGIN_SECRETS_GCP_KMS_KEY_URI for the KMS
       secrets tests. AWS integration tests: XNGIN_DEVDWH_AWS_REDSHIFT_DSN, a Redshift user that may create schemas,
-      for the Redshift tests.
+      for the Redshift tests. XNGIN_DEVDWH_GCP_CREDENTIALS_RESTRICTED, a key for a service account that holds only
+      BigQuery Job User, for the BigQuery permission tests. Variables may also be set in .env.
     interactive: true
     env:
       DATABASE_URL: "{{.DATABASE_URL_FOR_TEST}}"

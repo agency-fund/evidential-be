@@ -7,6 +7,7 @@ a conftest as a module loads a second copy of it.
 """
 
 import contextlib
+from collections.abc import Generator
 
 import pytest
 import sqlalchemy
@@ -42,7 +43,7 @@ from xngin.apiserver.testing.helpers import (
     get_queries_test_uri,
     get_test_uri_info,
 )
-from xngin.apiserver.testing.pg_helpers import create_test_database_pg
+from xngin.apiserver.testing.pg_helpers import create_test_database_pg, with_name_suffix
 from xngin.db_extensions import custom_functions
 
 # Gives the assertions in the helpers that tests import pytest's detailed failure messages, as in test modules.
@@ -253,6 +254,65 @@ def fixture_testing_datasource_other(
         aclient=aclient,
         org_name="testing datasource other",
     )
+
+
+# The testing warehouse is shared by every pytest-xdist worker and test run, and roles by every database on the server,
+# so these names are suffixed per run and worker.
+DWH_ROLE_WITHOUT_SELECT = with_name_suffix("dwh_role_without_select")
+DWH_ROLE_WITHOUT_SELECT_PASSWORD = "pw"  # noqa: S105
+
+
+@pytest.fixture(name="restricted_dsn")
+def fixture_restricted_dsn() -> Generator[Dsn]:
+    """The test warehouse's DSN as a role that can log in but has no SELECT on any of its tables."""
+    admin_dsn = Dsn.from_url(flags.XNGIN_DEVDWH_DSN)
+    admin = sqlalchemy.create_engine(admin_dsn.to_sqlalchemy_url())
+    try:
+        with admin.begin() as conn:
+            conn.execute(sqlalchemy.text(f"DROP ROLE IF EXISTS {DWH_ROLE_WITHOUT_SELECT}"))
+            conn.execute(
+                sqlalchemy.text(
+                    f"CREATE ROLE {DWH_ROLE_WITHOUT_SELECT} LOGIN PASSWORD '{DWH_ROLE_WITHOUT_SELECT_PASSWORD}'"
+                )
+            )
+        try:
+            yield admin_dsn.model_copy(
+                update={"user": DWH_ROLE_WITHOUT_SELECT, "password": DWH_ROLE_WITHOUT_SELECT_PASSWORD}
+            )
+        finally:
+            with admin.begin() as conn:
+                conn.execute(sqlalchemy.text(f"DROP OWNED BY {DWH_ROLE_WITHOUT_SELECT}"))
+                conn.execute(sqlalchemy.text(f"DROP ROLE {DWH_ROLE_WITHOUT_SELECT}"))
+    finally:
+        admin.dispose()
+
+
+DWH_TEST_SCHEMA = with_name_suffix("dwh_search_path_test")
+
+
+@pytest.fixture(name="dwh_schema")
+def fixture_dwh_schema() -> Generator[str]:
+    """A schema in the test warehouse holding one small participants table, for search_path tests."""
+    admin = sqlalchemy.create_engine(Dsn.from_url(flags.XNGIN_DEVDWH_DSN).to_sqlalchemy_url())
+    try:
+        with admin.begin() as conn:
+            conn.execute(sqlalchemy.text(f"DROP SCHEMA IF EXISTS {DWH_TEST_SCHEMA} CASCADE"))
+            conn.execute(sqlalchemy.text(f"CREATE SCHEMA {DWH_TEST_SCHEMA}"))
+            conn.execute(
+                sqlalchemy.text(
+                    f"CREATE TABLE {DWH_TEST_SCHEMA}.participants (id bigint PRIMARY KEY, is_engaged boolean)"
+                )
+            )
+            conn.execute(
+                sqlalchemy.text(f"INSERT INTO {DWH_TEST_SCHEMA}.participants VALUES (1, true), (2, false)")  # noqa: S608
+            )
+        try:
+            yield DWH_TEST_SCHEMA
+        finally:
+            with admin.begin() as conn:
+                conn.execute(sqlalchemy.text(f"DROP SCHEMA IF EXISTS {DWH_TEST_SCHEMA} CASCADE"))
+    finally:
+        admin.dispose()
 
 
 def _make_datasource_metadata(
