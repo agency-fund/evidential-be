@@ -2886,7 +2886,7 @@ def test_record_bandit_outcome_does_not_update_arms(xngin_session, testing_datas
     assert recorded_outcomes == {"participant-1": 1.0, "participant-2": 0.0}
 
     # The update applies both outcomes at once.
-    assert update_bandit_arms_impl(xngin_session, bandit_experiment) == 2
+    update_bandit_arms_impl(xngin_session, bandit_experiment)
     xngin_session.commit()
     persisted_alpha, persisted_beta = (
         xngin_session.execute(select(tables.Arm.alpha, tables.Arm.beta).where(tables.Arm.id == assigned_arm.id))

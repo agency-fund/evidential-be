@@ -397,7 +397,7 @@ def get_assignment_cmab(
     The endpoint returns a 422 error if a prerequisite is not met.
     """,
 )
-def update_bandit_arm_with_participant_outcome(
+def record_bandit_participant_outcome(
     participant_id: str,
     body: Annotated[UpdateBanditArmOutcomeRequest, Body()],
     experiment: Annotated[tables.Experiment, Depends(edeps.experiment_with_datasource_and_fields)],
@@ -444,7 +444,7 @@ def update_bandit_arms(
     if not ExperimentsType(experiment.experiment_type).is_bandit():
         raise LateValidationError("Only bandit experiments have arms to update.")
 
-    update_bandit_arms_impl(session, experiment)
+    experiment = update_bandit_arms_impl(session, experiment)
     session.commit()
 
     return UpdateBanditArmsResponse(arms=[_to_arm_bandit(arm) for arm in experiment.arms])

@@ -10,12 +10,12 @@ from xngin.apiserver.routers.common_enums import (
     LikelihoodTypes,
     PriorTypes,
     UpdateTypeBeta,
-    UpdateTypeNormal,
 )
 from xngin.apiserver.routers.experiments.test_experiments_common import make_createexperimentrequest_json
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.stats.bandit_sampling import (
+    _update_arm_normal,  # noqa: PLC2701
     choose_arm,
     update_arm,
 )
@@ -268,28 +268,39 @@ def test_update_arm_beta_binomial_counts_batched_rewards():
 
 
 def test_update_arm_normal_batch_matches_sequential_updates():
-    """Updating on T rewards at once equals updating one reward at a time from the same starting prior."""
+    """For a fixed likelihood sigma, updating on T rewards at once equals updating one reward at a time.
+
+    Calls _update_arm_normal directly: update_arm estimates sigma from the batch's rewards, so its batched and
+    one-at-a-time results differ by design.
+    """
     rng = np.random.default_rng(0)
-    contexts = rng.normal(size=(4, 2)).tolist()
-    rewards = rng.normal(size=4).tolist()
+    contexts = rng.normal(size=(4, 2))
+    rewards = rng.normal(size=4)
+    llhood_sigma = 0.7
+    prior_mu = np.zeros(2)
+    prior_covariance = np.eye(2)
 
-    cmab_experiment = make_experiment_table(
-        experiment_type=ExperimentsType.CMAB_ONLINE, prior_type=PriorTypes.NORMAL, reward_type=LikelihoodTypes.NORMAL
+    batched = _update_arm_normal(
+        current_mu=prior_mu,
+        current_covariance=prior_covariance,
+        rewards=rewards,
+        llhood_sigma=llhood_sigma,
+        contexts=contexts,
     )
-    arm_to_update = cmab_experiment.arms[0]
 
-    batched = update_arm(experiment=cmab_experiment, arm_to_update=arm_to_update, outcomes=rewards, contexts=contexts)
-    assert isinstance(batched, UpdateTypeNormal)
-
-    for reward, context in zip(rewards, contexts, strict=True):
-        step = update_arm(
-            experiment=cmab_experiment, arm_to_update=arm_to_update, outcomes=[reward], contexts=[context]
+    mu, covariance = prior_mu, prior_covariance
+    for i in range(len(rewards)):
+        step = _update_arm_normal(
+            current_mu=mu,
+            current_covariance=covariance,
+            rewards=rewards[i : i + 1],
+            llhood_sigma=llhood_sigma,
+            contexts=contexts[i : i + 1],
         )
-        assert isinstance(step, UpdateTypeNormal)
-        arm_to_update.mu, arm_to_update.covariance = step.mu, step.covariance
+        mu, covariance = np.asarray(step.mu), np.asarray(step.covariance)
 
-    np.testing.assert_allclose(np.asarray(batched.mu), np.asarray(arm_to_update.mu))
-    np.testing.assert_allclose(np.asarray(batched.covariance), np.asarray(arm_to_update.covariance))
+    np.testing.assert_allclose(np.asarray(batched.mu), mu)
+    np.testing.assert_allclose(np.asarray(batched.covariance), covariance)
 
 
 def test_update_arm_normal_rejects_mismatched_context_shape():

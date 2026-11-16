@@ -529,7 +529,7 @@ def test_get_experiment_assignments_streams_bandit_assignments(
     assert first_assignment is not None
     assert second_assignment is not None
 
-    eclient.update_bandit_arm_with_participant_outcome(
+    eclient.record_bandit_participant_outcome(
         api_key=testing_datasource.key,
         body=UpdateBanditArmOutcomeRequest(outcome=1.5),
         experiment_id=experiment.experiment_id,
@@ -617,7 +617,7 @@ def test_get_experiment_assignments_streams_cmab_context_values(
     ).data.assignment
 
     # One participant has an outcome
-    eclient.update_bandit_arm_with_participant_outcome(
+    eclient.record_bandit_participant_outcome(
         api_key=testing_datasource.key,
         body=UpdateBanditArmOutcomeRequest(outcome=1.5),
         experiment_id=experiment.experiment_id,
@@ -1166,7 +1166,7 @@ def test_get_assignment_bandit_cache_headers(
     assert "Cache-Control" not in response.response.headers
 
     # Record outcome
-    _ = eclient.update_bandit_arm_with_participant_outcome(
+    _ = eclient.record_bandit_participant_outcome(
         api_key=testing_datasource.key,
         body=UpdateBanditArmOutcomeRequest(outcome=1.0),
         experiment_id=experiment.experiment_id,
@@ -1327,12 +1327,17 @@ def test_update_bandit_arm_with_outcome(
         ).data.assignment
     assert assignment is not None
 
-    updated_arm = eclient.update_bandit_arm_with_participant_outcome(
+    # Recording the outcome returns the arm as it was: the outcome takes effect at the next arm update.
+    recorded_arm = eclient.record_bandit_participant_outcome(
         api_key=testing_datasource.key,
         body=UpdateBanditArmOutcomeRequest(outcome=1.0),
         experiment_id=experiment_id,
         participant_id=participant_id,
     ).data
+    assert recorded_arm == initial_arms[assignment.arm_id]
+
+    updated_arms = eclient.update_bandit_arms(api_key=testing_datasource.key, experiment_id=experiment_id).data.arms
+    updated_arm = next(arm for arm in updated_arms if arm.arm_id == assignment.arm_id)
 
     updated_design_spec = aclient.get_experiment_for_ui(
         datasource_id=testing_datasource.datasource_id,
@@ -1425,7 +1430,7 @@ def test_update_bandit_arm_with_outcome(
     assert stored_arm == updated_arm
 
     with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
-        eclient.update_bandit_arm_with_participant_outcome(
+        eclient.record_bandit_participant_outcome(
             api_key=testing_datasource.key,
             body=UpdateBanditArmOutcomeRequest(outcome=1.0),
             experiment_id=experiment_id,
@@ -1434,7 +1439,7 @@ def test_update_bandit_arm_with_outcome(
     assert exc.value.result.status == HTTPStatus.UNPROCESSABLE_CONTENT
 
     with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
-        eclient.update_bandit_arm_with_participant_outcome(
+        eclient.record_bandit_participant_outcome(
             api_key=testing_datasource.key,
             body=UpdateBanditArmOutcomeRequest(outcome=1.0),
             experiment_id=experiment_id,
@@ -1463,7 +1468,7 @@ def test_update_bandit_arm_with_freq_experiments_returns_422(
     assert assignment is not None
 
     with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
-        eclient.update_bandit_arm_with_participant_outcome(
+        eclient.record_bandit_participant_outcome(
             api_key=testing_datasource.key,
             body=UpdateBanditArmOutcomeRequest(outcome=42.7),
             experiment_id=experiment.experiment_id,
@@ -1476,7 +1481,7 @@ def test_update_bandit_arm_with_freq_experiments_returns_422(
 def test_normal_prior_binary_reward_fits_each_outcome_exactly_once(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
-    """The endpoint folds one recorded outcome into a Normal/Bernoulli posterior exactly once."""
+    """An arm update folds one recorded outcome into a Normal/Bernoulli posterior exactly once."""
     initial_mu = [0.0]
     initial_covariance = [[1.0]]
     design_spec = MABExperimentSpec(
@@ -1499,17 +1504,22 @@ def test_normal_prior_binary_reward_fits_each_outcome_exactly_once(
     ).data.experiment_id
     aclient.commit_experiment(datasource_id=testing_datasource.datasource_id, experiment_id=experiment_id)
 
-    eclient.get_assignment(
+    assignment = eclient.get_assignment(
         api_key=testing_datasource.key,
         experiment_id=experiment_id,
         participant_id="1",
-    )
-    updated_arm = eclient.update_bandit_arm_with_participant_outcome(
+    ).data.assignment
+    assert assignment is not None
+    eclient.record_bandit_participant_outcome(
         api_key=testing_datasource.key,
         body=UpdateBanditArmOutcomeRequest(outcome=1.0),
         experiment_id=experiment_id,
         participant_id="1",
-    ).data
+    )
+    # Updating twice must not count the outcome twice.
+    for _ in range(2):
+        updated_arms = eclient.update_bandit_arms(api_key=testing_datasource.key, experiment_id=experiment_id).data.arms
+    updated_arm = next(arm for arm in updated_arms if arm.arm_id == assignment.arm_id)
 
     expected = update_arm(
         experiment=tables.Experiment(
@@ -1529,7 +1539,7 @@ def test_normal_prior_binary_reward_fits_each_outcome_exactly_once(
 def test_beta_prior_binary_reward_uses_outcome_in_order_exactly_once(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
-    """The endpoint folds one recorded outcome into a Beta/Bernoulli posterior exactly once."""
+    """An arm update folds each recorded outcome into a Beta/Bernoulli posterior exactly once."""
     initial_alpha = 1.0
     initial_beta = 1.0
     design_spec = MABExperimentSpec(
@@ -1565,26 +1575,28 @@ def test_beta_prior_binary_reward_uses_outcome_in_order_exactly_once(
         participant_id="1",
     )
 
-    # Update the outcome for participant 1 before 2
-    updated_arm = eclient.update_bandit_arm_with_participant_outcome(
+    def update_control_arm() -> ArmBandit:
+        arms = eclient.update_bandit_arms(api_key=testing_datasource.key, experiment_id=experiment_id).data.arms
+        return next(arm for arm in arms if arm.arm_name == "control")
+
+    # Record the outcome for participant 1 before 2
+    eclient.record_bandit_participant_outcome(
         api_key=testing_datasource.key,
         body=UpdateBanditArmOutcomeRequest(outcome=1.0),
         experiment_id=experiment_id,
         participant_id="1",
-    ).data
-
-    assert updated_arm.arm_name == "control"
+    )
+    updated_arm = update_control_arm()
     assert updated_arm.alpha == initial_alpha + 101
     assert updated_arm.beta == initial_beta
 
-    updated_arm = eclient.update_bandit_arm_with_participant_outcome(
+    eclient.record_bandit_participant_outcome(
         api_key=testing_datasource.key,
         body=UpdateBanditArmOutcomeRequest(outcome=0.0),
         experiment_id=experiment_id,
         participant_id="2",
-    ).data
-
-    assert updated_arm.arm_name == "control"
+    )
+    updated_arm = update_control_arm()
     assert updated_arm.alpha == initial_alpha + 101
     assert updated_arm.beta == initial_beta + 1
 

@@ -962,7 +962,7 @@ class ExperimentsAPIClient:
         )
 
     @overload
-    def update_bandit_arm_with_participant_outcome(
+    def record_bandit_participant_outcome(
         self,
         *,
         body: UpdateBanditArmOutcomeRequest,
@@ -973,7 +973,7 @@ class ExperimentsAPIClient:
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> ExperimentsAPIClientResult[Literal[HTTPStatus.OK], ArmBandit]: ...
     @overload
-    def update_bandit_arm_with_participant_outcome(
+    def record_bandit_participant_outcome(
         self,
         *,
         body: UpdateBanditArmOutcomeRequest,
@@ -989,7 +989,7 @@ class ExperimentsAPIClient:
         | ExperimentsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], dict]
         | ExperimentsAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], ExperimentsAPIClientHTTPValidationError]
     ): ...
-    def update_bandit_arm_with_participant_outcome(
+    def record_bandit_participant_outcome(
         self,
         *,
         body: UpdateBanditArmOutcomeRequest,

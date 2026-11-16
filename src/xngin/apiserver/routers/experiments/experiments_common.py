@@ -1094,7 +1094,7 @@ def _fetch_outcomes_and_context_for_arm(
     arm_id: str,
     experiment_type: ExperimentsType,
 ) -> tuple[list[float], list[list[float]] | None]:
-    """Return every recorded outcome for the arm, oldest first.
+    """Return every recorded outcome for the arm, newest first.
 
     Context values are returned alongside the outcomes, one per outcome, only for contextual bandits.
     An arm with no recorded outcomes returns an empty list.
@@ -1106,7 +1106,7 @@ def _fetch_outcomes_and_context_for_arm(
             tables.Draw.arm_id == arm_id,
             tables.Draw.outcome.is_not(None),
         )
-        .order_by(tables.Draw.observed_at, tables.Draw.participant_id)
+        .order_by(tables.Draw.observed_at.desc(), tables.Draw.participant_id)
     ).all()
     outcomes = [row.outcome for row in rows]
     if experiment_type == ExperimentsType.CMAB_ONLINE:
@@ -1177,14 +1177,14 @@ def record_bandit_outcome_impl(
     return arm_id
 
 
-def update_bandit_arms_impl(xngin_session: Session, experiment: tables.Experiment) -> int:
+def update_bandit_arms_impl(xngin_session: Session, experiment: tables.Experiment) -> tables.Experiment:
     """Recompute every arm's parameters from its initial prior and all of its recorded outcomes.
 
     Recomputing from scratch makes this safe to repeat: running it twice gives the same parameters, so a retried
     or interrupted run can never count an outcome twice. Draws are not modified; their current_* columns keep the
     parameters the participant was assigned under.
 
-    Returns the number of outcomes used. Does not complete the caller's transaction.
+    Returns the experiment, whose arms now hold the updated parameters. Does not complete the caller's transaction.
     """
     experiment_type = ExperimentsType(experiment.experiment_type)
     # Lock the arms in a fixed order so concurrent recomputes of the same experiment (worker and any manual trigger)
@@ -1197,7 +1197,6 @@ def update_bandit_arms_impl(xngin_session: Session, experiment: tables.Experimen
         .execution_options(populate_existing=True)
     ).all()
 
-    num_outcomes = 0
     for arm in arms:
         outcomes, context_vals = _fetch_outcomes_and_context_for_arm(
             xngin_session,
@@ -1205,7 +1204,9 @@ def update_bandit_arms_impl(xngin_session: Session, experiment: tables.Experimen
             arm_id=arm.id,
             experiment_type=experiment_type,
         )
-        num_outcomes += len(outcomes)
+        # An arm with no recorded outcomes has nothing to update from
+        if not outcomes:
+            continue
         updated_parameters = update_bandit_arm(
             experiment=experiment,
             arm_to_update=arm,
@@ -1222,7 +1223,7 @@ def update_bandit_arms_impl(xngin_session: Session, experiment: tables.Experimen
                 arm.mu = updated_parameters.mu
                 arm.covariance = updated_parameters.covariance
 
-    return num_outcomes
+    return experiment
 
 
 def convert_assignment_results_to_assign_summary(

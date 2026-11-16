@@ -361,7 +361,7 @@ def fixture_testing_bandit_experiment(
                 experiment_id=experiment.config.experiment_id,
                 participant_id=participant_id,
             )
-        eclient.update_bandit_arm_with_participant_outcome(
+        eclient.record_bandit_participant_outcome(
             api_key=testing_datasource.key,
             experiment_id=experiment.config.experiment_id,
             participant_id=participant_id,
@@ -2484,7 +2484,7 @@ def test_create_and_assign_mab_dwh_rejects_pushed_outcome(
     assert assignment.outcome is None
 
     with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
-        eclient.update_bandit_arm_with_participant_outcome(
+        eclient.record_bandit_participant_outcome(
             api_key=testing_datasource.key,
             body=UpdateBanditArmOutcomeRequest(outcome=1.0),
             experiment_id=experiment_id,
@@ -2518,7 +2518,7 @@ def test_mab_experiments_analyze_ignores_unobserved_draws_with_single_outcome(
         experiment_id=experiment.config.experiment_id,
         participant_id="p1",
     )
-    eclient.update_bandit_arm_with_participant_outcome(
+    eclient.record_bandit_participant_outcome(
         api_key=testing_datasource.key,
         body=UpdateBanditArmOutcomeRequest(outcome=1.0),
         experiment_id=experiment.config.experiment_id,
@@ -2563,7 +2563,7 @@ def test_mab_experiments_analyze_ignores_unobserved_draws_with_multiple_outcomes
             experiment_id=experiment.config.experiment_id,
             participant_id=participant_id,
         )
-        eclient.update_bandit_arm_with_participant_outcome(
+        eclient.record_bandit_participant_outcome(
             api_key=testing_datasource.key,
             body=UpdateBanditArmOutcomeRequest(outcome=outcome),
             experiment_id=experiment.config.experiment_id,

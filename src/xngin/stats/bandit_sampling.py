@@ -380,7 +380,8 @@ def update_arm(
         context_array = np.array(contexts).reshape(len(rewards), -1) if contexts is not None else None
         # Normal likelihood
         if experiment.reward_type == LikelihoodTypes.NORMAL.value:
-            llhood_sigma = np.std(rewards)
+            std = np.std(rewards)
+            llhood_sigma = std if std > 0.0 else 1.0
             return _update_arm_normal(
                 current_mu=mu,
                 current_covariance=covariance,
