@@ -247,6 +247,31 @@ def test_get_experiment(testing_datasource, aclient: AdminAPIClient, eclient: Ex
     assert response.design_spec == new_experiment.design_spec
 
 
+def test_get_experiment_assign_summary_with_one_arm_missing_stats(
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+):
+    """One online assignment leaves the other arm without an arm_stats row; GET still reports it at size 0."""
+    new_exp = create_experiment(testing_datasource, aclient)
+    assignment = eclient.get_assignment(
+        api_key=testing_datasource.key,
+        experiment_id=new_exp.experiment_id,
+        participant_id="p1",
+    ).data.assignment
+    assert assignment is not None
+
+    fetched_exp = eclient.get_experiment(api_key=testing_datasource.key, experiment_id=new_exp.experiment_id).data
+    fetched_summary = fetched_exp.assign_summary
+    assert fetched_summary is not None
+    assert fetched_summary.sample_size == 1
+    assert fetched_summary.balance_check is None
+    assert fetched_summary.arm_sizes is not None
+    arm_ids = [arm.arm_id for arm in fetched_exp.design_spec.arms]
+    for arm_size, arm_id in zip(fetched_summary.arm_sizes, arm_ids, strict=True):
+        assert arm_size.arm.arm_id == arm_id
+        assert arm_size.size == (1 if arm_id == assignment.arm_id else 0)
+        assert arm_size.cluster_count is None
+
+
 @pytest.mark.parametrize(
     ("experiment_type", "table_name", "primary_key", "expected_status", "expected_in_loc"),
     [
