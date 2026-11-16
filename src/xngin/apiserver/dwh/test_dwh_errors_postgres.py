@@ -5,6 +5,7 @@ Prefer extending this module to simulating errors in test_dwh_errors_simulated.p
 """
 
 import socket
+import sys
 
 import psycopg
 import psycopg2
@@ -300,6 +301,7 @@ def test_real_driver_statement_timeout(real_dsn: Dsn):
 
 def test_real_driver_connection_refused(real_dsn: Dsn):
     # Reserve a local port without listening so no other service can take it during the failed connection.
+    # Linux resets that connect. macOS drops it, so the connect waits and then times out.
     with socket.socket() as reserved:
         reserved.bind(("127.0.0.1", 0))
         port = reserved.getsockname()[1]
@@ -309,12 +311,19 @@ def test_real_driver_connection_refused(real_dsn: Dsn):
     assert result.code == DwhErrorCode.CONNECTION
     # psycopg 3 prefixes libpq's text with "connection failed: ", which the message drops; the address stays so the
     # reader can see what was dialed.
-    assert result.message == (
-        f'The connection to the data warehouse failed: connection to server at "127.0.0.1", port {port} failed: '
-        "Connection refused."
+    if sys.platform == "darwin":
+        expected_preamble = "could not receive data from server: " if real_dsn.driver == "postgresql+psycopg" else ""
+        expected_dwh_message = "Operation timed out"
+    else:
+        expected_preamble = ""
+        expected_dwh_message = "Connection refused"
+    expected_message = (
+        'The connection to the data warehouse failed: connection to server at "127.0.0.1", '
+        f"port {port} failed: {expected_preamble}{expected_dwh_message}."
     )
+    assert result.message == expected_message
+    assert result.dwh_message is not None and expected_dwh_message in result.dwh_message
     assert result.hint == "Check the host, port, and network settings in the data source configuration."
-    assert result.dwh_message is not None and "Connection refused" in result.dwh_message
 
 
 def test_real_driver_transaction_conflict(real_dsn: Dsn, dwh_schema: str):
