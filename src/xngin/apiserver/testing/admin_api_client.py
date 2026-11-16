@@ -3105,7 +3105,8 @@ class AdminAPIClient:
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.CONFLICT], HTTPExceptionError]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FAILED_DEPENDENCY], DwhErrorResponse]
     ): ...
     def commit_experiment(
         self,
@@ -3121,7 +3122,8 @@ class AdminAPIClient:
         | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
         | AdminAPIClientResult[Literal[HTTPStatus.CONFLICT], HTTPExceptionError]
-        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FAILED_DEPENDENCY], DwhErrorResponse]
     ):
         return cast(
             (
@@ -3131,7 +3133,8 @@ class AdminAPIClient:
                 | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
                 | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
                 | AdminAPIClientResult[Literal[HTTPStatus.CONFLICT], HTTPExceptionError]
-                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], XHTTPValidationError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FAILED_DEPENDENCY], DwhErrorResponse]
             ),
             self._route_handler(
                 path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/commit",
@@ -3144,7 +3147,8 @@ class AdminAPIClient:
                     HTTPStatus.FORBIDDEN: HTTPExceptionError,
                     HTTPStatus.NOT_FOUND: HTTPExceptionError,
                     HTTPStatus.CONFLICT: HTTPExceptionError,
-                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: XHTTPValidationError,
+                    HTTPStatus.FAILED_DEPENDENCY: DwhErrorResponse,
                 },
                 path_params={
                     "datasource_id": datasource_id,

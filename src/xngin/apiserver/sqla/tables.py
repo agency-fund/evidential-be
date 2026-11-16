@@ -432,7 +432,9 @@ class Experiment(Base):
     datasource_id: Mapped[str] = mapped_column(String(255), ForeignKey("datasources.id", ondelete="CASCADE"))
 
     experiment_type: Mapped[str] = mapped_column()
-    # The underlying datasource table name backing this experiment.
+    # The table within the datasource backing this experiment. For Google Sheets this is a tab ID:
+    # the source tab at design time, replaced by the experiment's own outcomes tab on commit
+    # (see commit_experiment_impl).
     datasource_table: Mapped[str | None] = mapped_column(String(255))
     name: Mapped[str] = mapped_column(String(255))
     # Describe your experiment and hypothesis here.

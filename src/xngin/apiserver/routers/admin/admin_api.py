@@ -129,7 +129,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
 from xngin.apiserver.routers.power_adapters import build_metric_stats, calculate_cluster_stats
-from xngin.apiserver.settings import NoDwh, RemoteDatabaseConfig
+from xngin.apiserver.settings import GoogleSheetsDsn, NoDwh, RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.worker.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE
@@ -1054,6 +1054,8 @@ def create_datasource(
 ) -> CreateDatasourceResponse:
     """Creates a new datasource for the specified organization."""
     org = adeps.load_organization_or_raise(session, user, body.organization_id)
+    if body.dsn.type == "google_sheets":
+        adeps.raise_unless_privileged(user)
 
     raise_unless_safe_hostname(body.dsn)
 
@@ -1072,14 +1074,31 @@ def create_datasource(
 def update_datasource(
     datasource: Annotated[tables.Datasource, Depends(adeps.datasource)],
     session: Annotated[Session, Depends(xngin_sync_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     body: UpdateDatasourceRequest,
 ):
+    if body.dsn is not None and body.dsn.type == "google_sheets":
+        adeps.raise_unless_privileged(user)
     if body.name is not None:
         datasource.name = body.name
     if body.dsn is not None:
         raise_unless_safe_hostname(body.dsn)
         cfg = datasource.get_config()
-        cfg.dwh = api_dsn_to_settings_dwh(body.dsn, cfg.dwh)
+        new_dwh = api_dsn_to_settings_dwh(body.dsn, cfg.dwh)
+        # An experiment tab for Gsheets is identified by two things: the spreadsheet (this datasource's URL) and the
+        # tab ID (Experiment.datasource_table). So once experiments exist, the datasource can't switch to a
+        # different spreadsheet; switching tabs within the same spreadsheet is fine.
+        if (
+            isinstance(cfg.dwh, GoogleSheetsDsn)
+            and isinstance(new_dwh, GoogleSheetsDsn)
+            and cfg.dwh.get_spreadsheet_id() != new_dwh.get_spreadsheet_id()
+            and session.scalar(select(tables.Experiment.id).where(tables.Experiment.datasource_id == datasource.id))
+        ):
+            raise LateValidationError(
+                "Experiments read their outcomes from this datasource's spreadsheet. "
+                "Create a new datasource to connect a different spreadsheet."
+            )
+        cfg.dwh = new_dwh
         datasource.set_config(cfg)
 
     datasource.clear_table_list()
@@ -1402,7 +1421,7 @@ EXPERIMENT_STATE_TRANSITION_RESPONSES: dict[int | str, dict[str, Any]] = {
 
 @router.post(
     "/datasources/{datasource_id}/experiments/{experiment_id}/commit",
-    responses=EXPERIMENT_STATE_TRANSITION_RESPONSES,
+    responses={**EXPERIMENT_STATE_TRANSITION_RESPONSES, **DWH_ERROR_RESPONSES},
     status_code=status.HTTP_204_NO_CONTENT,
 )
 def commit_experiment(
