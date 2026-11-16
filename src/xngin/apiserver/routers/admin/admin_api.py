@@ -1703,11 +1703,12 @@ def power_check(
             request_metrics_by_name = {m.field_name: m for m in body.metrics}
             for metric_stat in metric_stats:
                 req_metric = request_metrics_by_name[metric_stat.field_name]
-                if req_metric.available_n_clusters is not None:
-                    metric_stat.available_n_clusters = req_metric.available_n_clusters
-                else:
-                    assert raw_cluster_stats is not None  # needs_cluster_stats ran the cluster query
+                # Always use the cluster count from the query if available, as the user can't
+                # manually set it, only echo back a value we sent to the FE.
+                if raw_cluster_stats is not None:
                     metric_stat.available_n_clusters = len(raw_cluster_stats)
+                else:
+                    metric_stat.available_n_clusters = req_metric.available_n_clusters
                 # If the user provided ICC, avg_cluster_size, and cv, use them instead of deriving from the dwh.
                 if req_metric.has_cluster_stats:
                     metric_stat.icc = req_metric.icc
