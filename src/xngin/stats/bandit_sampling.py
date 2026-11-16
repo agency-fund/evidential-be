@@ -320,9 +320,11 @@ def update_arm(
     arm_to_update: tables.Arm,
     outcomes: list[float],
     contexts: list[list[float]] | None = None,
+    *,
+    from_initial_prior: bool = False,
 ) -> PriorUpdateType:
     """
-    Update the arm parameters based on the experiment type and reward.
+    Update the arm parameters with a batch of outcomes, all applied at once.
 
     Parameters
     ----------
@@ -330,7 +332,10 @@ def update_arm(
         type information.
     arm_to_update: The arm to update based on the reward received.
     outcomes: The rewards received from the arm.
-    contexts: The context vectors for the arm.
+    contexts: The context vectors for the arm, one per outcome.
+    from_initial_prior: When True, start from the arm's initial parameters (alpha_init/beta_init or
+        mu_init/sigma_init) instead of its current ones. Pass every outcome the arm has ever received, so the
+        result is the full posterior and recomputing it again gives the same answer.
     """
     supported_types = {
         ExperimentsType.MAB_ONLINE.value,
@@ -345,33 +350,48 @@ def update_arm(
     if contexts is not None and len(outcomes) != len(contexts):
         raise ValueError("Number of context and outcome values do not match")
 
+    rewards = np.array(outcomes, dtype=float)
+
     # Beta-binomial priors
     if experiment.prior_type == PriorTypes.BETA.value:
-        if not (arm_to_update.alpha and arm_to_update.beta):
+        if from_initial_prior:
+            alpha, beta = arm_to_update.alpha_init, arm_to_update.beta_init
+        else:
+            alpha, beta = arm_to_update.alpha, arm_to_update.beta
+        if alpha is None or beta is None:
             raise ValueError("Arm must have alpha and beta parameters.")
-        rewards = np.array([outcomes[0]])
-        return _update_arm_beta_binomial(alpha=arm_to_update.alpha, beta=arm_to_update.beta, rewards=rewards)
+        return _update_arm_beta_binomial(alpha=alpha, beta=beta, rewards=rewards)
 
     # Normal priors
     if experiment.prior_type == PriorTypes.NORMAL.value:
-        if arm_to_update.mu is None and arm_to_update.covariance is None:
+        if arm_to_update.mu is None or arm_to_update.covariance is None:
             raise ValueError("Arm must have mu and covariance parameters.")
 
-        rewards = np.array(outcomes)
+        if from_initial_prior:
+            if arm_to_update.mu_init is None or arm_to_update.sigma_init is None:
+                raise ValueError("Arm must have mu_init and sigma_init parameters.")
+            num_dimensions = len(arm_to_update.mu)
+            mu = np.full(num_dimensions, arm_to_update.mu_init)
+            covariance = np.diag([arm_to_update.sigma_init] * num_dimensions)
+        else:
+            mu = np.array(arm_to_update.mu)
+            covariance = np.array(arm_to_update.covariance)
+
         context_array = np.array(contexts).reshape(len(rewards), -1) if contexts is not None else None
         # Normal likelihood
         if experiment.reward_type == LikelihoodTypes.NORMAL.value:
+            llhood_sigma = np.std(rewards)
             return _update_arm_normal(
-                current_mu=np.array(arm_to_update.mu),
-                current_covariance=np.array(arm_to_update.covariance),
-                rewards=rewards[:1],
-                llhood_sigma=1.0,  # TODO: Assuming a fixed likelihood sigma
-                contexts=context_array[:1, :] if context_array is not None else None,
+                current_mu=mu,
+                current_covariance=covariance,
+                rewards=rewards,
+                llhood_sigma=llhood_sigma,
+                contexts=context_array,
             )
         # TODO: currently only supports Bernoulli likelihood
         return _update_arm_laplace(
-            current_mu=np.array(arm_to_update.mu),
-            current_covariance=np.array(arm_to_update.covariance),
+            current_mu=mu,
+            current_covariance=covariance,
             rewards=rewards,
             contexts=context_array,
             link_function=ContextLinkFunctions.LOGISTIC,

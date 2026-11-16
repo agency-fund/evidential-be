@@ -40,6 +40,7 @@ from xngin.apiserver.routers.common_api_types import (
     ListExperimentsResponse,
     OnlineAssignmentWithFiltersRequest,
     UpdateBanditArmOutcomeRequest,
+    UpdateBanditArmsResponse,
 )
 from xngin.apiserver.routers.experiments import experiments_common, experiments_common_csv
 from xngin.apiserver.routers.experiments import experiments_dependencies as edeps
@@ -47,7 +48,8 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     create_assignment_for_participant,
     get_existing_assignment_for_participant,
     get_or_create_assignment_for_participant,
-    update_bandit_arm_with_outcome_impl,
+    record_bandit_outcome_impl,
+    update_bandit_arms_impl,
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import (
     CsvStreamingResponse,
@@ -377,7 +379,8 @@ def get_assignment_cmab(
     "/experiments/{experiment_id}/assignments/{participant_id}/outcome",
     summary="Record a bandit arm outcome for a participant.",
     description="""
-    Records the outcome for a participant's assigned arm and returns the updated arm parameters.
+    Records the outcome for a participant's assigned arm, but does NOT update the arm parameters.
+    Arms are updated by a separate endpoint, or via a background job.
 
     Use this in push integrations to report each outcome as it happens. Applies only to MAB or
     CMAB experiments using push-based integrations.
@@ -406,8 +409,8 @@ def update_bandit_arm_with_participant_outcome(
             "connected data warehouse. Remove this call from your application / workflow."
         )
 
-    # Update the arm with the outcome. A CMAB experiment's contexts load lazily from here.
-    updated_arm = update_bandit_arm_with_outcome_impl(
+    # Store the outcome only.
+    arm_id = record_bandit_outcome_impl(
         xngin_session=session,
         experiment=experiment,
         participant_id=participant_id,
@@ -415,16 +418,50 @@ def update_bandit_arm_with_participant_outcome(
     )
     session.commit()
 
+    arm = next(arm for arm in experiment.arms if arm.id == arm_id)
+    return _to_arm_bandit(arm)
+
+
+@router.post(
+    "/experiments/{experiment_id}/arms/update",
+    summary="Update a bandit experiment's arms from all recorded outcomes.",
+    description="""
+    Recomputes every arm's parameters from its initial prior and all outcomes recorded so far, and
+    returns the updated arms.
+
+    Evidential already does this on the schedule set by the experiment's `update_frequency_hours`.
+    Call this to apply recently recorded outcomes right away. It is safe to call repeatedly: an
+    update with no new outcomes leaves the arms unchanged.
+
+    Applies only to MAB and CMAB experiments. The endpoint returns a 422 error for other experiment
+    types.
+    """,
+)
+def update_bandit_arms(
+    experiment: Annotated[tables.Experiment, Depends(edeps.experiment_with_datasource_and_fields)],
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
+) -> UpdateBanditArmsResponse:
+    if not ExperimentsType(experiment.experiment_type).is_bandit():
+        raise LateValidationError("Only bandit experiments have arms to update.")
+
+    update_bandit_arms_impl(session, experiment)
+    session.commit()
+
+    return UpdateBanditArmsResponse(arms=[_to_arm_bandit(arm) for arm in experiment.arms])
+
+
+def _to_arm_bandit(arm: tables.Arm) -> ArmBandit:
+    """Convert a stored arm to its API representation."""
     return ArmBandit(
-        arm_id=updated_arm.id,
-        arm_name=updated_arm.name,
-        arm_description=updated_arm.description,
-        alpha_init=updated_arm.alpha_init,
-        beta_init=updated_arm.beta_init,
-        alpha=updated_arm.alpha,
-        beta=updated_arm.beta,
-        mu_init=updated_arm.mu_init,
-        sigma_init=updated_arm.sigma_init,
-        mu=updated_arm.mu,
-        covariance=updated_arm.covariance,
+        arm_id=arm.id,
+        arm_name=arm.name,
+        arm_description=arm.description,
+        alpha_init=arm.alpha_init,
+        beta_init=arm.beta_init,
+        alpha=arm.alpha,
+        beta=arm.beta,
+        mu_init=arm.mu_init,
+        sigma_init=arm.sigma_init,
+        mu=arm.mu,
+        covariance=arm.covariance,
     )

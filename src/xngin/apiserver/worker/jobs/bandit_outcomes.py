@@ -8,7 +8,7 @@ from sqlalchemy import ColumnElement, and_
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.routers.experiments.experiments_common import update_bandit_arm_with_outcome_impl
+from xngin.apiserver.routers.experiments.experiments_common import record_bandit_outcome_impl
 from xngin.apiserver.sqla import tables
 
 
@@ -43,7 +43,7 @@ def apply_outcomes(
     *,
     skip_invalid: bool = False,
 ) -> OutcomeReport:
-    """Apply a batch without committing, preserving per-draw posterior/history semantics.
+    """Record a batch of outcomes on their draws without committing. Arms are updated later by BanditUpdateJob.
 
     Outcomes without a value are counted as pending and left unresolved. Validation errors precede writes in the
     updater. Only warehouse ingestion may skip them; all other failures roll back through the caller's transaction
@@ -56,7 +56,7 @@ def apply_outcomes(
             continue
         with logger.contextualize(participant_id=outcome.participant_id):
             try:
-                update_bandit_arm_with_outcome_impl(
+                record_bandit_outcome_impl(
                     xngin_session=session,
                     experiment=experiment,
                     participant_id=outcome.participant_id,

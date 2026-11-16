@@ -3,7 +3,7 @@ import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TypedDict, assert_never
+from typing import assert_never
 
 import numpy as np
 import pandas as pd
@@ -941,6 +941,10 @@ def create_assignment_for_participant(
                             participant_id=participant_id,
                             arm_id=chosen_arm.id,
                             context_vals=sorted_context_vals,
+                            current_alpha=chosen_arm.alpha,
+                            current_beta=chosen_arm.beta,
+                            current_mu=chosen_arm.mu,
+                            current_covariance=chosen_arm.covariance,
                         )
                         .returning(tables.Draw.created_at)
                     )
@@ -1090,56 +1094,37 @@ def _fetch_outcomes_and_context_for_arm(
     arm_id: str,
     experiment_type: ExperimentsType,
 ) -> tuple[list[float], list[list[float]] | None]:
-    """Return the just-recorded outcome plus the arm's prior outcomes, newest first.
+    """Return every recorded outcome for the arm, oldest first.
 
-    Context values are aggregated alongside the outcomes and returned only for contextual
-    bandits, i.e. when the current draw carries context.
+    Context values are returned alongside the outcomes, one per outcome, only for contextual bandits.
+    An arm with no recorded outcomes returns an empty list.
     """
-    is_cmab = experiment_type == ExperimentsType.CMAB_ONLINE
-    last_100_draws = (
+    rows = xngin_session.execute(
         select(tables.Draw.outcome, tables.Draw.context_vals)
         .where(
             tables.Draw.experiment_id == experiment_id,
             tables.Draw.arm_id == arm_id,
             tables.Draw.outcome.is_not(None),
         )
-        .order_by(tables.Draw.observed_at.desc())
-        .limit(100)  # TODO: Make draw limiting configurable
-        .subquery()
-    )
-    outcomes = [func.array_agg(last_100_draws.c.outcome)]
-    if is_cmab:
-        context_vals = [func.array_agg(last_100_draws.c.context_vals)]
-        results = xngin_session.execute(select(*outcomes, *context_vals).select_from(last_100_draws))
-        outcomes, context_vals = results.one()
-        return outcomes, context_vals
-    results = xngin_session.execute(select(*outcomes).select_from(last_100_draws))
-    outcomes = results.one()[0]
+        .order_by(tables.Draw.observed_at, tables.Draw.participant_id)
+    ).all()
+    outcomes = [row.outcome for row in rows]
+    if experiment_type == ExperimentsType.CMAB_ONLINE:
+        return outcomes, [row.context_vals for row in rows]
     return outcomes, None
 
 
-class PartialUpdateDrawBeta(TypedDict):
-    """Subset of fields on tables.Draw, used for type-safe partial updates."""
-
-    current_alpha: float | None
-    current_beta: float | None
-
-
-class PartialUpdateDrawNormal(TypedDict):
-    """Subset of fields on tables.Draw, used for type-safe partial updates."""
-
-    current_mu: list[float] | None
-    current_covariance: list[list[float]] | None
-
-
-def update_bandit_arm_with_outcome_impl(
+def record_bandit_outcome_impl(
     xngin_session: Session,
     experiment: tables.Experiment,
     participant_id: str,
     outcome: float,
     autofailed_outcome: bool = False,
-) -> tables.Arm:
-    """Update a bandit draw and arm without completing the caller's transaction."""
+) -> str:
+    """Validate and store a participant's outcome on their draw, without updating the arm.
+
+    Returns the ID of the draw's arm. Does not complete the caller's transaction.
+    """
     # Not supported for frequentist experiments
     design_spec = ExperimentStorageConverter(experiment).get_design_spec()
 
@@ -1182,68 +1167,62 @@ def update_bandit_arm_with_outcome_impl(
             tables.Draw.outcome.is_(None),  # guard against double-write at DB level
         )
         .values(observed_at=datetime.now(UTC), outcome=outcome, autofailed_outcome=autofailed_outcome)
-        .returning(tables.Draw.arm_id, tables.Draw.context_vals)
+        .returning(tables.Draw.arm_id)
     )
-    draw_record = result.one_or_none()
-    if draw_record is None:
+    arm_id = result.scalar_one_or_none()
+    if arm_id is None:
         raise ExperimentsAssignmentError(
             f"Participant '{participant_id}' already has a recorded outcome for this experiment.",
         )
+    return arm_id
 
-    arm_to_update = xngin_session.execute(
+
+def update_bandit_arms_impl(xngin_session: Session, experiment: tables.Experiment) -> int:
+    """Recompute every arm's parameters from its initial prior and all of its recorded outcomes.
+
+    Recomputing from scratch makes this safe to repeat: running it twice gives the same parameters, so a retried
+    or interrupted run can never count an outcome twice. Draws are not modified; their current_* columns keep the
+    parameters the participant was assigned under.
+
+    Returns the number of outcomes used. Does not complete the caller's transaction.
+    """
+    experiment_type = ExperimentsType(experiment.experiment_type)
+    # Lock the arms in a fixed order so concurrent recomputes of the same experiment (worker and any manual trigger)
+    # queue behind each other instead of deadlocking or interleaving their writes.
+    arms = xngin_session.scalars(
         select(tables.Arm)
-        .where(tables.Arm.id == draw_record.arm_id, tables.Arm.experiment_id == experiment.id)
+        .where(tables.Arm.experiment_id == experiment.id)
+        .order_by(tables.Arm.id)
         .with_for_update()
         .execution_options(populate_existing=True)
-    ).scalar_one_or_none()
-    if arm_to_update is None:
-        raise ExperimentsAssignmentError(
-            f"Arm '{draw_record.arm_id}' not found for experiment '{experiment.id}'.",
+    ).all()
+
+    num_outcomes = 0
+    for arm in arms:
+        outcomes, context_vals = _fetch_outcomes_and_context_for_arm(
+            xngin_session,
+            experiment_id=experiment.id,
+            arm_id=arm.id,
+            experiment_type=experiment_type,
+        )
+        num_outcomes += len(outcomes)
+        updated_parameters = update_bandit_arm(
+            experiment=experiment,
+            arm_to_update=arm,
+            outcomes=outcomes,
+            contexts=context_vals,
+            from_initial_prior=True,
         )
 
-    # Get all prior draws for this arm, sorted by observation date
-    outcomes, context_vals = _fetch_outcomes_and_context_for_arm(
-        xngin_session,
-        experiment_id=experiment.id,
-        arm_id=draw_record.arm_id,
-        experiment_type=ExperimentsType(experiment.experiment_type),
-    )
+        match updated_parameters:
+            case UpdateTypeBeta():
+                arm.alpha = updated_parameters.alpha
+                arm.beta = updated_parameters.beta
+            case UpdateTypeNormal():
+                arm.mu = updated_parameters.mu
+                arm.covariance = updated_parameters.covariance
 
-    updated_parameters = update_bandit_arm(
-        experiment=experiment,
-        arm_to_update=arm_to_update,
-        outcomes=outcomes,
-        contexts=context_vals,
-    )
-
-    # Update the draw record and arm with the new parameters
-    update_draw_params: PartialUpdateDrawBeta | PartialUpdateDrawNormal
-    match updated_parameters:
-        case UpdateTypeBeta():
-            update_draw_params = PartialUpdateDrawBeta(
-                current_alpha=updated_parameters.alpha, current_beta=updated_parameters.beta
-            )
-            arm_to_update.alpha = updated_parameters.alpha
-            arm_to_update.beta = updated_parameters.beta
-
-        case UpdateTypeNormal():
-            update_draw_params = PartialUpdateDrawNormal(
-                current_mu=updated_parameters.mu, current_covariance=updated_parameters.covariance
-            )
-            arm_to_update.mu = updated_parameters.mu
-            arm_to_update.covariance = updated_parameters.covariance
-
-    xngin_session.execute(
-        update(tables.Draw)
-        .where(
-            tables.Draw.participant_id == participant_id,
-            tables.Draw.experiment_id == experiment.id,
-            tables.Draw.arm_id == arm_to_update.id,
-        )
-        .values(**update_draw_params)
-    )
-
-    return arm_to_update
+    return num_outcomes
 
 
 def convert_assignment_results_to_assign_summary(

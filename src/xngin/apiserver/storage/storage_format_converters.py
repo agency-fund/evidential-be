@@ -360,6 +360,7 @@ class ExperimentStorageConverter:
                 "enable_autofail": self.experiment.enable_autofail,
                 "autofail_window": self.experiment.autofail_window,
                 "autofail_outcome_value": self.experiment.autofail_outcome_value,
+                "update_frequency_hours": self.experiment.update_frequency_hours,
                 "contexts": contexts,
             })
         raise ValueError(f"Unsupported experiment type: {self.experiment.experiment_type}")
@@ -510,6 +511,7 @@ class ExperimentStorageConverter:
                 experiment.enable_autofail = design_spec.enable_autofail
                 experiment.autofail_window = design_spec.autofail_window
                 experiment.autofail_outcome_value = design_spec.autofail_outcome_value
+                experiment.update_frequency_hours = design_spec.update_frequency_hours
 
                 arm_weights = design_spec.get_validated_arm_weights()
                 if arm_weights:

@@ -14,6 +14,7 @@ from loguru import logger
 from xngin.apiserver import customlogging, database
 from xngin.apiserver.worker.executor import AttemptExecutor, SystemClock
 from xngin.apiserver.worker.jobs.autofail import AutofailJob
+from xngin.apiserver.worker.jobs.bandit_update import BanditUpdateJob
 from xngin.apiserver.worker.jobs.base import Backoff
 from xngin.apiserver.worker.jobs.dwh_pull import DwhPullJob
 from xngin.apiserver.worker.jobs.snapshots import SnapshotJob
@@ -42,6 +43,9 @@ DWH_PULL_BACKOFF = Backoff(
 # Autofail failures are quick database errors or bugs that hold nothing external, so they keep retrying every 2
 # minutes.
 AUTOFAIL_BACKOFF = Backoff(delays=(timedelta(minutes=1), timedelta(minutes=2)))
+# Bandit update failures are database errors or bugs in our code. Retry soon, but back off so a bug that fails every
+# time doesn't recompute the arms in a tight loop.
+BANDIT_UPDATE_BACKOFF = Backoff(delays=(timedelta(minutes=2), timedelta(minutes=5)))
 
 # How long shutdown waits for the task queue thread to finish its current task, before the executor drains. Task
 # handlers time out their HTTP requests after 10 seconds and the queue's connect attempts after CONNECT_TIMEOUT_SECS,
@@ -143,6 +147,8 @@ def run(
         ),
         # AutofailJob computes its next run time from the experiment's pending draws.
         AutofailJob(batch_size=autofail_batch_size, backoff=AUTOFAIL_BACKOFF),
+        # BanditUpdateJob runs on each experiment's own update_frequency_hours.
+        BanditUpdateJob(backoff=BANDIT_UPDATE_BACKOFF),
     )
     clock = SystemClock()
     # Graceful shutdown: SIGINT and SIGTERM only set this event, so the worker stops starting new jobs

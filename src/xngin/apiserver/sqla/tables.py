@@ -463,6 +463,7 @@ class Experiment(Base):
     enable_autofail: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
     autofail_window: Mapped[int] = mapped_column(server_default="24")
     autofail_outcome_value: Mapped[float] = mapped_column(server_default="0.0")
+    update_frequency_hours: Mapped[int | None] = mapped_column()
 
     # Frequentist config params
     # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run

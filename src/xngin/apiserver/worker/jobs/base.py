@@ -106,7 +106,7 @@ class Job(Protocol):
 
 def next_run_in_window(
     now: ColumnElement[datetime],
-    interval: timedelta,
+    interval: timedelta | ColumnElement[timedelta],
     *,
     opens: SQLColumnExpression[datetime],
     closes: SQLColumnExpression[datetime],

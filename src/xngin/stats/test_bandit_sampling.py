@@ -253,8 +253,6 @@ def test_below_threshold_barely_explores_with_dominant_arm_cmab():
     assert challenger_rate < EXPECTED_CHALLENGER_RATE / 2
 
 
-# TODO: this should pass once we switch to batched updates
-@pytest.mark.skip
 def test_update_arm_beta_binomial_counts_batched_rewards():
     """Each 1 adds to alpha and each 0 adds to beta."""
     beta_binom_experiment = make_experiment_table(
@@ -269,8 +267,6 @@ def test_update_arm_beta_binomial_counts_batched_rewards():
     assert result.beta == arm_to_update.beta + 1
 
 
-# TODO: this should pass once we switch to batched updates
-@pytest.mark.skip
 def test_update_arm_normal_batch_matches_sequential_updates():
     """Updating on T rewards at once equals updating one reward at a time from the same starting prior."""
     rng = np.random.default_rng(0)

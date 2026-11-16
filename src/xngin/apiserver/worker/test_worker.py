@@ -14,7 +14,7 @@ from xngin.apiserver.routers.admin.test_admin_api import (
 from xngin.apiserver.routers.common_enums import ExperimentState, ExperimentsType, LikelihoodTypes, PriorTypes
 from xngin.apiserver.routers.experiments.experiments_common import (
     create_assignment_for_participant,
-    update_bandit_arm_with_outcome_impl,
+    record_bandit_outcome_impl,
 )
 from xngin.apiserver.routers.experiments.test_experiments_common import make_create_online_bandit_experiment_request
 from xngin.apiserver.sqla import tables
@@ -117,7 +117,7 @@ def test_dwh_pull_runs_only_while_draws_are_pending_until_the_grace_period_ends(
     experiment = make_dwh_experiment(xngin_session, testing_datasource.ds)
     experiment.end_date = datetime.now(UTC) - timedelta(days=days_since_end)
     if resolved:
-        update_bandit_arm_with_outcome_impl(xngin_session, experiment, "1", 1.0)
+        record_bandit_outcome_impl(xngin_session, experiment, "1", 1.0)
     xngin_session.commit()
     assert (scheduled_at(experiment.id, PULL) is not None) == scheduled
 
@@ -149,7 +149,7 @@ def test_autofail_catches_up_after_an_outage(xngin_session, testing_datasource):
 def test_autofail_schedule_follows_pending_draws(xngin_session, testing_datasource):
     resolved = make_autofail_experiment(xngin_session, testing_datasource.ds, participants=("1",))
     pending = make_autofail_experiment(xngin_session, testing_datasource.ds, participants=("1",))
-    update_bandit_arm_with_outcome_impl(xngin_session, resolved, "1", 1.0)
+    record_bandit_outcome_impl(xngin_session, resolved, "1", 1.0)
     pending.end_date = datetime.now(UTC) - timedelta(days=5)
     xngin_session.commit()
 
@@ -200,7 +200,7 @@ def test_attempt_rechecks_run_times_under_its_claim(xngin_session, testing_datas
     experiment = make_autofail_experiment(xngin_session, testing_datasource.ds, participants=("1",))
     assert due_experiment_ids((AUTOFAIL,)) == (experiment.id,)
     # An API outcome resolves the only pending draw after the look found the experiment due.
-    update_bandit_arm_with_outcome_impl(xngin_session, experiment, "1", 1.0)
+    record_bandit_outcome_impl(xngin_session, experiment, "1", 1.0)
     xngin_session.commit()
 
     assert attempt_experiment((AUTOFAIL,), experiment.id) == FinishedAttempt(experiment.id, AttemptResult.NOTHING_READY)
@@ -235,7 +235,7 @@ def test_api_writes_commit_while_a_worker_holds_the_experiment(xngin_session, te
         # Assignments, outcomes, and experiment edits must commit while maintenance still holds both locks.
         xngin_session.execute(text("SET LOCAL lock_timeout = '300ms'"))
         create_assignment_for_participant(xngin_session, experiment, "new", None, random_state=66)
-        update_bandit_arm_with_outcome_impl(xngin_session, experiment, "1", 1.0)
+        record_bandit_outcome_impl(xngin_session, experiment, "1", 1.0)
         experiment.end_date += timedelta(days=1)
         xngin_session.commit()
     assert ran_successfully(running.result(), job)
@@ -470,7 +470,7 @@ def test_real_job_failure_rolls_back_backs_off_and_recovers(
 ):
     participants = ("1", "2", "3")
     experiment = make_experiment(xngin_session, testing_datasource.ds, participants=participants)
-    real_update = bandit_outcomes.update_bandit_arm_with_outcome_impl
+    real_update = bandit_outcomes.record_bandit_outcome_impl
     updated = []
     fail = True
 
@@ -483,7 +483,7 @@ def test_real_job_failure_rolls_back_backs_off_and_recovers(
             raise RuntimeError("Interrupted outcome processing")
         return result
 
-    monkeypatch.setattr(bandit_outcomes, "update_bandit_arm_with_outcome_impl", update_then_fail)
+    monkeypatch.setattr(bandit_outcomes, "record_bandit_outcome_impl", update_then_fail)
     started = datetime.now(UTC)
     finished = started + timedelta(seconds=17)
     # Distinct start and finish times show that the retry delay is measured from when the run finished.
