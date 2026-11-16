@@ -149,6 +149,7 @@ def _build_cluster_sample_size_message(
     available_nonnull_n: int,
     num_clusters_total: int,
     target_possible: float | None,
+    limited_by_clusters: bool,
 ) -> MetricPowerAnalysisMessage:
     assert metric.available_n is not None
 
@@ -189,6 +190,34 @@ def _build_cluster_sample_size_message(
     if sufficient_n:
         msg_type = MetricPowerAnalysisMessageType.SUFFICIENT
         msg_body = "There are enough non-null valued units available."
+    elif limited_by_clusters:
+        assert metric.available_n_clusters is not None
+        assert metric.metric_baseline is not None
+        assert metric.metric_target is not None
+
+        msg_type = MetricPowerAnalysisMessageType.INSUFFICIENT
+        values_map["additional_clusters_needed"] = num_clusters_total - metric.available_n_clusters
+        values_map["available_n_clusters"] = metric.available_n_clusters
+        values_map["metric_baseline"] = round(metric.metric_baseline, 4)
+        values_map["metric_target"] = round(metric.metric_target, 4)
+        if target_possible is None:
+            msg_body = (
+                "There are not enough clusters available. "
+                "You need {additional_clusters_needed} more clusters to meet your specified "
+                "metric target of {metric_target}. "
+                "With the available {available_n_clusters} clusters, no metric target "
+                "in the direction of your specified change can reach the requested power. "
+            )
+        else:
+            values_map["target_possible"] = round(target_possible, 4)
+            msg_body = (
+                "There are not enough clusters available. "
+                "You need {additional_clusters_needed} more clusters to meet your specified "
+                "metric target of {metric_target}. "
+                "Alternatively, with the available {available_n_clusters} clusters "
+                "and a metric baseline of {metric_baseline}, your metric target should be "
+                "{target_possible} or further from the baseline. "  # noqa: RUF027
+            )
     else:
         assert metric.metric_baseline is not None
         assert metric.metric_target is not None
@@ -442,21 +471,34 @@ def solve_for_sample_size_cluster(
             n_per_arm_list.append(n_actual_this_arm)
 
         # 4) Assemble the final values we need for our analysis response.
-        # Note that we're using the total inflated individual units needed given the clustering
-        # present to determine whether or not we have enough units to sample from!
+        # Sufficiency uses the inflated unit count, and the cluster count when we know how many
+        # clusters exist. A smaller average cluster size can demand more clusters than exist.
         clusters_total = sum(clusters_per_arm_list)
         cluster_adj_target_n = sum(n_per_arm_list)
         effective_n = int(cluster_adj_target_n / deff)
-        sufficient_n = bool(cluster_adj_target_n <= available_nonnull_n)
+        enough_units = cluster_adj_target_n <= available_nonnull_n
+        # If available_n_clusters doesn't exist, skip the cluster check portion.
+        enough_clusters = metric.available_n_clusters is None or clusters_total <= metric.available_n_clusters
+        sufficient_n = enough_units and enough_clusters
         target_possible = None
         pct_change_possible = None
         target_possible_lower = None
         pct_change_possible_lower = None
+        limited_by_clusters = False
         if not sufficient_n:
-            # Let the user know: Given the clustering, what could you detect with what's available?
+            # Let the user know what they could detect with what's available. When the cluster
+            # count is the tighter limit, size that sample from the clusters that exist at this
+            # average cluster size. Using every non-null unit would assume more clusters than exist.
+            achievable_n = available_nonnull_n
+            if not enough_clusters:
+                assert metric.available_n_clusters is not None
+                cluster_capped_n = round(metric.available_n_clusters * metric.avg_cluster_size)
+                if cluster_capped_n < available_nonnull_n:
+                    achievable_n = cluster_capped_n
+                    limited_by_clusters = True
             mde_result = solve_for_mde_cluster_impl(
                 metric=metric,
-                desired_n=available_nonnull_n,
+                desired_n=achievable_n,
                 n_arms=n_arms,
                 arm_weights=arm_weights,
                 alpha=alpha,
@@ -476,6 +518,7 @@ def solve_for_sample_size_cluster(
             available_nonnull_n=available_nonnull_n,
             num_clusters_total=clusters_total,
             target_possible=(target_possible_lower if requested_direction_is_down(metric) else target_possible),
+            limited_by_clusters=limited_by_clusters,
         )
 
         cluster_analysis = MetricPowerAnalysis(
