@@ -3134,7 +3134,7 @@ def capture_statements(session: Session) -> Generator[list[str]]:
 def test_list_experiments_query_count_does_not_grow_with_experiments(xngin_session, testing_datasource):
     """Listing variable-sized experiments loads in a fixed number of queries (an N+1 queries regression test)."""
 
-    def _list_experiments() -> tuple[list[str], ListExperimentsResponse]:
+    def _list_org_experiments() -> tuple[list[str], ListExperimentsResponse]:
         # Expire everything already loaded so that every list call issues the same queries.
         xngin_session.expire_all()
         with capture_statements(xngin_session) as statements:
@@ -3159,8 +3159,11 @@ def test_list_experiments_query_count_does_not_grow_with_experiments(xngin_sessi
     ])
     xngin_session.commit()
 
-    statements_for_two, response = _list_experiments()
-    assert len(statements_for_two) == 5  # experiment, webhooks, contexts, arm+armstats, fields+filters
+    statements_for_two, response = _list_org_experiments()
+    # 6 queries: experiment, webhooks, contexts, arm+armstats, fields+filters, datasource.
+    # The datasource fetch is a lazy load of datasource.config from get_spreadsheet_full_url(),
+    # once per distinct datasource rather than once per experiment.
+    assert len(statements_for_two) == 6
     assert len(response.items) == 2
     summaries = {item.experiment_id: item.assign_summary for item in response.items}
 
@@ -3184,7 +3187,7 @@ def test_list_experiments_query_count_does_not_grow_with_experiments(xngin_sessi
     for _ in range(3):
         insert_experiment_and_arms(xngin_session, testing_datasource.ds)
 
-    statements_for_five, response = _list_experiments()
+    statements_for_five, response = _list_org_experiments()
     assert len(response.items) == 5
     for item in response.items:
         assert item.assign_summary is not None
