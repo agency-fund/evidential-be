@@ -1056,7 +1056,7 @@ def create_datasource(
     """Creates a new datasource for the specified organization."""
     org = adeps.load_organization_or_raise(session, user, body.organization_id)
     if body.dsn.type == "google_sheets":
-        adeps.raise_unless_privileged(user)
+        adeps.raise_unless_can_connect_google_sheets(user)
 
     raise_unless_safe_hostname(body.dsn)
 
@@ -1079,7 +1079,7 @@ def update_datasource(
     body: UpdateDatasourceRequest,
 ):
     if body.dsn is not None and body.dsn.type == "google_sheets":
-        adeps.raise_unless_privileged(user)
+        adeps.raise_unless_can_connect_google_sheets(user)
     if body.name is not None:
         datasource.name = body.name
     if body.dsn is not None:

@@ -24,7 +24,7 @@ from sqlalchemy.orm import QueryableAttribute, Session, selectinload
 
 from xngin.apiserver.dependencies import xngin_sync_db_session
 from xngin.apiserver.request_context_middleware import add_request_fields
-from xngin.apiserver.routers.auth.auth_dependencies import require_user_from_token
+from xngin.apiserver.routers.auth.auth_dependencies import is_trusted_domain_email, require_user_from_token
 from xngin.apiserver.routers.preloads import (
     EXPERIMENT_ARMS_WITH_STATS,
     EXPERIMENT_FIELDS_WITH_FILTERS,
@@ -53,6 +53,15 @@ def raise_unless_privileged(user: tables.User) -> None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only privileged users can perform this action.",
+        )
+
+
+def raise_unless_can_connect_google_sheets(user: tables.User) -> None:
+    """Raises 403 unless the user is privileged or has an email address in one of the XNGIN_TRUSTED_EMAIL_DOMAINS."""
+    if not user.is_privileged and not is_trusted_domain_email(user.email):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only privileged users and users from a trusted email domain can connect Google Sheets.",
         )
 
 

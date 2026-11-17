@@ -268,6 +268,46 @@ def test_user_from_token_initial_setup(xngin_session: Session):
     assert exc.value.status_code == 401
 
 
+def test_user_from_token_trusted_domain_self_signup(xngin_session: Session, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(flags, "TRUSTED_EMAIL_DOMAINS", frozenset({"example.org"}))
+    # Deployments that allow self-signup have no developer warehouse, so new users get no sample data sources.
+    monkeypatch.setattr(flags, "XNGIN_DEVDWH_DSN", "")
+
+    user = require_user_from_token(
+        xngin_session,
+        Principal(email="newuser@example.org", iss="iss", sub="sub", hd="example.org", iat=int(time.time())),
+    )
+
+    assert not user.is_privileged
+    xngin_session.refresh(user, ["organizations"])
+    assert len(user.organizations) == 1
+    datasources = user.organizations[0].datasources
+    assert [ds.name for ds in datasources] == [DEFAULT_NO_DWH_SOURCE_NAME]
+    assert isinstance(datasources[0].get_config().dwh, NoDwh)
+
+
+@pytest.mark.parametrize(
+    ("email", "hd"),
+    [
+        # hd is empty when XNGIN_OIDC_CLAIM_MAP does not map it, or when the account is not managed by a Workspace.
+        ("someone@example.org", ""),
+        ("someone@example.net", "example.net"),
+        # A trusted hd must match the email domain.
+        ("someone@example.net", "example.org"),
+    ],
+)
+def test_user_from_token_untrusted_domain_is_not_created(
+    xngin_session: Session, monkeypatch: pytest.MonkeyPatch, email: str, hd: str
+):
+    monkeypatch.setattr(flags, "TRUSTED_EMAIL_DOMAINS", frozenset({"example.org"}))
+
+    with pytest.raises(HTTPException, match="user not found") as exc:
+        require_user_from_token(
+            xngin_session, Principal(email=email, iss="iss", sub="sub", hd=hd, iat=int(time.time()))
+        )
+    assert exc.value.status_code == 401
+
+
 def test_user_from_token_expired(xngin_session: Session):
     # emulate first time developer experience by deleting the seeded users
     delete_seeded_users(xngin_session)

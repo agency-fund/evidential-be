@@ -346,6 +346,25 @@ def test_only_privileged_users_can_connect_google_sheets(sheets_api, aclient_unp
     api.read.assert_not_called()
 
 
+def test_trusted_domain_users_can_connect_google_sheets(sheets_api, aclient_unpriv, xngin_session, monkeypatch):
+    # The unprivileged testing user's email address is in example.com.
+    monkeypatch.setattr(flags, "TRUSTED_EMAIL_DOMAINS", frozenset({"example.com"}))
+    org_id = aclient_unpriv.create_organizations(body=aapi.CreateOrganizationRequest(name="Trusted")).data.id
+    sheets_dsn = aapi.GoogleSheetsDsn(spreadsheet_url=URL)
+
+    created_id = aclient_unpriv.create_datasource(
+        body=aapi.CreateDatasourceRequest(organization_id=org_id, name="Sheet", dsn=sheets_dsn)
+    ).data.id
+    updated_id = aclient_unpriv.create_datasource(
+        body=aapi.CreateDatasourceRequest(organization_id=org_id, name="Connector", dsn=aapi.ApiOnlyDsn())
+    ).data.id
+    aclient_unpriv.update_datasource(datasource_id=updated_id, body=aapi.UpdateDatasourceRequest(dsn=sheets_dsn))
+
+    xngin_session.expire_all()
+    for datasource_id in (created_id, updated_id):
+        assert isinstance(xngin_session.get_one(tables.Datasource, datasource_id).get_config().dwh, GoogleSheetsDsn)
+
+
 def test_empty_metric_is_numeric_and_zero_is_observed(sheets_api):
     _, values = sheets_api
     values[:] = [["id", "outcome"], ["001", ""], ["002", 0]]

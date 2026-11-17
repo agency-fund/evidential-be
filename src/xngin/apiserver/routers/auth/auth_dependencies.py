@@ -179,22 +179,46 @@ def _lookup_or_create(session: Session, principal: Principal) -> tables.User | N
             return user
         return None
 
-    # There are two cases when we create a user on an authenticated request:
+    # There are three cases when we create a user on an authenticated request:
     # 1. Airplane mode: We are in airplane mode and the request is coming from the UI in airplane mode.
     # 2. First use of installation by a developer: There are no users in the database, and this is the first request.
+    # 3. Trusted domain self-signup: The identity provider vouches that the user belongs to a trusted domain. These
+    #    users are not privileged; like everyone else, they get their own organization.
     user_count = session.scalar(select(count(tables.User.id)))
     if user_count == 0 or (flags.AIRPLANE_MODE and principal.iss == "airplane"):
-        user = tables.User(email=principal.email, iss=principal.iss, sub=principal.sub, is_privileged=True)
-        user = create_entities_for_first_time_user(
-            session,
-            user,
-            flags.XNGIN_DEVDWH_DSN,
-            bigquery_dsn=flags.XNGIN_DEVDWH_GCP_BIGQUERY_DSN,
-            redshift_dsn=flags.XNGIN_DEVDWH_AWS_REDSHIFT_DSN,
-        )
-        session.commit()
-        return user
-    return None
+        is_privileged = True
+    elif _is_trusted_domain_principal(principal):
+        is_privileged = False
+    else:
+        return None
+    user = tables.User(email=principal.email, iss=principal.iss, sub=principal.sub, is_privileged=is_privileged)
+    user = create_entities_for_first_time_user(
+        session,
+        user,
+        flags.XNGIN_DEVDWH_DSN,
+        bigquery_dsn=flags.XNGIN_DEVDWH_GCP_BIGQUERY_DSN,
+        redshift_dsn=flags.XNGIN_DEVDWH_AWS_REDSHIFT_DSN,
+    )
+    session.commit()
+    return user
+
+
+def is_trusted_domain_email(email: str) -> bool:
+    """Reports whether the email address belongs to one of the XNGIN_TRUSTED_EMAIL_DOMAINS."""
+    _, at, domain = email.rpartition("@")
+    return bool(at) and domain.lower() in flags.TRUSTED_EMAIL_DOMAINS
+
+
+def _is_trusted_domain_principal(principal: Principal) -> bool:
+    """Reports whether the identity provider vouched that the principal belongs to a trusted domain.
+
+    The email domain alone is not enough: a consumer Google account can be registered with any email address. Google
+    only sets the hosted domain (hd) claim for accounts managed by that Google Workspace domain, so we require hd to be
+    trusted and to match the email domain. hd is only populated when XNGIN_OIDC_CLAIM_MAP maps it.
+    """
+    hd = principal.hd.lower()
+    _, _, email_domain = principal.email.rpartition("@")
+    return hd in flags.TRUSTED_EMAIL_DOMAINS and email_domain.lower() == hd
 
 
 def enable_testing_tokens():

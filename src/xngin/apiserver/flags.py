@@ -40,6 +40,15 @@ OIDC_CLAIM_MAP = os.environ.get(ENV_XNGIN_OIDC_CLAIM_MAP, "")
 # token_cryptor).
 ENV_SESSION_TOKEN_KEYSET = "XNGIN_SESSION_TOKEN_KEYSET"  # noqa: S105
 
+# XNGIN_TRUSTED_EMAIL_DOMAINS: comma-separated list of email domains whose users are trusted. A user from a trusted
+# domain may connect Google Sheets datasources without being privileged, and a first login creates their (unprivileged)
+# account and a personal organization without an invitation. Self-signup additionally requires the identity provider
+# to vouch for the domain via the "hd" claim, so pair this with XNGIN_OIDC_CLAIM_MAP=hd:hd. Unset trusts no domain.
+# Example: XNGIN_TRUSTED_EMAIL_DOMAINS=example.com,example.org
+TRUSTED_EMAIL_DOMAINS: frozenset[str] = frozenset(
+    d.strip().lower() for d in os.environ.get("XNGIN_TRUSTED_EMAIL_DOMAINS", "").split(",") if d.strip()
+)
+
 ALLOW_CONNECTING_TO_PRIVATE_IPS = truthy_env("ALLOW_CONNECTING_TO_PRIVATE_IPS")
 PUBLISH_ALL_DOCS = truthy_env("XNGIN_PUBLISH_ALL_DOCS")
 

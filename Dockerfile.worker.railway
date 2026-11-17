@@ -11,12 +11,11 @@ ENV UV_PYTHON_PREFERENCE=only-system
 WORKDIR /code
 COPY pyproject.toml .
 COPY uv.lock .
-# Note: Railway builders will error if the id= is set via build variables.
-RUN --mount=type=cache,id=s/2beeade6-094a-4c7b-b3b0-7853103c0bd3-/root/.cache/uv,target=/root/.cache/uv \
-    /bin/uv sync --locked --no-install-project --no-dev
+# No build cache mount: Railway requires a cache mount's id= to embed the ID of the service being built, so the
+# mount used by the production service would fail the build of a service in another Railway project.
+RUN /bin/uv sync --locked --no-install-project --no-dev
 COPY ./src /code/src
-RUN --mount=type=cache,id=s/2beeade6-094a-4c7b-b3b0-7853103c0bd3-/root/.cache/uv,target=/root/.cache/uv \
-    /bin/uv sync --locked --no-dev
+RUN /bin/uv sync --locked --no-dev
 
 FROM python:3.14-slim-trixie
 RUN apt-get update \
