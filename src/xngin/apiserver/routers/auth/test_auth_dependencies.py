@@ -7,15 +7,17 @@ import fastapi
 import pytest
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from xngin.apiserver import flags
+from xngin.apiserver import database, flags
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.routers.admin.admin_common import DEFAULT_NO_DWH_SOURCE_NAME, default_organization_name
 from xngin.apiserver.routers.admin.test_admin_api import find_ds_with_name
+from xngin.apiserver.routers.auth import auth_dependencies
 from xngin.apiserver.routers.auth.auth_dependencies import (
+    AIRPLANE_TOKEN,
     PRIVILEGED_TOKEN_FOR_TESTING,
     SESSION_TOKEN_LIFETIME,
     SESSION_TOKEN_PREFIX,
@@ -24,6 +26,7 @@ from xngin.apiserver.routers.auth.auth_dependencies import (
     SessionTokenCryptor,
     require_user_from_token,
     require_valid_session_token,
+    sign_in,
 )
 from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.auth.token_cryptor import TokenCryptor, TokenCryptorMisconfiguredError
@@ -355,6 +358,18 @@ def test_initial_user_setup_matches_testing_dwh(xngin_session: Session):
     assert set(snapshot_counts.values()) == {10}
 
 
+def _set_signup_policy(session: Session, mode: tables.SignupMode, domains: list[str] | None = None) -> None:
+    """Stores the sign-up mode and domain settings directly, as the admin API would."""
+    settings = session.get(tables.ServerSettings, tables.SERVER_SETTINGS_ID)
+    if settings is None:
+        settings = tables.ServerSettings()
+        session.add(settings)
+    settings.signup_mode = mode
+    session.execute(delete(tables.DomainSettings))
+    session.add_all(tables.DomainSettings(domain=domain) for domain in domains or [])
+    session.commit()
+
+
 def _principal(email: str, *, iss: str = "https://idp.example.com", sub: str = "sub-1", iat: int | None = None):
     return Principal(email=email, iss=iss, sub=sub, hd="", iat=int(time.time()) if iat is None else iat)
 
@@ -365,6 +380,175 @@ def _user_count(session: Session) -> int:
 
 def _users_with_email_ci(session: Session, email: str) -> list[tables.User]:
     return list(session.scalars(select(tables.User).where(func.lower(tables.User.email) == email.lower())))
+
+
+def _sign_up(session: Session, principal: Principal) -> tables.User:
+    user = sign_in(session, principal)
+    assert user is not None
+    return user
+
+
+def _assert_rejected(session: Session, principal: Principal):
+    assert sign_in(session, principal) is None
+    with pytest.raises(HTTPException, match="user not found") as exc:
+        require_user_from_token(session, principal)
+    assert exc.value.status_code == 401
+
+
+def test_signup_without_settings_row_rejects_unknown_user(xngin_session: Session):
+    assert xngin_session.get(tables.ServerSettings, tables.SERVER_SETTINGS_ID) is None
+    users_before = _user_count(xngin_session)
+
+    _assert_rejected(xngin_session, _principal("stranger@example.org"))
+
+    assert _user_count(xngin_session) == users_before
+    assert xngin_session.scalar(select(func.count()).select_from(tables.Organization)) == 0
+    assert xngin_session.get(tables.ServerSettings, tables.SERVER_SETTINGS_ID) is None
+
+
+@pytest.mark.parametrize("mode", ["existing", "existing_and_domains", "anyone"])
+def test_invited_user_signs_in_under_every_signup_mode(xngin_session: Session, mode):
+    _set_signup_policy(xngin_session, mode, ["example.org"])
+    invited = tables.User(email="invitee@example.com")
+    xngin_session.add(invited)
+    xngin_session.commit()
+
+    user = require_user_from_token(xngin_session, _principal("invitee@example.com", sub="invitee-sub"))
+
+    assert user.id == invited.id
+    assert (user.iss, user.sub) == ("https://idp.example.com", "invitee-sub")
+
+
+def test_requests_do_not_sign_up_users(xngin_session: Session):
+    _set_signup_policy(xngin_session, "anyone")
+    users_before = _user_count(xngin_session)
+
+    with pytest.raises(HTTPException, match="user not found"):
+        require_user_from_token(xngin_session, _principal("newcomer@example.net"))
+
+    assert _user_count(xngin_session) == users_before
+
+
+def test_signup_existing_rejects_unknown_user(xngin_session: Session):
+    _set_signup_policy(xngin_session, "existing", ["example.org"])
+    users_before = _user_count(xngin_session)
+
+    _assert_rejected(xngin_session, _principal("stranger@example.org"))
+
+    assert _user_count(xngin_session) == users_before
+
+
+@pytest.mark.parametrize("devdwh_dsn", ["", flags.XNGIN_DEVDWH_DSN or "postgresql+psycopg://u:p@localhost/dwh"])
+def test_signup_anyone_creates_bare_unprivileged_user(
+    xngin_session: Session, monkeypatch: pytest.MonkeyPatch, records, devdwh_dsn
+):
+    monkeypatch.setattr(flags, "XNGIN_DEVDWH_DSN", devdwh_dsn)
+    _set_signup_policy(xngin_session, "anyone")
+    users_before = _user_count(xngin_session)
+
+    user = _sign_up(xngin_session, _principal("newcomer@example.net", sub="newcomer-sub"))
+
+    assert user.email == "newcomer@example.net"
+    assert user.is_privileged is False
+    assert user.iss == "https://idp.example.com"
+    assert user.sub == "newcomer-sub"
+    assert _user_count(xngin_session) == users_before + 1
+    xngin_session.refresh(user, ["organizations"])
+    assert user.organizations == []
+    assert xngin_session.scalar(select(func.count()).select_from(tables.Organization)) == 0
+    assert xngin_session.scalar(select(func.count()).select_from(tables.Datasource)) == 0
+
+    created = [r for r in records if r["message"].startswith("Created user")]
+    assert len(created) == 1
+    assert user.id in created[0]["message"]
+    assert "domain='example.net'" in created[0]["message"]
+    assert "signup_mode=anyone" in created[0]["message"]
+
+
+def test_signup_anyone_returns_same_user_on_later_requests(xngin_session: Session):
+    _set_signup_policy(xngin_session, "anyone")
+    principal = _principal("newcomer@example.net")
+
+    first = _sign_up(xngin_session, principal)
+    second = require_user_from_token(xngin_session, principal)
+
+    assert first.id == second.id
+    assert len(_users_with_email_ci(xngin_session, "newcomer@example.net")) == 1
+
+
+def test_signup_existing_and_domains_match_creates_user(xngin_session: Session):
+    _set_signup_policy(xngin_session, "existing_and_domains", ["example.org", "example.net"])
+
+    user = _sign_up(xngin_session, _principal("Member@EXAMPLE.org"))
+
+    assert user.is_privileged is False
+    # The stored email is exactly as presented by the identity provider.
+    assert user.email == "Member@EXAMPLE.org"
+
+
+@pytest.mark.parametrize(
+    "email",
+    [
+        "member@sub.example.org",
+        "member@example.org.example.net",
+        "member@example.org.",
+        "member@example.org@example.com",
+    ],
+)
+def test_signup_existing_and_domains_miss_rejects_user(xngin_session: Session, email):
+    _set_signup_policy(xngin_session, "existing_and_domains", ["example.org"])
+    users_before = _user_count(xngin_session)
+
+    _assert_rejected(xngin_session, _principal(email))
+
+    assert _user_count(xngin_session) == users_before
+
+
+def test_signup_existing_and_domains_empty_list_rejects_user(xngin_session: Session):
+    _set_signup_policy(xngin_session, "existing_and_domains", [])
+
+    _assert_rejected(xngin_session, _principal("member@example.org"))
+
+
+def test_signup_existing_and_domains_ignores_domains_that_do_not_allow_signup(xngin_session: Session):
+    _set_signup_policy(xngin_session, "existing_and_domains", [])
+    xngin_session.add(tables.DomainSettings(domain="example.org", allow_signup=False))
+    xngin_session.commit()
+
+    _assert_rejected(xngin_session, _principal("member@example.org"))
+
+
+@pytest.mark.parametrize(
+    ("mode", "domains"),
+    [
+        pytest.param("existing", ["example.org"], id="switch-to-existing"),
+        pytest.param("existing_and_domains", ["example.net"], id="domain-removed"),
+    ],
+)
+def test_signed_up_user_survives_policy_changes(xngin_session: Session, mode, domains):
+    _set_signup_policy(xngin_session, "existing_and_domains", ["example.org"])
+    principal = _principal("member@example.org")
+    created = _sign_up(xngin_session, principal)
+
+    _set_signup_policy(xngin_session, mode, domains)
+
+    assert require_user_from_token(xngin_session, principal).id == created.id
+    # Others from the removed domain are no longer admitted.
+    _assert_rejected(xngin_session, _principal("another@example.org"))
+
+
+def test_signed_up_user_honours_last_logout(xngin_session: Session):
+    _set_signup_policy(xngin_session, "anyone")
+    user = _sign_up(xngin_session, _principal("newcomer@example.net", iat=0))
+
+    now = datetime.now()
+    user.last_logout = now + timedelta(days=365)
+    xngin_session.commit()
+
+    with pytest.raises(HTTPException, match="Expired session") as exc:
+        require_user_from_token(xngin_session, _principal("newcomer@example.net", iat=int(now.timestamp())))
+    assert exc.value.status_code == 401
+    assert len(_users_with_email_ci(xngin_session, "newcomer@example.net")) == 1
 
 
 def test_invited_user_matches_case_insensitively(xngin_session: Session):
@@ -389,3 +573,56 @@ def test_emails_are_unique_case_insensitively(xngin_session: Session):
     with pytest.raises(IntegrityError, match="ix_users_email_lower"):
         xngin_session.commit()
     xngin_session.rollback()
+
+
+def test_signup_race_loser_returns_winning_user(xngin_session: Session, monkeypatch: pytest.MonkeyPatch):
+    """When a concurrent request creates the user between the lookup and the insert, the existing row is used."""
+    _set_signup_policy(xngin_session, "anyone")
+    email = "racer@example.net"
+    original_find = auth_dependencies.find_user_by_email
+    calls = 0
+
+    def find_after_concurrent_insert(session: Session, email_arg: str):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            # The winning request inserts and commits the user after our lookup found nothing.
+            with database.get_session() as other_session:
+                # The winner's email differs in case, as it would if the IDP changed how it presents the address.
+                other_session.add(tables.User(email=email.upper(), iss="https://idp.example.com", sub="sub-1"))
+                other_session.commit()
+            return None
+        return original_find(session, email_arg)
+
+    monkeypatch.setattr(auth_dependencies, "find_user_by_email", find_after_concurrent_insert)
+
+    user = _sign_up(xngin_session, _principal(email))
+
+    assert calls == 2
+    assert user.email == email.upper()
+    assert len(_users_with_email_ci(xngin_session, email)) == 1
+
+
+def test_first_user_bootstrap_ignores_signup_policy(xngin_session: Session):
+    delete_seeded_users(xngin_session)
+    _set_signup_policy(xngin_session, "existing")
+
+    first_user = require_user_from_token(xngin_session, _principal("founder@example.org"))
+
+    assert first_user.is_privileged
+    xngin_session.refresh(first_user, ["organizations"])
+    assert [o.name for o in first_user.organizations] == ["founder's Organization"]
+
+
+def test_airplane_mode_creates_privileged_user_regardless_of_signup_policy(
+    xngin_session: Session, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(flags, "AIRPLANE_MODE", True)
+    monkeypatch.setattr(flags, "XNGIN_DEVDWH_DSN", "")
+    _set_signup_policy(xngin_session, "existing")
+
+    user = require_user_from_token(xngin_session, TESTING_TOKENS[AIRPLANE_TOKEN])
+
+    assert user.is_privileged
+    xngin_session.refresh(user, ["organizations"])
+    assert [o.name for o in user.organizations] == ["testing's Organization"]

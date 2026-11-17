@@ -12,3 +12,4 @@ class Principal(BaseModel):
     iat: int  # issued-at timestamp
     iss: str  # issuer
     sub: str  # subject identifier
+    user_id: str | None = None  # Evidential's unique user ID for this user, if it existed at time of login.

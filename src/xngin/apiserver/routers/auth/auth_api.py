@@ -11,10 +11,11 @@ import httpx2
 import jwt
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Response
 from loguru import logger
+from sqlalchemy.orm import Session
 from starlette import status
 
 from xngin.apiserver import constants, flags
-from xngin.apiserver.dependencies import retrying_httpx_dependency
+from xngin.apiserver.dependencies import retrying_httpx_dependency, xngin_sync_db_session
 from xngin.apiserver.routers.auth import auth_dependencies
 from xngin.apiserver.routers.auth.auth_api_types import CallbackRequest, CallbackResponse, OidcClientConfigResponse
 from xngin.apiserver.routers.auth.auth_dependencies import SessionTokenCryptor
@@ -28,6 +29,7 @@ from xngin.apiserver.routers.auth.discovery import (
 )
 from xngin.apiserver.routers.auth.oidc_settings import SCOPE, OidcSettings, get_oidc_settings
 from xngin.apiserver.routers.auth.principal import Principal
+from xngin.apiserver.sqla import tables
 
 # The identity provider and this server may disagree slightly about the wall clock. PyJWT applies this leeway to the
 # iat, nbf, and exp claims.
@@ -117,13 +119,15 @@ def auth_callback(
     discovery: Annotated[OidcDiscoveryClient, Depends(get_oidc_discovery)],
     httpx_client: Annotated[httpx2.Client, Depends(retrying_httpx_dependency)],
     session_cryptor: Annotated[SessionTokenCryptor, Depends()],
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
     response: Response,
 ) -> CallbackResponse:
     """Exchanges the OIDC authorization code and verifier for an identity token (JWT), and then creates a session token.
 
     This is the final step in acquiring a JWT from the identity provider promising that the user successfully
     authenticated. After verifying the identity token, we return a signed application-specific token that the
-    frontend can use to authenticate the user for the remainder of their session.
+    frontend can use to authenticate the user for the remainder of their session. A user who signs in for the first
+    time is created here if the sign-up policy permits.
     """
     tokens = _exchange_code_for_tokens(
         settings, discovery, httpx_client, code=body.code, code_verifier=body.code_verifier
@@ -132,7 +136,10 @@ def auth_callback(
     claims = _validate_idtoken(settings, signing_key, id_token=tokens.id_token, nonce=body.nonce)
     if "email_verified" not in claims:
         _require_email_verified_by_userinfo(discovery, httpx_client, claims=claims, access_token=tokens.access_token)
-    session_token = session_cryptor.encode(_principal_from_claims(settings, claims))
+    principal = _principal_from_claims(settings, claims)
+    if user := auth_dependencies.sign_in(session, principal):
+        principal = principal.model_copy(update={"user_id": user.id})
+    session_token = session_cryptor.encode(principal)
     # The session token is a bearer credential, so no cache may keep a copy of this response.
     response.headers["Cache-Control"] = "no-store"
     return CallbackResponse(session_token=session_token)
@@ -350,6 +357,9 @@ def _principal_from_claims(settings: OidcSettings, claims: dict) -> Principal:
             )
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials")
         auxiliary[field_name] = value
+    if len(claims["email"]) > tables.MAX_LENGTH_OF_USER_EMAIL:
+        logger.warning(f"ID token email claim is longer than {tables.MAX_LENGTH_OF_USER_EMAIL} characters")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials")
     return Principal(
         email=claims["email"],
         hd=auxiliary.get("hd", ""),

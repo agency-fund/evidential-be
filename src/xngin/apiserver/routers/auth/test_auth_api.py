@@ -33,6 +33,7 @@ from xngin.apiserver.routers.auth.discovery import (
 )
 from xngin.apiserver.routers.auth.oidc_settings import OidcSettings, get_oidc_settings
 from xngin.apiserver.routers.auth.principal import Principal
+from xngin.apiserver.sqla import tables
 from xngin.xsecrets.nacl_provider import NaclProviderKeyset
 
 TEST_CLIENT_ID = "test-client-id.apps.googleusercontent.com"
@@ -743,6 +744,15 @@ def test_callback_returns_session_token_that_must_not_be_cached(client, configur
         iss=TEST_ISSUER,
         sub="1234567890",
     )
+
+
+@pytest.mark.parametrize(
+    "issued_claims", [_claims(email="a" * (tables.MAX_LENGTH_OF_USER_EMAIL - 11) + "@example.net")]
+)
+def test_callback_rejects_email_too_long_to_store(client, configured_app):
+    response = client.post("/v1/a/oidc/callback", json=_callback_body())
+
+    assert response.status_code == 401, response.text
 
 
 def test_callback_rejects_token_issued_for_another_login_attempt(client, configured_app):
