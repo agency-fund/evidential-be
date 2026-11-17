@@ -24,7 +24,6 @@ from humanize import precisedelta
 from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy import delete, func, literal, select, update
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, selectinload
 
 from xngin.apiserver import constants
@@ -321,19 +320,9 @@ def create_user(
     memberships. When they next sign in via OIDC, the existing user record is bound to their OIDC
     identity automatically.
     """
-    user_id = (
-        session.execute(
-            pg_insert(tables.User)
-            .values(email=body.email)
-            .on_conflict_do_update(
-                index_elements=[tables.User.email],
-                set_={"email": body.email},
-            )
-            .returning(tables.User.id)
-        )
-    ).scalar_one()
+    user = admin_common.find_or_create_user_by_email(session, body.email)
     session.commit()
-    return CreateUserResponse(id=user_id)
+    return CreateUserResponse(id=user.id)
 
 
 @router.get("/users")
@@ -891,13 +880,10 @@ def add_member_to_organization(
 
     The authenticated user must be part of the organization to add members.
     """
-    if body.email in {u.email for u in organization.users}:
+    new_user = admin_common.find_or_create_user_by_email(session, body.email)
+    if new_user in organization.users:
+        session.commit()
         return GENERIC_SUCCESS
-
-    new_user = session.execute(select(tables.User).where(tables.User.email == body.email)).scalar_one_or_none()
-    if new_user is None:
-        new_user = tables.User(email=body.email)
-        session.add(new_user)
     organization.users.append(new_user)
     session.commit()
     return GENERIC_SUCCESS

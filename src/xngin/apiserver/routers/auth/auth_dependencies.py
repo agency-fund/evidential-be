@@ -14,6 +14,7 @@ from sqlalchemy.sql.functions import count
 from xngin.apiserver import flags
 from xngin.apiserver.dependencies import xngin_sync_db_session
 from xngin.apiserver.request_context_middleware import add_request_fields
+from xngin.apiserver.routers.admin.admin_common import find_user_by_email
 from xngin.apiserver.routers.auth.discovery import LOGIN_UNAVAILABLE_DETAIL, get_oidc_discovery
 from xngin.apiserver.routers.auth.oidc_settings import get_oidc_settings
 from xngin.apiserver.routers.auth.principal import Principal
@@ -157,27 +158,31 @@ def require_user_from_token(
     )
 
 
+def _authenticate_existing(session: Session, user: tables.User, principal: Principal) -> tables.User | None:
+    """Returns user if principal may authenticate as them, binding the principal's identity to invited users."""
+    if user.last_logout.timestamp() > principal.iat:
+        return None
+    if user.iss == principal.iss and user.sub == principal.sub:
+        return user
+    # Users that are invited but who have not yet logged in will have (iss, sub) == (None, None), meaning that they
+    # can authenticate with any IDP. After logging in the first time, they will only ever be able to log in with
+    # that IDP.
+    if user.iss is None:
+        user.iss = principal.iss
+        user.sub = principal.sub
+        session.commit()
+        return user
+    return None
+
+
 def _lookup_or_create(session: Session, principal: Principal) -> tables.User | None:
     """Lookup or create a user based on email, iss, sub, and iat.
 
     To support initial deployment, a User will be created if we are in airplane mode or if there are no users in the
     database yet.
     """
-    user = session.scalars(select(tables.User).where(tables.User.email == principal.email)).first()
-    if user:
-        if user.last_logout.timestamp() > principal.iat:
-            return None
-        if user.iss == principal.iss and user.sub == principal.sub:
-            return user
-        # Users that are invited but who have not yet logged in will have (iss, sub) == (None, None), meaning that they
-        # can authenticate with any IDP. After logging in the first time, they will only ever be able to log in with
-        # that IDP.
-        if user.iss is None:
-            user.iss = principal.iss
-            user.sub = principal.sub
-            session.commit()
-            return user
-        return None
+    if user := find_user_by_email(session, principal.email):
+        return _authenticate_existing(session, user, principal)
 
     # There are two cases when we create a user on an authenticated request:
     # 1. Airplane mode: We are in airplane mode and the request is coming from the UI in airplane mode.

@@ -286,6 +286,8 @@ class User(Base):
 
     organizations: Mapped[list[Organization]] = relationship(secondary="user_organizations", back_populates="users")
 
+    __table_args__ = (Index("ix_users_email_lower", sqlalchemy.func.lower(email), unique=True),)
+
 
 class UserOrganization(Base):
     """Maps a User to an Organization."""

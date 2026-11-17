@@ -8,6 +8,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags
@@ -351,3 +352,39 @@ def test_initial_user_setup_matches_testing_dwh(xngin_session: Session):
     snapshot_counts: dict[str, int] = {experiment_id: count for experiment_id, count in snapshot_count_rows}
     assert len(snapshot_counts) == 2
     assert set(snapshot_counts.values()) == {10}
+
+
+def _principal(email: str, *, iss: str = "https://idp.example.com", sub: str = "sub-1", iat: int | None = None):
+    return Principal(email=email, iss=iss, sub=sub, hd="", iat=int(time.time()) if iat is None else iat)
+
+
+def _user_count(session: Session) -> int:
+    return session.scalar(select(func.count()).select_from(tables.User)) or 0
+
+
+def _users_with_email_ci(session: Session, email: str) -> list[tables.User]:
+    return list(session.scalars(select(tables.User).where(func.lower(tables.User.email) == email.lower())))
+
+
+def test_invited_user_matches_case_insensitively(xngin_session: Session):
+    """An invited user is bound on first sign-in even when the IDP presents their email in a different case."""
+    xngin_session.add(tables.User(email="alice@example.com"))
+    xngin_session.commit()
+    users_before = _user_count(xngin_session)
+
+    user = require_user_from_token(xngin_session, _principal("Alice@example.com", sub="alice-sub"))
+
+    assert user.email == "alice@example.com"
+    assert user.iss == "https://idp.example.com"
+    assert user.sub == "alice-sub"
+    assert _user_count(xngin_session) == users_before
+    assert [u.email for u in _users_with_email_ci(xngin_session, "alice@example.com")] == ["alice@example.com"]
+
+
+def test_emails_are_unique_case_insensitively(xngin_session: Session):
+    xngin_session.add(tables.User(email="alice@example.com"))
+    xngin_session.commit()
+    xngin_session.add(tables.User(email="Alice@example.com"))
+    with pytest.raises(IntegrityError, match="ix_users_email_lower"):
+        xngin_session.commit()
+    xngin_session.rollback()

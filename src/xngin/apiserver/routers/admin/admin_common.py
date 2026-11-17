@@ -1,5 +1,7 @@
 import secrets
 
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from xngin.apiserver.routers.admin.admin_api_types import AddWebhookToOrganizationRequest
@@ -7,6 +9,26 @@ from xngin.apiserver.settings import NoDwh, RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
 
 DEFAULT_NO_DWH_SOURCE_NAME = "API Only"
+
+
+def find_user_by_email(session: Session, email: str) -> tables.User | None:
+    """Finds the user whose email address matches case-insensitively."""
+    return session.scalars(select(tables.User).where(func.lower(tables.User.email) == func.lower(email))).one_or_none()
+
+
+def find_or_create_user_by_email(session: Session, email: str) -> tables.User:
+    """Returns the user whose email address matches case-insensitively, creating one with this address if none does.
+
+    Tolerates a concurrent request creating the same user, even with an address that differs only in case.
+    """
+    if user := find_user_by_email(session, email):
+        return user
+    created_id = session.scalar(
+        pg_insert(tables.User).values(email=email).on_conflict_do_nothing().returning(tables.User.id)
+    )
+    if created_id is None:
+        return session.scalars(select(tables.User).where(func.lower(tables.User.email) == func.lower(email))).one()
+    return session.get_one(tables.User, created_id)
 
 
 def create_datasource_impl(
