@@ -4,11 +4,27 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from xngin.apiserver.limits import MAX_LENGTH_OF_NAME_VALUE
 from xngin.apiserver.routers.admin.admin_api_types import AddWebhookToOrganizationRequest
 from xngin.apiserver.settings import NoDwh, RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
 
 DEFAULT_NO_DWH_SOURCE_NAME = "API Only"
+
+_DEFAULT_ORGANIZATION_NAME_SUFFIX = "'s Organization"
+
+
+def default_organization_name(email: str) -> str:
+    """Returns the name of an organization created on behalf of the user with this email address.
+
+    The name is derived from the part of the address before the last "@" (or the whole string if there is no "@"),
+    truncated so that the name fits within MAX_LENGTH_OF_NAME_VALUE.
+    """
+    local, sep, _ = email.rpartition("@")
+    if not sep:
+        local = email
+    max_local_length = MAX_LENGTH_OF_NAME_VALUE - len(_DEFAULT_ORGANIZATION_NAME_SUFFIX)
+    return f"{local[:max_local_length]}{_DEFAULT_ORGANIZATION_NAME_SUFFIX}"
 
 
 def find_user_by_email(session: Session, email: str) -> tables.User | None:

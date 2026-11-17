@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from xngin.apiserver import flags
 from xngin.apiserver.dwh.dwh_session import DwhSession
-from xngin.apiserver.routers.admin.admin_common import DEFAULT_NO_DWH_SOURCE_NAME
+from xngin.apiserver.routers.admin.admin_common import DEFAULT_NO_DWH_SOURCE_NAME, default_organization_name
 from xngin.apiserver.routers.admin.test_admin_api import find_ds_with_name
 from xngin.apiserver.routers.auth.auth_dependencies import (
     PRIVILEGED_TOKEN_FOR_TESTING,
@@ -31,7 +31,6 @@ from xngin.apiserver.settings import NoDwh
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.bootstrap import (
     ALT_TESTING_DWH_DATASOURCE_NAME,
-    DEFAULT_ORGANIZATION_NAME,
     PGSTRESS_DATASOURCE_NAME,
     TESTING_DWH_DATASOURCE_NAME,
 )
@@ -260,6 +259,7 @@ def test_user_from_token_initial_setup(xngin_session: Session):
     assert first_user.is_privileged
     xngin_session.refresh(first_user, ["organizations"])
     assert len(first_user.organizations) == 1
+    assert first_user.organizations[0].name == "firstuser's Organization"
 
     with pytest.raises(HTTPException, match="user not found") as exc:
         require_user_from_token(
@@ -300,7 +300,8 @@ def test_initial_user_setup_matches_testing_dwh(xngin_session: Session):
     xngin_session.refresh(first_user, ["organizations"])
     assert len(first_user.organizations) == 1
     organization = first_user.organizations[0]
-    assert organization.name == DEFAULT_ORGANIZATION_NAME
+    assert organization.name == "initial's Organization"
+    assert organization.name == default_organization_name("initial@example.com")
     datasources: list[tables.Datasource] = organization.datasources
     assert len(datasources) == 4, [d.name for d in datasources]
 
