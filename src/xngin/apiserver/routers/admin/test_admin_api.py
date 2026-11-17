@@ -2289,7 +2289,9 @@ def test_update_experiment_url_null_when_empty(testing_experiment, aclient: Admi
     assert parsed_response.config.design_spec.design_url is None, parsed_response
 
 
-def test_update_experiment_invalid(testing_datasource, testing_experiment, aclient: AdminAPIClient):
+def test_update_experiment_invalid(
+    use_deterministic_random, testing_datasource, testing_experiment, aclient: AdminAPIClient
+):
     """Test experiment update validation checks."""
     datasource_id = testing_experiment.datasource_id
     experiment_id = testing_experiment.id
