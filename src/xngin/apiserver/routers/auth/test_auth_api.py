@@ -22,6 +22,11 @@ from fastapi import FastAPI, HTTPException, Request
 from xngin.apiserver import flags
 from xngin.apiserver.dependencies import retrying_httpx_dependency
 from xngin.apiserver.main import app
+from xngin.apiserver.routers.admin.admin_api_types import (
+    CreateDomainSettingsRequest,
+    SignupSettings,
+    UpdateServerSettingsRequest,
+)
 from xngin.apiserver.routers.auth import auth_api
 from xngin.apiserver.routers.auth.auth_dependencies import SessionTokenCryptor
 from xngin.apiserver.routers.auth.discovery import (
@@ -33,7 +38,9 @@ from xngin.apiserver.routers.auth.discovery import (
 )
 from xngin.apiserver.routers.auth.oidc_settings import OidcSettings, get_oidc_settings
 from xngin.apiserver.routers.auth.principal import Principal
+from xngin.apiserver.routers.common_enums import SignupMode
 from xngin.apiserver.sqla import tables
+from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.xsecrets.nacl_provider import NaclProviderKeyset
 
 TEST_CLIENT_ID = "test-client-id.apps.googleusercontent.com"
@@ -753,6 +760,58 @@ def test_callback_rejects_email_too_long_to_store(client, configured_app):
     response = client.post("/v1/a/oidc/callback", json=_callback_body())
 
     assert response.status_code == 401, response.text
+
+
+def _sign_in(client) -> str:
+    response = client.post("/v1/a/oidc/callback", json=_callback_body())
+    assert response.status_code == 200, response.text
+    session_token: str = response.json()["session_token"]
+    return session_token
+
+
+def _caller_identity(client, session_token: str):
+    return client.get("/v1/m/caller-identity", headers={"Authorization": f"Bearer {session_token}"})
+
+
+@pytest.mark.parametrize(
+    ("mode", "domain_allows_signup", "expected_status"),
+    [
+        pytest.param(SignupMode.EXISTING, True, 401, id="existing"),
+        pytest.param(SignupMode.EXISTING_AND_DOMAINS, True, 200, id="domain-allows-signup"),
+        pytest.param(SignupMode.EXISTING_AND_DOMAINS, False, 401, id="domain-does-not-allow-signup"),
+        pytest.param(SignupMode.EXISTING_AND_DOMAINS, None, 401, id="domain-not-listed"),
+        pytest.param(SignupMode.ANYONE, None, 200, id="anyone"),
+    ],
+)
+def test_sign_in_signs_up_new_users_according_to_the_signup_settings(
+    client, configured_app, aclient: AdminAPIClient, mode, domain_allows_signup, expected_status
+):
+    if domain_allows_signup is not None:
+        aclient.create_domain_settings(
+            body=CreateDomainSettingsRequest(domain="example.com", allow_signup=domain_allows_signup)
+        )
+    aclient.update_server_settings(body=UpdateServerSettingsRequest(signup=SignupSettings(mode=mode)))
+
+    response = _caller_identity(client, _sign_in(client))
+
+    assert response.status_code == expected_status, response.text
+    if expected_status == 200:
+        assert response.json()["email"] == "user@example.com"
+        assert response.json()["is_privileged"] is False
+
+
+def test_session_tokens_from_before_a_user_was_deleted_stay_rejected(client, configured_app, aclient: AdminAPIClient):
+    aclient.update_server_settings(body=UpdateServerSettingsRequest(signup=SignupSettings(mode=SignupMode.ANYONE)))
+    earlier_token = _sign_in(client)
+    assert _caller_identity(client, earlier_token).status_code == 200
+    (user,) = aclient.list_users(email_contains="user@example.com").data.items
+
+    aclient.delete_user(user_id=user.id)
+    assert _caller_identity(client, earlier_token).status_code == 401
+
+    later_token = _sign_in(client)
+    assert _caller_identity(client, later_token).status_code == 200
+    assert _caller_identity(client, earlier_token).status_code == 401
 
 
 def test_callback_rejects_token_issued_for_another_login_attempt(client, configured_app):

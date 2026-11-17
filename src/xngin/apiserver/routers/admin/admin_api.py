@@ -24,6 +24,7 @@ from humanize import precisedelta
 from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy import delete, func, literal, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, selectinload
 
 from xngin.apiserver import constants
@@ -35,7 +36,12 @@ from xngin.apiserver.dwh.field_aliases import FieldAliases
 from xngin.apiserver.dwh.inspections import create_inspect_table_response_from_table
 from xngin.apiserver.exceptionhandlers import XHTTPValidationError
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.limits import MAX_LENGTH_OF_EMAIL_VALUE, MAX_LENGTH_OF_NAME_VALUE, MIN_TIME_UNTIL_NEW_END_DATE
+from xngin.apiserver.limits import (
+    MAX_LENGTH_OF_EMAIL_VALUE,
+    MAX_LENGTH_OF_NAME_VALUE,
+    MAX_NUMBER_OF_DOMAIN_SETTINGS,
+    MIN_TIME_UNTIL_NEW_END_DATE,
+)
 from xngin.apiserver.pagination import (
     PaginationQuery,
     SortField,
@@ -59,23 +65,27 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     CreateApiKeyResponse,
     CreateDatasourceRequest,
     CreateDatasourceResponse,
+    CreateDomainSettingsRequest,
     CreateOrganizationRequest,
     CreateOrganizationResponse,
     CreateUserRequest,
     CreateUserResponse,
     DatasourceSummary,
     DeleteExperimentDataRequest,
+    DomainSettingsSummary,
     Dsn,
     EventSummary,
     GetDatasourceResponse,
     GetExperimentForUiResponse,
     GetOrganizationResponse,
+    GetServerSettingsResponse,
     GetSnapshotResponse,
     GetUserResponse,
     InspectDatasourceResponse,
     InspectDatasourceTableResponse,
     ListApiKeysResponse,
     ListDatasourcesResponse,
+    ListDomainSettingsResponse,
     ListOrganizationEventsResponse,
     ListOrganizationsResponse,
     ListSnapshotsResponse,
@@ -86,12 +96,15 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     PatchUserRequest,
     PostgresDsn,
     RedshiftDsn,
+    SignupSettings,
     SnapshotStatus,
     UpdateArmRequest,
     UpdateDatasourceRequest,
+    UpdateDomainSettingsRequest,
     UpdateExperimentRequest,
     UpdateOrganizationRequest,
     UpdateOrganizationWebhookRequest,
+    UpdateServerSettingsRequest,
     UserDetail,
     UserSummary,
     WebhookSummary,
@@ -120,7 +133,7 @@ from xngin.apiserver.routers.common_api_types import (
     PreassignedFrequentistExperimentSpec,
     Relation,
 )
-from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
+from xngin.apiserver.routers.common_enums import ExperimentState, SignupMode, StopAssignmentReason
 from xngin.apiserver.routers.experiments import experiments_common, experiments_common_csv
 from xngin.apiserver.routers.experiments.experiments_common import (
     AbandonExperimentResult,
@@ -496,6 +509,162 @@ def delete_user(
 
     session.delete(target)
     session.commit()
+    return GENERIC_SUCCESS
+
+
+@router.get("/server-settings")
+def get_server_settings(
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
+    _user: Annotated[tables.User, Depends(adeps.privileged_caller)],
+) -> GetServerSettingsResponse:
+    """Returns the installation-wide settings.
+
+    Privileged users only. Settings that have never been changed have their default values, and `updated_at` is
+    null.
+    """
+    settings = session.get(tables.ServerSettings, tables.SERVER_SETTINGS_ID)
+    return GetServerSettingsResponse(
+        signup=SignupSettings(mode=SignupMode(settings.signup_mode) if settings else SignupMode.EXISTING),
+        updated_at=settings.updated_at if settings else None,
+    )
+
+
+@router.patch("/server-settings", status_code=status.HTTP_204_NO_CONTENT)
+def update_server_settings(
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
+    user: Annotated[tables.User, Depends(adeps.privileged_caller)],
+    body: Annotated[UpdateServerSettingsRequest, Body(...)],
+):
+    """Updates the installation-wide settings.
+
+    Privileged users only.
+    """
+    if body.signup is None:
+        return GENERIC_SUCCESS
+
+    previous = session.get(tables.ServerSettings, tables.SERVER_SETTINGS_ID)
+    old_mode = SignupMode(previous.signup_mode) if previous else SignupMode.EXISTING
+    if body.signup.mode == old_mode:
+        return GENERIC_SUCCESS
+    session.execute(
+        pg_insert(tables.ServerSettings)
+        .values(id=tables.SERVER_SETTINGS_ID, signup_mode=body.signup.mode)
+        .on_conflict_do_update(
+            index_elements=[tables.ServerSettings.id],
+            set_={"signup_mode": body.signup.mode, "updated_at": func.now()},
+        )
+    )
+    session.commit()
+
+    logger.info(f"Sign-up mode changed by user {user.id}: {old_mode} -> {body.signup.mode}")
+    return GENERIC_SUCCESS
+
+
+def _domain_settings_summary(domain_settings: tables.DomainSettings) -> DomainSettingsSummary:
+    return DomainSettingsSummary(
+        id=domain_settings.id,
+        domain=domain_settings.domain,
+        allow_signup=domain_settings.allow_signup,
+    )
+
+
+@router.get("/domain-settings")
+def list_domain_settings(
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
+    _user: Annotated[tables.User, Depends(adeps.privileged_caller)],
+) -> ListDomainSettingsResponse:
+    """Lists the settings for each email address domain, sorted by domain.
+
+    Privileged users only.
+    """
+    rows = session.scalars(select(tables.DomainSettings).order_by(tables.DomainSettings.domain))
+    return ListDomainSettingsResponse(items=[_domain_settings_summary(row) for row in rows])
+
+
+@router.post("/domain-settings")
+def create_domain_settings(
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
+    user: Annotated[tables.User, Depends(adeps.privileged_caller)],
+    body: Annotated[CreateDomainSettingsRequest, Body(...)],
+) -> DomainSettingsSummary:
+    """Creates the settings for an email address domain.
+
+    Privileged users only. Each domain may have only one set of settings; creating a second returns 409.
+    """
+    count = session.scalar(select(func.count()).select_from(tables.DomainSettings)) or 0
+    if count >= MAX_NUMBER_OF_DOMAIN_SETTINGS:
+        raise LateValidationError(f"At most {MAX_NUMBER_OF_DOMAIN_SETTINGS} domains may have settings.")
+    created_id = session.scalar(
+        pg_insert(tables.DomainSettings)
+        .values(id=tables.domain_settings_id_factory(), domain=body.domain, allow_signup=body.allow_signup)
+        .on_conflict_do_nothing(index_elements=[tables.DomainSettings.domain])
+        .returning(tables.DomainSettings.id)
+    )
+    if created_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=f"The domain {body.domain} already has settings."
+        )
+    session.commit()
+
+    logger.info(f"Domain settings for {body.domain} created by user {user.id}: allow_signup={body.allow_signup}")
+    return _domain_settings_summary(session.get_one(tables.DomainSettings, created_id))
+
+
+def _domain_settings_or_404(session: Session, domain_settings_id: str) -> tables.DomainSettings:
+    domain_settings = session.get(tables.DomainSettings, domain_settings_id)
+    if domain_settings is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Domain settings not found.")
+    return domain_settings
+
+
+@router.patch("/domain-settings/{domain_settings_id}", status_code=status.HTTP_204_NO_CONTENT)
+def update_domain_settings(
+    domain_settings_id: str,
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
+    user: Annotated[tables.User, Depends(adeps.privileged_caller)],
+    body: Annotated[UpdateDomainSettingsRequest, Body(...)],
+):
+    """Updates the settings for an email address domain.
+
+    Privileged users only. Fields that are absent are left unchanged.
+    """
+    domain_settings = _domain_settings_or_404(session, domain_settings_id)
+    if body.allow_signup is None or body.allow_signup == domain_settings.allow_signup:
+        return GENERIC_SUCCESS
+    domain_settings.allow_signup = body.allow_signup
+    session.commit()
+
+    logger.info(
+        f"Domain settings for {domain_settings.domain} updated by user {user.id}: "
+        f"allow_signup={domain_settings.allow_signup}"
+    )
+    return GENERIC_SUCCESS
+
+
+@router.delete("/domain-settings/{domain_settings_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_domain_settings(
+    domain_settings_id: str,
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
+    user: Annotated[tables.User, Depends(adeps.privileged_caller)],
+    allow_missing: Annotated[
+        bool,
+        Query(description="If true, return a 204 even if the resource does not exist."),
+    ] = False,
+):
+    """Deletes the settings for an email address domain.
+
+    Privileged users only.
+    """
+    domain_settings = session.get(tables.DomainSettings, domain_settings_id)
+    if domain_settings is None:
+        if allow_missing:
+            return GENERIC_SUCCESS
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Domain settings not found.")
+    domain = domain_settings.domain
+    session.delete(domain_settings)
+    session.commit()
+
+    logger.info(f"Domain settings for {domain} deleted by user {user.id}")
     return GENERIC_SUCCESS
 
 
