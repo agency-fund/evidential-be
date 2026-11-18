@@ -262,6 +262,75 @@ def test_assign_treatment_incorrectly_using_id_as_strata(sample_df):
         assign_treatment_and_check_balance(df=sample_df, stratum_cols=["id"], id_col="id", n_arms=2, random_state=42)
 
 
+def test_assign_treatment_empty_arm_raises_stats_assignment_error():
+    """An arm with no assignments would make the balance check fail."""
+    df = pd.DataFrame({"id": [1, 2], "score": [10.0, 20.0]})
+
+    with pytest.raises(
+        StatsAssignmentError,
+        match=r"At least one arm received no participants\. Increase your sample size and try again\.",
+    ):
+        assign_treatment_and_check_balance(df=df, stratum_cols=["score"], id_col="id", n_arms=3, random_state=0)
+
+
+def test_assign_treatment_single_occupied_arm_raises_stats_assignment_error():
+    """When every participant lands in one arm, raise before the balance check."""
+    df = pd.DataFrame({"id": range(6), "group": ["A", "A", "A", "B", "B", "B"]})
+
+    with pytest.raises(
+        StatsAssignmentError,
+        match=r"At least one arm received no participants\. Increase your sample size and try again\.",
+    ):
+        assign_treatment_and_check_balance(
+            df=df,
+            stratum_cols=["group"],
+            id_col="id",
+            n_arms=2,
+            random_state=1,
+            arm_weights=[99, 1],  # skew the weights to get all assignments into one arm
+        )
+
+
+def test_assign_treatment_simple_random_skewed_weights_empty_arm_raises():
+    """No strata still rejects an arm left empty by skewed weights."""
+    df = pd.DataFrame({"id": range(20)})
+
+    with pytest.raises(
+        StatsAssignmentError,
+        match=r"At least one arm received no participants\. Increase your sample size and try again\.",
+    ):
+        assign_treatment_and_check_balance(
+            df=df,
+            stratum_cols=[],
+            id_col="id",
+            n_arms=2,
+            random_state=0,
+            arm_weights=[99, 1],
+        )
+
+
+def test_assign_treatment_simple_random_fewer_rows_than_arms_raises():
+    """No strata still rejects an empty arm when there are fewer rows than arms."""
+    df = pd.DataFrame({"id": [1, 2]})
+
+    with pytest.raises(
+        StatsAssignmentError,
+        match=r"At least one arm received no participants\. Increase your sample size and try again\.",
+    ):
+        assign_treatment_and_check_balance(df=df, stratum_cols=[], id_col="id", n_arms=3, random_state=0)
+
+
+def test_assign_treatment_no_usable_strata_empty_arm_raises():
+    """Strata that cannot be used still reject an empty arm on the simple-random fallback."""
+    df = pd.DataFrame({"id": [1, 2], "single_value": [1, 1]})
+
+    with pytest.raises(
+        StatsAssignmentError,
+        match=r"At least one arm received no participants\. Increase your sample size and try again\.",
+    ):
+        assign_treatment_and_check_balance(df=df, stratum_cols=["single_value"], id_col="id", n_arms=3, random_state=0)
+
+
 def test_simple_random_assignment(sample_df):
     """Test simple random assignment function."""
     assignments = simple_random_assignment(sample_df, n_arms=2, random_state=42)
@@ -410,6 +479,19 @@ def test_simple_random_assignment_unbalanced(sample_df):
     assert len(assignments) == len(sample_df)
     assert assignments.count(0) == 667
     assert assignments.count(1) == 333
+
+
+def test_assign_clusters_single_occupied_arm_raises_stats_assignment_error():
+    """When both clusters land in one arm, assignment fails before the balance check."""
+    df = pd.DataFrame({"participant_id": range(3), "cluster": [1, 2, 2]})
+
+    with pytest.raises(
+        StatsAssignmentError,
+        match=r"At least one arm received no participants\. Increase your sample size and try again\.",
+    ):
+        assign_treatment_and_check_balance(
+            df=df, stratum_cols=[], id_col="participant_id", n_arms=2, random_state=1, cluster_col="cluster"
+        )
 
 
 def test_assign_clusters_equal_sizes():

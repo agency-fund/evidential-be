@@ -20,9 +20,10 @@ from fastapi import (
     Response,
     status,
 )
+from humanize import precisedelta
 from loguru import logger
 from pydantic import BaseModel
-from sqlalchemy import delete, func, literal, select
+from sqlalchemy import delete, func, literal, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, selectinload
 
@@ -35,7 +36,7 @@ from xngin.apiserver.dwh.field_aliases import FieldAliases
 from xngin.apiserver.dwh.inspections import create_inspect_table_response_from_table
 from xngin.apiserver.exceptionhandlers import XHTTPValidationError
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.limits import MAX_LENGTH_OF_EMAIL_VALUE, MAX_LENGTH_OF_NAME_VALUE
+from xngin.apiserver.limits import MAX_LENGTH_OF_EMAIL_VALUE, MAX_LENGTH_OF_NAME_VALUE, MIN_TIME_UNTIL_NEW_END_DATE
 from xngin.apiserver.pagination import (
     PaginationQuery,
     SortField,
@@ -107,6 +108,7 @@ from xngin.apiserver.routers.common_api_types import (
     ContextType,
     CreateExperimentRequest,
     CreateExperimentResponse,
+    DwhErrorResponse,
     ExperimentAnalysisResponse,
     ExperimentsType,
     Filter,
@@ -119,7 +121,7 @@ from xngin.apiserver.routers.common_api_types import (
     PreassignedFrequentistExperimentSpec,
     Relation,
 )
-from xngin.apiserver.routers.common_enums import ExperimentState
+from xngin.apiserver.routers.common_enums import ExperimentState, StopAssignmentReason
 from xngin.apiserver.routers.experiments import experiments_common, experiments_common_csv
 from xngin.apiserver.routers.experiments.experiments_common import (
     AbandonExperimentResult,
@@ -128,7 +130,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
 from xngin.apiserver.routers.power_adapters import build_metric_stats, calculate_cluster_stats
-from xngin.apiserver.settings import NoDwh, RemoteDatabaseConfig
+from xngin.apiserver.settings import GoogleSheetsDsn, NoDwh, RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.worker.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE
@@ -142,10 +144,6 @@ RESPONSE_CACHE_MAX_AGE_SECONDS = timedelta(minutes=15).seconds
 # Describes the structure of an error raised via `raise HTTPException`.
 class HTTPExceptionError(BaseModel):
     detail: str
-
-
-class MessageError(BaseModel):
-    message: str
 
 
 # This defines the response codes we can expect our API to return in the normal course of operation and would be
@@ -183,23 +181,11 @@ VALIDATION_RESPONSE: dict[str, Any] = {
     "description": "Validation error.",
 }
 
-DWH_CONNECTION_RESPONSES: dict[str | int, dict[str, Any]] = {
+DWH_ERROR_RESPONSES: dict[str | int, dict[str, Any]] = {
     "422": VALIDATION_RESPONSE,
-    "502": {
-        "model": MessageError,
-        "description": "Unable to connect to the datasource.",
-    },
-    "504": {
-        "model": MessageError,
-        "description": "Datasource request timed out.",
-    },
-}
-
-DWH_CONNECTION_AND_NOT_FOUND_RESPONSES: dict[str | int, dict[str, Any]] = {
-    **DWH_CONNECTION_RESPONSES,
-    "404": {
-        "model": MessageError,
-        "description": "Requested datasource metadata could not be found.",
+    "424": {
+        "model": DwhErrorResponse,
+        "description": "The data warehouse failed to produce a usable response.",
     },
 }
 
@@ -1056,7 +1042,7 @@ def list_organization_datasources(
 
 @router.post(
     "/datasources",
-    responses=DWH_CONNECTION_RESPONSES,
+    responses=DWH_ERROR_RESPONSES,
 )
 def create_datasource(
     session: Annotated[Session, Depends(xngin_sync_db_session)],
@@ -1069,6 +1055,8 @@ def create_datasource(
 ) -> CreateDatasourceResponse:
     """Creates a new datasource for the specified organization."""
     org = adeps.load_organization_or_raise(session, user, body.organization_id)
+    if body.dsn.type == "google_sheets":
+        adeps.raise_unless_privileged(user)
 
     raise_unless_safe_hostname(body.dsn)
 
@@ -1087,14 +1075,31 @@ def create_datasource(
 def update_datasource(
     datasource: Annotated[tables.Datasource, Depends(adeps.datasource)],
     session: Annotated[Session, Depends(xngin_sync_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     body: UpdateDatasourceRequest,
 ):
+    if body.dsn is not None and body.dsn.type == "google_sheets":
+        adeps.raise_unless_privileged(user)
     if body.name is not None:
         datasource.name = body.name
     if body.dsn is not None:
         raise_unless_safe_hostname(body.dsn)
         cfg = datasource.get_config()
-        cfg.dwh = api_dsn_to_settings_dwh(body.dsn, cfg.dwh)
+        new_dwh = api_dsn_to_settings_dwh(body.dsn, cfg.dwh)
+        # An experiment tab for Gsheets is identified by two things: the spreadsheet (this datasource's URL) and the
+        # tab ID (Experiment.datasource_table). So once experiments exist, the datasource can't switch to a
+        # different spreadsheet; switching tabs within the same spreadsheet is fine.
+        if (
+            isinstance(cfg.dwh, GoogleSheetsDsn)
+            and isinstance(new_dwh, GoogleSheetsDsn)
+            and cfg.dwh.get_spreadsheet_id() != new_dwh.get_spreadsheet_id()
+            and session.scalar(select(tables.Experiment.id).where(tables.Experiment.datasource_id == datasource.id))
+        ):
+            raise LateValidationError(
+                "Experiments read their outcomes from this datasource's spreadsheet. "
+                "Create a new datasource to connect a different spreadsheet."
+            )
+        cfg.dwh = new_dwh
         datasource.set_config(cfg)
 
     datasource.clear_table_list()
@@ -1124,7 +1129,7 @@ def get_datasource(
 
 @router.get(
     "/datasources/{datasource_id}/inspect",
-    responses=DWH_CONNECTION_AND_NOT_FOUND_RESPONSES,
+    responses=DWH_ERROR_RESPONSES,
 )
 def inspect_datasource(
     datasource: Annotated[tables.Datasource, Depends(adeps.datasource)],
@@ -1156,7 +1161,7 @@ def invalidate_inspect_table_cache(session: Session, datasource_id: str) -> None
 
 @router.get(
     "/datasources/{datasource_id}/inspect/{table_name}",
-    responses=DWH_CONNECTION_AND_NOT_FOUND_RESPONSES,
+    responses=DWH_ERROR_RESPONSES,
 )
 def inspect_table_in_datasource(
     datasource: Annotated[tables.Datasource, Depends(adeps.datasource)],
@@ -1186,7 +1191,8 @@ def inspect_table_in_datasource(
     session.commit()
 
     with DwhSession.open(config.dwh) as dwh:
-        # CannotFindTableError will be handled by exceptionhandlers.py.
+        # CannotFindTableError and DwhPermissionDeniedError will be handled by exceptionhandlers.py, before anything
+        # is cached.
         table = dwh.inspect_table(table_name)
     response = create_inspect_table_response_from_table(table)
 
@@ -1301,7 +1307,7 @@ def delete_api_key(
     return response
 
 
-@router.post("/datasources/{datasource_id}/experiments")
+@router.post("/datasources/{datasource_id}/experiments", responses=DWH_ERROR_RESPONSES)
 def create_experiment(
     datasource: Annotated[tables.Datasource, Depends(adeps.datasource)],
     session: Annotated[Session, Depends(xngin_sync_db_session)],
@@ -1345,6 +1351,7 @@ def create_experiment(
     description="""
     For preassigned experiments, and online experiments (except contextual bandits),
     returns an analysis of the experiment's performance, given datasource and experiment ID.""",
+    responses=DWH_ERROR_RESPONSES,
 )
 def analyze_experiment(
     experiment: Annotated[tables.Experiment, Depends(adeps.experiment_for_analysis)],
@@ -1415,7 +1422,7 @@ EXPERIMENT_STATE_TRANSITION_RESPONSES: dict[int | str, dict[str, Any]] = {
 
 @router.post(
     "/datasources/{datasource_id}/experiments/{experiment_id}/commit",
-    responses=EXPERIMENT_STATE_TRANSITION_RESPONSES,
+    responses={**EXPERIMENT_STATE_TRANSITION_RESPONSES, **DWH_ERROR_RESPONSES},
     status_code=status.HTTP_204_NO_CONTENT,
 )
 def commit_experiment(
@@ -1459,11 +1466,10 @@ def list_organization_experiments(
 @router.get("/datasources/{datasource_id}/experiments/{experiment_id}")
 def get_experiment_for_ui(
     experiment: Annotated[tables.Experiment, Depends(adeps.experiment_for_ui)],
-    session: Annotated[Session, Depends(xngin_sync_db_session)],
 ) -> GetExperimentForUiResponse:
     """Returns the experiment with the specified ID."""
     return GetExperimentForUiResponse(
-        config=experiments_common.get_experiment_impl(session, experiment),
+        config=experiments_common.get_experiment_impl(experiment),
         experiment_schema=make_schema_from_experiment(experiment),
     )
 
@@ -1504,10 +1510,22 @@ def update_experiment(
         if end_date <= body.start_date:
             raise LateValidationError("New start date must be before end date.")
         experiment.start_date = body.start_date
-    if body.end_date is not None:
+    if body.end_date is not None and body.end_date != experiment.end_date:
         if body.end_date <= experiment.start_date:
             raise LateValidationError("New end date must be after start date.")
+        if body.end_date < datetime.now(UTC) + MIN_TIME_UNTIL_NEW_END_DATE:
+            minimum_notice = precisedelta(MIN_TIME_UNTIL_NEW_END_DATE, minimum_unit="minutes")
+            raise LateValidationError(f"New end date must be at least {minimum_notice} from now.")
         experiment.end_date = body.end_date
+        session.execute(
+            update(tables.Experiment)
+            .where(
+                tables.Experiment.id == experiment.id,
+                tables.Experiment.stopped_assignments_reason == StopAssignmentReason.END_DATE,
+            )
+            .values(stopped_assignments_at=None, stopped_assignments_reason=None)
+            .execution_options(synchronize_session="fetch")
+        )
     if body.decision is not None:
         experiment.decision = body.decision
     if body.impact is not None:
@@ -1600,7 +1618,7 @@ def update_arm(
 
 @router.post(
     "/datasources/{datasource_id}/power",
-    responses=DWH_CONNECTION_AND_NOT_FOUND_RESPONSES,
+    responses=DWH_ERROR_RESPONSES,
 )
 def power_check(
     datasource: Annotated[tables.Datasource, Depends(adeps.datasource)],
@@ -1622,22 +1640,26 @@ def power_check(
 
     filters = body.filters
     cluster_key = body.cluster_key
-    desired_n_clusters = body.desired_n_clusters
-    desired_ns_clusters = body.desired_ns_clusters
     # Exclude rows without a valid cluster key.
     if cluster_key is not None:
         filters = [*filters, Filter(field_name=cluster_key, relation=Relation.EXCLUDES, value=[None])]
 
     metrics_missing_stats = [m for m in body.metrics if not m.has_baseline_stats]
-    needs_cluster_stats = cluster_key is not None and any(not m.has_cluster_stats for m in body.metrics)
+    needs_cluster_stats = cluster_key is not None and any(
+        not m.has_cluster_stats or m.available_n_clusters is None for m in body.metrics
+    )
 
     if not metrics_missing_stats and not needs_cluster_stats:
         # Every metric arrived with baseline stats (and cluster stats where needed), so the
         # warehouse is not contacted at all.
         metric_stats = [m.to_design_spec_metric() for m in body.metrics]
     else:
+        # Only queries run inside the session; stats are computed from the raw rows after the
+        # connection is closed. Metrics carrying baseline stats are not queried.
+        raw_metric_stats = raw_cluster_stats = None
+        fields_needing_cluster_stats = []
         with DwhSession.open(dsconfig.dwh) as dwh:
-            sa_table = dwh.inspect_table(body.table_name)
+            sa_table = dwh.inspect_table(body.table_name, check_readable=False)
             # Validate the fields used in the request are present in the table and that filter values are valid.
             _ = validate_power_fields_or_raise(
                 sa_table,
@@ -1646,25 +1668,20 @@ def power_check(
                 cluster_key=body.cluster_key,
             )
 
-            # Only queries run inside this block; stats are computed from the raw rows after
-            # the DWH connection is closed. Metrics carrying baseline stats are not queried.
-            raw_metric_stats = (
-                dwh.get_raw_metric_stats(sa_table, metrics=metrics_missing_stats, filters=filters)
-                if metrics_missing_stats
-                else None
-            )
-            db_derived_metrics = (
-                [m.field_name for m in body.metrics if not m.has_cluster_stats] if cluster_key is not None else []
-            )
-            raw_cluster_stats = None
-            if cluster_key is not None and db_derived_metrics:
+            if metrics_missing_stats:
+                raw_metric_stats = dwh.get_raw_metric_stats(sa_table, metrics=metrics_missing_stats, filters=filters)
+
+            # We get the available_n_clusters from this sufficient-statistics query, so run it even
+            # when the user supplied stats but not the cluster count.
+            if cluster_key is not None and needs_cluster_stats:
+                fields_needing_cluster_stats = [m.field_name for m in body.metrics if not m.has_cluster_stats]
                 # Shifting each metric by its mean keeps the sums of squares in the
                 # sufficient-statistics query numerically stable. The mean comes from the raw
                 # query row for queried metrics and from the supplied baseline for echoed ones.
                 supplied_baselines = {m.field_name: m.metric_baseline for m in body.metrics if m.has_baseline_stats}
                 queried_aliases = FieldAliases(m.field_name for m in metrics_missing_stats)
                 outcome_shifts = {}
-                for field_name in db_derived_metrics:
+                for field_name in fields_needing_cluster_stats:
                     if field_name in supplied_baselines:
                         mean = supplied_baselines[field_name]
                     else:
@@ -1678,32 +1695,38 @@ def power_check(
                 raw_cluster_stats = dwh.get_cluster_sufficient_stats(
                     sa_table,
                     cluster_column_name=cluster_key,
-                    outcome_column_names=db_derived_metrics,
+                    outcome_column_names=fields_needing_cluster_stats,
                     filters=filters,
                     outcome_shifts=outcome_shifts,
                 )
 
-        queried_stats = (
+        db_metric_stats = (
             build_metric_stats(raw_metric_stats, sa_table, metrics_missing_stats)
             if raw_metric_stats is not None
             else []
         )
-        queried_stats_by_name = {m.field_name: m for m in queried_stats}
+        db_metric_stats_by_name = {m.field_name: m for m in db_metric_stats}
         metric_stats = [
-            m.to_design_spec_metric() if m.has_baseline_stats else queried_stats_by_name[m.field_name]
+            m.to_design_spec_metric() if m.has_baseline_stats else db_metric_stats_by_name[m.field_name]
             for m in body.metrics
         ]
 
         # Augment with cluster-level stats if this is a cluster-randomized design.
         if cluster_key is not None:
             db_cluster_stats = (
-                calculate_cluster_stats(raw_cluster_stats, cluster_key, db_derived_metrics)
+                calculate_cluster_stats(raw_cluster_stats, cluster_key, fields_needing_cluster_stats)
                 if raw_cluster_stats is not None
                 else {}
             )
             request_metrics_by_name = {m.field_name: m for m in body.metrics}
             for metric_stat in metric_stats:
                 req_metric = request_metrics_by_name[metric_stat.field_name]
+                # Always use the cluster count from the query if available, as the user can't
+                # manually set it, only echo back a value we sent to the FE.
+                if raw_cluster_stats is not None:
+                    metric_stat.available_n_clusters = len(raw_cluster_stats)
+                else:
+                    metric_stat.available_n_clusters = req_metric.available_n_clusters
                 # If the user provided ICC, avg_cluster_size, and cv, use them instead of deriving from the dwh.
                 if req_metric.has_cluster_stats:
                     metric_stat.icc = req_metric.icc
@@ -1723,9 +1746,9 @@ def power_check(
             alpha=body.alpha,
             arm_weights=body.arm_weights,
             desired_n=body.desired_n,
-            desired_n_clusters=desired_n_clusters,
+            desired_n_clusters=body.desired_n_clusters,
             desired_ns=body.desired_ns,
-            desired_ns_clusters=desired_ns_clusters,
+            desired_ns_clusters=body.desired_ns_clusters,
         )
     )
 

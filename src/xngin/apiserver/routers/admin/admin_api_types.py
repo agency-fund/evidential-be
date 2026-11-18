@@ -3,10 +3,12 @@ from typing import Annotated, Literal
 from urllib.parse import urlparse
 
 from annotated_types import Ge, Le
+from humanize import precisedelta
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from xngin.apiserver.common_field_types import FieldName
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
+from xngin.apiserver.dwh.dwh_utils import parse_spreadsheet_url
 from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.limits import (
     MAX_LENGTH_OF_DESCRIPTION_VALUE,
@@ -14,6 +16,7 @@ from xngin.apiserver.limits import (
     MAX_LENGTH_OF_ID_VALUE,
     MAX_LENGTH_OF_NAME_VALUE,
     MAX_LENGTH_OF_URL_VALUE,
+    MIN_TIME_UNTIL_NEW_END_DATE,
 )
 from xngin.apiserver.routers.common_api_types import (
     ApiBaseModel,
@@ -453,13 +456,26 @@ class BqDsn(AdminApiBaseModel):
     ]
 
 
+class GoogleSheetsDsn(AdminApiBaseModel):
+    """Google Sheets connector using the server's GCP service account, which adds one tab per committed experiment."""
+
+    type: Literal["google_sheets"] = "google_sheets"
+    spreadsheet_url: Annotated[str, Field(max_length=MAX_LENGTH_OF_URL_VALUE)]
+
+    @field_validator("spreadsheet_url")
+    @classmethod
+    def validate_spreadsheet_url(cls, value: str) -> str:
+        parse_spreadsheet_url(value)
+        return value
+
+
 class ApiOnlyDsn(AdminApiBaseModel):
     """ApiOnlyDsn describes a datasource where data is included in Evidential API requests."""
 
     type: Literal["api_only"] = "api_only"
 
 
-type Dsn = Annotated[ApiOnlyDsn | PostgresDsn | BqDsn | RedshiftDsn, Field(discriminator="type")]
+type Dsn = Annotated[ApiOnlyDsn | PostgresDsn | BqDsn | RedshiftDsn | GoogleSheetsDsn, Field(discriminator="type")]
 
 
 class CreateDatasourceRequest(AdminApiBaseModel):
@@ -506,6 +522,10 @@ class InspectDatasourceTableResponse(ApiBaseModel):
         Field(description="Fields that are possibly candidates for unique IDs."),
     ]
     fields: Annotated[list[FieldMetadata], Field(description="Fields in the table.")]
+    display_name: Annotated[
+        str | None,
+        Field(description="Human-readable Google Sheets tab name."),
+    ] = None
 
 
 class ApiKeySummary(AdminApiBaseModel):
@@ -545,7 +565,17 @@ class UpdateExperimentRequest(AdminApiBaseModel):
     description: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)] = None
     design_url: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_URL_VALUE)] = None
     start_date: Annotated[datetime | None, Field()] = None
-    end_date: Annotated[datetime | None, Field()] = None
+    end_date: Annotated[
+        datetime | None,
+        Field(
+            description=(
+                "New end date. Must be after the start date and at least "
+                f"{precisedelta(MIN_TIME_UNTIL_NEW_END_DATE, minimum_unit='minutes')} from now. "
+                "If the experiment stopped making "
+                "new assignments because its previous end date passed, a later end date resumes them."
+            )
+        ),
+    ] = None
 
     impact: Annotated[Impact | None, Field()] = None
     decision: Annotated[str | None, Field()] = None

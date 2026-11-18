@@ -21,7 +21,7 @@ from pydantic import (
 )
 
 from xngin.apiserver.common_field_types import FieldName
-from xngin.apiserver.exceptions_common import LateValidationError
+from xngin.apiserver.exceptions_common import DwhErrorCode, LateValidationError
 from xngin.apiserver.limits import (
     MAX_GCP_SERVICE_ACCOUNT_LEN,
     MAX_LENGTH_OF_CLUSTER_KEY_VALUE,
@@ -66,6 +66,24 @@ class PaginatedResponse(ApiBaseModel):
         str,
         Field(description="Token to retrieve the next page. Empty when no more results."),
     ] = ""
+
+
+class DwhErrorResponse(ApiBaseModel):
+    """Describes an error that occurred while working with a data warehouse."""
+
+    message: Annotated[str, Field(description="A human-readable summary of the error.")]
+    code: Annotated[DwhErrorCode, Field(description="A stable, machine-readable category for the error.")]
+    hint: Annotated[str | None, Field(description="A suggested next step for resolving the error.")] = None
+    hint_command: Annotated[
+        str | None, Field(description="A statement for the data warehouse administrator to run, such as a GRANT.")
+    ] = None
+    dwh_message: Annotated[
+        str | None, Field(description="The data warehouse's own error message, when it is safe to show.")
+    ] = None
+    table_name: Annotated[str | None, Field(description="The table involved in the error, if any.")] = None
+    request_id: Annotated[
+        str | None, Field(description="An identifier for the request, for correlating it with server logs.")
+    ] = None
 
 
 class DesignSpecMetricBase(ApiBaseModel):
@@ -125,6 +143,17 @@ class DesignSpecMetricBase(ApiBaseModel):
                 "available_n is greater than available_nonnull_n, some assigned participants may have a "
                 "missing value for this metric."
             )
+        ),
+    ] = None
+    available_n_clusters: Annotated[
+        int | None,
+        Field(
+            ge=1,
+            description=(
+                "For cluster-randomized designs, the number of distinct clusters among the available_n "
+                "participants. Clusters are sampled from this population, so it is the largest valid "
+                "desired_n_clusters. Unset for individually-randomized designs."
+            ),
         ),
     ] = None
     use_one_time_metric: Annotated[
@@ -246,6 +275,7 @@ class DesignSpecMetricRequest(DesignSpecMetricBase):
             metric_stddev=self.metric_stddev,
             available_nonnull_n=self.available_nonnull_n,
             available_n=self.available_n,
+            available_n_clusters=self.available_n_clusters,
         )
 
 
@@ -1318,6 +1348,21 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
         return self
 
 
+def _validate_cluster_sizing_requires_cluster_key(
+    cluster_key: str | None,
+    desired_n_clusters: int | None,
+    desired_ns_clusters: Sequence[int] | None,
+    metrics: list[DesignSpecMetricRequest],
+) -> None:
+    """Validates that cluster-sizing parameters are only set when cluster_key is set."""
+    if cluster_key is None and desired_n_clusters is not None:
+        raise ValueError("desired_n_clusters can only be set when cluster_key is set.")
+    if cluster_key is None and desired_ns_clusters is not None:
+        raise ValueError("desired_ns_clusters can only be set when cluster_key is set.")
+    if cluster_key is None and any(m.available_n_clusters is not None for m in metrics):
+        raise ValueError("available_n_clusters can only be set when cluster_key is set.")
+
+
 class PreassignedFrequentistExperimentSpec(BaseFrequentistDesignSpec):
     """Describes a Preassigned A/B experiment.
 
@@ -1371,10 +1416,9 @@ class PreassignedFrequentistExperimentSpec(BaseFrequentistDesignSpec):
     def validate_cluster_randomization(self) -> Self:
         if self.cluster_key is not None and self.strata:
             raise ValueError("Cluster-randomized frequentist designs cannot also set strata.")
-        if self.cluster_key is None and self.desired_n_clusters is not None:
-            raise ValueError("desired_n_clusters can only be set when cluster_key is set.")
-        if self.cluster_key is None and self.desired_ns_clusters is not None:
-            raise ValueError("desired_ns_clusters can only be set when cluster_key is set.")
+        _validate_cluster_sizing_requires_cluster_key(
+            self.cluster_key, self.desired_n_clusters, self.desired_ns_clusters, self.metrics
+        )
         return self
 
     @model_validator(mode="after")
@@ -1616,10 +1660,9 @@ class PowerRequest(ApiBaseModel):
 
         The strata rule from that spec does not apply here, since a power request has no strata.
         """
-        if self.cluster_key is None and self.desired_n_clusters is not None:
-            raise ValueError("desired_n_clusters can only be set when cluster_key is set.")
-        if self.cluster_key is None and self.desired_ns_clusters is not None:
-            raise ValueError("desired_ns_clusters can only be set when cluster_key is set.")
+        _validate_cluster_sizing_requires_cluster_key(
+            self.cluster_key, self.desired_n_clusters, self.desired_ns_clusters, self.metrics
+        )
         return self
 
     @model_validator(mode="after")
@@ -1872,17 +1915,22 @@ class ExperimentConfig(ApiBaseModel):
 
     experiment_id: Annotated[str, Field(description="Server-generated ID of the experiment.")]
     datasource_id: str
+    spreadsheet_full_url: Annotated[
+        str | None,
+        Field(description="Full URL of the datasource spreadsheet, including the launched experiment's outcomes tab."),
+    ] = None
     state: Annotated[ExperimentState, Field(description="Current state of this experiment.")]
     stopped_assignments_at: Annotated[
         dt.datetime | None,
         Field(
-            description="The date and time assignments were stopped. Null if assignments are still allowed to be made."
+            description=(
+                "The date and time when assignments were stopped. Null if the experiment is "
+                "still accepting assignments. This date can change if the experiment's "
+                "end date is modified."
+            )
         ),
     ]
-    stopped_assignments_reason: Annotated[
-        StopAssignmentReason | None,
-        Field(description="The reason assignments were stopped. Null if assignments are still allowed to be made."),
-    ]
+    stopped_assignments_reason: StopAssignmentReason | None
     design_spec: DesignSpec
     power_analyses: PowerResponse | None
     assign_summary: AssignSummary | None
@@ -1929,7 +1977,7 @@ class GetParticipantAssignmentResponse(ApiBaseModel):
     participant_id: str
     assignment: Annotated[
         Assignment | None,
-        Field(description="Null if no assignment. assignment.strata are not included."),
+        Field(description="Null if no assignment. Strata are not included."),
     ]
 
 

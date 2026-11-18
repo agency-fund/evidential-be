@@ -507,6 +507,17 @@ def test_check_balance_with_unbalanced_clusters():
     assert result.f_statistic == pytest.approx(87574.78)
 
 
+def test_check_balance_single_arm_raises_stats_balance_error():
+    """Every sample in one arm cannot be compared, so this is a balance-check error."""
+    data = pd.DataFrame({"treat": [0, 0, 0, 0], "age": [20, 21, 22, 23]})
+
+    with pytest.raises(
+        StatsBalanceError,
+        match=r"All participants were randomly assigned to one arm",
+    ):
+        check_balance_of_preprocessed_df(data, treatment_col="treat")
+
+
 def test_check_balance_with_missing_cluster_col_raises_stats_balance_error():
     """A missing cluster column should raise a domain error instead of a raw KeyError."""
     data = pd.DataFrame({"treat": [0, 1, 0, 1], "age": [20, 21, 22, 23]})

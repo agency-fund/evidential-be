@@ -180,13 +180,13 @@ def exercise_through_api(
 
 
 def expect_unusable_table_name(aclient: AdminAPIClient, dwh_config: Dsn | BqDsn, table_name: str, message: str) -> None:
-    """Checks that a power check on table_name fails with a 404 whose message contains message.
+    """Checks that a power check on table_name fails with a 424 dwh_table_not_found whose message contains message.
 
     The table name travels in the request body, which can carry any character, unlike a URL path.
     """
     datasource_id = create_datasource(aclient, dwh_config)
     metric = DesignSpecMetricRequest(field_name=PLAIN_COLUMNS.metric, metric_pct_change=0.5)
-    with expect_status_code(404, message_contains=message):
+    with expect_status_code(424, message_contains=message, code_eq="dwh_table_not_found"):
         aclient.power_check(
             datasource_id=datasource_id,
             body=PowerRequest(table_name=table_name, metrics=[metric], filters=[], n_arms=2),

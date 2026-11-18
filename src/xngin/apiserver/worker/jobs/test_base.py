@@ -3,9 +3,10 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy import DateTime, literal, select
 
+from xngin.apiserver.exceptions_common import DwhPermissionDeniedError, LateValidationError
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.worker_helpers import make_push_experiment
-from xngin.apiserver.worker.jobs.base import Backoff, next_run_in_window
+from xngin.apiserver.worker.jobs.base import Backoff, describe_failure, next_run_in_window
 
 OPENS = datetime(2026, 1, 1, tzinfo=UTC)
 CLOSES = OPENS + timedelta(days=10)
@@ -68,3 +69,21 @@ def test_next_run_in_window(xngin_session, testing_datasource, last_success_at, 
 
     run_at = next_run_in_window(timestamp(now), timedelta(days=2), opens=timestamp(OPENS), closes=timestamp(CLOSES))
     assert xngin_session.scalar(select(run_at).where(tables.JobStatus.experiment_id == experiment.id)) == expected
+
+
+def test_describe_failure_appends_a_dwh_errors_hint_and_command():
+    exc = DwhPermissionDeniedError(
+        "The data warehouse user cannot read the table.",
+        hint="Ask your database administrator to replace <schema> with the schema containing this table "
+        "and run the following statement.",
+        hint_command="GRANT SELECT ON <schema>.participants TO evidential;",
+    )
+    assert describe_failure(exc) == (
+        "DwhPermissionDeniedError: The data warehouse user cannot read the table. "
+        "Ask your database administrator to replace <schema> with the schema containing this table "
+        "and run the following statement. GRANT SELECT ON <schema>.participants TO evidential;"
+    )
+
+
+def test_describe_failure_without_a_hint():
+    assert describe_failure(LateValidationError("Bad config.")) == "LateValidationError: Bad config."
