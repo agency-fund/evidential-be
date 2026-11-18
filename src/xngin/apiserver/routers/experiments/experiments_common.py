@@ -1229,14 +1229,15 @@ def record_bandit_outcome_impl(
     return arm_id
 
 
-def update_bandit_arms_impl(xngin_session: Session, experiment: tables.Experiment) -> tables.Experiment:
+def update_bandit_arms_impl(xngin_session: Session, experiment: tables.Experiment) -> int:
     """Recompute every arm's parameters from its initial prior and all of its recorded outcomes.
 
     Recomputing from scratch makes this safe to repeat: running it twice gives the same parameters, so a retried
     or interrupted run can never count an outcome twice. Draws are not modified; their current_* columns keep the
     parameters the participant was assigned under.
 
-    Returns the experiment, whose arms now hold the updated parameters. Does not complete the caller's transaction.
+    The arms are updated in place, so experiment.arms holds the new parameters afterwards. Returns the number of
+    recorded outcomes the update used, across all arms. Does not complete the caller's transaction.
     """
     experiment_type = ExperimentsType(experiment.experiment_type)
     # Lock the arms in a fixed order so concurrent recomputes of the same experiment (worker and any manual trigger)
@@ -1249,6 +1250,7 @@ def update_bandit_arms_impl(xngin_session: Session, experiment: tables.Experimen
         .execution_options(populate_existing=True)
     ).all()
 
+    num_outcomes = 0
     for arm in arms:
         outcomes, context_vals = _fetch_outcomes_and_context_for_arm(
             xngin_session,
@@ -1259,6 +1261,7 @@ def update_bandit_arms_impl(xngin_session: Session, experiment: tables.Experimen
         # An arm with no recorded outcomes has nothing to update from
         if not outcomes:
             continue
+        num_outcomes += len(outcomes)
         updated_parameters = update_bandit_arm(
             experiment=experiment,
             arm_to_update=arm,
@@ -1275,7 +1278,7 @@ def update_bandit_arms_impl(xngin_session: Session, experiment: tables.Experimen
                 arm.mu = updated_parameters.mu
                 arm.covariance = updated_parameters.covariance
 
-    return experiment
+    return num_outcomes
 
 
 def convert_assignment_results_to_assign_summary(

@@ -60,7 +60,7 @@ class BanditUpdateJob:
 
     def execute(self, session: Session, experiment: tables.Experiment) -> JobResult:
         """Recompute the experiment's arms in the caller's transaction."""
-        experiment = update_bandit_arms_impl(session, experiment)
-        logger.info(f"Updated {len(experiment.arms)} arms.")
-        sentry_sdk.metrics.count("worker.bandit_update.outcomes", len(experiment.draws))
+        num_outcomes = update_bandit_arms_impl(session, experiment)
+        logger.info(f"Updated {len(experiment.arms)} arms from {num_outcomes} outcomes.")
+        sentry_sdk.metrics.count("worker.bandit_update.outcomes", num_outcomes)
         return JobSucceeded()

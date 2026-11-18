@@ -613,8 +613,8 @@ class Draw(Base):
     arm: Mapped[Arm] = relationship("Arm", back_populates="draws", lazy="joined")
     experiment: Mapped[Experiment] = relationship("Experiment", back_populates="draws", lazy="joined")
     __table_args__ = (
-        # Each arm's resolved draws, newest outcome first, for the arm's recent outcomes that every outcome report
-        # reads while it holds the arm's lock.
+        # Each arm's resolved draws, newest outcome first, which an arm update reads in full to recompute the arm
+        # from its initial prior.
         Index(
             "ix_draws_resolved",
             arm_id,

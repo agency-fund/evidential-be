@@ -17,11 +17,15 @@ from xngin.apiserver.routers.experiments.experiments_common import (
     create_assignment_for_participant,
     record_bandit_outcome_impl,
 )
-from xngin.apiserver.routers.experiments.test_experiments_common import make_create_online_bandit_experiment_request
+from xngin.apiserver.routers.experiments.test_experiments_common import (
+    insert_experiment_and_arms,
+    make_create_online_bandit_experiment_request,
+)
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
 from xngin.apiserver.testing.worker_helpers import (
     AUTOFAIL,
+    BANDIT_UPDATE,
     NOW,
     PULL,
     SNAPSHOT,
@@ -121,6 +125,57 @@ def test_dwh_pull_runs_only_while_draws_are_pending_until_the_grace_period_ends(
         record_bandit_outcome_impl(xngin_session, experiment, "1", 1.0)
     xngin_session.commit()
     assert (scheduled_at(experiment.id, PULL) is not None) == scheduled
+
+
+def test_bandit_update_runs_every_update_frequency_hours(xngin_session, testing_datasource):
+    """The job recomputes the arms from recorded outcomes, then waits the experiment's own interval."""
+    experiment = make_push_experiment(xngin_session, testing_datasource.ds)
+    experiment.update_frequency_hours = 6
+    assignment = create_assignment_for_participant(xngin_session, experiment, "1", None, random_state=66)
+    assert assignment is not None
+    record_bandit_outcome_impl(xngin_session, experiment, "1", 1.0)
+    xngin_session.commit()
+    arm = next(arm for arm in experiment.arms if arm.id == assignment.arm_id)
+    # Recording the outcome alone leaves the arm at its prior.
+    assert arm.alpha == arm.alpha_init
+
+    started = datetime.now(UTC)
+    assert ran_successfully(attempt_due((BANDIT_UPDATE,), now=started), BANDIT_UPDATE)
+
+    # The worker committed in its own session, so reload the arm to see its write.
+    xngin_session.refresh(arm)
+    assert arm.alpha_init is not None
+    assert arm.alpha == arm.alpha_init + 1
+    assert scheduled_at(experiment.id, BANDIT_UPDATE, now=started) == started + timedelta(hours=6)
+
+
+@pytest.mark.parametrize("reason", ["no-frequency", "frequentist"])
+def test_bandit_update_is_never_scheduled_without_a_bandit_frequency(xngin_session, testing_datasource, reason):
+    if reason == "no-frequency":
+        experiment = make_push_experiment(xngin_session, testing_datasource.ds)
+        experiment.update_frequency_hours = None
+        xngin_session.commit()
+    else:
+        # insert_experiment_and_arms defaults to a frequentist (preassigned) experiment.
+        experiment = insert_experiment_and_arms(xngin_session, testing_datasource.ds)
+    assert scheduled_at(experiment.id, BANDIT_UPDATE) is None
+
+
+@pytest.mark.parametrize(
+    ("days_since_end", "scheduled"),
+    [
+        pytest.param(-3, True, id="running"),
+        pytest.param(3, True, id="grace"),
+        pytest.param(9, False, id="after-grace"),
+    ],
+)
+def test_bandit_update_runs_until_the_grace_period_ends(xngin_session, testing_datasource, days_since_end, scheduled):
+    """Outcomes can land after the end date, so updates continue for LATE_OUTCOME_GRACE, like DWH pulls."""
+    assert timedelta(days=3) < LATE_OUTCOME_GRACE < timedelta(days=9)
+    experiment = make_push_experiment(xngin_session, testing_datasource.ds)
+    experiment.end_date = datetime.now(UTC) - timedelta(days=days_since_end)
+    xngin_session.commit()
+    assert (scheduled_at(experiment.id, BANDIT_UPDATE) is not None) == scheduled
 
 
 def test_autofail_catches_up_after_an_outage(xngin_session, testing_datasource):

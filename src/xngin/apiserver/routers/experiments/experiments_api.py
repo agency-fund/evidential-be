@@ -443,7 +443,7 @@ def update_bandit_arms(
     if not ExperimentsType(experiment.experiment_type).is_bandit():
         raise LateValidationError("Only bandit experiments have arms to update.")
 
-    experiment = update_bandit_arms_impl(session, experiment)
+    update_bandit_arms_impl(session, experiment)
     session.commit()
 
     return UpdateBanditArmsResponse(arms=[_to_arm_bandit(arm) for arm in experiment.arms])

@@ -5,7 +5,7 @@ from io import StringIO
 from typing import TYPE_CHECKING, TypeIs
 
 import pytest
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 
 from xngin.apiserver.exceptionhandlers import XHTTPValidationError
 from xngin.apiserver.routers.admin.admin_api_types import UpdateExperimentRequest
@@ -1266,12 +1266,12 @@ def test_get_assignment_bandit_cache_headers(
         (ExperimentsType.MAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
         (ExperimentsType.MAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
         # MAB_ONLINE_DWH is absent: it reads outcomes from the warehouse and rejects this endpoint.
-        # See test_update_bandit_arm_with_outcome_rejected_for_mab_dwh.
+        # See test_record_bandit_outcome_rejected_for_mab_dwh.
         (ExperimentsType.CMAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.NORMAL),
         (ExperimentsType.CMAB_ONLINE, PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI),
     ],
 )
-def test_update_bandit_arm_with_outcome(
+def test_record_bandit_outcome(
     testing_datasource,
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
@@ -1524,7 +1524,7 @@ def test_update_bandit_arm_with_outcome(
 
 
 @pytest.mark.parametrize("experiment_type", [ExperimentsType.FREQ_ONLINE, ExperimentsType.FREQ_PREASSIGNED])
-def test_update_bandit_arm_with_freq_experiments_returns_422(
+def test_record_bandit_outcome_with_freq_experiments_returns_422(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient, experiment_type: ExperimentsType
 ):
     """Frequentist experiments reject bandit outcome updates through the API."""
@@ -1551,6 +1551,56 @@ def test_update_bandit_arm_with_freq_experiments_returns_422(
         )
     assert exc.value.result.status == HTTPStatus.UNPROCESSABLE_CONTENT
     assert "Cannot dynamically update arms for frequentist experiments" in str(exc.value.result.data)
+
+    # Frequentist experiments have no bandit arms, so the arm update endpoint rejects them too.
+    with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
+        eclient.update_bandit_arms(api_key=testing_datasource.key, experiment_id=experiment.experiment_id)
+    assert exc.value.result.status == HTTPStatus.UNPROCESSABLE_CONTENT
+    assert "Only bandit experiments have arms to update." in str(exc.value.result.data)
+
+
+def make_mab_design_spec(**kwargs) -> MABExperimentSpec:
+    """A minimal two-arm Beta/Bernoulli MAB design spec; kwargs override its fields."""
+    fields = {
+        "experiment_type": ExperimentsType.MAB_ONLINE,
+        "experiment_name": "update frequency",
+        "description": "update frequency",
+        "start_date": datetime(2024, 1, 1, tzinfo=UTC),
+        "end_date": datetime.now(UTC) + timedelta(days=1),
+        "arms": [
+            ArmBandit(arm_name="control", arm_description="", alpha_init=1.0, beta_init=1.0),
+            ArmBandit(arm_name="treatment", arm_description="", alpha_init=1.0, beta_init=1.0),
+        ],
+        "prior_type": PriorTypes.BETA,
+        "reward_type": LikelihoodTypes.BERNOULLI,
+        "contexts": None,
+    } | kwargs
+    return MABExperimentSpec(**fields)
+
+
+@pytest.mark.parametrize(("requested", "stored"), [(None, 24), (6, 6)])
+def test_update_frequency_hours_round_trips_through_the_design_spec(
+    testing_datasource, aclient: AdminAPIClient, requested: int | None, stored: int
+):
+    """The schedule a bandit is created with (24 hours if omitted) is what the API reads back."""
+
+    overrides = {} if requested is None else {"update_frequency_hours": requested}
+    design_spec = make_mab_design_spec(**overrides)
+    experiment_id = aclient.create_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        body=CreateExperimentRequest(design_spec=design_spec),
+    ).data.experiment_id
+
+    read_back = aclient.get_experiment_for_ui(
+        datasource_id=testing_datasource.datasource_id, experiment_id=experiment_id
+    ).data.config.design_spec
+    assert isinstance(read_back, MABExperimentSpec)
+    assert read_back.update_frequency_hours == stored
+
+
+def test_update_frequency_hours_must_be_at_least_one_hour():
+    with pytest.raises(ValidationError, match="update_frequency_hours"):
+        make_mab_design_spec(update_frequency_hours=0)
 
 
 def test_normal_prior_binary_reward_fits_each_outcome_exactly_once(
@@ -1676,7 +1726,7 @@ def test_beta_prior_binary_reward_uses_outcome_in_order_exactly_once(
     assert updated_arm.beta == initial_beta + 1
 
 
-def test_update_bandit_arm_with_outcome_rejects_non_binary_outcome_for_binary_reward(
+def test_record_bandit_outcome_rejects_non_binary_outcome_for_binary_reward(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """An experiment whose reward is binary accepts only 0 or 1."""
@@ -1712,7 +1762,7 @@ def test_update_bandit_arm_with_outcome_rejects_non_binary_outcome_for_binary_re
     assert "Must be 0 or 1" in response.text
 
 
-def test_update_bandit_arm_with_outcome_rejects_non_numeric_outcome(
+def test_record_bandit_outcome_rejects_non_numeric_outcome(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
     """Non-numeric outcome in the request body is rejected"""
@@ -1726,9 +1776,7 @@ def test_update_bandit_arm_with_outcome_rejects_non_numeric_outcome(
     assert response.status_code == HTTPStatus.UNPROCESSABLE_CONTENT, response.content
 
 
-def test_update_bandit_arm_with_outcome_rejected_for_mab_dwh(
-    xngin_session, testing_datasource, eclient: ExperimentsAPIClient
-):
+def test_record_bandit_outcome_rejected_for_mab_dwh(xngin_session, testing_datasource, eclient: ExperimentsAPIClient):
     """MAB-DWH outcomes are read from the org's DWH; the push endpoint rejects the type."""
     experiment = insert_experiment_and_arms(
         xngin_session,

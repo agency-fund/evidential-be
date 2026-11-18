@@ -13,6 +13,7 @@ from pydantic import HttpUrl, TypeAdapter
 from sqlalchemy import Boolean, Column, MetaData, String, Table, event, insert, select, update
 from sqlalchemy.orm import Session
 
+from xngin.apiserver import database
 from xngin.apiserver.dwh.dwh_session import DwhSession
 from xngin.apiserver.exceptions_common import LateValidationError
 from xngin.apiserver.routers.admin import admin_api
@@ -43,7 +44,13 @@ from xngin.apiserver.routers.common_api_types import (
     PriorTypes,
     Stratum,
 )
-from xngin.apiserver.routers.common_enums import DataType, ExperimentState, Relation, StopAssignmentReason
+from xngin.apiserver.routers.common_enums import (
+    DataType,
+    ExperimentState,
+    Relation,
+    StopAssignmentReason,
+    UpdateTypeNormal,
+)
 from xngin.apiserver.routers.experiments import experiments_common
 from xngin.apiserver.routers.experiments.experiments_common import (
     ExperimentsAssignmentError,
@@ -80,6 +87,7 @@ from xngin.apiserver.testing.assertions import assert_dates_equal
 from xngin.apiserver.testing.helpers import RowProtocolMixin
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
 from xngin.stats.assignment import AssignmentResult
+from xngin.stats.bandit_sampling import update_arm
 
 
 def make_createexperimentrequest_json(
@@ -3020,6 +3028,65 @@ def test_update_bandit_arms_is_idempotent(xngin_session, testing_datasource):
     # Arms without outcomes stay at their initial prior.
     for arm in bandit_experiment.arms[1:]:
         assert (arm.alpha, arm.beta) == (arm.alpha_init, arm.beta_init)
+
+
+def test_update_bandit_arms_applies_cmab_contexts_in_one_batch(xngin_session, testing_datasource):
+    """A CMAB update fits each arm to all of its outcomes and their contexts at once, from the initial prior."""
+    bandit_experiment = insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.CMAB_ONLINE,
+        prior_type=PriorTypes.NORMAL,
+        reward_type=LikelihoodTypes.NORMAL,
+    )
+    first_arm, second_arm = bandit_experiment.arms[0], bandit_experiment.arms[1]
+    # (arm, participant, context values for the experiment's two contexts, outcome). Each arm gets several
+    # outcomes with different contexts, so the update has to stack them into a (T x d) context matrix.
+    draws = [
+        (first_arm, "p1", [0.0, 1.5], 2.0),
+        (first_arm, "p2", [1.0, -0.5], 7.0),
+        (first_arm, "p3", [1.0, 2.0], 4.0),
+        (second_arm, "p4", [0.0, 0.3], -1.0),
+        (second_arm, "p5", [1.0, 1.0], 3.5),
+    ]
+    for arm, participant_id, context_vals, _ in draws:
+        xngin_session.execute(
+            insert(tables.Draw).values(
+                experiment_id=bandit_experiment.id,
+                participant_id=participant_id,
+                arm_id=arm.id,
+                context_vals=context_vals,
+            )
+        )
+    for _, participant_id, _, outcome in draws:
+        record_bandit_outcome_impl(xngin_session, bandit_experiment, participant_id, outcome)
+
+    # Compute what each arm should become by calling the stats function directly on that arm's outcomes.
+    expected = {}
+    for arm in (first_arm, second_arm):
+        arm_draws = [(context_vals, outcome) for draw_arm, _, context_vals, outcome in draws if draw_arm is arm]
+        result = update_arm(
+            experiment=bandit_experiment,
+            arm_to_update=arm,
+            outcomes=[outcome for _, outcome in arm_draws],
+            contexts=[context_vals for context_vals, _ in arm_draws],
+            from_initial_prior=True,
+        )
+        assert isinstance(result, UpdateTypeNormal)
+        expected[arm.id] = result
+
+    num_outcomes = update_bandit_arms_impl(xngin_session, bandit_experiment)
+    xngin_session.commit()
+
+    assert num_outcomes == len(draws)
+    for arm in (first_arm, second_arm):
+        assert arm.mu is not None
+        assert arm.covariance is not None
+
+        np.testing.assert_allclose(np.asarray(arm.mu), np.asarray(expected[arm.id].mu))
+        np.testing.assert_allclose(np.asarray(arm.covariance), np.asarray(expected[arm.id].covariance))
+        # The posterior has moved away from the initial prior.
+        assert arm.mu != [arm.mu_init] * len(arm.mu)
 
 
 def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_session, testing_datasource):
