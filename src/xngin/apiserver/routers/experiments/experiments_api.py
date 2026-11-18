@@ -423,14 +423,17 @@ def record_bandit_participant_outcome(
 
 @router.post(
     "/experiments/{experiment_id}/arms/update",
-    summary="Update a bandit experiment's arms from all recorded outcomes.",
+    summary="Update a bandit experiment's arms from newly recorded outcomes.",
     description="""
-    Recomputes every arm's parameters from its initial prior and all outcomes recorded so far, and
-    returns the updated arms.
+    Updates every arm's parameters with the outcomes recorded since the arm was last updated, and
+    returns the updated arms. Each outcome is applied to an arm exactly once.
 
     Evidential already does this on the schedule set by the experiment's `update_frequency_hours`.
     Call this to apply recently recorded outcomes right away. It is safe to call repeatedly: an
     update with no new outcomes leaves the arms unchanged.
+
+    Set `update_from_initial_prior=true` to instead rebuild every arm from its initial prior using all
+    outcomes recorded so far.
 
     Applies only to MAB and CMAB experiments. The endpoint returns a 422 error for other experiment
     types.
@@ -439,11 +442,21 @@ def record_bandit_participant_outcome(
 def update_bandit_arms(
     experiment: Annotated[tables.Experiment, Depends(edeps.experiment_with_datasource_and_fields)],
     session: Annotated[Session, Depends(xngin_sync_db_session)],
+    # A query parameter (?update_from_initial_prior=true), so the default incremental update keeps the plain URL.
+    update_from_initial_prior: Annotated[
+        bool,
+        Query(
+            description=(
+                "Rebuild every arm from its initial prior using all recorded outcomes, instead of applying only "
+                "the outcomes recorded since the last update."
+            )
+        ),
+    ] = False,
 ) -> UpdateBanditArmsResponse:
     if not ExperimentsType(experiment.experiment_type).is_bandit():
         raise LateValidationError("Only bandit experiments have arms to update.")
 
-    update_bandit_arms_impl(session, experiment)
+    update_bandit_arms_impl(session, experiment, update_from_initial_prior=update_from_initial_prior)
     session.commit()
 
     return UpdateBanditArmsResponse(arms=[_to_arm_bandit(arm) for arm in experiment.arms])

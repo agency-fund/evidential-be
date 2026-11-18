@@ -1047,6 +1047,7 @@ class ExperimentsAPIClient:
         *,
         experiment_id: str,
         api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
+        update_from_initial_prior: bool = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[True] = True,
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> ExperimentsAPIClientResult[Literal[HTTPStatus.OK], UpdateBanditArmsResponse]: ...
@@ -1056,6 +1057,7 @@ class ExperimentsAPIClient:
         *,
         experiment_id: str,
         api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
+        update_from_initial_prior: bool = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: Literal[False],
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> (
@@ -1070,6 +1072,7 @@ class ExperimentsAPIClient:
         *,
         experiment_id: str,
         api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
+        update_from_initial_prior: bool = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
         raise_if_not_default_status: bool = True,
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> (
@@ -1102,6 +1105,9 @@ class ExperimentsAPIClient:
                 },
                 path_params={
                     "experiment_id": experiment_id,
+                },
+                query_params={
+                    "update_from_initial_prior": update_from_initial_prior,
                 },
                 security_params=(
                     ExperimentsAPIClientSecurityParam(kind="api_key_header", name="X-API-Key", value=api_key),

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, TypeIs
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
+from sqlalchemy import update
 
 from xngin.apiserver.exceptionhandlers import XHTTPValidationError
 from xngin.apiserver.routers.admin.admin_api_types import UpdateExperimentRequest
@@ -1724,6 +1725,53 @@ def test_beta_prior_binary_reward_uses_outcome_in_order_exactly_once(
     updated_arm = update_control_arm()
     assert updated_arm.alpha == initial_alpha + 101
     assert updated_arm.beta == initial_beta + 1
+
+
+def test_update_bandit_arms_from_initial_prior_rebuilds_the_arms(
+    xngin_session, testing_datasource, eclient: ExperimentsAPIClient
+):
+    """A plain update applies only new outcomes; update_from_initial_prior refits from the prior and all outcomes."""
+    experiment = insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.MAB_ONLINE,
+        prior_type=PriorTypes.BETA,
+        reward_type=LikelihoodTypes.BERNOULLI,
+    )
+    assignment = eclient.get_assignment(
+        api_key=testing_datasource.key, experiment_id=experiment.id, participant_id="1"
+    ).data.assignment
+    assert assignment is not None
+    eclient.record_bandit_participant_outcome(
+        api_key=testing_datasource.key,
+        body=UpdateBanditArmOutcomeRequest(outcome=1.0),
+        experiment_id=experiment.id,
+        participant_id="1",
+    )
+    eclient.update_bandit_arms(api_key=testing_datasource.key, experiment_id=experiment.id)
+
+    # Corrupt the arm's stored parameters, as a stand-in for any arm that needs repairing.
+    xngin_session.execute(update(tables.Arm).where(tables.Arm.id == assignment.arm_id).values(alpha=50.0, beta=50.0))
+    xngin_session.commit()
+
+    def assigned_arm(update_from_initial_prior: bool = False) -> ArmBandit:
+        """Call the arm update endpoint and return the assigned arm from its response."""
+        arms = eclient.update_bandit_arms(
+            api_key=testing_datasource.key,
+            experiment_id=experiment.id,
+            update_from_initial_prior=update_from_initial_prior,
+        ).data.arms
+        return next(arm for arm in arms if arm.arm_id == assignment.arm_id)
+
+    # A plain update has no new outcomes to apply, so it leaves the corrupted parameters alone.
+    plain = assigned_arm()
+    assert (plain.alpha, plain.beta) == (50.0, 50.0)
+
+    # A rebuild refits from the prior and the one recorded outcome.
+    rebuilt = assigned_arm(update_from_initial_prior=True)
+    assert rebuilt.alpha_init is not None
+    assert rebuilt.beta_init is not None
+    assert (rebuilt.alpha, rebuilt.beta) == (rebuilt.alpha_init + 1, rebuilt.beta_init)
 
 
 def test_record_bandit_outcome_rejects_non_binary_outcome_for_binary_reward(

@@ -1140,26 +1140,51 @@ def _check_outcome_against_mab_dwh_target(
         )
 
 
-def _fetch_outcomes_and_context_for_arm(
+def _arm_has_applied_outcomes(xngin_session: Session, experiment_id: str, arm_id: str) -> bool:
+    """Whether an earlier arm update has already folded some of the arm's outcomes into its parameters."""
+    return xngin_session.execute(
+        select(
+            select(tables.Draw.participant_id)
+            .where(
+                tables.Draw.experiment_id == experiment_id,
+                tables.Draw.arm_id == arm_id,
+                tables.Draw.outcome.is_not(None),
+                tables.Draw.applied_at.is_not(None),
+            )
+            .exists()
+        )
+    ).scalar_one()
+
+
+def _claim_outcomes_for_arm(
     xngin_session: Session,
     experiment_id: str,
     arm_id: str,
     experiment_type: ExperimentsType,
+    from_initial_prior: bool = False,
 ) -> tuple[list[float], list[list[float]] | None]:
-    """Return every recorded outcome for the arm, newest first.
+    """Mark the arm's outcomes as applied, and return them.
 
-    Context values are returned alongside the outcomes, one per outcome, only for contextual bandits.
-    An arm with no recorded outcomes returns an empty list.
+    By default only the not-yet-applied outcomes (applied_at IS NULL) are claimed. With from_initial_prior, every
+    recorded outcome is claimed (and re-marked), since a rebuild from the prior needs all of them.
+
+    Marking and reading happen in one UPDATE ... RETURNING statement, so the rows marked are exactly the rows
+    returned. An outcome committed by another request mid-update is either returned here or left for the next update;
+    it is never marked without being read. The marks commit with the caller's transaction, together with the new arm
+    parameters, so a failed update leaves its outcomes unapplied for the next run.
+
+    Returns the outcomes in no particular order, since the batch update doesn't depend on order. Context values are
+    returned alongside, one per outcome, only for contextual bandits. Returns an empty list if there are none.
     """
-    rows = xngin_session.execute(
-        select(tables.Draw.outcome, tables.Draw.context_vals)
-        .where(
-            tables.Draw.experiment_id == experiment_id,
-            tables.Draw.arm_id == arm_id,
-            tables.Draw.outcome.is_not(None),
-        )
-        .order_by(tables.Draw.observed_at.desc(), tables.Draw.participant_id)
-    ).all()
+    stmt = update(tables.Draw).where(
+        tables.Draw.experiment_id == experiment_id,
+        tables.Draw.arm_id == arm_id,
+        tables.Draw.outcome.is_not(None),
+    )
+    if not from_initial_prior:
+        stmt = stmt.where(tables.Draw.applied_at.is_(None))
+    stmt = stmt.values(applied_at=datetime.now(UTC)).returning(tables.Draw.outcome, tables.Draw.context_vals)
+    rows = xngin_session.execute(stmt).all()
     outcomes = [row.outcome for row in rows]
     if experiment_type == ExperimentsType.CMAB_ONLINE:
         return outcomes, [row.context_vals for row in rows]
@@ -1229,15 +1254,28 @@ def record_bandit_outcome_impl(
     return arm_id
 
 
-def update_bandit_arms_impl(xngin_session: Session, experiment: tables.Experiment) -> int:
-    """Recompute every arm's parameters from its initial prior and all of its recorded outcomes.
+def update_bandit_arms_impl(
+    xngin_session: Session, experiment: tables.Experiment, update_from_initial_prior: bool = False
+) -> int:
+    """Update every arm's parameters with the outcomes recorded since the arm was last updated.
 
-    Recomputing from scratch makes this safe to repeat: running it twice gives the same parameters, so a retried
-    or interrupted run can never count an outcome twice. Draws are not modified; their current_* columns keep the
-    parameters the participant was assigned under.
+    With update_from_initial_prior=True, every arm is instead rebuilt from its initial prior using all of its recorded
+    outcomes, applied or not. Use it to repair arms, or to undo the drift of incremental Laplace updates.
 
-    The arms are updated in place, so experiment.arms holds the new parameters afterwards. Returns the number of
-    recorded outcomes the update used, across all arms. Does not complete the caller's transaction.
+    Each update starts from the arm's current parameters and applies only the outcomes not yet applied (draws whose
+    applied_at is NULL), then marks them applied. The marks and the new parameters commit together in the caller's
+    transaction, so a retried or interrupted run never counts an outcome twice, and running it again with nothing new
+    leaves the arms unchanged. For Beta and Normal-likelihood arms this gives exactly the same parameters as fitting
+    all outcomes at once from the prior. For Normal-prior/Bernoulli arms (Laplace approximation) it is the standard
+    online approximation and can drift slightly from a full refit.
+
+    An arm none of whose outcomes have been applied yet starts from its initial prior instead. That covers new
+    experiments, and also experiments whose arms were updated before applied_at existed: their stored parameters are
+    rebuilt from the prior and all outcomes on the first run.
+
+    The arms are updated in place, so experiment.arms holds the new parameters afterwards. Draws keep their current_*
+    columns, the parameters the participant was assigned under. Returns the number of outcomes applied by this call,
+    across all arms. Does not complete the caller's transaction.
     """
     experiment_type = ExperimentsType(experiment.experiment_type)
     # Lock the arms in a fixed order so concurrent recomputes of the same experiment (worker and any manual trigger)
@@ -1252,13 +1290,20 @@ def update_bandit_arms_impl(xngin_session: Session, experiment: tables.Experimen
 
     num_outcomes = 0
     for arm in arms:
-        outcomes, context_vals = _fetch_outcomes_and_context_for_arm(
+        # Start from the prior when the caller asks for a rebuild, or when nothing has been applied to this arm yet:
+        # then its stored parameters may not reflect its outcomes (e.g. updated by older code). Check before
+        # claiming, since claiming marks outcomes applied.
+        from_initial_prior = update_from_initial_prior or not _arm_has_applied_outcomes(
+            xngin_session, experiment.id, arm.id
+        )
+        outcomes, context_vals = _claim_outcomes_for_arm(
             xngin_session,
             experiment_id=experiment.id,
             arm_id=arm.id,
             experiment_type=experiment_type,
+            from_initial_prior=from_initial_prior,
         )
-        # An arm with no recorded outcomes has nothing to update from
+        # No new outcomes since the last update: the arm stays as it is.
         if not outcomes:
             continue
         num_outcomes += len(outcomes)
@@ -1267,7 +1312,7 @@ def update_bandit_arms_impl(xngin_session: Session, experiment: tables.Experimen
             arm_to_update=arm,
             outcomes=outcomes,
             contexts=context_vals,
-            from_initial_prior=True,
+            from_initial_prior=from_initial_prior,
         )
 
         match updated_parameters:

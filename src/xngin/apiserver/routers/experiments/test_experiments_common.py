@@ -49,6 +49,7 @@ from xngin.apiserver.routers.common_enums import (
     ExperimentState,
     Relation,
     StopAssignmentReason,
+    UpdateTypeBeta,
     UpdateTypeNormal,
 )
 from xngin.apiserver.routers.experiments import experiments_common
@@ -3087,6 +3088,136 @@ def test_update_bandit_arms_applies_cmab_contexts_in_one_batch(xngin_session, te
         np.testing.assert_allclose(np.asarray(arm.covariance), np.asarray(expected[arm.id].covariance))
         # The posterior has moved away from the initial prior.
         assert arm.mu != [arm.mu_init] * len(arm.mu)
+
+
+def _record_outcomes_on_arm(
+    xngin_session: Session, experiment: tables.Experiment, arm: tables.Arm, outcomes: list[tuple[str, float]]
+) -> None:
+    """Insert a draw on the arm for each participant, then record the participant's outcome on it."""
+    for participant_id, _ in outcomes:
+        xngin_session.execute(
+            insert(tables.Draw).values(
+                experiment_id=experiment.id, participant_id=participant_id, arm_id=arm.id, context_vals=None
+            )
+        )
+    for participant_id, outcome in outcomes:
+        record_bandit_outcome_impl(xngin_session, experiment, participant_id, outcome)
+
+
+def _flat_params(params: tables.Arm | UpdateTypeBeta | UpdateTypeNormal) -> np.ndarray:
+    """An arm's (or an update result's) parameters as one flat array, so either prior type compares with allclose."""
+    if isinstance(params, UpdateTypeBeta) or (isinstance(params, tables.Arm) and params.alpha is not None):
+        return np.array([params.alpha, params.beta], dtype=float)
+    assert params.mu is not None
+    assert params.covariance is not None
+    return np.concatenate([np.ravel(params.mu), np.ravel(params.covariance)])
+
+
+@pytest.mark.parametrize(
+    ("prior_type", "reward_type", "exact"),
+    [
+        # Conjugate models: applying outcomes in batches gives exactly the all-at-once posterior.
+        pytest.param(PriorTypes.BETA, LikelihoodTypes.BERNOULLI, True, id="beta-bernoulli"),
+        pytest.param(PriorTypes.NORMAL, LikelihoodTypes.NORMAL, True, id="normal-normal"),
+        # The Laplace approximation is only approximately the same when applied in batches.
+        pytest.param(PriorTypes.NORMAL, LikelihoodTypes.BERNOULLI, False, id="normal-bernoulli-laplace"),
+    ],
+)
+def test_update_bandit_arms_applies_only_new_outcomes(
+    xngin_session, testing_datasource, prior_type: PriorTypes, reward_type: LikelihoodTypes, exact: bool
+):
+    """A second update starts from the arm's current parameters and applies only the outcomes recorded since."""
+    experiment = insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.MAB_ONLINE,
+        prior_type=prior_type,
+        reward_type=reward_type,
+    )
+    arm = experiment.arms[0]
+    first_batch = [("p1", 1.0), ("p2", 0.0), ("p3", 1.0)]
+    second_batch = [("p4", 1.0), ("p5", 0.0)]
+
+    _record_outcomes_on_arm(xngin_session, experiment, arm, first_batch)
+    assert update_bandit_arms_impl(xngin_session, experiment) == len(first_batch)
+    xngin_session.commit()
+
+    _record_outcomes_on_arm(xngin_session, experiment, arm, second_batch)
+    # What the second update should give: the second batch alone, applied to the arm's current parameters.
+    expected = update_arm(experiment=experiment, arm_to_update=arm, outcomes=[outcome for _, outcome in second_batch])
+    assert update_bandit_arms_impl(xngin_session, experiment) == len(second_batch)
+    xngin_session.commit()
+
+    np.testing.assert_allclose(_flat_params(arm), _flat_params(expected))
+    if exact:
+        # For conjugate models, that is the same as fitting every outcome at once from the prior.
+        from_prior = update_arm(
+            experiment=experiment,
+            arm_to_update=arm,
+            outcomes=[outcome for _, outcome in first_batch + second_batch],
+            from_initial_prior=True,
+        )
+        np.testing.assert_allclose(_flat_params(arm), _flat_params(from_prior))
+
+    # Every outcome is now marked applied, so another update has nothing to do and leaves the arm unchanged.
+    unapplied = xngin_session.scalars(
+        select(tables.Draw.participant_id).where(
+            tables.Draw.experiment_id == experiment.id, tables.Draw.applied_at.is_(None)
+        )
+    ).all()
+    assert unapplied == []
+    params_after_second_update = _flat_params(arm)
+    assert update_bandit_arms_impl(xngin_session, experiment) == 0
+    xngin_session.commit()
+    np.testing.assert_allclose(_flat_params(arm), params_after_second_update)
+
+
+def test_update_bandit_arms_rebuilds_from_the_prior_when_nothing_was_applied(xngin_session, testing_datasource):
+    """Arms updated before applied_at existed have stale parameters; their first update starts from the prior."""
+    experiment = insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.MAB_ONLINE,
+        prior_type=PriorTypes.BETA,
+        reward_type=LikelihoodTypes.BERNOULLI,
+    )
+    arm = experiment.arms[0]
+    assert arm.alpha_init is not None
+    assert arm.beta_init is not None
+    # Stand-in for parameters written by older code (e.g. double counted), with outcomes never marked applied.
+    arm.alpha, arm.beta = 50.0, 50.0
+    _record_outcomes_on_arm(xngin_session, experiment, arm, [("p1", 1.0), ("p2", 1.0), ("p3", 0.0)])
+    xngin_session.commit()
+
+    update_bandit_arms_impl(xngin_session, experiment)
+    xngin_session.commit()
+
+    assert (arm.alpha, arm.beta) == (arm.alpha_init + 2, arm.beta_init + 1)
+
+
+def test_rolled_back_update_leaves_outcomes_for_the_next_update(xngin_session, testing_datasource):
+    """The applied marks roll back with the arm parameters, so a failed update loses no outcomes."""
+    experiment = insert_experiment_and_arms(
+        xngin_session,
+        testing_datasource.ds,
+        experiment_type=ExperimentsType.MAB_ONLINE,
+        prior_type=PriorTypes.BETA,
+        reward_type=LikelihoodTypes.BERNOULLI,
+    )
+    arm = experiment.arms[0]
+    _record_outcomes_on_arm(xngin_session, experiment, arm, [("p1", 1.0), ("p2", 0.0)])
+    xngin_session.commit()
+
+    # The update runs, but its transaction never commits (as when a worker run fails partway).
+    update_bandit_arms_impl(xngin_session, experiment)
+    xngin_session.rollback()
+
+    assert (arm.alpha, arm.beta) == (arm.alpha_init, arm.beta_init)
+    assert update_bandit_arms_impl(xngin_session, experiment) == 2
+    xngin_session.commit()
+    assert arm.alpha_init is not None
+    assert arm.beta_init is not None
+    assert (arm.alpha, arm.beta) == (arm.alpha_init + 1, arm.beta_init + 1)
 
 
 def test_analyze_experiment_freq_impl_with_no_outcomes_for_any_arms(xngin_session, testing_datasource):

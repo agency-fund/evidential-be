@@ -1,9 +1,9 @@
-"""Scheduled recomputes of bandit arms from all recorded outcomes.
+"""Scheduled bandit arm updates from newly recorded outcomes.
 
 Outcomes arrive from three places (the outcome API, AutofailJob, and DwhPullJob), and each one only records the
 outcome on its draw. BanditUpdateJob is what turns those outcomes into arm parameters: every update_frequency_hours
-it recomputes each arm from its initial prior and every outcome recorded so far. Because the recompute starts from
-the prior each time, it is safe to repeat, so a failed or retried run never counts an outcome twice, and the next
+it applies the outcomes recorded since the last update to each arm's current parameters, and marks them applied.
+The marks commit with the new parameters, so a failed or retried run never counts an outcome twice, and the next
 successful run catches up on everything recorded in the meantime.
 """
 
@@ -25,13 +25,13 @@ from xngin.apiserver.worker.jobs.dwh_pull import LATE_OUTCOME_GRACE
 
 @dataclass(slots=True)
 class BanditUpdateJob:
-    """Recompute each committed bandit experiment's arms every update_frequency_hours.
+    """Update each committed bandit experiment's arms every update_frequency_hours.
 
     Runs from the start date until LATE_OUTCOME_GRACE past the end date, the same window DwhPullJob uses, so outcomes
     that land after the end date (late warehouse loads, late autofails) still reach the final arm parameters.
 
     The job runs on its interval whether or not new outcomes arrived. Checking for new outcomes would read the
-    experiment's draws on every scheduler poll, which costs more than a recompute once per interval, and a recompute
+    experiment's draws on every scheduler poll, which costs more than an update once per interval, and an update
     with nothing new leaves the arms unchanged.
     """
 
@@ -59,7 +59,7 @@ class BanditUpdateJob:
         )
 
     def execute(self, session: Session, experiment: tables.Experiment) -> JobResult:
-        """Recompute the experiment's arms in the caller's transaction."""
+        """Apply the experiment's new outcomes to its arms in the caller's transaction."""
         num_outcomes = update_bandit_arms_impl(session, experiment)
         logger.info(f"Updated {len(experiment.arms)} arms from {num_outcomes} outcomes.")
         sentry_sdk.metrics.count("worker.bandit_update.outcomes", num_outcomes)

@@ -380,8 +380,7 @@ def update_arm(
         context_array = np.array(contexts).reshape(len(rewards), -1) if contexts is not None else None
         # Normal likelihood
         if experiment.reward_type == LikelihoodTypes.NORMAL.value:
-            std = np.std(rewards)
-            llhood_sigma = std if std > 0.0 else 1.0
+            llhood_sigma = 1.0  # TODO: use empirical standard deviation with batch correction
             return _update_arm_normal(
                 current_mu=mu,
                 current_covariance=covariance,

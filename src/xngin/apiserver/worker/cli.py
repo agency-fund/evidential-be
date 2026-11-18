@@ -44,7 +44,7 @@ DWH_PULL_BACKOFF = Backoff(
 # minutes.
 AUTOFAIL_BACKOFF = Backoff(delays=(timedelta(minutes=1), timedelta(minutes=2)))
 # Bandit update failures are database errors or bugs in our code. Retry soon, but back off so a bug that fails every
-# time doesn't recompute the arms in a tight loop.
+# time doesn't retry the arm update in a tight loop.
 BANDIT_UPDATE_BACKOFF = Backoff(delays=(timedelta(minutes=2), timedelta(minutes=5)))
 
 # How long shutdown waits for the task queue thread to finish its current task, before the executor drains. Task
