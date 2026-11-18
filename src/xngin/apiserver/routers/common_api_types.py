@@ -145,6 +145,17 @@ class DesignSpecMetricBase(ApiBaseModel):
             )
         ),
     ] = None
+    available_n_clusters: Annotated[
+        int | None,
+        Field(
+            ge=1,
+            description=(
+                "For cluster-randomized designs, the number of distinct clusters among the available_n "
+                "participants. Clusters are sampled from this population, so it is the largest valid "
+                "desired_n_clusters. Unset for individually-randomized designs."
+            ),
+        ),
+    ] = None
     use_one_time_metric: Annotated[
         bool,
         Field(
@@ -264,6 +275,7 @@ class DesignSpecMetricRequest(DesignSpecMetricBase):
             metric_stddev=self.metric_stddev,
             available_nonnull_n=self.available_nonnull_n,
             available_n=self.available_n,
+            available_n_clusters=self.available_n_clusters,
         )
 
 
@@ -1326,6 +1338,21 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
         return self
 
 
+def _validate_cluster_sizing_requires_cluster_key(
+    cluster_key: str | None,
+    desired_n_clusters: int | None,
+    desired_ns_clusters: Sequence[int] | None,
+    metrics: list[DesignSpecMetricRequest],
+) -> None:
+    """Validates that cluster-sizing parameters are only set when cluster_key is set."""
+    if cluster_key is None and desired_n_clusters is not None:
+        raise ValueError("desired_n_clusters can only be set when cluster_key is set.")
+    if cluster_key is None and desired_ns_clusters is not None:
+        raise ValueError("desired_ns_clusters can only be set when cluster_key is set.")
+    if cluster_key is None and any(m.available_n_clusters is not None for m in metrics):
+        raise ValueError("available_n_clusters can only be set when cluster_key is set.")
+
+
 class PreassignedFrequentistExperimentSpec(BaseFrequentistDesignSpec):
     """Describes a Preassigned A/B experiment.
 
@@ -1379,10 +1406,9 @@ class PreassignedFrequentistExperimentSpec(BaseFrequentistDesignSpec):
     def validate_cluster_randomization(self) -> Self:
         if self.cluster_key is not None and self.strata:
             raise ValueError("Cluster-randomized frequentist designs cannot also set strata.")
-        if self.cluster_key is None and self.desired_n_clusters is not None:
-            raise ValueError("desired_n_clusters can only be set when cluster_key is set.")
-        if self.cluster_key is None and self.desired_ns_clusters is not None:
-            raise ValueError("desired_ns_clusters can only be set when cluster_key is set.")
+        _validate_cluster_sizing_requires_cluster_key(
+            self.cluster_key, self.desired_n_clusters, self.desired_ns_clusters, self.metrics
+        )
         return self
 
     @model_validator(mode="after")
@@ -1624,10 +1650,9 @@ class PowerRequest(ApiBaseModel):
 
         The strata rule from that spec does not apply here, since a power request has no strata.
         """
-        if self.cluster_key is None and self.desired_n_clusters is not None:
-            raise ValueError("desired_n_clusters can only be set when cluster_key is set.")
-        if self.cluster_key is None and self.desired_ns_clusters is not None:
-            raise ValueError("desired_ns_clusters can only be set when cluster_key is set.")
+        _validate_cluster_sizing_requires_cluster_key(
+            self.cluster_key, self.desired_n_clusters, self.desired_ns_clusters, self.metrics
+        )
         return self
 
     @model_validator(mode="after")

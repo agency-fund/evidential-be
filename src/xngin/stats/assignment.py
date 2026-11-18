@@ -132,12 +132,13 @@ def _assign_individuals_to_arms(
     if len(stratum_cols) == 0:
         # No stratification, so use simple random assignment
         treatment_ids = simple_random_assignment(df, n_arms, random_state, arm_weights)
+        arm_pop = _arm_pop_or_raise(treatment_ids, n_arms, n_expected=len(df), id_column=aliases.name(id_col))
         return AssignmentResult(
             treatment_ids=treatment_ids,
             stratum_ids=None,
             balance_result=None,
             stratum_cols=[],
-            arm_pop=np.bincount(treatment_ids, minlength=n_arms),
+            arm_pop=arm_pop,
         )
 
     # Dedupe the strata names and then sort them by field name for a stable output ordering
@@ -158,12 +159,13 @@ def _assign_individuals_to_arms(
         # No stratification, so use simple random assignment while still outputting strata, even
         # though they're either all the same value or all unique values.
         treatment_ids = simple_random_assignment(df, n_arms, random_state, arm_weights)
+        arm_pop = _arm_pop_or_raise(treatment_ids, n_arms, n_expected=len(df), id_column=aliases.name(id_col))
         return AssignmentResult(
             treatment_ids=treatment_ids,
             stratum_ids=None,
             balance_result=None,
             stratum_cols=orig_stratum_cols,
-            arm_pop=np.bincount(treatment_ids, minlength=n_arms),
+            arm_pop=arm_pop,
         )
 
     # Do stratified random assignment
@@ -181,12 +183,7 @@ def _assign_individuals_to_arms(
     df_cleaned = df_cleaned.merge(treatment_status, on=id_col)
     stratum_ids = df_cleaned[STOCHATREAT_STRATUM_ID_NAME]
     treatment_ids = df_cleaned[STOCHATREAT_TREAT_NAME]
-
-    if len(df) != len(df_cleaned):
-        raise StatsAssignmentError(
-            f"Expected {len(df)} assignments but only have {len(df_cleaned)}. "
-            f"Check if your {aliases.name(id_col)} values could be causing problems."
-        )
+    arm_pop = _arm_pop_or_raise(treatment_ids, n_arms, n_expected=len(df), id_column=aliases.name(id_col))
 
     # Put back non-null numeric columns for a more robust balance check.
     df_cleaned.drop(columns=[STOCHATREAT_STRATUM_ID_NAME], inplace=True)
@@ -212,7 +209,7 @@ def _assign_individuals_to_arms(
         stratum_ids=list(stratum_ids),
         balance_result=balance_result,
         stratum_cols=orig_stratum_cols,
-        arm_pop=np.bincount(treatment_ids, minlength=n_arms),
+        arm_pop=arm_pop,
     )
 
 
@@ -270,20 +267,14 @@ def _assign_clusters_to_arms(
 
     # Merge arm and stratum assignments back to cluster level.
     cluster_df = cluster_df.merge(treatment_status, on=cluster_col)
-
     # Broadcast cluster-level assignments to individual level.
     df_with_assignments = df.merge(
         cluster_df[[cluster_col, STOCHATREAT_TREAT_NAME, STOCHATREAT_STRATUM_ID_NAME]], on=cluster_col
     )
-
-    if len(df) != len(df_with_assignments):
-        raise StatsAssignmentError(
-            f"Expected {len(df)} assignments but only have {len(df_with_assignments)}. "
-            f"Check if your {aliases.name(cluster_col)} values could be causing problems."
-        )
-
     treatment_ids = df_with_assignments[STOCHATREAT_TREAT_NAME]
     stratum_ids = df_with_assignments[STOCHATREAT_STRATUM_ID_NAME]
+    arm_pop = _arm_pop_or_raise(treatment_ids, n_arms, n_expected=len(df), id_column=aliases.name(cluster_col))
+    arm_cluster_pop = np.bincount(cluster_df[STOCHATREAT_TREAT_NAME], minlength=n_arms)
 
     # Run balance check at the cluster level. If cluster sizes are all equal,
     # cluster_size is excluded as a constant column and no balance check is possible.
@@ -302,6 +293,7 @@ def _assign_clusters_to_arms(
             exclude_col_set=exclude_cols_set,
         )
     except StatsBalanceError:
+        # Equal cluster sizes leave no usable covariate, so skip the check.
         balance_result = None
 
     return AssignmentResult(
@@ -309,9 +301,27 @@ def _assign_clusters_to_arms(
         stratum_ids=list(stratum_ids),
         balance_result=balance_result,
         stratum_cols=[],
-        arm_pop=np.bincount(treatment_ids, minlength=n_arms),
-        arm_cluster_pop=np.bincount(cluster_df[STOCHATREAT_TREAT_NAME], minlength=n_arms),
+        arm_pop=arm_pop,
+        arm_cluster_pop=arm_cluster_pop,
     )
+
+
+def _arm_pop_or_raise(
+    treatment_ids: pd.Series | list[int], n_arms: int, *, n_expected: int, id_column: str
+) -> npt.NDArray[np.intp]:
+    """Count assignments per arm, rejecting a bad merge or an empty arm."""
+    if len(treatment_ids) != n_expected:
+        raise StatsAssignmentError(
+            f"Expected {n_expected} assignments but only have {len(treatment_ids)}. "
+            f"Check if your {id_column} values could be causing problems."
+        )
+
+    arm_pop = np.bincount(treatment_ids, minlength=n_arms)
+    if (arm_pop[:n_arms] == 0).any():
+        raise StatsAssignmentError(
+            "At least one arm received no participants. Increase your sample size and try again."
+        )
+    return arm_pop
 
 
 def _arm_weights_to_probs(arm_weights: list[float] | None, n_arms: int) -> list[float]:

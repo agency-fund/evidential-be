@@ -435,6 +435,7 @@ def test_design_spec_metric_request_to_design_spec_metric():
         metric_stddev=15.0,
         available_nonnull_n=900,
         available_n=1000,
+        available_n_clusters=50,
     )
     metric = request.to_design_spec_metric()
     assert metric == DesignSpecMetric(
@@ -448,6 +449,7 @@ def test_design_spec_metric_request_to_design_spec_metric():
         metric_stddev=15.0,
         available_nonnull_n=900,
         available_n=1000,
+        available_n_clusters=50,
     )
 
 
@@ -472,6 +474,20 @@ def test_desired_ns_clusters_requires_cluster_key():
 
     with pytest.raises(ValidationError, match="desired_ns_clusters can only be set when cluster_key is set"):
         PreassignedFrequentistExperimentSpec.model_validate(invalid_spec)
+
+
+def test_power_request_available_n_clusters_requires_cluster_key():
+    metrics = [{"field_name": "metric1", "metric_pct_change": 0.1, "available_n_clusters": 12}]
+    PowerRequest.model_validate({"table_name": "dwh", "n_arms": 2, "cluster_key": "school_id", "metrics": metrics})
+
+    with pytest.raises(ValidationError, match="available_n_clusters can only be set when cluster_key is set"):
+        PowerRequest.model_validate({"table_name": "dwh", "n_arms": 2, "metrics": metrics})
+
+
+def test_power_request_available_n_clusters_must_be_at_least_one():
+    metrics = [{"field_name": "metric1", "metric_pct_change": 0.1, "available_n_clusters": 0}]
+    with pytest.raises(ValidationError, match="greater than or equal to 1"):
+        PowerRequest.model_validate({"table_name": "dwh", "n_arms": 2, "cluster_key": "school_id", "metrics": metrics})
 
 
 @pytest.mark.parametrize(
