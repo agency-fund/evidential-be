@@ -1,12 +1,50 @@
 import secrets
 
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from xngin.apiserver.limits import MAX_LENGTH_OF_NAME_VALUE
 from xngin.apiserver.routers.admin.admin_api_types import AddWebhookToOrganizationRequest
 from xngin.apiserver.settings import NoDwh, RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
 
 DEFAULT_NO_DWH_SOURCE_NAME = "API Only"
+
+_DEFAULT_ORGANIZATION_NAME_SUFFIX = "'s Organization"
+
+
+def default_organization_name(email: str) -> str:
+    """Returns the name of an organization created on behalf of the user with this email address.
+
+    The name is derived from the part of the address before the last "@" (or the whole string if there is no "@"),
+    truncated so that the name fits within MAX_LENGTH_OF_NAME_VALUE.
+    """
+    local, sep, _ = email.rpartition("@")
+    if not sep:
+        local = email
+    max_local_length = MAX_LENGTH_OF_NAME_VALUE - len(_DEFAULT_ORGANIZATION_NAME_SUFFIX)
+    return f"{local[:max_local_length]}{_DEFAULT_ORGANIZATION_NAME_SUFFIX}"
+
+
+def find_user_by_email(session: Session, email: str) -> tables.User | None:
+    """Finds the user whose email address matches case-insensitively."""
+    return session.scalars(select(tables.User).where(func.lower(tables.User.email) == func.lower(email))).one_or_none()
+
+
+def find_or_create_user_by_email(session: Session, email: str) -> tables.User:
+    """Returns the user whose email address matches case-insensitively, creating one with this address if none does.
+
+    Tolerates a concurrent request creating the same user, even with an address that differs only in case.
+    """
+    if user := find_user_by_email(session, email):
+        return user
+    created_id = session.scalar(
+        pg_insert(tables.User).values(email=email).on_conflict_do_nothing().returning(tables.User.id)
+    )
+    if created_id is None:
+        return session.scalars(select(tables.User).where(func.lower(tables.User.email) == func.lower(email))).one()
+    return session.get_one(tables.User, created_id)
 
 
 def create_datasource_impl(

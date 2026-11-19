@@ -45,20 +45,24 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     CreateApiKeyResponse,
     CreateDatasourceRequest,
     CreateDatasourceResponse,
+    CreateDomainSettingsRequest,
     CreateOrganizationRequest,
     CreateOrganizationResponse,
     CreateUserRequest,
     CreateUserResponse,
     DeleteExperimentDataRequest,
+    DomainSettingsSummary,
     GetDatasourceResponse,
     GetExperimentForUiResponse,
     GetOrganizationResponse,
+    GetServerSettingsResponse,
     GetSnapshotResponse,
     GetUserResponse,
     InspectDatasourceResponse,
     InspectDatasourceTableResponse,
     ListApiKeysResponse,
     ListDatasourcesResponse,
+    ListDomainSettingsResponse,
     ListOrganizationEventsResponse,
     ListOrganizationsResponse,
     ListSnapshotsResponse,
@@ -67,9 +71,11 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     PatchUserRequest,
     UpdateArmRequest,
     UpdateDatasourceRequest,
+    UpdateDomainSettingsRequest,
     UpdateExperimentRequest,
     UpdateOrganizationRequest,
     UpdateOrganizationWebhookRequest,
+    UpdateServerSettingsRequest,
 )
 from xngin.apiserver.routers.auth.auth_api_types import CallerIdentity
 from xngin.apiserver.routers.common_api_types import (
@@ -911,6 +917,394 @@ class AdminAPIClient:
                 },
                 path_params={
                     "user_id": user_id,
+                },
+                raise_if_not_default_status=raise_if_not_default_status,
+                client_exts=client_exts,
+            ),
+        )
+
+    @overload
+    def get_server_settings(
+        self,
+        *,
+        raise_if_not_default_status: Literal[True] = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], GetServerSettingsResponse]: ...
+    @overload
+    def get_server_settings(
+        self,
+        *,
+        raise_if_not_default_status: Literal[False],
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.OK], GetServerSettingsResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+    ): ...
+    def get_server_settings(
+        self,
+        *,
+        raise_if_not_default_status: bool = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.OK], GetServerSettingsResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+    ):
+        return cast(
+            (
+                AdminAPIClientResult[Literal[HTTPStatus.OK], GetServerSettingsResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+            ),
+            self._route_handler(
+                path="/v1/m/server-settings",
+                method=HTTPMethod.GET,
+                default_status=HTTPStatus.OK,
+                models={
+                    HTTPStatus.OK: GetServerSettingsResponse,
+                    HTTPStatus.BAD_REQUEST: HTTPExceptionError,
+                    HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
+                    HTTPStatus.FORBIDDEN: HTTPExceptionError,
+                    HTTPStatus.NOT_FOUND: HTTPExceptionError,
+                },
+                raise_if_not_default_status=raise_if_not_default_status,
+                client_exts=client_exts,
+            ),
+        )
+
+    @overload
+    def update_server_settings(
+        self,
+        *,
+        body: UpdateServerSettingsRequest,
+        raise_if_not_default_status: Literal[True] = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
+    @overload
+    def update_server_settings(
+        self,
+        *,
+        body: UpdateServerSettingsRequest,
+        raise_if_not_default_status: Literal[False],
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+    ): ...
+    def update_server_settings(
+        self,
+        *,
+        body: UpdateServerSettingsRequest,
+        raise_if_not_default_status: bool = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+    ):
+        return cast(
+            (
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+            ),
+            self._route_handler(
+                path="/v1/m/server-settings",
+                method=HTTPMethod.PATCH,
+                default_status=HTTPStatus.NO_CONTENT,
+                models={
+                    HTTPStatus.NO_CONTENT: Any,
+                    HTTPStatus.BAD_REQUEST: HTTPExceptionError,
+                    HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
+                    HTTPStatus.FORBIDDEN: HTTPExceptionError,
+                    HTTPStatus.NOT_FOUND: HTTPExceptionError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
+                },
+                body_params={
+                    "body": body,
+                },
+                raise_if_not_default_status=raise_if_not_default_status,
+                client_exts=client_exts,
+            ),
+        )
+
+    @overload
+    def list_domain_settings(
+        self,
+        *,
+        raise_if_not_default_status: Literal[True] = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], ListDomainSettingsResponse]: ...
+    @overload
+    def list_domain_settings(
+        self,
+        *,
+        raise_if_not_default_status: Literal[False],
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ListDomainSettingsResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+    ): ...
+    def list_domain_settings(
+        self,
+        *,
+        raise_if_not_default_status: bool = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.OK], ListDomainSettingsResponse]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+    ):
+        return cast(
+            (
+                AdminAPIClientResult[Literal[HTTPStatus.OK], ListDomainSettingsResponse]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+            ),
+            self._route_handler(
+                path="/v1/m/domain-settings",
+                method=HTTPMethod.GET,
+                default_status=HTTPStatus.OK,
+                models={
+                    HTTPStatus.OK: ListDomainSettingsResponse,
+                    HTTPStatus.BAD_REQUEST: HTTPExceptionError,
+                    HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
+                    HTTPStatus.FORBIDDEN: HTTPExceptionError,
+                    HTTPStatus.NOT_FOUND: HTTPExceptionError,
+                },
+                raise_if_not_default_status=raise_if_not_default_status,
+                client_exts=client_exts,
+            ),
+        )
+
+    @overload
+    def create_domain_settings(
+        self,
+        *,
+        body: CreateDomainSettingsRequest,
+        raise_if_not_default_status: Literal[True] = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.OK], DomainSettingsSummary]: ...
+    @overload
+    def create_domain_settings(
+        self,
+        *,
+        body: CreateDomainSettingsRequest,
+        raise_if_not_default_status: Literal[False],
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.OK], DomainSettingsSummary]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+    ): ...
+    def create_domain_settings(
+        self,
+        *,
+        body: CreateDomainSettingsRequest,
+        raise_if_not_default_status: bool = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.OK], DomainSettingsSummary]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+    ):
+        return cast(
+            (
+                AdminAPIClientResult[Literal[HTTPStatus.OK], DomainSettingsSummary]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+            ),
+            self._route_handler(
+                path="/v1/m/domain-settings",
+                method=HTTPMethod.POST,
+                default_status=HTTPStatus.OK,
+                models={
+                    HTTPStatus.OK: DomainSettingsSummary,
+                    HTTPStatus.BAD_REQUEST: HTTPExceptionError,
+                    HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
+                    HTTPStatus.FORBIDDEN: HTTPExceptionError,
+                    HTTPStatus.NOT_FOUND: HTTPExceptionError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
+                },
+                body_params={
+                    "body": body,
+                },
+                raise_if_not_default_status=raise_if_not_default_status,
+                client_exts=client_exts,
+            ),
+        )
+
+    @overload
+    def update_domain_settings(
+        self,
+        *,
+        body: UpdateDomainSettingsRequest,
+        domain_settings_id: str,
+        raise_if_not_default_status: Literal[True] = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
+    @overload
+    def update_domain_settings(
+        self,
+        *,
+        body: UpdateDomainSettingsRequest,
+        domain_settings_id: str,
+        raise_if_not_default_status: Literal[False],
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+    ): ...
+    def update_domain_settings(
+        self,
+        *,
+        body: UpdateDomainSettingsRequest,
+        domain_settings_id: str,
+        raise_if_not_default_status: bool = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+    ):
+        return cast(
+            (
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+            ),
+            self._route_handler(
+                path="/v1/m/domain-settings/{domain_settings_id}",
+                method=HTTPMethod.PATCH,
+                default_status=HTTPStatus.NO_CONTENT,
+                models={
+                    HTTPStatus.NO_CONTENT: Any,
+                    HTTPStatus.BAD_REQUEST: HTTPExceptionError,
+                    HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
+                    HTTPStatus.FORBIDDEN: HTTPExceptionError,
+                    HTTPStatus.NOT_FOUND: HTTPExceptionError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
+                },
+                path_params={
+                    "domain_settings_id": domain_settings_id,
+                },
+                body_params={
+                    "body": body,
+                },
+                raise_if_not_default_status=raise_if_not_default_status,
+                client_exts=client_exts,
+            ),
+        )
+
+    @overload
+    def delete_domain_settings(
+        self,
+        *,
+        domain_settings_id: str,
+        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
+        raise_if_not_default_status: Literal[True] = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
+    @overload
+    def delete_domain_settings(
+        self,
+        *,
+        domain_settings_id: str,
+        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
+        raise_if_not_default_status: Literal[False],
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+    ): ...
+    def delete_domain_settings(
+        self,
+        *,
+        domain_settings_id: str,
+        allow_missing: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
+        raise_if_not_default_status: bool = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+    ):
+        return cast(
+            (
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+            ),
+            self._route_handler(
+                path="/v1/m/domain-settings/{domain_settings_id}",
+                method=HTTPMethod.DELETE,
+                default_status=HTTPStatus.NO_CONTENT,
+                models={
+                    HTTPStatus.NO_CONTENT: Any,
+                    HTTPStatus.BAD_REQUEST: HTTPExceptionError,
+                    HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
+                    HTTPStatus.FORBIDDEN: HTTPExceptionError,
+                    HTTPStatus.NOT_FOUND: HTTPExceptionError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
+                },
+                path_params={
+                    "domain_settings_id": domain_settings_id,
+                },
+                query_params={
+                    "allow_missing": allow_missing,
                 },
                 raise_if_not_default_status=raise_if_not_default_status,
                 client_exts=client_exts,
