@@ -2359,6 +2359,51 @@ def test_update_arm(testing_experiment, aclient: AdminAPIClient):
     assert arm.arm_description == "updated desc"
 
 
+def test_update_bandit_arms_for_ui(testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient):
+    """The admin arm update applies recorded outcomes, incrementally or rebuilt from the prior."""
+    datasource_id = testing_datasource.datasource_id
+    experiment_id = make_bandit_online_experiment(aclient, datasource_id).config.experiment_id
+    assignment = eclient.get_assignment(
+        api_key=testing_datasource.key, experiment_id=experiment_id, participant_id="1"
+    ).data.assignment
+    assert assignment is not None
+    eclient.record_bandit_participant_outcome(
+        api_key=testing_datasource.key,
+        body=UpdateBanditArmOutcomeRequest(outcome=1.0),
+        experiment_id=experiment_id,
+        participant_id="1",
+    )
+
+    def assigned_arm() -> ArmBandit:
+        """Read the assigned arm as the UI sees it."""
+        design_spec = aclient.get_experiment_for_ui(datasource_id=datasource_id, experiment_id=experiment_id).data
+        arm = next(arm for arm in design_spec.config.design_spec.arms if arm.arm_id == assignment.arm_id)
+        assert isinstance(arm, ArmBandit)
+        return arm
+
+    # Recording the outcome alone doesn't change the arm; the admin update applies it.
+    before = assigned_arm()
+    assert before.alpha == before.alpha_init
+    aclient.update_bandit_arms_for_ui(datasource_id=datasource_id, experiment_id=experiment_id)
+    after = assigned_arm()
+    assert before.alpha is not None
+    assert after.alpha == before.alpha + 1
+
+    # A rebuild from the prior gives the same result here, since the arm has seen exactly one outcome.
+    aclient.update_bandit_arms_for_ui(
+        datasource_id=datasource_id, experiment_id=experiment_id, update_from_initial_prior=True
+    )
+    rebuilt = assigned_arm()
+    assert (rebuilt.alpha, rebuilt.beta) == (after.alpha, after.beta)
+
+
+def test_update_bandit_arms_for_ui_rejects_frequentist_experiments(testing_experiment, aclient: AdminAPIClient):
+    with expect_status_code(422, text="Only bandit experiments have arms to update."):
+        aclient.update_bandit_arms_for_ui(
+            datasource_id=testing_experiment.datasource_id, experiment_id=testing_experiment.id
+        )
+
+
 def test_update_arm_invalid(use_deterministic_random, testing_datasource, testing_experiment, aclient: AdminAPIClient):
     """Test arm update validation checks.
 

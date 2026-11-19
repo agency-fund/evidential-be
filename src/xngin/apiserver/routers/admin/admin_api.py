@@ -1617,6 +1617,36 @@ def update_arm(
 
 
 @router.post(
+    "/datasources/{datasource_id}/experiments/{experiment_id}/arms/update",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def update_bandit_arms_for_ui(
+    experiment: Annotated[tables.Experiment, Depends(adeps.experiment)],
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
+    update_from_initial_prior: Annotated[
+        bool,
+        Query(
+            description=(
+                "Rebuild every arm from its initial prior using all recorded outcomes, instead of applying only "
+                "the outcomes recorded since the last update."
+            )
+        ),
+    ] = False,
+):
+    """Updates a bandit experiment's arms from recorded outcomes, as the experiments API's arm update does.
+
+    The admin UI can't call the experiments API, which authenticates with a datasource API key, so this exposes the
+    same update to signed-in members of the experiment's organization.
+    """
+    if not ExperimentsType(experiment.experiment_type).is_bandit():
+        raise LateValidationError("Only bandit experiments have arms to update.")
+
+    experiments_common.update_bandit_arms_impl(session, experiment, update_from_initial_prior=update_from_initial_prior)
+    session.commit()
+    return GENERIC_SUCCESS
+
+
+@router.post(
     "/datasources/{datasource_id}/power",
     responses=DWH_ERROR_RESPONSES,
 )
