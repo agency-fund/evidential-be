@@ -1,7 +1,8 @@
 from typing import TYPE_CHECKING
 
+from xngin.apiserver import flags
 from xngin.apiserver.flags import PUBLISH_ALL_DOCS
-from xngin.apiserver.routers import healthchecks_api
+from xngin.apiserver.routers import devidp, healthchecks_api
 from xngin.apiserver.routers.admin import admin_api
 from xngin.apiserver.routers.admin_integrations import admin_integrations_api
 from xngin.apiserver.routers.auth import auth_api
@@ -22,6 +23,14 @@ def register(app: FastAPI):
         tags=["Auth"],
         include_in_schema=PUBLISH_ALL_DOCS,
     )
+
+    if flags.DEVIDP_ENABLED:
+        if not flags.is_dev_environment():
+            raise devidp.DevIdpNotAllowedError(
+                f"{flags.ENV_XNGIN_DEVIDP} is set, but the development-only identity provider may only run when "
+                "ENVIRONMENT is unset or dev."
+            )
+        app.include_router(devidp.router, include_in_schema=False)
 
     app.include_router(
         admin_api.router,
