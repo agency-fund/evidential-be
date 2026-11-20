@@ -20,9 +20,10 @@ from fastapi import (
     Response,
     status,
 )
+from humanize import precisedelta
 from loguru import logger
 from pydantic import BaseModel
-from sqlalchemy import delete, func, literal, select
+from sqlalchemy import delete, func, literal, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, selectinload
 
@@ -35,7 +36,12 @@ from xngin.apiserver.dwh.field_aliases import FieldAliases
 from xngin.apiserver.dwh.inspections import create_inspect_table_response_from_table
 from xngin.apiserver.exceptionhandlers import XHTTPValidationError
 from xngin.apiserver.exceptions_common import LateValidationError
-from xngin.apiserver.limits import MAX_LENGTH_OF_EMAIL_VALUE, MAX_LENGTH_OF_NAME_VALUE
+from xngin.apiserver.limits import (
+    MAX_LENGTH_OF_EMAIL_VALUE,
+    MAX_LENGTH_OF_NAME_VALUE,
+    MAX_NUMBER_OF_DOMAIN_SETTINGS,
+    MIN_TIME_UNTIL_NEW_END_DATE,
+)
 from xngin.apiserver.pagination import (
     PaginationQuery,
     SortField,
@@ -59,23 +65,27 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     CreateApiKeyResponse,
     CreateDatasourceRequest,
     CreateDatasourceResponse,
+    CreateDomainSettingsRequest,
     CreateOrganizationRequest,
     CreateOrganizationResponse,
     CreateUserRequest,
     CreateUserResponse,
     DatasourceSummary,
     DeleteExperimentDataRequest,
+    DomainSettingsSummary,
     Dsn,
     EventSummary,
     GetDatasourceResponse,
     GetExperimentForUiResponse,
     GetOrganizationResponse,
+    GetServerSettingsResponse,
     GetSnapshotResponse,
     GetUserResponse,
     InspectDatasourceResponse,
     InspectDatasourceTableResponse,
     ListApiKeysResponse,
     ListDatasourcesResponse,
+    ListDomainSettingsResponse,
     ListOrganizationEventsResponse,
     ListOrganizationsResponse,
     ListSnapshotsResponse,
@@ -86,12 +96,15 @@ from xngin.apiserver.routers.admin.admin_api_types import (
     PatchUserRequest,
     PostgresDsn,
     RedshiftDsn,
+    SignupSettings,
     SnapshotStatus,
     UpdateArmRequest,
     UpdateDatasourceRequest,
+    UpdateDomainSettingsRequest,
     UpdateExperimentRequest,
     UpdateOrganizationRequest,
     UpdateOrganizationWebhookRequest,
+    UpdateServerSettingsRequest,
     UserDetail,
     UserSummary,
     WebhookSummary,
@@ -120,7 +133,7 @@ from xngin.apiserver.routers.common_api_types import (
     PreassignedFrequentistExperimentSpec,
     Relation,
 )
-from xngin.apiserver.routers.common_enums import ExperimentState
+from xngin.apiserver.routers.common_enums import ExperimentState, SignupMode, StopAssignmentReason
 from xngin.apiserver.routers.experiments import experiments_common, experiments_common_csv
 from xngin.apiserver.routers.experiments.experiments_common import (
     AbandonExperimentResult,
@@ -129,7 +142,7 @@ from xngin.apiserver.routers.experiments.experiments_common import (
 )
 from xngin.apiserver.routers.experiments.experiments_common_csv import CsvStreamingResponse
 from xngin.apiserver.routers.power_adapters import build_metric_stats, calculate_cluster_stats
-from xngin.apiserver.settings import NoDwh, RemoteDatabaseConfig
+from xngin.apiserver.settings import GoogleSheetsDsn, NoDwh, RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
 from xngin.apiserver.worker.tq.task_payload_types import WEBHOOK_OUTBOUND_TASK_TYPE
@@ -320,19 +333,9 @@ def create_user(
     memberships. When they next sign in via OIDC, the existing user record is bound to their OIDC
     identity automatically.
     """
-    user_id = (
-        session.execute(
-            pg_insert(tables.User)
-            .values(email=body.email)
-            .on_conflict_do_update(
-                index_elements=[tables.User.email],
-                set_={"email": body.email},
-            )
-            .returning(tables.User.id)
-        )
-    ).scalar_one()
+    user = admin_common.find_or_create_user_by_email(session, body.email)
     session.commit()
-    return CreateUserResponse(id=user_id)
+    return CreateUserResponse(id=user.id)
 
 
 @router.get("/users")
@@ -506,6 +509,162 @@ def delete_user(
 
     session.delete(target)
     session.commit()
+    return GENERIC_SUCCESS
+
+
+@router.get("/server-settings")
+def get_server_settings(
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
+    _user: Annotated[tables.User, Depends(adeps.privileged_caller)],
+) -> GetServerSettingsResponse:
+    """Returns the installation-wide settings.
+
+    Privileged users only. Settings that have never been changed have their default values, and `updated_at` is
+    null.
+    """
+    settings = session.get(tables.ServerSettings, tables.SERVER_SETTINGS_ID)
+    return GetServerSettingsResponse(
+        signup=SignupSettings(mode=SignupMode(settings.signup_mode) if settings else SignupMode.EXISTING),
+        updated_at=settings.updated_at if settings else None,
+    )
+
+
+@router.patch("/server-settings", status_code=status.HTTP_204_NO_CONTENT)
+def update_server_settings(
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
+    user: Annotated[tables.User, Depends(adeps.privileged_caller)],
+    body: Annotated[UpdateServerSettingsRequest, Body(...)],
+):
+    """Updates the installation-wide settings.
+
+    Privileged users only.
+    """
+    if body.signup is None:
+        return GENERIC_SUCCESS
+
+    previous = session.get(tables.ServerSettings, tables.SERVER_SETTINGS_ID)
+    old_mode = SignupMode(previous.signup_mode) if previous else SignupMode.EXISTING
+    if body.signup.mode == old_mode:
+        return GENERIC_SUCCESS
+    session.execute(
+        pg_insert(tables.ServerSettings)
+        .values(id=tables.SERVER_SETTINGS_ID, signup_mode=body.signup.mode)
+        .on_conflict_do_update(
+            index_elements=[tables.ServerSettings.id],
+            set_={"signup_mode": body.signup.mode, "updated_at": func.now()},
+        )
+    )
+    session.commit()
+
+    logger.info(f"Sign-up mode changed by user {user.id}: {old_mode} -> {body.signup.mode}")
+    return GENERIC_SUCCESS
+
+
+def _domain_settings_summary(domain_settings: tables.DomainSettings) -> DomainSettingsSummary:
+    return DomainSettingsSummary(
+        id=domain_settings.id,
+        domain=domain_settings.domain,
+        allow_signup=domain_settings.allow_signup,
+    )
+
+
+@router.get("/domain-settings")
+def list_domain_settings(
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
+    _user: Annotated[tables.User, Depends(adeps.privileged_caller)],
+) -> ListDomainSettingsResponse:
+    """Lists the settings for each email address domain, sorted by domain.
+
+    Privileged users only.
+    """
+    rows = session.scalars(select(tables.DomainSettings).order_by(tables.DomainSettings.domain))
+    return ListDomainSettingsResponse(items=[_domain_settings_summary(row) for row in rows])
+
+
+@router.post("/domain-settings")
+def create_domain_settings(
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
+    user: Annotated[tables.User, Depends(adeps.privileged_caller)],
+    body: Annotated[CreateDomainSettingsRequest, Body(...)],
+) -> DomainSettingsSummary:
+    """Creates the settings for an email address domain.
+
+    Privileged users only. Each domain may have only one set of settings; creating a second returns 409.
+    """
+    count = session.scalar(select(func.count()).select_from(tables.DomainSettings)) or 0
+    if count >= MAX_NUMBER_OF_DOMAIN_SETTINGS:
+        raise LateValidationError(f"At most {MAX_NUMBER_OF_DOMAIN_SETTINGS} domains may have settings.")
+    created_id = session.scalar(
+        pg_insert(tables.DomainSettings)
+        .values(id=tables.domain_settings_id_factory(), domain=body.domain, allow_signup=body.allow_signup)
+        .on_conflict_do_nothing(index_elements=[tables.DomainSettings.domain])
+        .returning(tables.DomainSettings.id)
+    )
+    if created_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=f"The domain {body.domain} already has settings."
+        )
+    session.commit()
+
+    logger.info(f"Domain settings for {body.domain} created by user {user.id}: allow_signup={body.allow_signup}")
+    return _domain_settings_summary(session.get_one(tables.DomainSettings, created_id))
+
+
+def _domain_settings_or_404(session: Session, domain_settings_id: str) -> tables.DomainSettings:
+    domain_settings = session.get(tables.DomainSettings, domain_settings_id)
+    if domain_settings is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Domain settings not found.")
+    return domain_settings
+
+
+@router.patch("/domain-settings/{domain_settings_id}", status_code=status.HTTP_204_NO_CONTENT)
+def update_domain_settings(
+    domain_settings_id: str,
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
+    user: Annotated[tables.User, Depends(adeps.privileged_caller)],
+    body: Annotated[UpdateDomainSettingsRequest, Body(...)],
+):
+    """Updates the settings for an email address domain.
+
+    Privileged users only. Fields that are absent are left unchanged.
+    """
+    domain_settings = _domain_settings_or_404(session, domain_settings_id)
+    if body.allow_signup is None or body.allow_signup == domain_settings.allow_signup:
+        return GENERIC_SUCCESS
+    domain_settings.allow_signup = body.allow_signup
+    session.commit()
+
+    logger.info(
+        f"Domain settings for {domain_settings.domain} updated by user {user.id}: "
+        f"allow_signup={domain_settings.allow_signup}"
+    )
+    return GENERIC_SUCCESS
+
+
+@router.delete("/domain-settings/{domain_settings_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_domain_settings(
+    domain_settings_id: str,
+    session: Annotated[Session, Depends(xngin_sync_db_session)],
+    user: Annotated[tables.User, Depends(adeps.privileged_caller)],
+    allow_missing: Annotated[
+        bool,
+        Query(description="If true, return a 204 even if the resource does not exist."),
+    ] = False,
+):
+    """Deletes the settings for an email address domain.
+
+    Privileged users only.
+    """
+    domain_settings = session.get(tables.DomainSettings, domain_settings_id)
+    if domain_settings is None:
+        if allow_missing:
+            return GENERIC_SUCCESS
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Domain settings not found.")
+    domain = domain_settings.domain
+    session.delete(domain_settings)
+    session.commit()
+
+    logger.info(f"Domain settings for {domain} deleted by user {user.id}")
     return GENERIC_SUCCESS
 
 
@@ -890,13 +1049,10 @@ def add_member_to_organization(
 
     The authenticated user must be part of the organization to add members.
     """
-    if body.email in {u.email for u in organization.users}:
+    new_user = admin_common.find_or_create_user_by_email(session, body.email)
+    if new_user in organization.users:
+        session.commit()
         return GENERIC_SUCCESS
-
-    new_user = session.execute(select(tables.User).where(tables.User.email == body.email)).scalar_one_or_none()
-    if new_user is None:
-        new_user = tables.User(email=body.email)
-        session.add(new_user)
     organization.users.append(new_user)
     session.commit()
     return GENERIC_SUCCESS
@@ -1054,6 +1210,8 @@ def create_datasource(
 ) -> CreateDatasourceResponse:
     """Creates a new datasource for the specified organization."""
     org = adeps.load_organization_or_raise(session, user, body.organization_id)
+    if body.dsn.type == "google_sheets":
+        adeps.raise_unless_privileged(user)
 
     raise_unless_safe_hostname(body.dsn)
 
@@ -1072,14 +1230,31 @@ def create_datasource(
 def update_datasource(
     datasource: Annotated[tables.Datasource, Depends(adeps.datasource)],
     session: Annotated[Session, Depends(xngin_sync_db_session)],
+    user: Annotated[tables.User, Depends(require_user_from_token)],
     body: UpdateDatasourceRequest,
 ):
+    if body.dsn is not None and body.dsn.type == "google_sheets":
+        adeps.raise_unless_privileged(user)
     if body.name is not None:
         datasource.name = body.name
     if body.dsn is not None:
         raise_unless_safe_hostname(body.dsn)
         cfg = datasource.get_config()
-        cfg.dwh = api_dsn_to_settings_dwh(body.dsn, cfg.dwh)
+        new_dwh = api_dsn_to_settings_dwh(body.dsn, cfg.dwh)
+        # An experiment tab for Gsheets is identified by two things: the spreadsheet (this datasource's URL) and the
+        # tab ID (Experiment.datasource_table). So once experiments exist, the datasource can't switch to a
+        # different spreadsheet; switching tabs within the same spreadsheet is fine.
+        if (
+            isinstance(cfg.dwh, GoogleSheetsDsn)
+            and isinstance(new_dwh, GoogleSheetsDsn)
+            and cfg.dwh.get_spreadsheet_id() != new_dwh.get_spreadsheet_id()
+            and session.scalar(select(tables.Experiment.id).where(tables.Experiment.datasource_id == datasource.id))
+        ):
+            raise LateValidationError(
+                "Experiments read their outcomes from this datasource's spreadsheet. "
+                "Create a new datasource to connect a different spreadsheet."
+            )
+        cfg.dwh = new_dwh
         datasource.set_config(cfg)
 
     datasource.clear_table_list()
@@ -1402,7 +1577,7 @@ EXPERIMENT_STATE_TRANSITION_RESPONSES: dict[int | str, dict[str, Any]] = {
 
 @router.post(
     "/datasources/{datasource_id}/experiments/{experiment_id}/commit",
-    responses=EXPERIMENT_STATE_TRANSITION_RESPONSES,
+    responses={**EXPERIMENT_STATE_TRANSITION_RESPONSES, **DWH_ERROR_RESPONSES},
     status_code=status.HTTP_204_NO_CONTENT,
 )
 def commit_experiment(
@@ -1446,11 +1621,10 @@ def list_organization_experiments(
 @router.get("/datasources/{datasource_id}/experiments/{experiment_id}")
 def get_experiment_for_ui(
     experiment: Annotated[tables.Experiment, Depends(adeps.experiment_for_ui)],
-    session: Annotated[Session, Depends(xngin_sync_db_session)],
 ) -> GetExperimentForUiResponse:
     """Returns the experiment with the specified ID."""
     return GetExperimentForUiResponse(
-        config=experiments_common.get_experiment_impl(session, experiment),
+        config=experiments_common.get_experiment_impl(experiment),
         experiment_schema=make_schema_from_experiment(experiment),
     )
 
@@ -1491,10 +1665,22 @@ def update_experiment(
         if end_date <= body.start_date:
             raise LateValidationError("New start date must be before end date.")
         experiment.start_date = body.start_date
-    if body.end_date is not None:
+    if body.end_date is not None and body.end_date != experiment.end_date:
         if body.end_date <= experiment.start_date:
             raise LateValidationError("New end date must be after start date.")
+        if body.end_date < datetime.now(UTC) + MIN_TIME_UNTIL_NEW_END_DATE:
+            minimum_notice = precisedelta(MIN_TIME_UNTIL_NEW_END_DATE, minimum_unit="minutes")
+            raise LateValidationError(f"New end date must be at least {minimum_notice} from now.")
         experiment.end_date = body.end_date
+        session.execute(
+            update(tables.Experiment)
+            .where(
+                tables.Experiment.id == experiment.id,
+                tables.Experiment.stopped_assignments_reason == StopAssignmentReason.END_DATE,
+            )
+            .values(stopped_assignments_at=None, stopped_assignments_reason=None)
+            .execution_options(synchronize_session="fetch")
+        )
     if body.decision is not None:
         experiment.decision = body.decision
     if body.impact is not None:
@@ -1609,20 +1795,24 @@ def power_check(
 
     filters = body.filters
     cluster_key = body.cluster_key
-    desired_n_clusters = body.desired_n_clusters
-    desired_ns_clusters = body.desired_ns_clusters
     # Exclude rows without a valid cluster key.
     if cluster_key is not None:
         filters = [*filters, Filter(field_name=cluster_key, relation=Relation.EXCLUDES, value=[None])]
 
     metrics_missing_stats = [m for m in body.metrics if not m.has_baseline_stats]
-    needs_cluster_stats = cluster_key is not None and any(not m.has_cluster_stats for m in body.metrics)
+    needs_cluster_stats = cluster_key is not None and any(
+        not m.has_cluster_stats or m.available_n_clusters is None for m in body.metrics
+    )
 
     if not metrics_missing_stats and not needs_cluster_stats:
         # Every metric arrived with baseline stats (and cluster stats where needed), so the
         # warehouse is not contacted at all.
         metric_stats = [m.to_design_spec_metric() for m in body.metrics]
     else:
+        # Only queries run inside the session; stats are computed from the raw rows after the
+        # connection is closed. Metrics carrying baseline stats are not queried.
+        raw_metric_stats = raw_cluster_stats = None
+        fields_needing_cluster_stats = []
         with DwhSession.open(dsconfig.dwh) as dwh:
             sa_table = dwh.inspect_table(body.table_name, check_readable=False)
             # Validate the fields used in the request are present in the table and that filter values are valid.
@@ -1633,25 +1823,20 @@ def power_check(
                 cluster_key=body.cluster_key,
             )
 
-            # Only queries run inside this block; stats are computed from the raw rows after
-            # the DWH connection is closed. Metrics carrying baseline stats are not queried.
-            raw_metric_stats = (
-                dwh.get_raw_metric_stats(sa_table, metrics=metrics_missing_stats, filters=filters)
-                if metrics_missing_stats
-                else None
-            )
-            db_derived_metrics = (
-                [m.field_name for m in body.metrics if not m.has_cluster_stats] if cluster_key is not None else []
-            )
-            raw_cluster_stats = None
-            if cluster_key is not None and db_derived_metrics:
+            if metrics_missing_stats:
+                raw_metric_stats = dwh.get_raw_metric_stats(sa_table, metrics=metrics_missing_stats, filters=filters)
+
+            # We get the available_n_clusters from this sufficient-statistics query, so run it even
+            # when the user supplied stats but not the cluster count.
+            if cluster_key is not None and needs_cluster_stats:
+                fields_needing_cluster_stats = [m.field_name for m in body.metrics if not m.has_cluster_stats]
                 # Shifting each metric by its mean keeps the sums of squares in the
                 # sufficient-statistics query numerically stable. The mean comes from the raw
                 # query row for queried metrics and from the supplied baseline for echoed ones.
                 supplied_baselines = {m.field_name: m.metric_baseline for m in body.metrics if m.has_baseline_stats}
                 queried_aliases = FieldAliases(m.field_name for m in metrics_missing_stats)
                 outcome_shifts = {}
-                for field_name in db_derived_metrics:
+                for field_name in fields_needing_cluster_stats:
                     if field_name in supplied_baselines:
                         mean = supplied_baselines[field_name]
                     else:
@@ -1665,32 +1850,38 @@ def power_check(
                 raw_cluster_stats = dwh.get_cluster_sufficient_stats(
                     sa_table,
                     cluster_column_name=cluster_key,
-                    outcome_column_names=db_derived_metrics,
+                    outcome_column_names=fields_needing_cluster_stats,
                     filters=filters,
                     outcome_shifts=outcome_shifts,
                 )
 
-        queried_stats = (
+        db_metric_stats = (
             build_metric_stats(raw_metric_stats, sa_table, metrics_missing_stats)
             if raw_metric_stats is not None
             else []
         )
-        queried_stats_by_name = {m.field_name: m for m in queried_stats}
+        db_metric_stats_by_name = {m.field_name: m for m in db_metric_stats}
         metric_stats = [
-            m.to_design_spec_metric() if m.has_baseline_stats else queried_stats_by_name[m.field_name]
+            m.to_design_spec_metric() if m.has_baseline_stats else db_metric_stats_by_name[m.field_name]
             for m in body.metrics
         ]
 
         # Augment with cluster-level stats if this is a cluster-randomized design.
         if cluster_key is not None:
             db_cluster_stats = (
-                calculate_cluster_stats(raw_cluster_stats, cluster_key, db_derived_metrics)
+                calculate_cluster_stats(raw_cluster_stats, cluster_key, fields_needing_cluster_stats)
                 if raw_cluster_stats is not None
                 else {}
             )
             request_metrics_by_name = {m.field_name: m for m in body.metrics}
             for metric_stat in metric_stats:
                 req_metric = request_metrics_by_name[metric_stat.field_name]
+                # Always use the cluster count from the query if available, as the user can't
+                # manually set it, only echo back a value we sent to the FE.
+                if raw_cluster_stats is not None:
+                    metric_stat.available_n_clusters = len(raw_cluster_stats)
+                else:
+                    metric_stat.available_n_clusters = req_metric.available_n_clusters
                 # If the user provided ICC, avg_cluster_size, and cv, use them instead of deriving from the dwh.
                 if req_metric.has_cluster_stats:
                     metric_stat.icc = req_metric.icc
@@ -1710,9 +1901,9 @@ def power_check(
             alpha=body.alpha,
             arm_weights=body.arm_weights,
             desired_n=body.desired_n,
-            desired_n_clusters=desired_n_clusters,
+            desired_n_clusters=body.desired_n_clusters,
             desired_ns=body.desired_ns,
-            desired_ns_clusters=desired_ns_clusters,
+            desired_ns_clusters=body.desired_ns_clusters,
         )
     )
 

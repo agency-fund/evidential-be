@@ -35,6 +35,10 @@ OIDC_REDIRECT_URI = os.environ.get(ENV_XNGIN_OIDC_REDIRECT_URI, "")
 ENV_XNGIN_OIDC_CLAIM_MAP = "XNGIN_OIDC_CLAIM_MAP"
 OIDC_CLAIM_MAP = os.environ.get(ENV_XNGIN_OIDC_CLAIM_MAP, "")
 
+# Serves a development-only OpenID Provider at /devidp; see routers/devidp.py.
+ENV_XNGIN_DEVIDP = "XNGIN_DEVIDP"
+DEVIDP_ENABLED = truthy_env(ENV_XNGIN_DEVIDP)
+
 # XNGIN_SESSION_TOKEN_KEYSET contains a keyset for encrypting session tokens. This is generated using the
 # `xngin-cli create-nacl-keyset` command. If set to "local", we will read from a local file (see:
 # token_cryptor).
@@ -52,6 +56,9 @@ XNGIN_DEVDWH_GCP_BIGQUERY_DSN = os.environ.get("XNGIN_DEVDWH_GCP_BIGQUERY_DSN", 
 
 # Optional Redshift warehouse for development and testing. Used in integration tests.
 XNGIN_DEVDWH_AWS_REDSHIFT_DSN = os.environ.get("XNGIN_DEVDWH_AWS_REDSHIFT_DSN", "")
+
+# Encoded service-account JSON needed for Google Sheets demo feature.
+GSHEETS_DEMO_CREDS_BASE64 = os.environ.get("GSHEETS_DEMO_CREDS_BASE64", "")
 
 # How long one block of interactions with a customer data warehouse may run in total before we stop waiting for it.
 # This defends against remote warehouses, not against our own application database, which we assume does not stall.

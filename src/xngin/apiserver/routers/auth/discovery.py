@@ -97,6 +97,14 @@ class OidcDiscovery:
             logger.warning(f"OpenID discovery unavailable during startup; login will retry on request: {exc}")
             return _LazyOidcDiscovery(settings, cls)
 
+    @classmethod
+    def lazy(cls, settings: OidcSettings) -> OidcDiscoveryClient:
+        """Returns a client that loads on first use, for providers that are unreachable until this server is serving.
+
+        This is the case for the development identity provider (devidp), which this server serves itself.
+        """
+        return _LazyOidcDiscovery(settings, cls)
+
     def __init__(
         self,
         settings: OidcSettings,

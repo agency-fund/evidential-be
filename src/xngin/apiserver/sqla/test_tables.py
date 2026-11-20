@@ -1,7 +1,10 @@
+import typing
+
 import pytest
 from pydantic import ValidationError
 from sqlalchemy import select
 
+from xngin.apiserver.routers.common_enums import SignupMode
 from xngin.apiserver.settings import RemoteDatabaseConfig
 from xngin.apiserver.sqla import tables
 
@@ -42,3 +45,7 @@ def test_remote_database_config_rejects_unknown_keys(config):
     with pytest.raises(ValidationError) as excinfo:
         RemoteDatabaseConfig.model_validate(config)
     assert any(error["type"] == "extra_forbidden" for error in excinfo.value.errors())
+
+
+def test_signup_mode_values_match_the_api_enum():
+    assert set(typing.get_args(tables.SignupMode.__value__)) == {mode.value for mode in SignupMode}

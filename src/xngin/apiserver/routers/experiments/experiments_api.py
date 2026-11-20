@@ -142,9 +142,8 @@ def _stream_experiment_assignments_response(
 )
 def get_experiment(
     experiment: Annotated[tables.Experiment, Depends(edeps.experiment_for_full_response)],
-    xngin_session: Annotated[Session, Depends(xngin_sync_db_session)],
 ) -> GetExperimentResponse:
-    return experiments_common.get_experiment_impl(xngin_session, experiment)
+    return experiments_common.get_experiment_impl(experiment)
 
 
 @router.get(

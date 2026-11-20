@@ -205,6 +205,35 @@ def test_create_user_does_not_affect_existing_user(aclient: AdminAPIClient):
     assert {o.id for o in after.organizations} == {o.id for o in before.organizations}
 
 
+def test_create_user_reuses_case_variant_of_existing_email(aclient: AdminAPIClient):
+    """create_user matches emails case-insensitively and does not rewrite the stored email."""
+    first = aclient.create_user(body=CreateUserRequest(email="alice@case-test.example.com")).data
+    second = aclient.create_user(body=CreateUserRequest(email="Alice@CASE-TEST.example.com")).data
+    assert second.id == first.id
+
+    matching = [u for u in aclient.list_users().data.items if u.email.lower() == "alice@case-test.example.com"]
+    assert [u.email for u in matching] == ["alice@case-test.example.com"]
+
+
+def test_add_member_reuses_case_variant_of_existing_email(aclient: AdminAPIClient):
+    """add_member_to_organization matches emails case-insensitively and does not rewrite the stored email."""
+    org_id = aclient.create_organizations(body=CreateOrganizationRequest(name="case-test-org")).data.id
+    existing_id = aclient.create_user(body=CreateUserRequest(email="bob@case-test.example.com")).data.id
+
+    aclient.add_member_to_organization(
+        organization_id=org_id, body=AddMemberToOrganizationRequest(email="Bob@Case-Test.example.com")
+    )
+    # Adding again with yet another variant is a no-op.
+    aclient.add_member_to_organization(
+        organization_id=org_id, body=AddMemberToOrganizationRequest(email="BOB@case-test.example.com")
+    )
+
+    matching = [u for u in aclient.list_users().data.items if u.email.lower() == "bob@case-test.example.com"]
+    assert [(u.id, u.email) for u in matching] == [(existing_id, "bob@case-test.example.com")]
+    members = aclient.get_organization(organization_id=org_id).data.users
+    assert [m.id for m in members if m.email.lower() == "bob@case-test.example.com"] == [existing_id]
+
+
 def test_create_user_requires_privileged(aclient_unpriv: AdminAPIClient):
     with expect_status_code(403):
         aclient_unpriv.create_user(body=CreateUserRequest(email="rejected@example.com"))

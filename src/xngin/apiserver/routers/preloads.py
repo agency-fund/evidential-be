@@ -27,6 +27,22 @@ EXPERIMENT_FIELDS_WITH_FILTERS: PreloadChain = [
     (PreloadMethod.JOINLOAD, tables.ExperimentField.experiment_filters),
 ]
 
+# For dependencies whose base query already selectinloads Experiment.arms.
+EXPERIMENT_ARMS_WITH_STATS: PreloadChain = [
+    (PreloadMethod.SELECTINLOAD, tables.Experiment.arms),
+    (PreloadMethod.JOINLOAD, tables.Arm.stats),
+]
+
+# For dependencies whose base query already joinedloads Experiment.arms; a selectinload here would replace that join
+# with an extra roundtrip.
+EXPERIMENT_JOINED_ARMS_WITH_STATS: PreloadChain = [
+    (PreloadMethod.JOINLOAD, tables.Experiment.arms),
+    (PreloadMethod.JOINLOAD, tables.Arm.stats),
+]
+
+
+EXPERIMENT_WEBHOOKS_AND_CONTEXTS: list[QueryableAttribute] = [tables.Experiment.webhooks, tables.Experiment.contexts]
+
 
 def build_preload_options(
     preload: list[QueryableAttribute] | None = None,

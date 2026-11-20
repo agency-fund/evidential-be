@@ -8,15 +8,18 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from loguru import logger
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.functions import count
 
 from xngin.apiserver import flags
 from xngin.apiserver.dependencies import xngin_sync_db_session
 from xngin.apiserver.request_context_middleware import add_request_fields
+from xngin.apiserver.routers.admin.admin_common import find_user_by_email
 from xngin.apiserver.routers.auth.discovery import LOGIN_UNAVAILABLE_DETAIL, get_oidc_discovery
 from xngin.apiserver.routers.auth.oidc_settings import get_oidc_settings
 from xngin.apiserver.routers.auth.principal import Principal
+from xngin.apiserver.routers.auth.signup_policy import email_domain, load_signup_policy, signup_allowed
 from xngin.apiserver.routers.auth.token_cryptor import TokenCryptor
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.bootstrap import create_entities_for_first_time_user
@@ -145,9 +148,12 @@ def require_user_from_token(
 ) -> tables.User:
     """Dependency for fetching the User record matching the authenticated user's email.
 
+    Users are never created here by the sign-up policy; that happens only at login (see sign_in), so a deleted user's
+    session token cannot recreate them.
+
     Adds the user's ID to the request's log context as user_id.
     """
-    user = _lookup_or_create(session, principal)
+    user = _lookup_or_create(session, principal, allow_signup=False)
     if user:
         add_request_fields(user_id=user.id)
         return user
@@ -157,31 +163,50 @@ def require_user_from_token(
     )
 
 
-def _lookup_or_create(session: Session, principal: Principal) -> tables.User | None:
+def _authenticate_existing(session: Session, user: tables.User, principal: Principal) -> tables.User | None:
+    """Returns user if principal may authenticate as them, binding the principal's identity to invited users."""
+    if principal.user_id is not None and principal.user_id != user.id:
+        return None
+    if user.last_logout.timestamp() > principal.iat:
+        return None
+    if user.iss == principal.iss and user.sub == principal.sub:
+        return user
+    # Users that are invited but who have not yet logged in will have (iss, sub) == (None, None), meaning that they
+    # can authenticate with any IDP. After logging in the first time, they will only ever be able to log in with
+    # that IDP.
+    if user.iss is None:
+        user.iss = principal.iss
+        user.sub = principal.sub
+        session.commit()
+        return user
+    return None
+
+
+def sign_in(session: Session, principal: Principal) -> tables.User | None:
+    """Looks up the user signing in, creating them if the sign-up policy permits.
+
+    Called when the identity provider has just authenticated the principal. Returns None when the principal may not
+    authenticate.
+    """
+    return _lookup_or_create(session, principal, allow_signup=True)
+
+
+def _lookup_or_create(session: Session, principal: Principal, *, allow_signup: bool) -> tables.User | None:
     """Lookup or create a user based on email, iss, sub, and iat.
 
-    To support initial deployment, a User will be created if we are in airplane mode or if there are no users in the
-    database yet.
-    """
-    user = session.scalars(select(tables.User).where(tables.User.email == principal.email)).first()
-    if user:
-        if user.last_logout.timestamp() > principal.iat:
-            return None
-        if user.iss == principal.iss and user.sub == principal.sub:
-            return user
-        # Users that are invited but who have not yet logged in will have (iss, sub) == (None, None), meaning that they
-        # can authenticate with any IDP. After logging in the first time, they will only ever be able to log in with
-        # that IDP.
-        if user.iss is None:
-            user.iss = principal.iss
-            user.sub = principal.sub
-            session.commit()
-            return user
-        return None
+    When no user matches, there are three cases in which a user is created:
+    1. First use of an installation: there are no users in the database yet. The user is privileged and gets an
+       organization (and developer samples, depending on flags).
+    2. Airplane mode: the server runs with AIRPLANE_MODE set and the request presents the airplane-mode token, as tests
+       run in airplane mode do. As in case 1.
+    3. Signup: allow_signup is true and the server's signup policy (see signup_policy.py) permits the email address.
+       The user is unprivileged and gets only a users row; no organization or datasource is created.
 
-    # There are two cases when we create a user on an authenticated request:
-    # 1. Airplane mode: We are in airplane mode and the request is coming from the UI in airplane mode.
-    # 2. First use of installation by a developer: There are no users in the database, and this is the first request.
+    Returns None when the principal may not authenticate.
+    """
+    if user := find_user_by_email(session, principal.email):
+        return _authenticate_existing(session, user, principal)
+
     user_count = session.scalar(select(count(tables.User.id)))
     if user_count == 0 or (flags.AIRPLANE_MODE and principal.iss == "airplane"):
         user = tables.User(email=principal.email, iss=principal.iss, sub=principal.sub, is_privileged=True)
@@ -194,7 +219,26 @@ def _lookup_or_create(session: Session, principal: Principal) -> tables.User | N
         )
         session.commit()
         return user
-    return None
+
+    if not allow_signup:
+        return None
+    policy = load_signup_policy(session)
+    if not signup_allowed(policy, principal.email):
+        return None
+
+    new_id = session.execute(
+        pg_insert(tables.User)
+        .values(email=principal.email, iss=principal.iss, sub=principal.sub, is_privileged=False)
+        .on_conflict_do_nothing()
+        .returning(tables.User.id)
+    ).scalar_one_or_none()
+    session.commit()
+    if new_id is None:
+        user = find_user_by_email(session, principal.email)
+        return _authenticate_existing(session, user, principal) if user else None
+
+    logger.info(f"Created user {new_id} by signup: domain={email_domain(principal.email)!r} signup_mode={policy.mode}")
+    return session.get_one(tables.User, new_id)
 
 
 def enable_testing_tokens():

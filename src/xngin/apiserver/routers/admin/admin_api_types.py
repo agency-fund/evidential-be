@@ -3,18 +3,23 @@ from typing import Annotated, Literal
 from urllib.parse import urlparse
 
 from annotated_types import Ge, Le
+from humanize import precisedelta
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from xngin.apiserver.common_field_types import FieldName
 from xngin.apiserver.dns.safe_resolve import DnsLookupError, safe_resolve
+from xngin.apiserver.dwh.dwh_utils import parse_spreadsheet_url
 from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.limits import (
     MAX_LENGTH_OF_DESCRIPTION_VALUE,
+    MAX_LENGTH_OF_DOMAIN_VALUE,
     MAX_LENGTH_OF_EMAIL_VALUE,
     MAX_LENGTH_OF_ID_VALUE,
     MAX_LENGTH_OF_NAME_VALUE,
     MAX_LENGTH_OF_URL_VALUE,
+    MIN_TIME_UNTIL_NEW_END_DATE,
 )
+from xngin.apiserver.routers.auth.signup_policy import normalize_domain
 from xngin.apiserver.routers.common_api_types import (
     ApiBaseModel,
     ConstrainedUrl,
@@ -24,7 +29,7 @@ from xngin.apiserver.routers.common_api_types import (
     Impact,
     PaginatedResponse,
 )
-from xngin.apiserver.routers.common_enums import DataType, SnapshotStatus
+from xngin.apiserver.routers.common_enums import DataType, SignupMode, SnapshotStatus
 
 
 def validate_webhook_url(url: str) -> str:
@@ -165,6 +170,87 @@ class CreateUserRequest(AdminApiBaseModel):
 
 class CreateUserResponse(AdminApiBaseModel):
     id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE, description="The user's unique ID.")]
+
+
+class SignupSettings(AdminApiBaseModel):
+    """Settings controlling whether people without an existing user account may sign in."""
+
+    mode: SignupMode
+
+
+class GetServerSettingsResponse(AdminApiBaseModel):
+    signup: Annotated[SignupSettings, Field(description="Settings controlling who may sign up.")]
+    updated_at: Annotated[
+        datetime | None, Field(description="When the settings were last changed. Null if they never were.")
+    ]
+
+
+class UpdateServerSettingsRequest(AdminApiBaseModel):
+    """Updates installation-wide settings."""
+
+    signup: Annotated[
+        SignupSettings | None, Field(description="When present, replaces the settings controlling who may sign up.")
+    ] = None
+
+
+class DomainSettingsSummary(AdminApiBaseModel):
+    id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE, description="The unique ID of the domain settings.")]
+    domain: Annotated[
+        str, Field(max_length=MAX_LENGTH_OF_DOMAIN_VALUE, description="The email address domain, e.g. `example.org`.")
+    ]
+    allow_signup: Annotated[
+        bool,
+        Field(
+            description=(
+                "When true, people whose email address is at this domain may sign up when the sign-up mode is "
+                "`existing_and_domains`."
+            )
+        ),
+    ]
+
+
+class ListDomainSettingsResponse(AdminApiBaseModel):
+    items: Annotated[list[DomainSettingsSummary], Field(description="Domain settings, sorted by domain.")]
+
+
+class CreateDomainSettingsRequest(AdminApiBaseModel):
+    domain: Annotated[
+        str,
+        Field(
+            max_length=MAX_LENGTH_OF_DOMAIN_VALUE,
+            description=(
+                "The email address domain, e.g. `example.org`. Matched exactly: subdomains are not included. "
+                "Internationalized domain names must be given in punycode. The domain is lowercased, and one leading "
+                "`@` is removed."
+            ),
+        ),
+    ]
+    allow_signup: Annotated[
+        bool,
+        Field(
+            description=(
+                "When true, people whose email address is at this domain may sign up when the sign-up mode is "
+                "`existing_and_domains`."
+            )
+        ),
+    ] = True
+
+    @field_validator("domain")
+    @classmethod
+    def normalize(cls, v: str) -> str:
+        return normalize_domain(v)
+
+
+class UpdateDomainSettingsRequest(AdminApiBaseModel):
+    allow_signup: Annotated[
+        bool | None,
+        Field(
+            description=(
+                "When present, sets whether people whose email address is at this domain may sign up when the "
+                "sign-up mode is `existing_and_domains`."
+            )
+        ),
+    ] = None
 
 
 class OrganizationListItem(AdminApiBaseModel):
@@ -453,13 +539,26 @@ class BqDsn(AdminApiBaseModel):
     ]
 
 
+class GoogleSheetsDsn(AdminApiBaseModel):
+    """Google Sheets connector using the server's GCP service account, which adds one tab per committed experiment."""
+
+    type: Literal["google_sheets"] = "google_sheets"
+    spreadsheet_url: Annotated[str, Field(max_length=MAX_LENGTH_OF_URL_VALUE)]
+
+    @field_validator("spreadsheet_url")
+    @classmethod
+    def validate_spreadsheet_url(cls, value: str) -> str:
+        parse_spreadsheet_url(value)
+        return value
+
+
 class ApiOnlyDsn(AdminApiBaseModel):
     """ApiOnlyDsn describes a datasource where data is included in Evidential API requests."""
 
     type: Literal["api_only"] = "api_only"
 
 
-type Dsn = Annotated[ApiOnlyDsn | PostgresDsn | BqDsn | RedshiftDsn, Field(discriminator="type")]
+type Dsn = Annotated[ApiOnlyDsn | PostgresDsn | BqDsn | RedshiftDsn | GoogleSheetsDsn, Field(discriminator="type")]
 
 
 class CreateDatasourceRequest(AdminApiBaseModel):
@@ -506,6 +605,10 @@ class InspectDatasourceTableResponse(ApiBaseModel):
         Field(description="Fields that are possibly candidates for unique IDs."),
     ]
     fields: Annotated[list[FieldMetadata], Field(description="Fields in the table.")]
+    display_name: Annotated[
+        str | None,
+        Field(description="Human-readable Google Sheets tab name."),
+    ] = None
 
 
 class ApiKeySummary(AdminApiBaseModel):
@@ -545,7 +648,17 @@ class UpdateExperimentRequest(AdminApiBaseModel):
     description: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_DESCRIPTION_VALUE)] = None
     design_url: Annotated[str | None, Field(max_length=MAX_LENGTH_OF_URL_VALUE)] = None
     start_date: Annotated[datetime | None, Field()] = None
-    end_date: Annotated[datetime | None, Field()] = None
+    end_date: Annotated[
+        datetime | None,
+        Field(
+            description=(
+                "New end date. Must be after the start date and at least "
+                f"{precisedelta(MIN_TIME_UNTIL_NEW_END_DATE, minimum_unit='minutes')} from now. "
+                "If the experiment stopped making "
+                "new assignments because its previous end date passed, a later end date resumes them."
+            )
+        ),
+    ] = None
 
     impact: Annotated[Impact | None, Field()] = None
     decision: Annotated[str | None, Field()] = None

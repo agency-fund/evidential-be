@@ -21,6 +21,7 @@ from xngin.apiserver.dns.safe_resolve import safe_resolve
 from xngin.apiserver.dwh import dwh_utils, participant_metrics_queries, queries, query_constructors
 from xngin.apiserver.dwh.analysis_types import ParticipantOutcome
 from xngin.apiserver.dwh.dwh_errors import HINT_CHECK_BQ_CREDENTIALS, classify_dwh_error
+from xngin.apiserver.dwh.google_sheets import GoogleSheetsClient
 from xngin.apiserver.exceptions_common import (
     CannotFindTableError,
     DwhAuthenticationError,
@@ -38,6 +39,7 @@ from xngin.apiserver.settings import (
     BqDsn,
     Dsn,
     Dwh,
+    GoogleSheetsDsn,
 )
 from xngin.ops.threads import ThreadTimeout, timeout_thread
 
@@ -139,11 +141,17 @@ class DwhSession:
         self._timeout = deadline
         self._timeout_secs = timeout_secs
         self._inspected_tables: dict[tuple[str, bool], sqlalchemy.Table] = {}
+        # Set only for Google Sheets datasources, whose tabs are loaded into an in-memory engine.
+        self._sheets: GoogleSheetsClient | None = None
         # Tables whose rows this session has shown the configured role may read.
         self._readable_tables: set[str] = set()
 
     def _connect_blocking(self) -> None:
-        self._engine = self._create_engine()
+        if isinstance(self._dwh_config, GoogleSheetsDsn):
+            self._sheets = GoogleSheetsClient(self._dwh_config)
+            self._engine = self._sheets.create_engine()
+        else:
+            self._engine = self._create_engine()
         self._session = Session(self._engine)
 
     def _close_blocking(self) -> None:
@@ -155,6 +163,8 @@ class DwhSession:
             engine = getattr(self, "_engine", None)
             if engine is not None:
                 engine.dispose()
+            if self._sheets is not None:
+                self._sheets.close()
 
     @staticmethod
     def _log_close_failure(future: Future[None]) -> None:
@@ -233,6 +243,8 @@ class DwhSession:
             raise UnsupportedTableNameError(table_name)
 
     def _reflect_table_blocking(self, table_name: str, *, use_sa_autoload: bool) -> sqlalchemy.Table:
+        if self._sheets is not None:
+            return self._sheets.load_table(table_name, self._engine)
         metadata = sqlalchemy.MetaData()
         try:
             if use_sa_autoload:
@@ -658,6 +670,8 @@ class DwhSession:
         )
 
     def _list_tables_blocking(self) -> list[str]:
+        if self._sheets is not None:
+            return [self._sheets.default_tab_id()]
         # Hack for redshift's lack of reflection support.
         if isinstance(self._dwh_config, Dsn) and self._dwh_config.is_redshift():
             query = text(
@@ -698,6 +712,44 @@ class DwhSession:
                 See _on_worker.
         """
         self._on_worker("a connectivity check", self._connectivity_check_blocking)
+
+    def create_sheet_experiment_tab(
+        self,
+        source_tab_id: str,
+        unique_id_field: str,
+        experiment_id: str,
+        assignments: dict[str, str],
+        field_names: set[str] | None = None,
+    ) -> str:
+        """
+        Create a new experiment tab in the Google Sheets datasource. This still adheres
+        to DWH connection requirements (e.g. timeouts) by executing the operation through
+        the worker thread.
+
+        Args:
+            source_tab_id: The ID of the source tab to copy.
+            unique_id_field: The field used as a unique identifier for each row.
+            experiment_id: The ID of the experiment.
+            assignments: A dictionary mapping field names to their assigned values.
+            field_names: Optional set of field names to include in the new tab.
+
+        Returns:
+            The ID of the newly created experiment tab.
+
+        Raises:
+            TypeError: If the datasource is not a Google Sheets datasource.
+        """
+        if self._sheets is None:
+            raise TypeError("Only Google Sheets datasources have experiment outcome tabs.")
+        return self._on_worker(
+            "creating the experiment outcomes tab",
+            self._sheets.create_experiment_tab,
+            source_tab_id,
+            unique_id_field,
+            experiment_id,
+            assignments,
+            field_names,
+        )
 
     def _create_engine(self) -> Engine:
         """Create a SQLAlchemy Engine for the customer database."""

@@ -8,6 +8,7 @@ import pytest
 from pydantic import TypeAdapter
 
 from xngin.apiserver.exceptionhandlers import XHTTPValidationError
+from xngin.apiserver.routers.admin.admin_api_types import UpdateExperimentRequest
 from xngin.apiserver.routers.common_api_types import (
     AnyBanditDesignSpec,
     AnyFrequentistDesignSpec,
@@ -79,6 +80,8 @@ def create_experiment(
         # Set defaults for our frequentist experiments
         table_name = table_name or "dwh"
         primary_key = primary_key or "id"
+    if experiment_type is ExperimentsType.FREQ_PREASSIGNED and desired_n is None:
+        desired_n = 20
 
     request = make_unvalidated_create_experiment_request(
         experiment_type=experiment_type,
@@ -86,7 +89,7 @@ def create_experiment(
         primary_key=primary_key,
         end_date=end_date,
         filters=filters,
-        desired_n=desired_n or 1,
+        desired_n=desired_n,
     )
     request = CreateExperimentRequest.model_validate(request, from_attributes=True)
     result = aclient.create_experiment(datasource_id=datasource_metadata.datasource_id, body=request)
@@ -99,11 +102,6 @@ def create_experiment(
         experiment_id=created_experiment.experiment_id,
     ).data.config
     return TypeAdapter(ExperimentConfig).validate_python(config)
-
-
-def create_preassigned_experiment(datasource_metadata, aclient: AdminAPIClient):
-    """Creates a preassigned experiment using the Admin API."""
-    return create_experiment(datasource_metadata, aclient, experiment_type=ExperimentsType.FREQ_PREASSIGNED)
 
 
 def make_unvalidated_create_experiment_request(
@@ -239,12 +237,37 @@ def test_list_experiments_with_api_key(testing_datasource, aclient: AdminAPIClie
 
 
 def test_get_experiment(testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient):
-    new_experiment = create_preassigned_experiment(testing_datasource, aclient)
+    new_experiment = create_experiment(testing_datasource, aclient, experiment_type=ExperimentsType.FREQ_PREASSIGNED)
     response = eclient.get_experiment(api_key=testing_datasource.key, experiment_id=new_experiment.experiment_id).data
     assert response.datasource_id == testing_datasource.datasource_id
     assert response.state == ExperimentState.COMMITTED
     assert isinstance(response.design_spec, PreassignedFrequentistExperimentSpec)
     assert response.design_spec == new_experiment.design_spec
+
+
+def test_get_experiment_assign_summary_with_one_arm_missing_stats(
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+):
+    """One online assignment leaves the other arm without an arm_stats row; GET still reports it at size 0."""
+    new_exp = create_experiment(testing_datasource, aclient)
+    assignment = eclient.get_assignment(
+        api_key=testing_datasource.key,
+        experiment_id=new_exp.experiment_id,
+        participant_id="p1",
+    ).data.assignment
+    assert assignment is not None
+
+    fetched_exp = eclient.get_experiment(api_key=testing_datasource.key, experiment_id=new_exp.experiment_id).data
+    fetched_summary = fetched_exp.assign_summary
+    assert fetched_summary is not None
+    assert fetched_summary.sample_size == 1
+    assert fetched_summary.balance_check is None
+    assert fetched_summary.arm_sizes is not None
+    arm_ids = [arm.arm_id for arm in fetched_exp.design_spec.arms]
+    for arm_size, arm_id in zip(fetched_summary.arm_sizes, arm_ids, strict=True):
+        assert arm_size.arm.arm_id == arm_id
+        assert arm_size.size == (1 if arm_id == assignment.arm_id else 0)
+        assert arm_size.cluster_count is None
 
 
 @pytest.mark.parametrize(
@@ -263,6 +286,7 @@ def test_get_experiment(testing_datasource, aclient: AdminAPIClient, eclient: Ex
 # model_construct bypasses validation intentionally, so suppress expected PydanticSerializationUnexpectedValue noise
 @pytest.mark.filterwarnings("ignore:Pydantic serializer warnings:UserWarning:pydantic")
 def test_create_experiment_api_table_name_and_primary_key_in_design_spec(
+    use_deterministic_random,
     testing_datasource,
     aclient: AdminAPIClient,
     experiment_type: ExperimentsType,
@@ -275,7 +299,7 @@ def test_create_experiment_api_table_name_and_primary_key_in_design_spec(
         experiment_type=experiment_type,
         table_name=table_name,
         primary_key=primary_key,
-        desired_n=1,
+        desired_n=8,
     )
     result = aclient.create_experiment(
         datasource_id=testing_datasource.datasource_id,
@@ -707,27 +731,27 @@ def test_get_assignment_preassigned(
     aclient: AdminAPIClient,
     eclient: ExperimentsAPIClient,
 ):
-    preassigned_experiment = create_preassigned_experiment(testing_datasource, aclient)
+    new_experiment = create_experiment(testing_datasource, aclient, experiment_type=ExperimentsType.FREQ_PREASSIGNED)
     assigned = eclient.get_experiment_assignments(
         api_key=testing_datasource.key,
-        experiment_id=preassigned_experiment.experiment_id,
+        experiment_id=new_experiment.experiment_id,
     ).data.assignments[0]
 
     parsed = eclient.get_assignment(
         api_key=testing_datasource.key,
-        experiment_id=preassigned_experiment.experiment_id,
+        experiment_id=new_experiment.experiment_id,
         participant_id="unassigned_id",
     ).data
-    assert parsed.experiment_id == preassigned_experiment.experiment_id
+    assert parsed.experiment_id == new_experiment.experiment_id
     assert parsed.participant_id == "unassigned_id"
     assert parsed.assignment is None
 
     parsed = eclient.get_assignment(
         api_key=testing_datasource.key,
-        experiment_id=preassigned_experiment.experiment_id,
+        experiment_id=new_experiment.experiment_id,
         participant_id=assigned.participant_id,
     ).data
-    assert parsed.experiment_id == preassigned_experiment.experiment_id
+    assert parsed.experiment_id == new_experiment.experiment_id
     assert parsed.participant_id == assigned.participant_id
     assert parsed.assignment is not None
     assert parsed.assignment.arm_name == assigned.arm_name
@@ -865,6 +889,57 @@ def test_get_assignment_online_past_end_date(
     assert experiment.stopped_assignments_reason == StopAssignmentReason.END_DATE
 
 
+@pytest.mark.parametrize("experiment_type", [ExperimentsType.FREQ_ONLINE, ExperimentsType.MAB_ONLINE])
+def test_extending_end_date_resumes_assignments(
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient, experiment_type
+):
+    """An experiment that stopped assigning because its end date passed assigns again once the end date is extended."""
+    experiment = create_experiment(
+        testing_datasource, aclient, experiment_type=experiment_type, end_date=datetime.now(UTC) - timedelta(days=1)
+    )
+    experiment_id = experiment.experiment_id
+    api_key = testing_datasource.key
+    stopped = eclient.get_assignment(api_key=api_key, experiment_id=experiment_id, participant_id="before").data
+    assert stopped.assignment is None
+    assert (
+        eclient.get_experiment(api_key=api_key, experiment_id=experiment_id).data.stopped_assignments_reason
+        == StopAssignmentReason.END_DATE
+    )
+
+    aclient.update_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=experiment_id,
+        body=UpdateExperimentRequest(end_date=datetime.now(UTC) + timedelta(days=7)),
+    )
+
+    resumed = eclient.get_experiment(api_key=api_key, experiment_id=experiment_id).data
+    assert resumed.stopped_assignments_at is None
+    assert resumed.stopped_assignments_reason is None
+    after = eclient.get_assignment(api_key=api_key, experiment_id=experiment_id, participant_id="after").data
+    assert after.assignment is not None
+
+
+def test_resending_an_ended_experiments_end_date_keeps_it_stopped(
+    testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
+):
+    """Saving the current, past end date again is accepted and does not resume assignments."""
+    experiment = create_experiment(testing_datasource, aclient, end_date=datetime.now(UTC) - timedelta(days=1))
+    experiment_id = experiment.experiment_id
+    api_key = testing_datasource.key
+    eclient.get_assignment(api_key=api_key, experiment_id=experiment_id, participant_id="before")
+
+    aclient.update_experiment(
+        datasource_id=testing_datasource.datasource_id,
+        experiment_id=experiment_id,
+        body=UpdateExperimentRequest(end_date=experiment.design_spec.end_date),
+    )
+
+    still_stopped = eclient.get_experiment(api_key=api_key, experiment_id=experiment_id).data
+    assert still_stopped.stopped_assignments_reason == StopAssignmentReason.END_DATE
+    after = eclient.get_assignment(api_key=api_key, experiment_id=experiment_id, participant_id="after").data
+    assert after.assignment is None
+
+
 def test_get_cmab_experiment_assignment_for_online_participant(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient
 ):
@@ -989,14 +1064,14 @@ def test_assign_with_filters_wrong_experiment_type(
     eclient: ExperimentsAPIClient,
 ):
     """Test that assign_with_filters endpoint rejects non-FREQ_ONLINE experiments."""
-    preassigned_exp = create_preassigned_experiment(testing_datasource, aclient)
+    new_experiment = create_experiment(testing_datasource, aclient, experiment_type=ExperimentsType.FREQ_PREASSIGNED)
 
     # Expect a 422 because we are using the get_assignment_filtered endpoint incorrectly.
     with pytest.raises(ExperimentsAPIClientNotDefaultStatusError) as exc:
         eclient.get_assignment_filtered(
             api_key=testing_datasource.key,
             body=OnlineAssignmentWithFiltersRequest(properties=[]),
-            experiment_id=preassigned_exp.experiment_id,
+            experiment_id=new_experiment.experiment_id,
             participant_id="participant_1",
         )
     assert exc.value.result.status == HTTPStatus.UNPROCESSABLE_CONTENT
@@ -1058,16 +1133,16 @@ def test_get_assignment_preassigned_cache_headers(
     eclient: ExperimentsAPIClient,
 ):
     """Test Cache-Control headers for preassigned experiments."""
-    preassigned_experiment = create_preassigned_experiment(testing_datasource, aclient)
+    new_experiment = create_experiment(testing_datasource, aclient, experiment_type=ExperimentsType.FREQ_PREASSIGNED)
     assigned = eclient.get_experiment_assignments(
         api_key=testing_datasource.key,
-        experiment_id=preassigned_experiment.experiment_id,
+        experiment_id=new_experiment.experiment_id,
     ).data.assignments[0]
 
     # No assignment = no cache header
     response = eclient.get_assignment(
         api_key=testing_datasource.key,
-        experiment_id=preassigned_experiment.experiment_id,
+        experiment_id=new_experiment.experiment_id,
         participant_id="unassigned_id",
     )
     assert "Cache-Control" not in response.response.headers
@@ -1075,7 +1150,7 @@ def test_get_assignment_preassigned_cache_headers(
     # With assignment = cache header
     response = eclient.get_assignment(
         api_key=testing_datasource.key,
-        experiment_id=preassigned_experiment.experiment_id,
+        experiment_id=new_experiment.experiment_id,
         participant_id=assigned.participant_id,
     )
     assert response.response.headers["Cache-Control"] == "private, max-age=3600"
@@ -1448,7 +1523,7 @@ def test_update_bandit_arm_with_freq_experiments_returns_422(
     testing_datasource, aclient: AdminAPIClient, eclient: ExperimentsAPIClient, experiment_type: ExperimentsType
 ):
     """Frequentist experiments reject bandit outcome updates through the API."""
-    experiment = create_experiment(testing_datasource, aclient, experiment_type=experiment_type)
+    experiment = create_experiment(testing_datasource, aclient, experiment_type=experiment_type, desired_n=20)
     if experiment_type == ExperimentsType.FREQ_ONLINE:
         assignment = eclient.get_assignment(
             api_key=testing_datasource.key,
