@@ -4513,6 +4513,42 @@ def test_power_check_cluster_with_manual_and_db_derived_metrics(testing_datasour
     assert user_analysis.metric_spec.available_n_clusters == 1000
 
 
+@pytest.mark.parametrize(("cv", "expected_flag"), [(1.0, False), (1.5, True)])
+def test_power_check_flags_high_cluster_variation_without_a_sample_size(
+    testing_datasource, aclient: AdminAPIClient, cv: float, expected_flag: bool
+):
+    """A cluster design whose sample size cannot be estimated still reports high cluster size variation."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test cluster variation flag",
+        description="high cluster size variation is flagged when no sample size can be estimated",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        table_name="clustered_dwh",
+        primary_key="participant_id",
+        arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
+        metrics=[
+            DesignSpecMetricRequest(field_name="converted", metric_target=1.0, icc=0.02, avg_cluster_size=10, cv=cv)
+        ],
+        strata=[],
+        # Only converted participants, so the baseline is 1 and a target of 1 is a zero effect size.
+        filters=[Filter(field_name="converted", relation=Relation.INCLUDES, value=[True])],
+        cluster_key="cluster_moderate",
+    )
+
+    result = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id, body=design_spec_to_power_request(design_spec)
+    )
+
+    assert len(result.data.analyses) == 1
+    analysis = result.data.analyses[0]
+    assert analysis.metric_spec.metric_baseline == 1
+    assert analysis.target_n is None
+    assert analysis.msg is not None
+    assert analysis.msg.type == MetricPowerAnalysisMessageType.ZERO_EFFECT_SIZE
+    assert analysis.msg.high_cluster_variation is expected_flag
+
+
 def test_create_freq_preassigned_experiment_with_cluster_key_roundtrips(
     testing_datasource,
     aclient: AdminAPIClient,
