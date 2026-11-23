@@ -52,6 +52,33 @@ def requested_direction_is_down(metric: DesignSpecMetric) -> bool:
     return False
 
 
+def fill_requested_mde_spec(metric: DesignSpecMetric, values_map: dict[str, float | int]) -> str:
+    """Mutate values_map and return a format fragment for the user's requested effect.
+
+    Prefers MDE % (metric_pct_change, or derived from baseline/target). Falls back to an absolute
+    metric_target only when percent change cannot be determined. Includes the trailing period.
+    """
+    if metric.metric_pct_change is not None:
+        values_map["requested_mde_pct"] = round(metric.metric_pct_change, 4)
+        return "specified MDE of {requested_mde_pct:.1%}."
+    if metric.metric_baseline is not None and metric.metric_target is not None and metric.metric_baseline != 0:
+        values_map["requested_mde_pct"] = round(metric.metric_target / metric.metric_baseline - 1.0, 4)
+        return "specified MDE of {requested_mde_pct:.1%}."
+    assert metric.metric_target is not None
+    values_map["metric_target"] = round(metric.metric_target, 4)
+    return "specified metric target of {metric_target}."
+
+
+def reported_pct_change_possible(
+    metric: DesignSpecMetric,
+    *,
+    pct_change_possible_upper: float | None,
+    pct_change_possible_lower: float | None,
+) -> float | None:
+    """The achievable percent change in the direction of the user's requested change."""
+    return pct_change_possible_lower if requested_direction_is_down(metric) else pct_change_possible_upper
+
+
 @dataclasses.dataclass(slots=True, kw_only=True, frozen=True)
 class MdeIndividualResult:
     """Both bounds of the two-sided minimum detectable effect around the baseline.
@@ -191,11 +218,10 @@ def _one_time_insufficient_msg_body(
     assert metric.metric_target is not None
 
     values_map["additional_n_needed"] = analysis.target_n - null_n
-    values_map["metric_baseline"] = round(metric.metric_baseline, 4)
-    values_map["metric_target"] = round(metric.metric_target, 4)
+    requested_spec = fill_requested_mde_spec(metric, values_map)
     msg_body = (
         "There are not enough units without a value for this metric. "
-        "You need {additional_n_needed} more to meet your specified metric target of {metric_target}. "
+        f"You need {{additional_n_needed}} more to meet your {requested_spec} "
     )
 
     # MDE for the pool that will actually be assigned: the null rows only.
@@ -218,19 +244,20 @@ def _one_time_insufficient_msg_body(
     analysis.pct_change_possible_lower = mde_result.pct_change_possible_lower
 
     # Report the bound in the direction of the user's requested change, as the regular insufficient message does.
-    reported_target_possible = (
-        mde_result.target_possible_lower if requested_direction_is_down(metric) else mde_result.target_possible
+    achievable_pct = reported_pct_change_possible(
+        metric,
+        pct_change_possible_upper=mde_result.pct_change_possible,
+        pct_change_possible_lower=mde_result.pct_change_possible_lower,
     )
-    if reported_target_possible is None:
+    if achievable_pct is None:
         return msg_body + (
-            "With the {available_null_n} units without a value, no metric target in the direction of your "
+            "With the {available_null_n} units without a value, no MDE in the direction of your "
             "specified change can reach the requested power. "
         )
-    values_map["target_possible"] = round(reported_target_possible, 4)
+    values_map["pct_change_possible"] = round(achievable_pct, 4)
     return msg_body + (
-        "Alternatively, with the {available_null_n} units without a value "
-        "and a metric baseline of {metric_baseline}, your metric target should be "
-        "{target_possible} or further from the baseline. "
+        "Alternatively, with the {available_null_n} units without a value, "
+        "your MDE should be {pct_change_possible:.1%} or further from the baseline. "
     )
 
 
@@ -435,30 +462,28 @@ def solve_for_sample_size_individual(  # noqa: PLR0915
 
         # The message reports the bound in the direction of the user's requested change;
         # the analysis fields keep their fixed upper/lower semantics.
-        reported_target_possible = (
-            mde_result.target_possible_lower if requested_direction_is_down(metric) else mde_result.target_possible
+        achievable_pct = reported_pct_change_possible(
+            metric,
+            pct_change_possible_upper=mde_result.pct_change_possible,
+            pct_change_possible_lower=mde_result.pct_change_possible_lower,
         )
 
         values_map["additional_n_needed"] = target_n - effective_n
-        values_map["metric_baseline"] = round(metric.metric_baseline, 4)
-        values_map["metric_target"] = round(metric.metric_target, 4)
-        if reported_target_possible is None:
+        requested_spec = fill_requested_mde_spec(metric, values_map)
+        if achievable_pct is None:
             msg_body = (
                 "There are not enough non-null valued units available. "
-                "You need {additional_n_needed} more units to meet your specified "
-                "metric target of {metric_target}. "
-                "With the available {available_nonnull_n} non-null units, no metric target "  # noqa: RUF027
+                f"You need {{additional_n_needed}} more units to meet your {requested_spec} "
+                "With the available {available_nonnull_n} non-null units, no MDE "  # noqa: RUF027
                 "in the direction of your specified change can reach the requested power. "
             )
         else:
-            values_map["target_possible"] = round(reported_target_possible, 4)
+            values_map["pct_change_possible"] = round(achievable_pct, 4)
             msg_body = (
                 "There are not enough non-null valued units available. "
-                "You need {additional_n_needed} more units to meet your specified "
-                "metric target of {metric_target}. "
-                "Alternatively, with the available {available_nonnull_n} non-null units "  # noqa: RUF027
-                "and a metric baseline of {metric_baseline}, your metric target should be "
-                "{target_possible} or further from the baseline. "
+                f"You need {{additional_n_needed}} more units to meet your {requested_spec} "
+                f"Alternatively, with the available {available_nonnull_n} non-null units, "
+                "your MDE should be {pct_change_possible:.1%} or further from the baseline. "
             )
 
     # Construct our response from the parts above
@@ -520,26 +545,24 @@ def solve_for_mde_individual(
 
     # Create message. It reports the bound in the direction of the user's requested change;
     # the analysis fields keep their fixed upper/lower semantics.
-    reported_target_possible = (
-        mde_result.target_possible_lower if requested_direction_is_down(metric) else mde_result.target_possible
+    achievable_pct = reported_pct_change_possible(
+        metric,
+        pct_change_possible_upper=mde_result.pct_change_possible,
+        pct_change_possible_lower=mde_result.pct_change_possible_lower,
     )
-    values_map: dict[str, float | int] = {
-        "desired_n": desired_n,
-        "metric_baseline": round(metric.metric_baseline, 4),
-    }
+    values_map: dict[str, float | int] = {"desired_n": desired_n}
 
     msg_type = MetricPowerAnalysisMessageType.SUFFICIENT
-    if reported_target_possible is None:
+    if achievable_pct is None:
         msg_body = (
-            "With a desired sample size of {desired_n} units and a metric baseline of "  # noqa: RUF027
-            "{metric_baseline}, no metric target in the direction of your specified change "
-            "can reach the requested power."
+            f"With a desired sample size of {desired_n} units, no MDE in the direction of your "
+            "specified change can reach the requested power."
         )
     else:
-        values_map["target_possible"] = round(reported_target_possible, 4)
+        values_map["pct_change_possible"] = round(achievable_pct, 4)
         msg_body = (
-            "With a desired sample size of {desired_n} units and a metric baseline of "  # noqa: RUF027
-            "{metric_baseline}, the minimum detectable effect (MDE) is {target_possible}."
+            f"With a desired sample size of {desired_n} units, the minimum detectable "
+            "effect (MDE) is {pct_change_possible:.1%}."
         )
 
     analysis.msg = MetricPowerAnalysisMessage(

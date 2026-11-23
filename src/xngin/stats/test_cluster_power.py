@@ -605,6 +605,7 @@ def test_solve_for_sample_size_cluster_uses_cluster_target_for_sufficiency():
     assert result.target_possible is not None
     assert individual_target_possible is not None
     assert expected_result.target_possible is not None
+    assert expected_result.pct_change_possible is not None
     assert result.target_possible > individual_target_possible
 
     assert result.msg is not None
@@ -613,7 +614,7 @@ def test_solve_for_sample_size_cluster_uses_cluster_target_for_sufficiency():
     assert msg_values is not None
     assert msg_values["target_n"] == result.target_n
     assert msg_values["additional_n_needed"] == 520
-    assert msg_values["target_possible"] == round(expected_result.target_possible, 4)
+    assert msg_values["pct_change_possible"] == round(expected_result.pct_change_possible, 4)
     assert "You need at least 720 units across 24 clusters" in result.msg.msg
     assert "You need at least 128 units" not in result.msg.msg
     assert result.msg.msg == result.msg.source_msg.format_map(msg_values)
@@ -681,6 +682,7 @@ def test_solve_for_sample_size_cluster_insufficient_clusters(available_n: int, a
     assert result.target_n == 720
     assert result.sufficient_n is False
     assert expected_result.target_possible is not None
+    assert expected_result.pct_change_possible is not None
     assert result.target_possible == pytest.approx(expected_result.target_possible)
     assert units_only_result.target_possible is not None
     assert result.target_possible is not None
@@ -692,7 +694,7 @@ def test_solve_for_sample_size_cluster_insufficient_clusters(available_n: int, a
     assert msg_values is not None
     assert msg_values["available_n_clusters"] == available_n_clusters
     assert msg_values["additional_clusters_needed"] == result.num_clusters_total - available_n_clusters
-    assert msg_values["target_possible"] == round(expected_result.target_possible, 4)
+    assert msg_values["pct_change_possible"] == round(expected_result.pct_change_possible, 4)
     assert "not enough clusters" in result.msg.msg
     assert "not enough non-null valued units" not in result.msg.msg
     assert result.msg.msg == result.msg.source_msg.format_map(msg_values)
@@ -767,11 +769,12 @@ def test_solve_for_sample_size_cluster_decrease_target_message():
     assert result.target_possible > 100
     assert result.target_possible_lower is not None
     assert result.target_possible_lower < 100
+    assert result.pct_change_possible_lower is not None
     # The message follows the requested direction (a decrease).
     assert result.msg is not None
     msg_values = result.msg.values  # noqa: PD011
     assert msg_values is not None
-    assert msg_values["target_possible"] == round(result.target_possible_lower, 4)
+    assert msg_values["pct_change_possible"] == round(result.pct_change_possible_lower, 4)
 
 
 def test_solve_for_sample_size_cluster_possible_target_uses_cluster_mde():
