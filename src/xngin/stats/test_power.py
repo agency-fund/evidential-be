@@ -44,15 +44,15 @@ def test_analyze_metric_power_numeric():
 
 
 @pytest.mark.parametrize(
-    ("available_nonnull_n", "available_n", "target_possible"),
+    ("available_nonnull_n", "available_n", "pct_change_possible"),
     [
-        (789, 789, 23.8468),
-        (104, 789, 42.9997),
+        (789, 789, 0.8057),
+        (104, 789, 2.2559),
         # This last test would pass if we compared against available_n instead of nonulls.
-        (789, 100000, 23.8468),
+        (789, 100000, 0.8057),
     ],
 )
-def test_analyze_metric_power_numeric_insufficient(available_nonnull_n, available_n, target_possible):
+def test_analyze_metric_power_numeric_insufficient(available_nonnull_n, available_n, pct_change_possible):
     metric = DesignSpecMetric(
         field_name="test_metric",
         metric_pct_change=0.1,
@@ -81,9 +81,8 @@ def test_analyze_metric_power_numeric_insufficient(available_nonnull_n, availabl
         "target_n": 50904,
         "available_nonnull_n": available_nonnull_n,
         "additional_n_needed": 50904 - available_nonnull_n,
-        "metric_baseline": 13.2066,
-        "target_possible": target_possible,
-        "metric_target": 14.5272,
+        "requested_mde_pct": 0.1,
+        "pct_change_possible": pct_change_possible,
     }
 
     # Check that null note appears when there are nulls
@@ -125,10 +124,9 @@ def test_analyze_metric_power_binary():
         "available_n": 1000,
         "available_nonnull_n": 1000,
         "target_n": 3130,
-        "additional_n_needed": 3130 - 1000,
-        "metric_baseline": 0.5,
-        "target_possible": pytest.approx(0.588163, abs=1e-4),
-        "metric_target": 0.55,
+        "additional_n_needed": 2130,
+        "requested_mde_pct": pytest.approx(0.1, abs=1e-9),
+        "pct_change_possible": pytest.approx(0.1763, abs=1e-4),
     }
     assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
 
@@ -154,7 +152,7 @@ def test_analyze_metric_power_binary_insufficient_decrease_target():
     # The message follows the requested direction (a decrease).
     assert result.msg is not None
     assert result.msg.values is not None
-    assert result.msg.values["target_possible"] == pytest.approx(1 - 0.588163, abs=1e-4)
+    assert result.msg.values["pct_change_possible"] == pytest.approx(-0.1763, abs=1e-4)
     assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
 
 
@@ -175,7 +173,7 @@ def test_analyze_metric_power_mde_decrease_direction():
     assert result.target_possible_lower == pytest.approx(0.0186, abs=1e-4)
     assert result.msg is not None
     assert result.msg.values is not None
-    assert result.msg.values["target_possible"] == pytest.approx(0.0186, abs=1e-4)
+    assert result.msg.values["pct_change_possible"] == pytest.approx(-0.6274, abs=1e-4)
 
 
 def test_analyze_metric_power_mde_unreachable_direction_message():
@@ -195,7 +193,7 @@ def test_analyze_metric_power_mde_unreachable_direction_message():
     assert result.pct_change_possible is None
     assert result.target_possible_lower is not None
     assert result.msg is not None
-    assert "no metric target in the direction of your specified change" in result.msg.msg
+    assert "no MDE in the direction of your specified change" in result.msg.msg
     assert result.msg.values is not None
     assert result.msg.msg == result.msg.source_msg.format_map(result.msg.values)
 

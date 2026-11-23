@@ -605,6 +605,7 @@ def test_solve_for_sample_size_cluster_uses_cluster_target_for_sufficiency():
     assert result.target_possible is not None
     assert individual_target_possible is not None
     assert expected_result.target_possible is not None
+    assert expected_result.pct_change_possible is not None
     assert result.target_possible > individual_target_possible
 
     assert result.msg is not None
@@ -613,10 +614,136 @@ def test_solve_for_sample_size_cluster_uses_cluster_target_for_sufficiency():
     assert msg_values is not None
     assert msg_values["target_n"] == result.target_n
     assert msg_values["additional_n_needed"] == 520
-    assert msg_values["target_possible"] == round(expected_result.target_possible, 4)
+    assert msg_values["pct_change_possible"] == round(expected_result.pct_change_possible, 4)
     assert "You need at least 720 units across 24 clusters" in result.msg.msg
     assert "You need at least 128 units" not in result.msg.msg
     assert result.msg.msg == result.msg.source_msg.format_map(msg_values)
+
+
+def test_solve_for_sample_size_cluster_enough_clusters_stays_sufficient():
+    """A cluster count at least as large as the design needs does not change a sufficient result."""
+    metric = DesignSpecMetric(
+        field_name="reading_score",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=1000,
+        available_nonnull_n=1000,
+        available_n_clusters=24,
+        icc=0.15,
+        avg_cluster_size=30,
+        cv=0.0,
+    )
+
+    result = solve_for_sample_size_cluster(metric=metric, n_arms=2)
+
+    assert result.num_clusters_total == 24
+    assert result.target_n == 720
+    assert result.sufficient_n is True
+    assert result.target_possible is None
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
+
+
+@pytest.mark.parametrize(
+    ("available_n", "available_n_clusters"),
+    [
+        # 1000 units cover the 720-unit target; 20 clusters do not cover 24.
+        pytest.param(1000, 20, id="units_enough"),
+        # 200 units and 5 clusters are both short, and 5 * 30 is the tighter sample.
+        pytest.param(200, 5, id="both_short"),
+    ],
+)
+def test_solve_for_sample_size_cluster_insufficient_clusters(available_n: int, available_n_clusters: int):
+    """A cluster count below the design is insufficient, and the detectable target uses that cap."""
+    metric = DesignSpecMetric(
+        field_name="reading_score",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=available_n,
+        available_nonnull_n=available_n,
+        available_n_clusters=available_n_clusters,
+        icc=0.15,
+        avg_cluster_size=30,
+        cv=0.0,
+    )
+
+    result = solve_for_sample_size_cluster(metric=metric, n_arms=2)
+    # The usable sample is the available clusters at this average size. Fitting every
+    # non-null unit into that cluster count would require a larger average.
+    achievable_n = available_n_clusters * 30
+    expected_result = solve_for_mde_cluster_impl(metric=metric, desired_n=achievable_n, n_arms=2)
+    units_only_result = solve_for_mde_cluster_impl(metric=metric, desired_n=available_n, n_arms=2)
+
+    assert result.num_clusters_total == 24
+    assert result.target_n == 720
+    assert result.sufficient_n is False
+    assert expected_result.target_possible is not None
+    assert expected_result.pct_change_possible is not None
+    assert result.target_possible == pytest.approx(expected_result.target_possible)
+    assert units_only_result.target_possible is not None
+    assert result.target_possible is not None
+    assert result.target_possible > units_only_result.target_possible
+
+    assert result.msg is not None
+    assert result.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
+    msg_values = result.msg.values  # noqa: PD011
+    assert msg_values is not None
+    assert msg_values["available_n_clusters"] == available_n_clusters
+    assert msg_values["additional_clusters_needed"] == result.num_clusters_total - available_n_clusters
+    assert msg_values["pct_change_possible"] == round(expected_result.pct_change_possible, 4)
+    assert "not enough clusters" in result.msg.msg
+    assert "not enough non-null valued units" not in result.msg.msg
+    assert result.msg.msg == result.msg.source_msg.format_map(msg_values)
+
+
+@pytest.mark.parametrize(
+    ("available_n_clusters", "avg_cluster_size", "floored_product"),
+    [
+        # 60 rows in 11 clusters: floor(11 * (60 / 11)) is 59, round() is 60.
+        pytest.param(11, 60 / 11, 59, id="uneven_mean"),
+        pytest.param(10, 6.0, 60, id="exact_divisor"),
+    ],
+)
+def test_solve_for_sample_size_cluster_short_on_units_and_clusters_uses_units_message_in_a_tie(
+    available_n_clusters: int,
+    avg_cluster_size: float,
+    floored_product: int,
+):
+    """Short unit and cluster counts use the units message when the cluster cap rounds to the unit count."""
+    assert math.floor(available_n_clusters * avg_cluster_size) == floored_product
+    assert round(available_n_clusters * avg_cluster_size) == 60
+
+    metric = DesignSpecMetric(
+        field_name="reading_score",
+        metric_type=MetricType.NUMERIC,
+        metric_baseline=100,
+        metric_target=110,
+        metric_stddev=20,
+        available_n=60,
+        available_nonnull_n=60,
+        available_n_clusters=available_n_clusters,
+        icc=0.15,
+        avg_cluster_size=avg_cluster_size,
+        cv=0.0,
+    )
+    result = solve_for_sample_size_cluster(metric=metric, n_arms=2)
+
+    assert result.sufficient_n is False
+    assert result.target_n is not None
+    assert result.target_n > 60
+    assert result.num_clusters_total is not None
+    assert result.num_clusters_total > available_n_clusters
+    assert result.msg is not None
+    msg_values = result.msg.values  # noqa: PD011
+    assert msg_values is not None
+    assert msg_values["additional_n_needed"] == result.target_n - 60
+    assert "not enough non-null valued units" in result.msg.msg
+    assert "additional_clusters_needed" not in msg_values
+    assert "not enough clusters" not in result.msg.msg
 
 
 def test_solve_for_sample_size_cluster_decrease_target_message():
@@ -642,11 +769,12 @@ def test_solve_for_sample_size_cluster_decrease_target_message():
     assert result.target_possible > 100
     assert result.target_possible_lower is not None
     assert result.target_possible_lower < 100
+    assert result.pct_change_possible_lower is not None
     # The message follows the requested direction (a decrease).
     assert result.msg is not None
     msg_values = result.msg.values  # noqa: PD011
     assert msg_values is not None
-    assert msg_values["target_possible"] == round(result.target_possible_lower, 4)
+    assert msg_values["pct_change_possible"] == round(result.pct_change_possible_lower, 4)
 
 
 def test_solve_for_sample_size_cluster_possible_target_uses_cluster_mde():
