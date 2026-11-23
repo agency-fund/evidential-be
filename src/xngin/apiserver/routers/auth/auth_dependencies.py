@@ -4,6 +4,7 @@ import secrets
 import time
 from typing import Annotated
 
+import chafernet
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from loguru import logger
@@ -23,7 +24,6 @@ from xngin.apiserver.routers.auth.signup_policy import email_domain, load_signup
 from xngin.apiserver.routers.auth.token_cryptor import TokenCryptor
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.bootstrap import create_entities_for_first_time_user
-from xngin.xsecrets import chafernet
 
 # The length of time that a session token is considered valid.
 SESSION_TOKEN_LIFETIME = dt.timedelta(hours=12).seconds

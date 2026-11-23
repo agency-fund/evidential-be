@@ -1,12 +1,12 @@
 import os
 from pathlib import Path
 
-from pydantic import ValidationError
-
-from xngin.xsecrets.chafernet import Chafernet, InvalidTokenError
-from xngin.xsecrets.nacl_provider import NaclProvider, NaclProviderKeyset
+from chafernet import Chafernet, InvalidTokenError, Keyset
 
 LOCAL_KEYSET_SENTINEL = "local"
+
+# Number of seconds in the future that a token's timestamp may be.
+MAX_CLOCK_SKEW = 5
 
 
 def _read_local_keyset(local_keyset_filename: str) -> str:
@@ -22,7 +22,7 @@ class TokenCryptorMisconfiguredError(Exception):
 
 
 class TokenCryptor:
-    """TokenCryptor configures a Chafernet with NaclProvider using environment variables as the primary source of keys.
+    """TokenCryptor wraps Chafernet using environment variables as the primary source of keys.
 
     These tokens allow passing opaque blobs of authenticated and encrypted data to the client. They can only be
     decoded by the server.
@@ -38,26 +38,24 @@ class TokenCryptor:
     @property
     def _instance(self) -> Chafernet:
         if not self._chafernet:
-            provider = self._new_provider()
-            self._chafernet = Chafernet(provider)
+            self._chafernet = Chafernet(self._new_keyset(), max_clock_skew=MAX_CLOCK_SKEW)
         return self._chafernet
 
-    def _new_provider(self):
+    def _new_keyset(self) -> Keyset:
         keys = os.environ.get(self._keyset_env_var, "")
         if not keys:
             raise TokenCryptorMisconfiguredError(f"{self._keyset_env_var} is not set but is required.")
         if keys == LOCAL_KEYSET_SENTINEL:
             keys = _read_local_keyset(self._local_keyset_filename)
         try:
-            keyset = NaclProviderKeyset.deserialize_base64(keys)
-        except ValidationError as err:
+            return Keyset.from_base64(keys)
+        except ValueError as err:
             raise TokenCryptorMisconfiguredError(f"{self._keyset_env_var} is invalid") from err
-        return NaclProvider(keyset)
 
     def encrypt(self, plaintext: bytes | str, aad: bytes) -> str:
         return self._prefix + self._instance.encrypt(plaintext, aad)
 
     def decrypt(self, token: str, aad: bytes) -> bytes:
         if not token.startswith(self._prefix):
-            raise InvalidTokenError
-        return self._instance.decrypt(token[len(self._prefix) :], aad, self._ttl)
+            raise InvalidTokenError("token is missing its prefix")
+        return self._instance.decrypt(token[len(self._prefix) :], self._ttl, aad)
