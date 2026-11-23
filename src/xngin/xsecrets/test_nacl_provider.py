@@ -4,11 +4,12 @@ import os
 
 import nacl.exceptions
 import pytest
+from chafernet import Keyset
 
 from xngin.xsecrets import nacl_provider
 from xngin.xsecrets.constants import ENV_XNGIN_SECRETS_NACL_KEYSET
 from xngin.xsecrets.exceptions import InvalidSecretStoreConfigurationError
-from xngin.xsecrets.nacl_provider import NaclProvider, NaclProviderKeyset
+from xngin.xsecrets.nacl_provider import NaclProvider
 from xngin.xsecrets.provider import Registry
 
 
@@ -34,7 +35,7 @@ def test_initialize_when_provider_is_not_configured():
 
 def test_initialize_valid_env_var():
     registry = Registry()
-    with temporary_env_var(ENV_XNGIN_SECRETS_NACL_KEYSET, NaclProviderKeyset.create().serialize_base64()):
+    with temporary_env_var(ENV_XNGIN_SECRETS_NACL_KEYSET, Keyset.generate().to_base64()):
         nacl_provider.initialize(registry)
     registry.get(nacl_provider.NAME)
     assert len(registry.get_providers()) == 1
@@ -61,36 +62,8 @@ def test_initialize_env_var_not_a_keyset():
         nacl_provider.initialize(registry)
 
 
-def test_keyset_construction():
-    first_keyset = NaclProviderKeyset.create()
-    assert len(first_keyset.keys) == 1
-
-    second_keyset = first_keyset.with_new_key()
-    assert len(second_keyset.keys) == 2
-    assert second_keyset.keys[1] == first_keyset.keys[0]
-
-    third_keyset = second_keyset.with_new_key().with_new_key()
-    assert len(third_keyset.keys) == 4
-    assert set(third_keyset.keys[:2]) & set(second_keyset.keys) == set()
-    assert third_keyset.keys[2:] == second_keyset.keys
-
-
-def test_keyset_keys_are_base64_keys_of_appropriate_size():
-    keyset = NaclProviderKeyset.create().with_new_key().with_new_key()
-    assert len(set(keyset.keys)) == 3
-    for key in keyset.keys:
-        decoded = base64.b64decode(key)
-        assert len(decoded) == 32
-
-
-def test_keyset_serde():
-    keyset = NaclProviderKeyset.create().with_new_key().with_new_key()
-    assert NaclProviderKeyset.deserialize_base64(keyset.serialize_base64()) == keyset
-    assert NaclProviderKeyset.model_validate_json(keyset.serialize_json()) == keyset
-
-
 def test_key_rotation():
-    first_keyset = NaclProviderKeyset.create()
+    first_keyset = Keyset.generate()
     first_provider = NaclProvider(first_keyset)
     encrypted = first_provider.encrypt(b"pt", b"aad")
 

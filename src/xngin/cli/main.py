@@ -298,13 +298,13 @@ def create_nacl_keyset(
 
     When --format=base64 (default), the output can be used as the XNGIN_SECRETS_NACL_KEYSET environment variable.
     """
-    from xngin.xsecrets.nacl_provider import NaclProviderKeyset  # noqa: PLC0415
+    from chafernet import Keyset  # noqa: PLC0415
 
-    keyset = NaclProviderKeyset.create()
+    keyset = Keyset.generate()
     if output_format == Base64OrJson.base64:
-        serialized = keyset.serialize_base64()
+        serialized = keyset.to_base64()
     else:
-        serialized = keyset.serialize_json()
+        serialized = keyset.to_json()
 
     if output is None:
         print(serialized)
