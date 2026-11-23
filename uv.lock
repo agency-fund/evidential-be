@@ -210,6 +210,26 @@ wheels = [
 ]
 
 [[package]]
+name = "chafernet"
+version = "0.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/bb/01/2da02564cf0f820fe9301f24131c3792e22ec7086aad8fd41f6639848e0a/chafernet-0.0.1.tar.gz", hash = "sha256:a42d78e56703650a7f2643b41c1bd2cc1fe232d0dfb6a9c7596034b1b8ccc6e4", size = 36225, upload-time = "2026-11-23T03:09:31.965Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1f/8c/62297ce0f10608ba025ca0acb79847779159246461cdfb05287a3dbed93e/chafernet-0.0.1-cp314-cp314-macosx_10_12_x86_64.whl", hash = "sha256:6b7699905f33c9a0cc9e6c005c70db27e67ff4c00683d7e23c66d546c8ee6f5b", size = 336047, upload-time = "2026-11-23T03:08:50.296Z" },
+    { url = "https://files.pythonhosted.org/packages/cb/c1/80e7c467e922e9786c017dc5a3df0dda1f685848149810e196ee43450c4d/chafernet-0.0.1-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:dbd591a4b089b5cbd58c0eaa425c3d1923238fd8b3527e45548c06d8901b0bfe", size = 309090, upload-time = "2026-11-23T03:08:51.564Z" },
+    { url = "https://files.pythonhosted.org/packages/a1/15/0d1188734ac258504eccb532a8622cd3509306773aa4ac8a57dce2cd0351/chafernet-0.0.1-cp314-cp314-manylinux_2_28_aarch64.whl", hash = "sha256:335ae031c9dff404059ed6b2662cc9876afdafe02ef7171e4657e1a35d1157e7", size = 333524, upload-time = "2026-11-23T03:08:52.747Z" },
+    { url = "https://files.pythonhosted.org/packages/b7/13/0ba652b73af952a80875d8ef03c1d7ee690858043466580a7a465efd59d9/chafernet-0.0.1-cp314-cp314-manylinux_2_28_x86_64.whl", hash = "sha256:7f068fb2c02e3cd7cdadfe5fc9edda1f2036cfd41c1844d9c55d8f2ec2d88973", size = 347620, upload-time = "2026-11-23T03:08:54.276Z" },
+    { url = "https://files.pythonhosted.org/packages/c8/95/b6982c96a81f2ec3da7d2ad1b4af50ec13d2b2eff3674ffdf5dd113e307e/chafernet-0.0.1-cp314-cp314-musllinux_1_2_aarch64.whl", hash = "sha256:e4e991efccc9e871148dc257a3e454c1a89fd1b9e1f96848e3e4731ef8efea9f", size = 512458, upload-time = "2026-11-23T03:08:55.924Z" },
+    { url = "https://files.pythonhosted.org/packages/73/1b/0ba8141eadea7b60b01e5e17a5000b918e3b5849271a313488cd110441e3/chafernet-0.0.1-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:6cfa37adcd1f9c8070bc876a4d8cbbebb8908682ae6921dc8e360825d2957a8b", size = 558499, upload-time = "2026-11-23T03:08:57.387Z" },
+    { url = "https://files.pythonhosted.org/packages/f7/19/f9e2cff20d49cdc33157382b35549d4c1f5e28d080e65fb3bda80a83bdb3/chafernet-0.0.1-cp314-cp314t-macosx_10_12_x86_64.whl", hash = "sha256:03781bfffd0b023dc02c3cc2c036e24be8d94c079a0e58ecb50626986fda24f4", size = 334675, upload-time = "2026-11-23T03:09:01.379Z" },
+    { url = "https://files.pythonhosted.org/packages/c9/56/a55bdf53cee1fe3387910ac850c2b05d3e020815022e6d36f393daba2540/chafernet-0.0.1-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:6182dc4fa66a6fcc71c35b9673544837fec6acf19c7cc9501489ac37884b53a1", size = 307210, upload-time = "2026-11-23T03:09:02.559Z" },
+    { url = "https://files.pythonhosted.org/packages/9d/3a/a67393fd20fcf044b91d1aef014145575751e6b651b099b89e02abf3b2cf/chafernet-0.0.1-cp314-cp314t-manylinux_2_28_aarch64.whl", hash = "sha256:6067bccb552b46d1da328830bf2a4f7c913901f05b350ac758ff01775c70a965", size = 332114, upload-time = "2026-11-23T03:09:03.848Z" },
+    { url = "https://files.pythonhosted.org/packages/fb/25/14b338966a0d3be49d38a14a66ebf8deb423a7e1aee3c2826e1dc23814b8/chafernet-0.0.1-cp314-cp314t-manylinux_2_28_x86_64.whl", hash = "sha256:24f5368904471c754b0c5c94a457664679ed5a95ad4ee2e5da9e505fd2c88eae", size = 347156, upload-time = "2026-11-23T03:09:05.186Z" },
+    { url = "https://files.pythonhosted.org/packages/8c/ed/59dc8beb6d3c08f940e6269ef9c9f3ec49da71b319367952502b28f3945a/chafernet-0.0.1-cp314-cp314t-musllinux_1_2_aarch64.whl", hash = "sha256:638ab00f346d7e4cf094d0cd6066ea647a417adb5d400770d818ca9faf617abf", size = 511401, upload-time = "2026-11-23T03:09:06.494Z" },
+    { url = "https://files.pythonhosted.org/packages/9c/e8/470620f33b891c61129d51565dd00e11560ec53843af12a06637d7dcfb0a/chafernet-0.0.1-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:fff303ecec374c7afd350a581147c2226e1882823df77223b5dac9c383b3ccb2", size = 558320, upload-time = "2026-11-23T03:09:07.769Z" },
+]
+
+[[package]]
 name = "charset-normalizer"
 version = "3.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1842,6 +1862,7 @@ dependencies = [
     { name = "atlas-provider-sqlalchemy" },
     { name = "boto3" },
     { name = "cachetools" },
+    { name = "chafernet" },
     { name = "cryptography" },
     { name = "dnspython" },
     { name = "email-validator" },
@@ -1905,6 +1926,7 @@ requires-dist = [
     { name = "atlas-provider-sqlalchemy", git = "https://github.com/ariga/atlas-provider-sqlalchemy?rev=ce075564fe748c8dea210e43d8afe6d027885b5f" },
     { name = "boto3", specifier = ">=1.35" },
     { name = "cachetools", specifier = ">=5.5.2" },
+    { name = "chafernet", specifier = ">=0.0.1,<0.1" },
     { name = "cryptography", specifier = ">=50,<51" },
     { name = "dnspython", specifier = ">=2.7.0" },
     { name = "email-validator", specifier = ">=2.2.0" },
