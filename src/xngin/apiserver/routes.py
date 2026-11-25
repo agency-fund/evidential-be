@@ -14,19 +14,36 @@ from xngin.apiserver.routers.integrations import integrations_api
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
-# FastAPI serves Swagger UI here in development. Elsewhere, this path redirects to the hosted API reference.
+# FastAPI serves Swagger UI here in development, and "/" redirects to it.
+# Elsewhere, both paths redirect to the hosted API reference.
 SWAGGER_UI_PATH = "/docs"
-HOSTED_API_DOCS_URL = "https://docs.evidential.dev/api"
+HOSTED_API_DOCS_URL = "https://docs.evidential.dev/api/"
+
+
+def _redirect_to_swagger_ui() -> RedirectResponse:
+    return RedirectResponse(SWAGGER_UI_PATH)
+
+
+def _redirect_to_hosted_api_docs() -> RedirectResponse:
+    return RedirectResponse(HOSTED_API_DOCS_URL)
 
 
 def register(app: FastAPI):
-    if not flags.is_dev_environment():
+    if flags.is_dev_environment():
         app.add_api_route(
-            SWAGGER_UI_PATH,
-            lambda: RedirectResponse(HOSTED_API_DOCS_URL),
+            "/",
+            _redirect_to_swagger_ui,
             methods=["GET"],
             include_in_schema=False,
         )
+    else:
+        for path in ("/", SWAGGER_UI_PATH):
+            app.add_api_route(
+                path,
+                _redirect_to_hosted_api_docs,
+                methods=["GET"],
+                include_in_schema=False,
+            )
 
     app.include_router(experiments_api.router, tags=["Experiment Integration"])
 
