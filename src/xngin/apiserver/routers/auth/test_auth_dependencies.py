@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 
 import fastapi
 import pytest
+from chafernet import Keyset
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import delete, func, select
@@ -39,7 +40,6 @@ from xngin.apiserver.storage.bootstrap import (
 )
 from xngin.apiserver.testing.helpers import delete_seeded_users
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
-from xngin.xsecrets.nacl_provider import NaclProviderKeyset
 
 
 @contextlib.contextmanager
@@ -81,7 +81,7 @@ def test_require_valid_session_token_misconfigured():
 
 
 def test_require_valid_session_token():
-    with temporary_env_var(flags.ENV_SESSION_TOKEN_KEYSET, NaclProviderKeyset.create().serialize_base64()):
+    with temporary_env_var(flags.ENV_SESSION_TOKEN_KEYSET, Keyset.generate().to_base64()):
         cryp = SessionTokenCryptor()
         expected = Principal(email="test@example.com", hd="", iat=0, iss="", sub="")
         valid_token = cryp.encode(expected)
@@ -97,7 +97,7 @@ def test_require_valid_session_token():
 
 @pytest.mark.parametrize("variant", ["x", ".", " ", "==", "  ", "===", ";", "\n"])
 def test_require_valid_session_token_invalid(variant):
-    with temporary_env_var(flags.ENV_SESSION_TOKEN_KEYSET, NaclProviderKeyset.create().serialize_base64()):
+    with temporary_env_var(flags.ENV_SESSION_TOKEN_KEYSET, Keyset.generate().to_base64()):
         cryp = SessionTokenCryptor()
         expected = Principal(email="test@example.com", hd="", iat=0, iss="", sub="")
         with pytest.raises(HTTPException, match="token invalid") as exc:
@@ -123,7 +123,7 @@ def test_require_valid_session_token_invalid(variant):
 @pytest.fixture(name="session_token_env")
 def fixture_session_token_env(monkeypatch: pytest.MonkeyPatch):
     """Configures a session token keyset and the identity provider settings used by session_token_aad()."""
-    monkeypatch.setenv(flags.ENV_SESSION_TOKEN_KEYSET, NaclProviderKeyset.create().serialize_base64())
+    monkeypatch.setenv(flags.ENV_SESSION_TOKEN_KEYSET, Keyset.generate().to_base64())
     monkeypatch.setattr(flags, "OIDC_ISSUER", "https://idp.example.com")
     monkeypatch.setattr(flags, "OIDC_CLIENT_ID", "client-id")
 
@@ -176,7 +176,7 @@ def test_session_token_without_aad_is_rejected(session_token_env):
 
 def test_token_cryptor_uses_custom_prefix_and_env_var():
     env_var_name = "XNGIN_TEST_TOKEN_KEYSET"
-    with temporary_env_var(env_var_name, NaclProviderKeyset.create().serialize_base64()):
+    with temporary_env_var(env_var_name, Keyset.generate().to_base64()):
         cryptor = TokenCryptor(
             ttl=60,
             keyset_env_var=env_var_name,
@@ -190,7 +190,7 @@ def test_token_cryptor_uses_custom_prefix_and_env_var():
 
 def test_token_cryptor_reads_configured_local_keyset_file(tmp_path):
     keyset_file = tmp_path / "my-local-keyset"
-    keyset_file.write_text(NaclProviderKeyset.create().serialize_base64())
+    keyset_file.write_text(Keyset.generate().to_base64())
     env_var_name = "XNGIN_TEST_TOKEN_KEYSET"
     with temporary_env_var(env_var_name, "local"):
         cryptor = TokenCryptor(

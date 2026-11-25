@@ -2,10 +2,10 @@ import json
 
 import nacl.exceptions
 import pytest
+from chafernet import Keyset
 
 from xngin.xsecrets import nacl_provider
 from xngin.xsecrets.constants import SERIALIZED_ENCRYPTED_VALUE_PREFIX
-from xngin.xsecrets.nacl_provider import NaclProviderKeyset
 from xngin.xsecrets.provider import Registry
 from xngin.xsecrets.secretservice import (
     SecretService,
@@ -82,7 +82,7 @@ def test_deserialize_invalid_structure():
 @pytest.fixture(name="nacl_secretservice")
 def fixture_nacl_secretservice():
     registry = Registry()
-    nacl_provider.initialize(registry, keyset=NaclProviderKeyset.create())
+    nacl_provider.initialize(registry, keyset=Keyset.generate())
     return SecretService(registry, nacl_provider.NAME)
 
 

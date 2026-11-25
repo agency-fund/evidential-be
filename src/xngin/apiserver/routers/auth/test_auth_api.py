@@ -15,6 +15,7 @@ from urllib.parse import parse_qsl
 
 import httpx2
 import pytest
+from chafernet import Keyset
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from fastapi import FastAPI, HTTPException, Request
@@ -41,7 +42,6 @@ from xngin.apiserver.routers.auth.principal import Principal
 from xngin.apiserver.routers.common_enums import SignupMode
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.testing.admin_api_client import AdminAPIClient
-from xngin.xsecrets.nacl_provider import NaclProviderKeyset
 
 TEST_CLIENT_ID = "test-client-id.apps.googleusercontent.com"
 TEST_ISSUER = "https://accounts.google.com"
@@ -699,7 +699,7 @@ def fixture_configured_app(settings, discovery, signing_key, issued_claims, monk
 
     conftest's overrides are restored afterwards.
     """
-    monkeypatch.setenv(flags.ENV_SESSION_TOKEN_KEYSET, NaclProviderKeyset.create().serialize_base64())
+    monkeypatch.setenv(flags.ENV_SESSION_TOKEN_KEYSET, Keyset.generate().to_base64())
     token_endpoint_response = httpx2.Response(200, json={"id_token": _mint(signing_key, issued_claims)})
     token_client = _token_endpoint_client([], token_endpoint_response)
     dependencies = (get_oidc_settings, get_oidc_discovery, retrying_httpx_dependency)
