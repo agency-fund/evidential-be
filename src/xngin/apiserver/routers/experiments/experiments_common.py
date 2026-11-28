@@ -3,7 +3,7 @@ import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TypedDict, assert_never
+from typing import assert_never
 
 import numpy as np
 import pandas as pd
@@ -993,6 +993,10 @@ def create_assignment_for_participant(
                             participant_id=participant_id,
                             arm_id=chosen_arm.id,
                             context_vals=sorted_context_vals,
+                            current_alpha=chosen_arm.alpha,
+                            current_beta=chosen_arm.beta,
+                            current_mu=chosen_arm.mu,
+                            current_covariance=chosen_arm.covariance,
                         )
                         .returning(tables.Draw.created_at)
                     )
@@ -1136,62 +1140,68 @@ def _check_outcome_against_mab_dwh_target(
         )
 
 
-def _fetch_outcomes_and_context_for_arm(
+def _arm_has_applied_outcomes(xngin_session: Session, experiment_id: str, arm_id: str) -> bool:
+    """Whether an earlier arm update has already folded some of the arm's outcomes into its parameters."""
+    return xngin_session.execute(
+        select(
+            select(tables.Draw.participant_id)
+            .where(
+                tables.Draw.experiment_id == experiment_id,
+                tables.Draw.arm_id == arm_id,
+                tables.Draw.outcome.is_not(None),
+                tables.Draw.applied_at.is_not(None),
+            )
+            .exists()
+        )
+    ).scalar_one()
+
+
+def _claim_outcomes_for_arm(
     xngin_session: Session,
     experiment_id: str,
     arm_id: str,
     experiment_type: ExperimentsType,
+    from_initial_prior: bool = False,
 ) -> tuple[list[float], list[list[float]] | None]:
-    """Return the just-recorded outcome plus the arm's prior outcomes, newest first.
+    """Mark the arm's outcomes as applied, and return them.
 
-    Context values are aggregated alongside the outcomes and returned only for contextual
-    bandits, i.e. when the current draw carries context.
+    By default only the not-yet-applied outcomes (applied_at IS NULL) are claimed. With from_initial_prior, every
+    recorded outcome is claimed (and re-marked), since a rebuild from the prior needs all of them.
+
+    Marking and reading happen in one UPDATE ... RETURNING statement, so the rows marked are exactly the rows
+    returned. The statement only sees outcomes that are committed before this update is executed. Any outcome that
+    committed while or after this update is executed, stays unapplied and will be picked up by the next update.
+    In this way, each outcome is used exactly once in an arm update.
+
+    Returns the outcomes in no particular order, since the batch update doesn't depend on order. Context values are
+    returned alongside, one per outcome, only for contextual bandits. Returns an empty list if there are none.
     """
-    is_cmab = experiment_type == ExperimentsType.CMAB_ONLINE
-    last_100_draws = (
-        select(tables.Draw.outcome, tables.Draw.context_vals)
-        .where(
-            tables.Draw.experiment_id == experiment_id,
-            tables.Draw.arm_id == arm_id,
-            tables.Draw.outcome.is_not(None),
-        )
-        .order_by(tables.Draw.observed_at.desc())
-        .limit(100)  # TODO: Make draw limiting configurable
-        .subquery()
+    stmt = update(tables.Draw).where(
+        tables.Draw.experiment_id == experiment_id,
+        tables.Draw.arm_id == arm_id,
+        tables.Draw.outcome.is_not(None),
     )
-    outcomes = [func.array_agg(last_100_draws.c.outcome)]
-    if is_cmab:
-        context_vals = [func.array_agg(last_100_draws.c.context_vals)]
-        results = xngin_session.execute(select(*outcomes, *context_vals).select_from(last_100_draws))
-        outcomes, context_vals = results.one()
-        return outcomes, context_vals
-    results = xngin_session.execute(select(*outcomes).select_from(last_100_draws))
-    outcomes = results.one()[0]
+    if not from_initial_prior:
+        stmt = stmt.where(tables.Draw.applied_at.is_(None))
+    stmt = stmt.values(applied_at=datetime.now(UTC)).returning(tables.Draw.outcome, tables.Draw.context_vals)
+    rows = xngin_session.execute(stmt).all()
+    outcomes = [row.outcome for row in rows]
+    if experiment_type == ExperimentsType.CMAB_ONLINE:
+        return outcomes, [row.context_vals for row in rows]
     return outcomes, None
 
 
-class PartialUpdateDrawBeta(TypedDict):
-    """Subset of fields on tables.Draw, used for type-safe partial updates."""
-
-    current_alpha: float | None
-    current_beta: float | None
-
-
-class PartialUpdateDrawNormal(TypedDict):
-    """Subset of fields on tables.Draw, used for type-safe partial updates."""
-
-    current_mu: list[float] | None
-    current_covariance: list[list[float]] | None
-
-
-def update_bandit_arm_with_outcome_impl(
+def record_bandit_outcome_impl(
     xngin_session: Session,
     experiment: tables.Experiment,
     participant_id: str,
     outcome: float,
     autofailed_outcome: bool = False,
-) -> tables.Arm:
-    """Update a bandit draw and arm without completing the caller's transaction."""
+) -> str:
+    """Validate and store a participant's outcome on their draw, without updating the arm.
+
+    Returns the ID of the draw's arm. Does not complete the caller's transaction.
+    """
     # Not supported for frequentist experiments
     design_spec = ExperimentStorageConverter(experiment).get_design_spec()
 
@@ -1234,68 +1244,86 @@ def update_bandit_arm_with_outcome_impl(
             tables.Draw.outcome.is_(None),  # guard against double-write at DB level
         )
         .values(observed_at=datetime.now(UTC), outcome=outcome, autofailed_outcome=autofailed_outcome)
-        .returning(tables.Draw.arm_id, tables.Draw.context_vals)
+        .returning(tables.Draw.arm_id)
     )
-    draw_record = result.one_or_none()
-    if draw_record is None:
+    arm_id = result.scalar_one_or_none()
+    if arm_id is None:
         raise ExperimentsAssignmentError(
             f"Participant '{participant_id}' already has a recorded outcome for this experiment.",
         )
+    return arm_id
 
-    arm_to_update = xngin_session.execute(
+
+def update_bandit_arms_impl(
+    xngin_session: Session, experiment: tables.Experiment, update_from_initial_prior: bool = False
+) -> int:
+    """Update every arm's parameters with the outcomes recorded since the arm was last updated.
+
+    With update_from_initial_prior=True, every arm is instead rebuilt from its initial prior using all of its recorded
+    outcomes, applied or not. Use it to repair arms, or to undo the drift of incremental Laplace updates.
+
+    Each update starts from the arm's current parameters and applies only the outcomes not yet applied (draws whose
+    applied_at is NULL), then marks them applied. The marks and the new parameters commit together in the caller's
+    transaction, so a retried or interrupted run never counts an outcome twice, and running it again with nothing new
+    leaves the arms unchanged. For Beta and Normal-likelihood arms this gives exactly the same parameters as fitting
+    all outcomes at once from the prior. For Normal-prior/Bernoulli arms (Laplace approximation) it is the standard
+    online approximation and can drift slightly from a full refit.
+
+    An arm none of whose outcomes have been applied yet starts from its initial prior instead. That covers new
+    experiments, and also experiments whose arms were updated before applied_at existed: their stored parameters are
+    rebuilt from the prior and all outcomes on the first run.
+
+    The arms are updated in place, so experiment.arms holds the new parameters afterwards. Draws keep their current_*
+    columns, the parameters the participant was assigned under. Returns the number of outcomes applied by this call,
+    across all arms. Does not complete the caller's transaction.
+    """
+    experiment_type = ExperimentsType(experiment.experiment_type)
+    # Lock the arms in a fixed order so concurrent recomputes of the same experiment (worker and any manual trigger)
+    # queue behind each other instead of deadlocking or interleaving their writes.
+    arms = xngin_session.scalars(
         select(tables.Arm)
-        .where(tables.Arm.id == draw_record.arm_id, tables.Arm.experiment_id == experiment.id)
+        .where(tables.Arm.experiment_id == experiment.id)
+        .order_by(tables.Arm.id)
         .with_for_update()
         .execution_options(populate_existing=True)
-    ).scalar_one_or_none()
-    if arm_to_update is None:
-        raise ExperimentsAssignmentError(
-            f"Arm '{draw_record.arm_id}' not found for experiment '{experiment.id}'.",
+    ).all()
+
+    num_outcomes = 0
+    for arm in arms:
+        # Start from the prior when the caller asks for a rebuild, or when nothing has been applied to this arm yet:
+        # then its stored parameters may not reflect its outcomes (e.g. updated by older code). Check before
+        # claiming, since claiming marks outcomes applied.
+        from_initial_prior = update_from_initial_prior or not _arm_has_applied_outcomes(
+            xngin_session, experiment.id, arm.id
+        )
+        outcomes, context_vals = _claim_outcomes_for_arm(
+            xngin_session,
+            experiment_id=experiment.id,
+            arm_id=arm.id,
+            experiment_type=experiment_type,
+            from_initial_prior=from_initial_prior,
         )
 
-    # Get all prior draws for this arm, sorted by observation date
-    outcomes, context_vals = _fetch_outcomes_and_context_for_arm(
-        xngin_session,
-        experiment_id=experiment.id,
-        arm_id=draw_record.arm_id,
-        experiment_type=ExperimentsType(experiment.experiment_type),
-    )
-
-    updated_parameters = update_bandit_arm(
-        experiment=experiment,
-        arm_to_update=arm_to_update,
-        outcomes=outcomes,
-        context=context_vals,
-    )
-
-    # Update the draw record and arm with the new parameters
-    update_draw_params: PartialUpdateDrawBeta | PartialUpdateDrawNormal
-    match updated_parameters:
-        case UpdateTypeBeta():
-            update_draw_params = PartialUpdateDrawBeta(
-                current_alpha=updated_parameters.alpha, current_beta=updated_parameters.beta
-            )
-            arm_to_update.alpha = updated_parameters.alpha
-            arm_to_update.beta = updated_parameters.beta
-
-        case UpdateTypeNormal():
-            update_draw_params = PartialUpdateDrawNormal(
-                current_mu=updated_parameters.mu, current_covariance=updated_parameters.covariance
-            )
-            arm_to_update.mu = updated_parameters.mu
-            arm_to_update.covariance = updated_parameters.covariance
-
-    xngin_session.execute(
-        update(tables.Draw)
-        .where(
-            tables.Draw.participant_id == participant_id,
-            tables.Draw.experiment_id == experiment.id,
-            tables.Draw.arm_id == arm_to_update.id,
+        if not outcomes:
+            continue
+        num_outcomes += len(outcomes)
+        updated_parameters = update_bandit_arm(
+            experiment=experiment,
+            arm_to_update=arm,
+            outcomes=outcomes,
+            contexts=context_vals,
+            from_initial_prior=from_initial_prior,
         )
-        .values(**update_draw_params)
-    )
 
-    return arm_to_update
+        match updated_parameters:
+            case UpdateTypeBeta():
+                arm.alpha = updated_parameters.alpha
+                arm.beta = updated_parameters.beta
+            case UpdateTypeNormal():
+                arm.mu = updated_parameters.mu
+                arm.covariance = updated_parameters.covariance
+
+    return num_outcomes
 
 
 def convert_assignment_results_to_assign_summary(

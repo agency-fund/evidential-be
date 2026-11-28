@@ -143,7 +143,7 @@ def test_autofail_skips_draws_with_outcomes(
     experiment_id = create_autofail_experiment(
         aclient, eclient, testing_datasource, participants=("0", "1", "2"), name="skip draws"
     )
-    eclient.update_bandit_arm_with_participant_outcome(
+    eclient.record_bandit_participant_outcome(
         api_key=testing_datasource.key,
         body=UpdateBanditArmOutcomeRequest(outcome=1.0),
         experiment_id=experiment_id,

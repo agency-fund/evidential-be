@@ -453,7 +453,7 @@ def create_bandit_snapshot_experiment(
                 experiment_id=experiment_id,
                 participant_id=participant_id,
             )
-            _ = eclient.update_bandit_arm_with_participant_outcome(
+            _ = eclient.record_bandit_participant_outcome(
                 api_key=testing_datasource.key,
                 body=UpdateBanditArmOutcomeRequest(outcome=outcome),
                 experiment_id=experiment_id,
@@ -466,7 +466,7 @@ def create_bandit_snapshot_experiment(
                 experiment_id=experiment_id,
                 participant_id=participant_id,
             )
-            _ = eclient.update_bandit_arm_with_participant_outcome(
+            _ = eclient.record_bandit_participant_outcome(
                 api_key=testing_datasource.key,
                 body=UpdateBanditArmOutcomeRequest(outcome=outcome),
                 experiment_id=experiment_id,
@@ -540,7 +540,7 @@ def test_create_snapshot_cmab_matches_admin_analysis_at_mean_contexts(
         )
         assert assignment_response.status == 200, assignment_response.data
         if outcome is not None:
-            eclient.update_bandit_arm_with_participant_outcome(
+            eclient.record_bandit_participant_outcome(
                 api_key=testing_datasource.key,
                 body=UpdateBanditArmOutcomeRequest(outcome=outcome),
                 experiment_id=experiment_id,

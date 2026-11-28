@@ -514,6 +514,7 @@ class Experiment(Base):
     enable_autofail: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.false())
     autofail_window: Mapped[int] = mapped_column(server_default="24")
     autofail_outcome_value: Mapped[float] = mapped_column(server_default="0.0")
+    update_frequency_hours: Mapped[int | None] = mapped_column()
 
     # Frequentist config params
     # JSON serialized form of a PowerResponse. Not required since some experiments may not have data to run
@@ -651,6 +652,9 @@ class Draw(Base):
     observed_at: Mapped[datetime | None] = mapped_column()
     outcome: Mapped[float | None] = mapped_column()
     autofailed_outcome: Mapped[bool | None] = mapped_column()
+    # When an arm update folded this draw's outcome into the arm's parameters.
+    # NULL until then, so each update reads only the outcomes recorded since the previous one.
+    applied_at: Mapped[datetime | None] = mapped_column()
     # Context values are assumed to be sorted by the experiment's corresponding context ids in ascending order.
     context_vals: Mapped[list[float] | None] = mapped_column(ARRAY(Float))
     current_mu: Mapped[list[float] | None] = mapped_column(ARRAY(Float))
@@ -661,13 +665,20 @@ class Draw(Base):
     arm: Mapped[Arm] = relationship("Arm", back_populates="draws", lazy="joined")
     experiment: Mapped[Experiment] = relationship("Experiment", back_populates="draws", lazy="joined")
     __table_args__ = (
-        # Each arm's resolved draws, newest outcome first, for the arm's recent outcomes that every outcome report
-        # reads while it holds the arm's lock.
+        # Each arm's resolved draws, newest outcome first. An arm update reads these to check whether any of the arm's
+        # outcomes have been applied yet; once updates are running, the newest resolved draw usually answers that.
         Index(
             "ix_draws_resolved",
             arm_id,
             observed_at.desc(),
             postgresql_where=sqlalchemy.text("outcome IS NOT NULL"),
+        ),
+        # Outcomes for each arm that have not yet been applied in an arm update.
+        # Each update reads them and marks them as applied
+        Index(
+            "ix_draws_unapplied",
+            arm_id,
+            postgresql_where=sqlalchemy.text("outcome IS NOT NULL AND applied_at IS NULL"),
         ),
         # The worker's view of an experiment's draws without outcomes, oldest first: autofail reads their deadlines
         # and DWH pulls read which ones to fill, without reading the resolved draws.

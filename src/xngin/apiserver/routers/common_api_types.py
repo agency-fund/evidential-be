@@ -1269,6 +1269,16 @@ class BaseBanditExperimentSpec(BaseDesignSpec):
             ),
         ),
     ] = 0.0
+    update_frequency_hours: Annotated[
+        int,
+        Field(
+            description=(
+                "How often, in hours, Evidential updates the arms' parameters from all outcomes recorded so far. "
+                "Outcomes are stored as they arrive and take effect at the next update. Default is 24 hours."
+            ),
+            ge=1,
+        ),
+    ] = 24
 
     @model_validator(mode="after")
     def check_arm_missing_params(self) -> Self:
@@ -2000,6 +2010,12 @@ class UpdateBanditArmOutcomeRequest(ApiBaseModel):
     """Describes the outcome of a bandit experiment."""
 
     outcome: float
+
+
+class UpdateBanditArmsResponse(ApiBaseModel):
+    """The arms of a bandit experiment after updating them from all recorded outcomes."""
+
+    arms: list[ArmBandit]
 
 
 class SampleCall(ApiBaseModel):

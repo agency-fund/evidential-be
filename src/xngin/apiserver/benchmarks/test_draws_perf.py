@@ -125,7 +125,7 @@ def _warmup_via_api(
                 experiment_id=experiment_id,
                 participant_id=participant_id,
             )
-        eclient.update_bandit_arm_with_participant_outcome(
+        eclient.record_bandit_participant_outcome(
             api_key=testing_datasource.key,
             body=UpdateBanditArmOutcomeRequest(outcome=float(rng.randint(0, 1))),
             experiment_id=experiment_id,

@@ -1,13 +1,24 @@
+import numpy as np
 import pytest
 from pydantic import TypeAdapter
 
 from xngin.apiserver.limits import TOP_TWO_BETA, TOP_TWO_MIN_ARMS
 from xngin.apiserver.routers.common_api_types import DesignSpec
-from xngin.apiserver.routers.common_enums import ExperimentState, ExperimentsType, LikelihoodTypes, PriorTypes
+from xngin.apiserver.routers.common_enums import (
+    ExperimentState,
+    ExperimentsType,
+    LikelihoodTypes,
+    PriorTypes,
+    UpdateTypeBeta,
+)
 from xngin.apiserver.routers.experiments.test_experiments_common import make_createexperimentrequest_json
 from xngin.apiserver.sqla import tables
 from xngin.apiserver.storage.storage_format_converters import ExperimentStorageConverter
-from xngin.stats.bandit_sampling import choose_arm, update_arm
+from xngin.stats.bandit_sampling import (
+    _update_arm_normal,  # noqa: PLC2701
+    choose_arm,
+    update_arm,
+)
 
 
 def make_experiment_table(
@@ -240,3 +251,79 @@ def test_below_threshold_barely_explores_with_dominant_arm_cmab():
     ]
     challenger_rate = sum(1 for s in selections if s != "arm_0") / N_DRAWS
     assert challenger_rate < EXPECTED_CHALLENGER_RATE / 2
+
+
+def test_update_arm_beta_binomial_counts_batched_rewards():
+    """Each 1 adds to alpha and each 0 adds to beta."""
+    beta_binom_experiment = make_experiment_table(
+        experiment_type=ExperimentsType.MAB_ONLINE, prior_type=PriorTypes.BETA, reward_type=LikelihoodTypes.BERNOULLI
+    )
+    arm_to_update = beta_binom_experiment.arms[0]
+    assert arm_to_update.alpha is not None
+    assert arm_to_update.beta is not None
+    result = update_arm(experiment=beta_binom_experiment, arm_to_update=arm_to_update, outcomes=[1.0, 0.0, 1.0, 1.0])
+    assert isinstance(result, UpdateTypeBeta)
+    assert result.alpha == arm_to_update.alpha + 3
+    assert result.beta == arm_to_update.beta + 1
+
+
+def test_update_arm_normal_batch_matches_sequential_updates():
+    """For a fixed likelihood sigma, updating on T rewards at once equals updating one reward at a time.
+
+    Calls _update_arm_normal directly: update_arm estimates sigma from the batch's rewards, so its batched and
+    one-at-a-time results differ by design.
+    """
+    rng = np.random.default_rng(0)
+    contexts = rng.normal(size=(4, 2))
+    rewards = rng.normal(size=4)
+    llhood_sigma = 0.7
+    prior_mu = np.zeros(2)
+    prior_covariance = np.eye(2)
+
+    batched = _update_arm_normal(
+        current_mu=prior_mu,
+        current_covariance=prior_covariance,
+        rewards=rewards,
+        llhood_sigma=llhood_sigma,
+        contexts=contexts,
+    )
+
+    mu, covariance = prior_mu, prior_covariance
+    for i in range(len(rewards)):
+        step = _update_arm_normal(
+            current_mu=mu,
+            current_covariance=covariance,
+            rewards=rewards[i : i + 1],
+            llhood_sigma=llhood_sigma,
+            contexts=contexts[i : i + 1],
+        )
+        mu, covariance = np.asarray(step.mu), np.asarray(step.covariance)
+
+    np.testing.assert_allclose(np.asarray(batched.mu), mu)
+    np.testing.assert_allclose(np.asarray(batched.covariance), covariance)
+
+
+def test_update_arm_normal_rejects_mismatched_context_shape():
+    cmab_experiment = make_experiment_table(
+        experiment_type=ExperimentsType.CMAB_ONLINE, prior_type=PriorTypes.NORMAL, reward_type=LikelihoodTypes.NORMAL
+    )
+    arm_to_update = cmab_experiment.arms[0]
+    with pytest.raises(ValueError, match="Context has unexpected dimensions"):
+        update_arm(experiment=cmab_experiment, arm_to_update=arm_to_update, outcomes=[0.0], contexts=[[1.0] * 3])
+
+
+def test_sample_normal_rejects_mismatched_context_shape():
+    cmab_experiment = make_experiment_table(
+        experiment_type=ExperimentsType.CMAB_ONLINE, prior_type=PriorTypes.NORMAL, reward_type=LikelihoodTypes.NORMAL
+    )
+
+    with pytest.raises(ValueError, match="Context has unexpected dimensions"):
+        choose_arm(experiment=cmab_experiment, sorted_context_vals=[1.0] * 3)
+
+
+def test_update_arm_rejects_mismatched_outcomes_and_contexts():
+    experiment = make_experiment_table(
+        experiment_type=ExperimentsType.CMAB_ONLINE, prior_type=PriorTypes.NORMAL, reward_type=LikelihoodTypes.NORMAL
+    )
+    with pytest.raises(ValueError, match="Number of context and outcome values do not match"):
+        update_arm(experiment=experiment, arm_to_update=experiment.arms[0], outcomes=[1.0, 0.0], contexts=[[1.0]])

@@ -29,6 +29,7 @@ from xngin.apiserver.worker.attempts import (
 )
 from xngin.apiserver.worker.executor import AttemptExecutor
 from xngin.apiserver.worker.jobs.autofail import AutofailJob
+from xngin.apiserver.worker.jobs.bandit_update import BanditUpdateJob
 from xngin.apiserver.worker.jobs.base import Backoff, Job, JobSucceeded
 from xngin.apiserver.worker.jobs.dwh_pull import DwhPullJob
 from xngin.apiserver.worker.jobs.snapshots import SnapshotJob
@@ -38,6 +39,7 @@ BACKOFF = Backoff(delays=(timedelta(minutes=1), timedelta(minutes=5)))
 SNAPSHOT = SnapshotJob(interval=timedelta(hours=3), dwh_timeout=90, backoff=Backoff.constant(timedelta(hours=1)))
 PULL = DwhPullJob(interval=timedelta(hours=4), dwh_timeout=90, backoff=BACKOFF)
 AUTOFAIL = AutofailJob(batch_size=2, backoff=BACKOFF)
+BANDIT_UPDATE = BanditUpdateJob(backoff=BACKOFF)
 NOW = datetime(2030, 1, 1, tzinfo=UTC)
 
 

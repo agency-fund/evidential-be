@@ -44,6 +44,7 @@ from xngin.apiserver.routers.common_api_types import (
     ListExperimentsResponse,
     OnlineAssignmentWithFiltersRequest,
     UpdateBanditArmOutcomeRequest,
+    UpdateBanditArmsResponse,
 )
 
 if TYPE_CHECKING:
@@ -961,7 +962,7 @@ class ExperimentsAPIClient:
         )
 
     @overload
-    def update_bandit_arm_with_participant_outcome(
+    def record_bandit_participant_outcome(
         self,
         *,
         body: UpdateBanditArmOutcomeRequest,
@@ -972,7 +973,7 @@ class ExperimentsAPIClient:
         client_exts: ExperimentsAPIClientExtensions | None = None,
     ) -> ExperimentsAPIClientResult[Literal[HTTPStatus.OK], ArmBandit]: ...
     @overload
-    def update_bandit_arm_with_participant_outcome(
+    def record_bandit_participant_outcome(
         self,
         *,
         body: UpdateBanditArmOutcomeRequest,
@@ -988,7 +989,7 @@ class ExperimentsAPIClient:
         | ExperimentsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], dict]
         | ExperimentsAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], ExperimentsAPIClientHTTPValidationError]
     ): ...
-    def update_bandit_arm_with_participant_outcome(
+    def record_bandit_participant_outcome(
         self,
         *,
         body: UpdateBanditArmOutcomeRequest,
@@ -1031,6 +1032,82 @@ class ExperimentsAPIClient:
                 },
                 body_params={
                     "body": body,
+                },
+                security_params=(
+                    ExperimentsAPIClientSecurityParam(kind="api_key_header", name="X-API-Key", value=api_key),
+                ),
+                raise_if_not_default_status=raise_if_not_default_status,
+                client_exts=client_exts,
+            ),
+        )
+
+    @overload
+    def update_bandit_arms(
+        self,
+        *,
+        experiment_id: str,
+        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
+        update_from_initial_prior: bool = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
+        raise_if_not_default_status: Literal[True] = True,
+        client_exts: ExperimentsAPIClientExtensions | None = None,
+    ) -> ExperimentsAPIClientResult[Literal[HTTPStatus.OK], UpdateBanditArmsResponse]: ...
+    @overload
+    def update_bandit_arms(
+        self,
+        *,
+        experiment_id: str,
+        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
+        update_from_initial_prior: bool = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
+        raise_if_not_default_status: Literal[False],
+        client_exts: ExperimentsAPIClientExtensions | None = None,
+    ) -> (
+        ExperimentsAPIClientResult[Literal[HTTPStatus.OK], UpdateBanditArmsResponse]
+        | ExperimentsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], dict]
+        | ExperimentsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], dict]
+        | ExperimentsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], dict]
+        | ExperimentsAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], ExperimentsAPIClientHTTPValidationError]
+    ): ...
+    def update_bandit_arms(
+        self,
+        *,
+        experiment_id: str,
+        api_key: str = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
+        update_from_initial_prior: bool = EXPERIMENTS_API_CLIENT_NOT_REQUIRED,
+        raise_if_not_default_status: bool = True,
+        client_exts: ExperimentsAPIClientExtensions | None = None,
+    ) -> (
+        ExperimentsAPIClientResult[Literal[HTTPStatus.OK], UpdateBanditArmsResponse]
+        | ExperimentsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], dict]
+        | ExperimentsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], dict]
+        | ExperimentsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], dict]
+        | ExperimentsAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], ExperimentsAPIClientHTTPValidationError]
+    ):
+        return cast(
+            (
+                ExperimentsAPIClientResult[Literal[HTTPStatus.OK], UpdateBanditArmsResponse]
+                | ExperimentsAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], dict]
+                | ExperimentsAPIClientResult[Literal[HTTPStatus.FORBIDDEN], dict]
+                | ExperimentsAPIClientResult[Literal[HTTPStatus.NOT_FOUND], dict]
+                | ExperimentsAPIClientResult[
+                    Literal[HTTPStatus.UNPROCESSABLE_CONTENT], ExperimentsAPIClientHTTPValidationError
+                ]
+            ),
+            self._route_handler(
+                path="/v1/experiments/{experiment_id}/arms/update",
+                method=HTTPMethod.POST,
+                default_status=HTTPStatus.OK,
+                models={
+                    HTTPStatus.OK: UpdateBanditArmsResponse,
+                    HTTPStatus.BAD_REQUEST: dict,
+                    HTTPStatus.FORBIDDEN: dict,
+                    HTTPStatus.NOT_FOUND: dict,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: ExperimentsAPIClientHTTPValidationError,
+                },
+                path_params={
+                    "experiment_id": experiment_id,
+                },
+                query_params={
+                    "update_from_initial_prior": update_from_initial_prior,
                 },
                 security_params=(
                     ExperimentsAPIClientSecurityParam(kind="api_key_header", name="X-API-Key", value=api_key),

@@ -4143,6 +4143,82 @@ class AdminAPIClient:
         )
 
     @overload
+    def update_bandit_arms_for_ui(
+        self,
+        *,
+        datasource_id: str,
+        experiment_id: str,
+        update_from_initial_prior: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
+        raise_if_not_default_status: Literal[True] = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]: ...
+    @overload
+    def update_bandit_arms_for_ui(
+        self,
+        *,
+        datasource_id: str,
+        experiment_id: str,
+        update_from_initial_prior: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
+        raise_if_not_default_status: Literal[False],
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+    ): ...
+    def update_bandit_arms_for_ui(
+        self,
+        *,
+        datasource_id: str,
+        experiment_id: str,
+        update_from_initial_prior: bool = ADMIN_API_CLIENT_NOT_REQUIRED,
+        raise_if_not_default_status: bool = True,
+        client_exts: AdminAPIClientExtensions | None = None,
+    ) -> (
+        AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+        | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+        | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+    ):
+        return cast(
+            (
+                AdminAPIClientResult[Literal[HTTPStatus.NO_CONTENT], Any]
+                | AdminAPIClientResult[Literal[HTTPStatus.BAD_REQUEST], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNAUTHORIZED], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.FORBIDDEN], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.NOT_FOUND], HTTPExceptionError]
+                | AdminAPIClientResult[Literal[HTTPStatus.UNPROCESSABLE_CONTENT], AdminAPIClientHTTPValidationError]
+            ),
+            self._route_handler(
+                path="/v1/m/datasources/{datasource_id}/experiments/{experiment_id}/arms/update",
+                method=HTTPMethod.POST,
+                default_status=HTTPStatus.NO_CONTENT,
+                models={
+                    HTTPStatus.NO_CONTENT: Any,
+                    HTTPStatus.BAD_REQUEST: HTTPExceptionError,
+                    HTTPStatus.UNAUTHORIZED: HTTPExceptionError,
+                    HTTPStatus.FORBIDDEN: HTTPExceptionError,
+                    HTTPStatus.NOT_FOUND: HTTPExceptionError,
+                    HTTPStatus.UNPROCESSABLE_CONTENT: AdminAPIClientHTTPValidationError,
+                },
+                path_params={
+                    "datasource_id": datasource_id,
+                    "experiment_id": experiment_id,
+                },
+                query_params={
+                    "update_from_initial_prior": update_from_initial_prior,
+                },
+                raise_if_not_default_status=raise_if_not_default_status,
+                client_exts=client_exts,
+            ),
+        )
+
+    @overload
     def power_check(
         self,
         *,
