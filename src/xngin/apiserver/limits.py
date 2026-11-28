@@ -9,6 +9,12 @@ MAX_LENGTH_OF_EMAIL_VALUE = 64
 # Maximum length of fields that contain identifiers such as primary keys, UUIDs, etc.
 MAX_LENGTH_OF_ID_VALUE = 64
 
+# Maximum length of a DNS domain name that we accept.
+MAX_LENGTH_OF_DOMAIN_VALUE = 128
+
+# Maximum number of email domains that may have domain settings.
+MAX_NUMBER_OF_DOMAIN_SETTINGS = 100
+
 # Maximum length of fields that hold URLs.
 MAX_LENGTH_OF_URL_VALUE = 500
 

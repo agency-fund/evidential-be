@@ -3999,7 +3999,7 @@ def test_power_check_with_manual_icc_and_nulls_in_cluster_key(testing_datasource
     # Primary test: verify that the user-provided values are used.
     assert analysis.metric_spec.icc == 0.015
     assert analysis.metric_spec.avg_cluster_size == 10
-    # assert analysis.metric_spec.cv == 0.3
+    assert analysis.metric_spec.cv == 0.1
 
     # Verify that the 28 null cluster key (age) rows are excluded from the analysis:
     assert analysis.metric_spec.available_n == 972
@@ -4009,15 +4009,42 @@ def test_power_check_with_manual_icc_and_nulls_in_cluster_key(testing_datasource
     # and the null age does not count as a cluster.
     assert analysis.metric_spec.available_n_clusters == 72
 
-    # Verify this was analyzed as a cluster-randomized experiment, and that with the user-supplied
-    # estimates about the data we should have enough clusters to sample from despite the minimum
-    # units needed being inflated by the design effect:
+    # The overridden average cluster size of 10 results in a design that needs 92 clusters. Only 72
+    # exist, and that cap does not grow with the override, so the design is insufficient even though
+    # the inflated unit count still fits in the non-null rows.
     assert analysis.num_clusters_total is not None
     assert analysis.num_clusters_total == 92
+    assert analysis.sufficient_n is False
     assert analysis.design_effect is not None
     assert analysis.design_effect == pytest.approx(1.137, abs=1e-3)
     assert analysis.msg is not None
+    assert analysis.msg.type == MetricPowerAnalysisMessageType.INSUFFICIENT
+    assert analysis.msg.values is not None
+    assert analysis.msg.values["additional_clusters_needed"] == 20
+    assert "not enough clusters" in analysis.msg.msg
+
+    # But if the overridden values keep the required clusters within the amount in the dwh, results
+    # are sufficient.
+    design_spec.metrics[0].icc = 0.005
+    design_spec.metrics[0].avg_cluster_size = 15
+    result = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id,
+        body=design_spec_to_power_request(design_spec),
+    )
+    analysis = result.data.analyses[0]
+    assert analysis.metric_spec.available_n_clusters == 72
+    assert analysis.num_clusters_total == 58
+    assert analysis.sufficient_n is True
+    assert analysis.design_effect == pytest.approx(1.07075, abs=1e-3)
+    assert analysis.msg is not None
     assert analysis.msg.type == MetricPowerAnalysisMessageType.SUFFICIENT
+    assert analysis.msg.values == {
+        "available_n": 972,
+        "available_nonnull_n": 948,
+        "target_n": 870,
+        "num_clusters_total": 58,
+    }
+    assert "There are enough non-null valued units available." in analysis.msg.msg
 
 
 def test_power_check_with_manual_icc_and_no_clusters_raises(testing_datasource, aclient: AdminAPIClient):
@@ -4556,6 +4583,42 @@ def test_power_check_cluster_with_manual_and_db_derived_metrics(testing_datasour
     # The cluster count describes the population, not the metric, so manual cluster stats don't change it.
     assert dwh_analysis.metric_spec.available_n_clusters == 1000
     assert user_analysis.metric_spec.available_n_clusters == 1000
+
+
+@pytest.mark.parametrize(("cv", "expected_flag"), [(1.0, False), (1.5, True)])
+def test_power_check_flags_high_cluster_variation_without_a_sample_size(
+    testing_datasource, aclient: AdminAPIClient, cv: float, expected_flag: bool
+):
+    """A cluster design whose sample size cannot be estimated still reports high cluster size variation."""
+    design_spec = PreassignedFrequentistExperimentSpec(
+        experiment_type=ExperimentsType.FREQ_PREASSIGNED,
+        experiment_name="test cluster variation flag",
+        description="high cluster size variation is flagged when no sample size can be estimated",
+        start_date=datetime(2024, 1, 1, tzinfo=UTC),
+        end_date=datetime.now(UTC) + timedelta(days=1),
+        table_name="clustered_dwh",
+        primary_key="participant_id",
+        arms=[Arm(arm_name="control", arm_description="C"), Arm(arm_name="treatment", arm_description="T")],
+        metrics=[
+            DesignSpecMetricRequest(field_name="converted", metric_target=1.0, icc=0.02, avg_cluster_size=10, cv=cv)
+        ],
+        strata=[],
+        # Only converted participants, so the baseline is 1 and a target of 1 is a zero effect size.
+        filters=[Filter(field_name="converted", relation=Relation.INCLUDES, value=[True])],
+        cluster_key="cluster_moderate",
+    )
+
+    result = aclient.power_check(
+        datasource_id=testing_datasource.datasource_id, body=design_spec_to_power_request(design_spec)
+    )
+
+    assert len(result.data.analyses) == 1
+    analysis = result.data.analyses[0]
+    assert analysis.metric_spec.metric_baseline == 1
+    assert analysis.target_n is None
+    assert analysis.msg is not None
+    assert analysis.msg.type == MetricPowerAnalysisMessageType.ZERO_EFFECT_SIZE
+    assert analysis.msg.high_cluster_variation is expected_flag
 
 
 def test_create_freq_preassigned_experiment_with_cluster_key_roundtrips(

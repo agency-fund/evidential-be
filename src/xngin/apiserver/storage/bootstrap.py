@@ -39,7 +39,6 @@ from xngin.apiserver.testing.stress_dwh_def import ExperimentFields
 from xngin.apiserver.testing.testing_dwh_def import TESTING_DWH_TABLE_NAME
 from xngin.apiserver.testing.wide_dwh_def import WIDE_DWH_TABLE_NAME
 
-DEFAULT_ORGANIZATION_NAME = "My Organization"
 TESTING_DWH_DATASOURCE_NAME = "Local DWH"
 ALT_TESTING_DWH_DATASOURCE_NAME = "Alternate Local DWH"
 PGSTRESS_DATASOURCE_NAME = "pgstress"
@@ -445,7 +444,9 @@ def create_entities_for_first_time_user(
     When bigquery_dsn or redshift_dsn is provided, it names a warehouse holding the stress test table, which gets a data
     source as well.
     """
-    organization = admin_common.create_organization_impl(session, user, DEFAULT_ORGANIZATION_NAME)
+    organization = admin_common.create_organization_impl(
+        session, user, admin_common.default_organization_name(user.email)
+    )
     session.flush()
     _maybe_create_developer_samples(session, organization, testing_dwh_dsn)
     _maybe_create_stress_samples(session, organization, testing_dwh_dsn, bigquery_dsn, redshift_dsn)

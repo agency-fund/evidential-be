@@ -30,6 +30,7 @@ def unique_id_factory(prefix: str):
 
 arm_id_factory = unique_id_factory("arm")
 datasource_id_factory = unique_id_factory("ds")
+domain_settings_id_factory = unique_id_factory("d")
 event_id_factory = unique_id_factory("evt")
 experiment_id_factory = unique_id_factory("exp")
 experiment_filter_id_factory = unique_id_factory("eflt")
@@ -43,6 +44,14 @@ context_id_factory = unique_id_factory("ctx")
 # Describes the status of a snapshot. SQLAlchemy will represent this Literal type as a string type.
 type SnapshotStatus = Literal["success", "failed"]
 
+type SignupMode = Literal["existing", "existing_and_domains", "anyone"]
+
+# The longest email address the users table can store.
+MAX_LENGTH_OF_USER_EMAIL = 255
+
+# The primary key of the only row permitted in the server_settings table.
+SERVER_SETTINGS_ID = "singleton"
+
 
 class Base(DeclarativeBase):
     # See https://docs.sqlalchemy.org/en/20/orm/declarative_tables.html#customizing-the-type-map
@@ -50,6 +59,7 @@ class Base(DeclarativeBase):
     type_annotation_map: ClassVar[dict[Any, TypeEngine[Any]]] = {
         datetime: sqlalchemy.TIMESTAMP(timezone=True),
         SnapshotStatus: sqlalchemy.String(16),
+        SignupMode: sqlalchemy.String(32),
     }
 
     def to_dict(self):
@@ -266,7 +276,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(primary_key=True, default=user_id_factory)
-    email: Mapped[str] = mapped_column(String(255), unique=True)
+    email: Mapped[str] = mapped_column(String(MAX_LENGTH_OF_USER_EMAIL), unique=True)
 
     # iss and sub will be None only for users that have been invited but have not yet logged in for the first time.
     iss: Mapped[str | None] = mapped_column(String(255))
@@ -285,6 +295,45 @@ class User(Base):
     )
 
     organizations: Mapped[list[Organization]] = relationship(secondary="user_organizations", back_populates="users")
+
+    __table_args__ = (Index("ix_users_email_lower", sqlalchemy.func.lower(email), unique=True),)
+
+
+class ServerSettings(Base):
+    """Installation-wide settings, stored in a single row
+
+    If the row is missing, defaults should be applied.
+    """
+
+    __tablename__ = "server_settings"
+    __table_args__ = (CheckConstraint("id = 'singleton'", name="ck_server_settings_singleton"),)
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default=SERVER_SETTINGS_ID)
+    # How users without an existing users row are treated when they sign in.
+    signup_mode: Mapped[SignupMode] = mapped_column(server_default="existing")
+    created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now(),
+        onupdate=sqlalchemy.sql.func.now(),
+    )
+
+
+class DomainSettings(Base):
+    """Settings for an email address domain."""
+
+    __tablename__ = "domain_settings"
+    __table_args__ = (CheckConstraint("domain = lower(domain)", name="ck_domain_settings_domain_lowercase"),)
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=domain_settings_id_factory)
+    domain: Mapped[str] = mapped_column(String(128), unique=True)
+    # When true, users whose email address is at this domain may sign up when signup_mode is existing_and_domains.
+    allow_signup: Mapped[bool] = mapped_column(server_default=sqlalchemy.sql.true())
+
+    created_at: Mapped[datetime] = mapped_column(server_default=sqlalchemy.sql.func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=sqlalchemy.sql.func.now(),
+        onupdate=sqlalchemy.sql.func.now(),
+    )
 
 
 class UserOrganization(Base):

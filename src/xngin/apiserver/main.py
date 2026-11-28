@@ -57,6 +57,8 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     lifespan=lifespan,
+    docs_url=routes.SWAGGER_UI_PATH if flags.is_dev_environment() else None,
+    redoc_url=None,
     swagger_ui_parameters={"persistAuthorization": True},
     generate_unique_id_function=humane_operation_id,
 )

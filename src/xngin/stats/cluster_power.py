@@ -13,7 +13,8 @@ from xngin.apiserver.routers.common_api_types import (
 from xngin.apiserver.routers.common_enums import MetricPowerAnalysisMessageType
 from xngin.stats.individual_power import (
     MdeIndividualResult,
-    requested_direction_is_down,
+    fill_requested_mde_spec,
+    reported_pct_change_possible,
     solve_for_mde_individual_impl,
     solve_for_sample_size_individual,
 )
@@ -148,7 +149,8 @@ def _build_cluster_sample_size_message(
     sufficient_n: bool,
     available_nonnull_n: int,
     num_clusters_total: int,
-    target_possible: float | None,
+    pct_change_possible: float | None,
+    limited_by_clusters: bool,
 ) -> MetricPowerAnalysisMessage:
     assert metric.available_n is not None
 
@@ -189,31 +191,51 @@ def _build_cluster_sample_size_message(
     if sufficient_n:
         msg_type = MetricPowerAnalysisMessageType.SUFFICIENT
         msg_body = "There are enough non-null valued units available."
+    elif limited_by_clusters:
+        assert metric.available_n_clusters is not None
+        assert metric.metric_baseline is not None
+        assert metric.metric_target is not None
+
+        msg_type = MetricPowerAnalysisMessageType.INSUFFICIENT
+        values_map["additional_clusters_needed"] = num_clusters_total - metric.available_n_clusters
+        values_map["available_n_clusters"] = metric.available_n_clusters
+        requested_spec = fill_requested_mde_spec(metric, values_map)
+        if pct_change_possible is None:
+            msg_body = (
+                "There are not enough clusters available. "
+                f"You need {{additional_clusters_needed}} more clusters to meet your {requested_spec} "
+                "With the available {available_n_clusters} clusters, no MDE "
+                "in the direction of your specified change can reach the requested power. "
+            )
+        else:
+            values_map["pct_change_possible"] = round(pct_change_possible, 4)
+            msg_body = (
+                "There are not enough clusters available. "
+                f"You need {{additional_clusters_needed}} more clusters to meet your {requested_spec} "
+                "Alternatively, with the available {available_n_clusters} clusters, "
+                f"your MDE should be {pct_change_possible:.1%} or further from the baseline. "
+            )
     else:
         assert metric.metric_baseline is not None
         assert metric.metric_target is not None
 
         msg_type = MetricPowerAnalysisMessageType.INSUFFICIENT
         values_map["additional_n_needed"] = target_n - available_nonnull_n
-        values_map["metric_baseline"] = round(metric.metric_baseline, 4)
-        values_map["metric_target"] = round(metric.metric_target, 4)
-        if target_possible is None:
+        requested_spec = fill_requested_mde_spec(metric, values_map)
+        if pct_change_possible is None:
             msg_body = (
                 "There are not enough non-null valued units available after accounting for clustering. "
-                "You need {additional_n_needed} more units to meet your specified "
-                "metric target of {metric_target}. "
-                "With the available {available_nonnull_n} non-null units, no metric target "  # noqa: RUF027
+                f"You need {{additional_n_needed}} more units to meet your {requested_spec} "
+                "With the available {available_nonnull_n} non-null units, no MDE "  # noqa: RUF027
                 "in the direction of your specified change can reach the requested power. "
             )
         else:
-            values_map["target_possible"] = round(target_possible, 4)
+            values_map["pct_change_possible"] = round(pct_change_possible, 4)
             msg_body = (
                 "There are not enough non-null valued units available after accounting for clustering. "
-                "You need {additional_n_needed} more units to meet your specified "
-                "metric target of {metric_target}. "
-                "Alternatively, with the available {available_nonnull_n} non-null units "  # noqa: RUF027
-                "and a metric baseline of {metric_baseline}, your metric target should be "
-                "{target_possible} or further from the baseline. "  # noqa: RUF027
+                f"You need {{additional_n_needed}} more units to meet your {requested_spec} "
+                f"Alternatively, with the available {available_nonnull_n} non-null units, "
+                f"your MDE should be {pct_change_possible:.1%} or further from the baseline. "
             )
 
     source_msg = " ".join(part for part in [msg_base_stats, msg_body, msg_null_warning, msg_cv_warning] if part)
@@ -340,28 +362,26 @@ def solve_for_mde_cluster(
 
     # Create message. It reports the bound in the direction of the user's requested change;
     # the analysis fields keep their fixed upper/lower semantics.
-    assert metric.metric_baseline is not None
-    reported_target_possible = (
-        result.target_possible_lower if requested_direction_is_down(metric) else result.target_possible
+    achievable_pct = reported_pct_change_possible(
+        metric,
+        pct_change_possible_upper=result.pct_change_possible,
+        pct_change_possible_lower=result.pct_change_possible_lower,
     )
     values_map: dict[str, float | int] = {
         "desired_n": desired_n,
-        "metric_baseline": round(metric.metric_baseline, 4),
         "num_clusters_total": clusters_total,
     }
     msg_type = MetricPowerAnalysisMessageType.SUFFICIENT
-    if reported_target_possible is None:
+    if achievable_pct is None:
         msg_body = (
             "With a desired sample size of {desired_n} units across {num_clusters_total} "
-            "clusters and a metric baseline of {metric_baseline}, no metric target in the "
-            "direction of your specified change can reach the requested power."
+            "clusters, no MDE in the direction of your specified change can reach the requested power."
         )
     else:
-        values_map["target_possible"] = round(reported_target_possible, 4)
+        values_map["pct_change_possible"] = round(achievable_pct, 4)
         msg_body = (
             "With a desired sample size of {desired_n} units across {num_clusters_total} "
-            "clusters and a metric baseline of {metric_baseline}, the minimum detectable "
-            "effect (MDE) is {target_possible}."
+            "clusters, the minimum detectable effect (MDE) is {pct_change_possible:.1%}."
         )
     analysis.msg = MetricPowerAnalysisMessage(
         type=msg_type,
@@ -402,6 +422,10 @@ def solve_for_sample_size_cluster(
     )
 
     if individual_analysis.target_n is None:
+        msg = individual_analysis.msg
+        # Cluster size variation does not depend on the outcome, so it is flagged even without a sample size.
+        if msg is not None and metric.cv > 1.0:
+            msg = msg.model_copy(update={"high_cluster_variation": True})
         cluster_analysis = MetricPowerAnalysis(
             metric_spec=metric,
             target_n=None,
@@ -410,7 +434,7 @@ def solve_for_sample_size_cluster(
             pct_change_possible=individual_analysis.pct_change_possible,
             target_possible_lower=individual_analysis.target_possible_lower,
             pct_change_possible_lower=individual_analysis.pct_change_possible_lower,
-            msg=individual_analysis.msg,
+            msg=msg,
         )
     else:
         # 2) Calculate the "design effect" due to clustering, which reduces the effective sample size.
@@ -442,21 +466,34 @@ def solve_for_sample_size_cluster(
             n_per_arm_list.append(n_actual_this_arm)
 
         # 4) Assemble the final values we need for our analysis response.
-        # Note that we're using the total inflated individual units needed given the clustering
-        # present to determine whether or not we have enough units to sample from!
+        # Sufficiency uses the inflated unit count, and the cluster count when we know how many
+        # clusters exist. A smaller average cluster size can demand more clusters than exist.
         clusters_total = sum(clusters_per_arm_list)
         cluster_adj_target_n = sum(n_per_arm_list)
         effective_n = int(cluster_adj_target_n / deff)
-        sufficient_n = bool(cluster_adj_target_n <= available_nonnull_n)
+        enough_units = cluster_adj_target_n <= available_nonnull_n
+        # If available_n_clusters doesn't exist, skip the cluster check portion.
+        enough_clusters = metric.available_n_clusters is None or clusters_total <= metric.available_n_clusters
+        sufficient_n = enough_units and enough_clusters
         target_possible = None
         pct_change_possible = None
         target_possible_lower = None
         pct_change_possible_lower = None
+        limited_by_clusters = False
         if not sufficient_n:
-            # Let the user know: Given the clustering, what could you detect with what's available?
+            # Let the user know what they could detect with what's available. When the cluster
+            # count is the tighter limit, size that sample from the clusters that exist at this
+            # average cluster size. Using every non-null unit would assume more clusters than exist.
+            achievable_n = available_nonnull_n
+            if not enough_clusters:
+                assert metric.available_n_clusters is not None
+                cluster_capped_n = round(metric.available_n_clusters * metric.avg_cluster_size)
+                if cluster_capped_n < available_nonnull_n:
+                    achievable_n = cluster_capped_n
+                    limited_by_clusters = True
             mde_result = solve_for_mde_cluster_impl(
                 metric=metric,
-                desired_n=available_nonnull_n,
+                desired_n=achievable_n,
                 n_arms=n_arms,
                 arm_weights=arm_weights,
                 alpha=alpha,
@@ -475,7 +512,12 @@ def solve_for_sample_size_cluster(
             sufficient_n=sufficient_n,
             available_nonnull_n=available_nonnull_n,
             num_clusters_total=clusters_total,
-            target_possible=(target_possible_lower if requested_direction_is_down(metric) else target_possible),
+            pct_change_possible=reported_pct_change_possible(
+                metric,
+                pct_change_possible_upper=pct_change_possible,
+                pct_change_possible_lower=pct_change_possible_lower,
+            ),
+            limited_by_clusters=limited_by_clusters,
         )
 
         cluster_analysis = MetricPowerAnalysis(

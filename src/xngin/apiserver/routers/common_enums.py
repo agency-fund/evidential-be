@@ -371,6 +371,20 @@ class ExperimentAnalysisType(enum.StrEnum):
     BANDIT = "bandit"
 
 
+class SignupMode(enum.StrEnum):
+    """Who may sign in, and who gets a user account the first time they sign in.
+
+    - `existing`: only existing users, including invited users, may sign in.
+    - `existing_and_domains`: existing users may sign in, and a user account is created for anyone whose verified email
+      address is at a domain whose domain settings have `allow_signup` set.
+    - `anyone`: existing users may sign in, and a user account is created for anyone who signs in.
+    """
+
+    EXISTING = "existing"
+    EXISTING_AND_DOMAINS = "existing_and_domains"
+    ANYONE = "anyone"
+
+
 class SnapshotStatus(enum.StrEnum):
     """Describes the status of a snapshot."""
 

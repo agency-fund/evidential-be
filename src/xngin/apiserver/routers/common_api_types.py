@@ -800,7 +800,13 @@ class MetricPowerAnalysis(ApiBaseModel):
 
     sufficient_n: Annotated[
         bool | None,
-        Field(description="Whether there are enough available participants to sample to reach target_n."),
+        Field(
+            description=(
+                "Whether there are enough available participants to sample to reach target_n. "
+                "For a cluster-randomized design this is also false when available_n_clusters is set "
+                "and fewer clusters exist than the design needs."
+            )
+        ),
     ] = None
 
     target_possible: Annotated[
@@ -808,8 +814,10 @@ class MetricPowerAnalysis(ApiBaseModel):
         Field(
             description=(
                 "When the sample size is too small to reach the desired metric_target, this is the target "
-                "that is possible given available_n, in the improvement (positive) direction from the "
-                "baseline. It is the absolute counterpart of pct_change_possible. "
+                "that is possible with the available sample, in the improvement (positive) direction from "
+                "the baseline. That sample is the available non-null units, or the available clusters at "
+                "this metric's average cluster size when the cluster count is the tighter limit. It is the "
+                "absolute counterpart of pct_change_possible. "
                 "None when the sample size is large enough to detect the desired change, or (for BINARY "
                 "metrics) when no value above the baseline is a large enough change to reach the "
                 "requested power."
@@ -822,8 +830,8 @@ class MetricPowerAnalysis(ApiBaseModel):
         Field(
             description=(
                 "When the sample size is too small to reach the desired metric_pct_change, this is the percent "
-                "change that is possible given available_n. It is the relative counterpart of target_possible. "
-                "None whenever target_possible is None."
+                "change that is possible with the same sample as target_possible. It is the relative "
+                "counterpart of target_possible. None whenever target_possible is None."
             )
         ),
     ] = None

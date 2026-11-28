@@ -12,12 +12,14 @@ from xngin.apiserver.dwh.dwh_utils import parse_spreadsheet_url
 from xngin.apiserver.dwh.inspection_types import ParticipantsSchema
 from xngin.apiserver.limits import (
     MAX_LENGTH_OF_DESCRIPTION_VALUE,
+    MAX_LENGTH_OF_DOMAIN_VALUE,
     MAX_LENGTH_OF_EMAIL_VALUE,
     MAX_LENGTH_OF_ID_VALUE,
     MAX_LENGTH_OF_NAME_VALUE,
     MAX_LENGTH_OF_URL_VALUE,
     MIN_TIME_UNTIL_NEW_END_DATE,
 )
+from xngin.apiserver.routers.auth.signup_policy import normalize_domain
 from xngin.apiserver.routers.common_api_types import (
     ApiBaseModel,
     ConstrainedUrl,
@@ -27,7 +29,7 @@ from xngin.apiserver.routers.common_api_types import (
     Impact,
     PaginatedResponse,
 )
-from xngin.apiserver.routers.common_enums import DataType, SnapshotStatus
+from xngin.apiserver.routers.common_enums import DataType, SignupMode, SnapshotStatus
 
 
 def validate_webhook_url(url: str) -> str:
@@ -168,6 +170,87 @@ class CreateUserRequest(AdminApiBaseModel):
 
 class CreateUserResponse(AdminApiBaseModel):
     id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE, description="The user's unique ID.")]
+
+
+class SignupSettings(AdminApiBaseModel):
+    """Settings controlling whether people without an existing user account may sign in."""
+
+    mode: SignupMode
+
+
+class GetServerSettingsResponse(AdminApiBaseModel):
+    signup: Annotated[SignupSettings, Field(description="Settings controlling who may sign up.")]
+    updated_at: Annotated[
+        datetime | None, Field(description="When the settings were last changed. Null if they never were.")
+    ]
+
+
+class UpdateServerSettingsRequest(AdminApiBaseModel):
+    """Updates installation-wide settings."""
+
+    signup: Annotated[
+        SignupSettings | None, Field(description="When present, replaces the settings controlling who may sign up.")
+    ] = None
+
+
+class DomainSettingsSummary(AdminApiBaseModel):
+    id: Annotated[str, Field(max_length=MAX_LENGTH_OF_ID_VALUE, description="The unique ID of the domain settings.")]
+    domain: Annotated[
+        str, Field(max_length=MAX_LENGTH_OF_DOMAIN_VALUE, description="The email address domain, e.g. `example.org`.")
+    ]
+    allow_signup: Annotated[
+        bool,
+        Field(
+            description=(
+                "When true, people whose email address is at this domain may sign up when the sign-up mode is "
+                "`existing_and_domains`."
+            )
+        ),
+    ]
+
+
+class ListDomainSettingsResponse(AdminApiBaseModel):
+    items: Annotated[list[DomainSettingsSummary], Field(description="Domain settings, sorted by domain.")]
+
+
+class CreateDomainSettingsRequest(AdminApiBaseModel):
+    domain: Annotated[
+        str,
+        Field(
+            max_length=MAX_LENGTH_OF_DOMAIN_VALUE,
+            description=(
+                "The email address domain, e.g. `example.org`. Matched exactly: subdomains are not included. "
+                "Internationalized domain names must be given in punycode. The domain is lowercased, and one leading "
+                "`@` is removed."
+            ),
+        ),
+    ]
+    allow_signup: Annotated[
+        bool,
+        Field(
+            description=(
+                "When true, people whose email address is at this domain may sign up when the sign-up mode is "
+                "`existing_and_domains`."
+            )
+        ),
+    ] = True
+
+    @field_validator("domain")
+    @classmethod
+    def normalize(cls, v: str) -> str:
+        return normalize_domain(v)
+
+
+class UpdateDomainSettingsRequest(AdminApiBaseModel):
+    allow_signup: Annotated[
+        bool | None,
+        Field(
+            description=(
+                "When present, sets whether people whose email address is at this domain may sign up when the "
+                "sign-up mode is `existing_and_domains`."
+            )
+        ),
+    ] = None
 
 
 class OrganizationListItem(AdminApiBaseModel):

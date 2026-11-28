@@ -1,0 +1,18 @@
+# Users offered by the development identity provider (see devidp.py). A user's claims are the template's claims,
+# overridden by the user's own.
+template:
+  email_verified: true
+users:
+  alice:
+    sub: sub-alice
+    email: alice@example.com
+    name: Alice
+  bob:
+    sub: sub-bob
+    email: bob@example.com
+    name: Bob
+  eve:
+    sub: sub-eve
+    email: eve@example.net
+    name: Eve
+    hd: example.net
