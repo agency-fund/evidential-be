@@ -1169,9 +1169,9 @@ def _claim_outcomes_for_arm(
     recorded outcome is claimed (and re-marked), since a rebuild from the prior needs all of them.
 
     Marking and reading happen in one UPDATE ... RETURNING statement, so the rows marked are exactly the rows
-    returned. An outcome committed by another request mid-update is either returned here or left for the next update;
-    it is never marked without being read. The marks commit with the caller's transaction, together with the new arm
-    parameters, so a failed update leaves its outcomes unapplied for the next run.
+    returned. The statement only sees outcomes that are committed before this update is executed. Any outcome that
+    committed while or after this update is executed, stays unapplied and will be picked up by the next update.
+    In this way, each outcome is used exactly once in an arm update.
 
     Returns the outcomes in no particular order, since the batch update doesn't depend on order. Context values are
     returned alongside, one per outcome, only for contextual bandits. Returns an empty list if there are none.
@@ -1303,7 +1303,7 @@ def update_bandit_arms_impl(
             experiment_type=experiment_type,
             from_initial_prior=from_initial_prior,
         )
-        # No new outcomes since the last update: the arm stays as it is.
+
         if not outcomes:
             continue
         num_outcomes += len(outcomes)

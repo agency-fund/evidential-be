@@ -673,7 +673,8 @@ class Draw(Base):
             observed_at.desc(),
             postgresql_where=sqlalchemy.text("outcome IS NOT NULL"),
         ),
-        # Each arm's outcomes that no arm update has applied yet: the only outcomes an update reads and marks.
+        # Outcomes for each arm that have not yet been applied in an arm update.
+        # Each update reads them and marks them as applied
         Index(
             "ix_draws_unapplied",
             arm_id,

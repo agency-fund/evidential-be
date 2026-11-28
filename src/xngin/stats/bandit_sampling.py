@@ -116,8 +116,8 @@ def _update_arm_beta_binomial(alpha: float, beta: float, rewards: np.ndarray) ->
     α_1 = α_0 + Σ_{i=1}^T r_i
     β_1 = β_0 + Σ_{i=1}^T (1 - r_i)
     """
-    num_positive = float((rewards == 1).sum())
-    num_negative = float((rewards == 0).sum())
+    num_positive = rewards.astype(bool).sum()
+    num_negative = (~rewards.astype(bool)).sum()
 
     return UpdateTypeBeta(alpha=alpha + num_positive, beta=beta + num_negative)
 

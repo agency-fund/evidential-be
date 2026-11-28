@@ -442,7 +442,6 @@ def record_bandit_participant_outcome(
 def update_bandit_arms(
     experiment: Annotated[tables.Experiment, Depends(edeps.experiment_with_datasource_and_fields)],
     session: Annotated[Session, Depends(xngin_sync_db_session)],
-    # A query parameter (?update_from_initial_prior=true), so the default incremental update keeps the plain URL.
     update_from_initial_prior: Annotated[
         bool,
         Query(
